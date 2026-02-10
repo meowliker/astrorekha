@@ -48,14 +48,14 @@ export default function SettingsPage() {
   const { subscriptionPlan, resetUserState, unlockedFeatures } = useUserStore();
 
   const userEmail = typeof window !== "undefined" 
-    ? localStorage.getItem("palmcosmic_email") || "user@example.com"
+    ? localStorage.getItem("astrorekha_email") || "user@example.com"
     : "user@example.com";
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const flow = localStorage.getItem("palmcosmic_onboarding_flow");
-      const purchaseType = localStorage.getItem("palmcosmic_purchase_type");
-      const bundle = localStorage.getItem("palmcosmic_bundle_id");
+      const flow = localStorage.getItem("astrorekha_onboarding_flow");
+      const purchaseType = localStorage.getItem("astrorekha_purchase_type");
+      const bundle = localStorage.getItem("astrorekha_bundle_id");
       setIsFlowB(flow === "flow-b" || purchaseType === "one-time");
       setBundleId(bundle);
     }

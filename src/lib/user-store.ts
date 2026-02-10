@@ -186,7 +186,7 @@ export const useUserStore = create<UserState>()(
       },
     }),
     {
-      name: "palmcosmic-user",
+      name: "astrorekha-user",
     }
   )
 );

@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     // Header
     doc.setFontSize(24);
     doc.setTextColor(225, 29, 72); // Primary color
-    doc.text("PalmCosmic", 105, 20, { align: "center" });
+    doc.text("AstroRekha", 105, 20, { align: "center" });
     
     doc.setFontSize(18);
     doc.setTextColor(0, 0, 0);
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
     doc.setFontSize(8);
     doc.setTextColor(150, 150, 150);
     doc.text("This reading is for entertainment purposes only.", 105, 280, { align: "center" });
-    doc.text("© PalmCosmic - Your Cosmic Journey Awaits", 105, 285, { align: "center" });
+    doc.text("© AstroRekha - Your Cosmic Journey Awaits", 105, 285, { align: "center" });
     
     // Generate PDF as buffer
     const pdfBuffer = doc.output("arraybuffer");

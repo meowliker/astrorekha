@@ -1,4 +1,4 @@
-# PalmCosmic Setup Guide
+# AstroRekha Setup Guide
 
 ## 🔑 API Keys Configuration
 

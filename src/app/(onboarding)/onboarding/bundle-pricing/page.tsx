@@ -95,11 +95,11 @@ export default function BundlePricingPage() {
     window.addEventListener("pageshow", handlePageShow);
     
     // Set flow type in localStorage
-    localStorage.setItem("palmcosmic_onboarding_flow", "flow-b");
+    localStorage.setItem("astrorekha_onboarding_flow", "flow-b");
     
     // Route protection: Check if user has already completed payment
-    const hasCompletedPayment = localStorage.getItem("palmcosmic_payment_completed") === "true";
-    const hasCompletedRegistration = localStorage.getItem("palmcosmic_registration_completed") === "true";
+    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
+    const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
     
     if (hasCompletedRegistration) {
       router.replace("/home");
@@ -114,7 +114,7 @@ export default function BundlePricingPage() {
 
   // Load saved palm image and generate stats
   useEffect(() => {
-    const savedImage = localStorage.getItem("palmcosmic_palm_image");
+    const savedImage = localStorage.getItem("astrorekha_palm_image");
     if (savedImage) {
       setPalmImage(savedImage);
     }
@@ -195,14 +195,14 @@ export default function BundlePricingPage() {
     }
     
     // Save selected plan to localStorage
-    localStorage.setItem("palmcosmic_selected_plan", selectedPlan);
-    localStorage.setItem("palmcosmic_onboarding_flow", "flow-b");
+    localStorage.setItem("astrorekha_selected_plan", selectedPlan);
+    localStorage.setItem("astrorekha_onboarding_flow", "flow-b");
     
     // Track AddToCart
     pixelEvents.addToCart(plan.priceValue, plan.name);
 
     // Track Brevo checkout_started for abandoned checkout automation (30-min email)
-    const userEmail = localStorage.getItem("palmcosmic_email");
+    const userEmail = localStorage.getItem("astrorekha_email");
     if (userEmail) {
       fetch("/api/track-event", {
         method: "POST",
@@ -222,7 +222,7 @@ export default function BundlePricingPage() {
         body: JSON.stringify({
           bundleId: selectedPlan,
           userId: firebaseUserId || generateUserId(),
-          email: localStorage.getItem("palmcosmic_email") || "",
+          email: localStorage.getItem("astrorekha_email") || "",
           flow: "flow-b",
         }),
       });
@@ -263,8 +263,8 @@ export default function BundlePricingPage() {
           animate={{ opacity: 1, y: 0 }}
           className="flex flex-col items-center gap-1 mb-4"
         >
-          <img src="/logo.png" alt="PalmCosmic" className="w-16 h-16 object-contain" />
-          <span className="text-sm text-muted-foreground">PalmCosmic</span>
+          <img src="/logo.png" alt="AstroRekha" className="w-16 h-16 object-contain" />
+          <span className="text-sm text-muted-foreground">AstroRekha</span>
         </motion.div>
 
         {/* Palm Reading Stats Card */}

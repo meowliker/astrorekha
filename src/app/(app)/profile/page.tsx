@@ -88,7 +88,7 @@ export default function ProfilePage() {
     setIsLoading(true);
     try {
       const authUid = auth.currentUser?.uid;
-      const storedId = localStorage.getItem("palmcosmic_user_id");
+      const storedId = localStorage.getItem("astrorekha_user_id");
       const userId = authUid || storedId;
 
       if (userId) {
@@ -180,7 +180,7 @@ export default function ProfilePage() {
           }
 
           // Get email from Firebase or localStorage
-          const email = data.email || localStorage.getItem("palmcosmic_email") || undefined;
+          const email = data.email || localStorage.getItem("astrorekha_email") || undefined;
           
           // Final fallback: use Western tropical calculation only if astro-engine signs unavailable
           const fallbackSunSign = month && day ? getZodiacSign(Number(month), Number(day)) : "Aries";
@@ -205,7 +205,7 @@ export default function ProfilePage() {
 
       // Fallback to onboarding store
       if (storeBirthMonth && storeBirthDay) {
-        const storedEmail = localStorage.getItem("palmcosmic_email") || undefined;
+        const storedEmail = localStorage.getItem("astrorekha_email") || undefined;
         setUserData({
           birthMonth: storeBirthMonth,
           birthDay: storeBirthDay,

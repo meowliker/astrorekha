@@ -1,7 +1,7 @@
-# PalmCosmic Architecture Rules
+# AstroRekha Architecture Rules
 
 ## System Overview
-PalmCosmic has 3 new modules being added to the existing app:
+AstroRekha has 3 new modules being added to the existing app:
 1. Astro Engine — Python FastAPI microservice (runs separately on port 8000)
 2. Palm Vision — Claude Vision API integration (runs in the main app)  
 3. Reading Generator — Claude API integration (runs in the main app)

@@ -24,8 +24,8 @@ export default function OnboardingPage() {
 
   // Route protection: Check user status and redirect accordingly
   useEffect(() => {
-    const hasCompletedPayment = localStorage.getItem("palmcosmic_payment_completed") === "true";
-    const hasCompletedRegistration = localStorage.getItem("palmcosmic_registration_completed") === "true";
+    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
+    const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
     
     if (hasCompletedRegistration) {
       router.replace("/home");
@@ -63,7 +63,7 @@ export default function OnboardingPage() {
         <motion.div variants={staggerItem} className="flex flex-col items-center gap-2 mb-6">
           <Image
             src="/logo.png"
-            alt="PalmCosmic"
+            alt="AstroRekha"
             width={48}
             height={48}
             className="rounded-xl"
@@ -71,7 +71,7 @@ export default function OnboardingPage() {
               e.currentTarget.style.display = "none";
             }}
           />
-          <span className="text-xl font-semibold">PalmCosmic</span>
+          <span className="text-xl font-semibold">AstroRekha</span>
         </motion.div>
 
         <motion.h1

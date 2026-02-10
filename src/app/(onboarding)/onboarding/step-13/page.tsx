@@ -105,7 +105,7 @@ export default function Step13Page() {
       const imageData = event.target?.result as string;
       setCapturedImage(imageData);
       // Save to localStorage for step-15
-      localStorage.setItem("palmcosmic_palm_image", imageData);
+      localStorage.setItem("astrorekha_palm_image", imageData);
       setScanError(null);
       setIsPalmValid(null);
       setPageState("preview");
@@ -137,7 +137,7 @@ export default function Step13Page() {
     
     setCapturedImage(imageData);
     // Save to localStorage for step-15
-    localStorage.setItem("palmcosmic_palm_image", imageData);
+    localStorage.setItem("astrorekha_palm_image", imageData);
     setScanError(null);
     setIsPalmValid(null);
     setPageState("preview");

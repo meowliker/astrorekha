@@ -20,18 +20,18 @@ export default function UserHydrator() {
 
   const hydrate = useCallback(async () => {
     const authUid = auth.currentUser?.uid || null;
-    const storedId = localStorage.getItem("palmcosmic_user_id");
+    const storedId = localStorage.getItem("astrorekha_user_id");
     const userId = authUid || storedId;
     if (!userId) return;
 
     if (authUid && storedId !== authUid) {
-      localStorage.setItem("palmcosmic_user_id", authUid);
+      localStorage.setItem("astrorekha_user_id", authUid);
     }
 
     try {
       const url = typeof window !== "undefined" ? new URL(window.location.href) : null;
       const sessionId = url?.searchParams.get("session_id") || "";
-      const fulfillKey = sessionId ? `pc_fulfilled_${sessionId}` : "";
+      const fulfillKey = sessionId ? `ar_fulfilled_${sessionId}` : "";
 
       if (sessionId && typeof window !== "undefined" && !sessionStorage.getItem(fulfillKey)) {
         sessionStorage.setItem(fulfillKey, "1");
@@ -67,7 +67,7 @@ export default function UserHydrator() {
       
       if (isCancelled) {
         // Set cookie to indicate subscription is cancelled
-        document.cookie = "pc_sub_cancelled=1; path=/; max-age=86400"; // 24 hours
+        document.cookie = "ar_sub_cancelled=1; path=/; max-age=86400"; // 24 hours
         
         // Redirect to manage subscription if on a protected route
         const protectedPaths = ["/dashboard", "/reports", "/chat", "/palm-reading", "/horoscope", "/birth-chart", "/compatibility", "/prediction-2026", "/profile", "/settings"];
@@ -80,7 +80,7 @@ export default function UserHydrator() {
         }
       } else {
         // Clear the cancelled cookie if subscription is active
-        document.cookie = "pc_sub_cancelled=; path=/; max-age=0";
+        document.cookie = "ar_sub_cancelled=; path=/; max-age=0";
       }
 
       // Backfill timezone for existing users who don't have it set

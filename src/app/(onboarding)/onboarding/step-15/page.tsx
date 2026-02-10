@@ -44,7 +44,7 @@ export default function Step15Page() {
 
   // Load captured palm image from localStorage and track ViewContent
   useEffect(() => {
-    const savedImage = localStorage.getItem("palmcosmic_palm_image");
+    const savedImage = localStorage.getItem("astrorekha_palm_image");
     if (savedImage) {
       setPalmImage(savedImage);
     }
@@ -138,7 +138,7 @@ export default function Step15Page() {
         return;
       }
       
-      localStorage.setItem("palmcosmic_email", trimmed);
+      localStorage.setItem("astrorekha_email", trimmed);
       // Track AddToWishlist when user provides email
       pixelEvents.addToWishlist("Personalized Palm Reading Report");
       
@@ -264,7 +264,7 @@ export default function Step15Page() {
           className="w-full max-w-sm"
         >
           <h2 className="text-lg font-semibold text-center mb-4">
-            Sign up to understand yourself better with PalmCosmic
+            Sign up to understand yourself better with AstroRekha
           </h2>
 
           <input

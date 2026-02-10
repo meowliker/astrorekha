@@ -62,7 +62,7 @@ export default function EditProfilePage() {
     try {
       // Get userId - prefer Firebase Auth uid
       const authUid = auth.currentUser?.uid;
-      const storedId = localStorage.getItem("palmcosmic_user_id");
+      const storedId = localStorage.getItem("astrorekha_user_id");
       const userId = authUid || storedId;
 
       if (!userId) {
@@ -72,7 +72,7 @@ export default function EditProfilePage() {
 
       // Update localStorage if using auth uid
       if (authUid && storedId !== authUid) {
-        localStorage.setItem("palmcosmic_user_id", authUid);
+        localStorage.setItem("astrorekha_user_id", authUid);
       }
 
       // Load from Firebase
@@ -99,7 +99,7 @@ export default function EditProfilePage() {
         }
       } else {
         // Fallback to localStorage for name
-        const savedName = localStorage.getItem("palmcosmic_name");
+        const savedName = localStorage.getItem("astrorekha_name");
         if (savedName) setLocalName(savedName);
       }
     } catch (error) {
@@ -134,7 +134,7 @@ export default function EditProfilePage() {
       switch (field) {
         case "name":
           setLocalName(value);
-          localStorage.setItem("palmcosmic_name", value);
+          localStorage.setItem("astrorekha_name", value);
           break;
         case "gender":
           setGender(value);
@@ -156,7 +156,7 @@ export default function EditProfilePage() {
       }
 
       // Save to Firebase
-      const userId = localStorage.getItem("palmcosmic_user_id");
+      const userId = localStorage.getItem("astrorekha_user_id");
       if (userId) {
         const userRef = doc(db, "users", userId);
         
@@ -261,7 +261,7 @@ export default function EditProfilePage() {
 
   const handleDeleteAccount = async () => {
     // Verify password (simple check - in production, verify against Firebase Auth)
-    const storedPassword = localStorage.getItem("palmcosmic_password");
+    const storedPassword = localStorage.getItem("astrorekha_password");
     if (storedPassword && deletePassword !== storedPassword) {
       setDeleteError("Incorrect password. Please try again.");
       return;
@@ -271,8 +271,8 @@ export default function EditProfilePage() {
     setDeleteError("");
     
     try {
-      const userId = localStorage.getItem("palmcosmic_user_id");
-      const userEmail = localStorage.getItem("palmcosmic_email");
+      const userId = localStorage.getItem("astrorekha_user_id");
+      const userEmail = localStorage.getItem("astrorekha_email");
       
       // Step 1: Cancel Stripe subscription first (set cancel_at_period_end)
       // This prevents continued billing after account deletion

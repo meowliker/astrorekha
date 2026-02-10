@@ -95,7 +95,7 @@ export const useOnboardingStore = create<OnboardingState>()(
       reset: () => set(initialState),
     }),
     {
-      name: "palmcosmic-onboarding",
+      name: "astrorekha-onboarding",
     }
   )
 );

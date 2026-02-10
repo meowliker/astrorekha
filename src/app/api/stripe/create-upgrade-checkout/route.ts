@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
 
     // Fallback: Create new checkout session if no existing subscription
     // This handles edge cases where user somehow doesn't have a subscription
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.headers.get("origin") || "https://palmcosmic-web-app.vercel.app";
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.headers.get("origin") || "https://astrorekha.com";
 
     const sessionParams: Stripe.Checkout.SessionCreateParams = {
       mode: "subscription",

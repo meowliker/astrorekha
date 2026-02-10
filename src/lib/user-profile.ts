@@ -98,23 +98,23 @@ export function generateUserId(): string {
 
   const authUid = auth.currentUser?.uid;
   if (authUid) {
-    localStorage.setItem("palmcosmic_user_id", authUid);
+    localStorage.setItem("astrorekha_user_id", authUid);
     return authUid;
   }
 
-  const currentId = localStorage.getItem("palmcosmic_user_id");
+  const currentId = localStorage.getItem("astrorekha_user_id");
   if (currentId) return currentId;
 
-  const anonIdKey = "palmcosmic_anon_id";
+  const anonIdKey = "astrorekha_anon_id";
   const existingAnonId = localStorage.getItem(anonIdKey);
   if (existingAnonId) {
-    localStorage.setItem("palmcosmic_user_id", existingAnonId);
+    localStorage.setItem("astrorekha_user_id", existingAnonId);
     return existingAnonId;
   }
 
   const newAnonId = `anon_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   localStorage.setItem(anonIdKey, newAnonId);
-  localStorage.setItem("palmcosmic_user_id", newAnonId);
+  localStorage.setItem("astrorekha_user_id", newAnonId);
   return newAnonId;
 }
 

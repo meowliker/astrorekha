@@ -48,7 +48,7 @@ export const trackCustomEvent = (eventName: string, params?: Record<string, any>
 };
 
 // ============================================
-// Standard Meta Pixel Events for PalmCosmic
+// Standard Meta Pixel Events for AstroRekha
 // ============================================
 
 export const pixelEvents = {
@@ -76,7 +76,7 @@ export const pixelEvents = {
   /** User completes sign-up (creates account) */
   completeRegistration: (email?: string) => 
     trackPixelEvent("CompleteRegistration", { 
-      content_name: "PalmCosmic Account",
+      content_name: "AstroRekha Account",
       ...(email && { email })
     }),
   
@@ -87,7 +87,7 @@ export const pixelEvents = {
     trackPixelEvent("StartTrial", { 
       value, 
       currency: "USD",
-      content_name: "PalmCosmic Trial"
+      content_name: "AstroRekha Trial"
     }),
   
   /** User subscribes (weekly/monthly/yearly) */

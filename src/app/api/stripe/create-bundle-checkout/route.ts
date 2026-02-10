@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.headers.get("origin") || "https://palmcosmic-web-app.vercel.app";
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.headers.get("origin") || "https://astrorekha.com";
 
     // Create one-time payment checkout session
     // Use Stripe Price ID if available, otherwise use inline price_data

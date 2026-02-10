@@ -46,7 +46,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
           type: "report",
           packageId: reportId,
           userId: generateUserId(),
-          email: localStorage.getItem("palmcosmic_email") || "",
+          email: localStorage.getItem("astrorekha_email") || "",
           cancelPath: "/reports?cancelled=true",
         }),
       });
@@ -185,7 +185,7 @@ export function AllUpsellsPopup({ isOpen, onClose, onPurchase }: AllUpsellsPopup
         body: JSON.stringify({
           selectedOffers: ["ultra-pack"],
           userId: generateUserId(),
-          email: localStorage.getItem("palmcosmic_email") || "",
+          email: localStorage.getItem("astrorekha_email") || "",
           successPath: "/dashboard?upsell_success=true&offers=ultra-pack",
           cancelPath: "/reports?cancelled=true",
         }),

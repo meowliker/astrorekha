@@ -187,7 +187,7 @@ function AStep17Content() {
     // Session restoration: If ?email= param is present and no local user data,
     // fetch from Firestore so the user can checkout from a different browser/device
     const emailParam = searchParams.get("email");
-    const hasLocalUser = !!localStorage.getItem("palmcosmic_user_id") || !!localStorage.getItem("palmcosmic_email");
+    const hasLocalUser = !!localStorage.getItem("astrorekha_user_id") || !!localStorage.getItem("astrorekha_email");
 
     if (emailParam && !hasLocalUser) {
       setIsRestoringSession(true);
@@ -195,8 +195,8 @@ function AStep17Content() {
         .then((res) => res.json())
         .then((data) => {
           if (data.success && data.userId) {
-            localStorage.setItem("palmcosmic_user_id", data.userId);
-            localStorage.setItem("palmcosmic_email", data.email);
+            localStorage.setItem("astrorekha_user_id", data.userId);
+            localStorage.setItem("astrorekha_email", data.email);
 
             const o = data.onboarding;
             if (o.gender) setGender(o.gender);
@@ -220,8 +220,8 @@ function AStep17Content() {
         .finally(() => setIsRestoringSession(false));
     }
     
-    const hasCompletedPayment = localStorage.getItem("palmcosmic_payment_completed") === "true";
-    const hasCompletedRegistration = localStorage.getItem("palmcosmic_registration_completed") === "true";
+    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
+    const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
     
     if (hasCompletedRegistration) {
       router.replace("/home");
@@ -232,14 +232,14 @@ function AStep17Content() {
     }
     
     // Flow B users should go to bundle-pricing, not subscription pricing
-    const onboardingFlow = localStorage.getItem("palmcosmic_onboarding_flow");
+    const onboardingFlow = localStorage.getItem("astrorekha_onboarding_flow");
     if (onboardingFlow === "flow-b") {
       router.replace("/onboarding/bundle-pricing");
       return;
     }
     
     // Track A/B test impression (only once per session to avoid duplicate counts)
-    const impressionKey = "palmcosmic_ab_impression_B";
+    const impressionKey = "astrorekha_ab_impression_B";
     if (!sessionStorage.getItem(impressionKey)) {
       sessionStorage.setItem(impressionKey, "true");
       fetch("/api/ab-test/event", {
@@ -249,14 +249,14 @@ function AStep17Content() {
           testId: "pricing-test-1",
           variant: "B",
           eventType: "impression",
-          visitorId: localStorage.getItem("palmcosmic_visitor_id") || generateUserId(),
+          visitorId: localStorage.getItem("astrorekha_visitor_id") || generateUserId(),
         }),
       }).catch(() => {});
     }
     
     pixelEvents.viewContent("Subscription Plans V2", "pricing");
     
-    const savedImage = localStorage.getItem("palmcosmic_palm_image");
+    const savedImage = localStorage.getItem("astrorekha_palm_image");
     if (savedImage) {
       setPalmImage(savedImage);
     }
@@ -267,7 +267,7 @@ function AStep17Content() {
     // Track bounce when user leaves page without starting checkout
     const trackBounce = () => {
       if (!checkoutStartedRef.current) {
-        const bounceKey = "palmcosmic_ab_bounce_B";
+        const bounceKey = "astrorekha_ab_bounce_B";
         if (!sessionStorage.getItem(bounceKey)) {
           sessionStorage.setItem(bounceKey, "true");
           // Use sendBeacon for reliable tracking on page unload
@@ -275,7 +275,7 @@ function AStep17Content() {
             testId: "pricing-test-1",
             variant: "B",
             eventType: "bounce",
-            visitorId: localStorage.getItem("palmcosmic_visitor_id") || generateUserId(),
+            visitorId: localStorage.getItem("astrorekha_visitor_id") || generateUserId(),
           });
           navigator.sendBeacon("/api/ab-test/event", new Blob([data], { type: "application/json" }));
         }
@@ -402,8 +402,8 @@ function AStep17Content() {
     const planPrice = plan === "1week-v2" ? 2.99 : plan === "4week-v2" ? 7.99 : 14.99;
     const planName = `${plan} Trial`;
     
-    localStorage.setItem("palmcosmic_selected_plan", plan);
-    localStorage.setItem("palmcosmic_ab_variant", "B");
+    localStorage.setItem("astrorekha_selected_plan", plan);
+    localStorage.setItem("astrorekha_ab_variant", "B");
     
     // Mark checkout as started to prevent bounce tracking
     checkoutStartedRef.current = true;
@@ -416,13 +416,13 @@ function AStep17Content() {
         testId: "pricing-test-1",
         variant: "B",
         eventType: "checkout_started",
-        visitorId: localStorage.getItem("palmcosmic_visitor_id") || generateUserId(),
+        visitorId: localStorage.getItem("astrorekha_visitor_id") || generateUserId(),
         metadata: { plan, price: planPrice },
       }),
     }).catch(() => {});
 
     // Track Brevo checkout_started for abandoned checkout automation (30-min email)
-    const userEmail = localStorage.getItem("palmcosmic_email");
+    const userEmail = localStorage.getItem("astrorekha_email");
     if (userEmail) {
       fetch("/api/track-event", {
         method: "POST",
@@ -445,7 +445,7 @@ function AStep17Content() {
         body: JSON.stringify({
           plan: selectedPlan,
           userId: firebaseUserId || generateUserId(),
-          email: localStorage.getItem("palmcosmic_email") || "",
+          email: localStorage.getItem("astrorekha_email") || "",
           abVariant: "B",
         }),
       });
@@ -496,8 +496,8 @@ function AStep17Content() {
           animate={{ opacity: 1, y: 0 }}
           className="flex flex-col items-center gap-1 mb-2"
         >
-          <img src="/logo.png" alt="PalmCosmic" className="w-20 h-20 object-contain" />
-          <span className="text-sm text-muted-foreground">PalmCosmic</span>
+          <img src="/logo.png" alt="AstroRekha" className="w-20 h-20 object-contain" />
+          <span className="text-sm text-muted-foreground">AstroRekha</span>
         </motion.div>
 
         <motion.h1
@@ -688,7 +688,7 @@ function AStep17Content() {
               <a href="/Terms/billing-terms.html" target="_blank" className="text-primary underline">Billing Terms</a> and{" "}
               <a href="/Terms/money-back-policy.html" target="_blank" className="text-primary underline">Money-back Policy</a>.
               {` Start your ${getTrialDays()} trial for ${getTrialPrice()}. After the trial, you'll be charged $49.99 every month starting from ${new Date(Date.now() + (selectedPlan === "1week-v2" ? 7 : selectedPlan === "4week-v2" ? 28 : 84) * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} until canceled.`}
-              {" "}By completing your purchase, you consent to us securely storing your payment details for future charges. No refunds for partial periods. You can cancel subscription anytime via account settings or by contacting support at weatpalmcosmic@gmail.com.
+              {" "}By completing your purchase, you consent to us securely storing your payment details for future charges. No refunds for partial periods. You can cancel subscription anytime via account settings or by contacting support at weatastrorekha@gmail.com.
             </span>
           </label>
         </motion.div>
@@ -1178,14 +1178,14 @@ function AStep17Content() {
           </motion.div>
         </div>
 
-        {/* What you'll find in PalmCosmic */}
+        {/* What you'll find in AstroRekha */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 1.7 }}
           className="w-full max-w-sm bg-gradient-to-b from-slate-800/80 to-slate-900/90 rounded-3xl p-6 mb-8"
         >
-          <h3 className="text-xl font-bold text-center mb-6">What you&apos;ll find in the PalmCosmic app</h3>
+          <h3 className="text-xl font-bold text-center mb-6">What you&apos;ll find in the AstroRekha app</h3>
 
           <div className="space-y-4">
             {[
@@ -1211,7 +1211,7 @@ function AStep17Content() {
             className="w-full h-12 text-base font-semibold bg-blue-500 hover:bg-blue-600 mt-6"
             size="lg"
           >
-            Try PalmCosmic
+            Try AstroRekha
           </Button>
         </motion.div>
 
@@ -1225,10 +1225,10 @@ function AStep17Content() {
           <div className="flex flex-col items-center mb-6">
             <img
               src="/logo.png"
-              alt="PalmCosmic"
+              alt="AstroRekha"
               className="w-12 h-12 mb-2"
             />
-            <p className="text-sm font-medium">PalmCosmic</p>
+            <p className="text-sm font-medium">AstroRekha</p>
           </div>
 
           <Link href="/Terms/contact-us.html" target="_blank" className="block w-full">

@@ -73,7 +73,7 @@ export default function DashboardPage() {
     try {
       // Get userId - prefer Firebase Auth uid
       const authUid = auth.currentUser?.uid;
-      const storedId = localStorage.getItem("palmcosmic_user_id");
+      const storedId = localStorage.getItem("astrorekha_user_id");
       const userId = authUid || storedId;
 
       if (userId) {
@@ -144,7 +144,7 @@ export default function DashboardPage() {
             });
             
             // Also try to get email from localStorage as fallback
-            const storedEmail = localStorage.getItem("palmcosmic_email");
+            const storedEmail = localStorage.getItem("astrorekha_email");
             if (storedEmail && !userEmail) {
               setUserEmail(storedEmail);
             }
@@ -156,7 +156,7 @@ export default function DashboardPage() {
       }
       
       // Also try to get email from localStorage as fallback
-      const storedEmail = localStorage.getItem("palmcosmic_email");
+      const storedEmail = localStorage.getItem("astrorekha_email");
       if (storedEmail && !userEmail) {
         setUserEmail(storedEmail);
       }
@@ -214,7 +214,7 @@ export default function DashboardPage() {
     try {
       setInsightsLoading(true);
       const authUid = auth.currentUser?.uid;
-      const storedId = localStorage.getItem("palmcosmic_user_id");
+      const storedId = localStorage.getItem("astrorekha_user_id");
       const userId = authUid || storedId;
       if (!userId) return;
 
@@ -584,7 +584,7 @@ export default function DashboardPage() {
                             // Update Firebase to deactivate timer after a delay
                             setTimeout(async () => {
                               setBirthChartTimerActive(false);
-                              const userId = localStorage.getItem("palmcosmic_user_id");
+                              const userId = localStorage.getItem("astrorekha_user_id");
                               if (userId) {
                                 try {
                                   const { doc, updateDoc } = await import("firebase/firestore");

@@ -194,7 +194,7 @@ export async function sendEmail(
   email.to = [{ email: to.email, name: to.name || to.email }];
   email.subject = subject;
   email.htmlContent = htmlContent;
-  email.sender = { email: "hello@palmcosmic.com", name: "PalmCosmic" };
+  email.sender = { email: "weatastrorekha@gmail.com", name: "AstroRekha" };
 
   try {
     await api.sendTransacEmail(email);

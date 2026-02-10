@@ -41,8 +41,8 @@ export default function PalmReadingPage() {
 
   useEffect(() => {
     // Check if user is Flow B
-    const flow = localStorage.getItem("palmcosmic_onboarding_flow");
-    const purchaseType = localStorage.getItem("palmcosmic_purchase_type");
+    const flow = localStorage.getItem("astrorekha_onboarding_flow");
+    const purchaseType = localStorage.getItem("astrorekha_purchase_type");
     setIsFlowB(flow === "flow-b" || purchaseType === "one-time");
     
     loadExistingReading();
@@ -70,11 +70,11 @@ export default function PalmReadingPage() {
       }
       
       // Check if palm image exists in localStorage (from onboarding)
-      const savedPalmImage = localStorage.getItem("palmcosmic_palm_image");
+      const savedPalmImage = localStorage.getItem("astrorekha_palm_image");
       if (savedPalmImage) {
         setCapturedImage(savedPalmImage);
         // For Flow B users, auto-analyze if they have a palm image but no reading
-        const flow = localStorage.getItem("palmcosmic_onboarding_flow");
+        const flow = localStorage.getItem("astrorekha_onboarding_flow");
         if (flow === "flow-b") {
           setLoading(false);
           // Auto-analyze the palm image
@@ -87,7 +87,7 @@ export default function PalmReadingPage() {
     } catch (err) {
       console.error("Failed to load reading:", err);
       // Still check localStorage as fallback
-      const savedPalmImage = localStorage.getItem("palmcosmic_palm_image");
+      const savedPalmImage = localStorage.getItem("astrorekha_palm_image");
       if (savedPalmImage) {
         setCapturedImage(savedPalmImage);
       }
@@ -221,8 +221,8 @@ export default function PalmReadingPage() {
 
   const handleShare = async () => {
     const shareText = reading?.cosmicInsight 
-      ? `✨ My Palm Reading\n\n${reading.cosmicInsight}\n\nGet your reading at PalmCosmic!`
-      : "Check out my palm reading on PalmCosmic!";
+      ? `✨ My Palm Reading\n\n${reading.cosmicInsight}\n\nGet your reading at AstroRekha!`
+      : "Check out my palm reading on AstroRekha!";
     
     if (navigator.share) {
       try {

@@ -66,7 +66,7 @@ export default function HoroscopePage() {
       };
 
       const authUid = auth.currentUser?.uid;
-      const storedId = localStorage.getItem("palmcosmic_user_id");
+      const storedId = localStorage.getItem("astrorekha_user_id");
       const userId = authUid || storedId;
 
       if (userId) {

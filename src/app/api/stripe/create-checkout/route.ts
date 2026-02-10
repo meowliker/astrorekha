@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
     const isYearlyPlan = plan === "yearly";
     
     // Get the base URL - use request origin as fallback
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.headers.get("origin") || "https://palmcosmic-web-app.vercel.app";
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.headers.get("origin") || "https://astrorekha.com";
 
     let sessionParams: any;
 

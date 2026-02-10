@@ -19,7 +19,7 @@ const cormorant = Cormorant_Garamond({
 });
 
 export const metadata: Metadata = {
-  title: "PalmCosmic - Discover Your Destiny",
+  title: "AstroRekha - Discover Your Destiny",
   description: "AI-powered palm reading and cosmic insights",
 };
 

@@ -184,7 +184,7 @@ function ResetPasswordContent() {
               <div className="relative w-20 h-20 rounded-2xl overflow-hidden border border-primary/30">
                 <Image
                   src="/logo.png"
-                  alt="PalmCosmic"
+                  alt="AstroRekha"
                   width={80}
                   height={80}
                   className="object-cover w-full h-full"

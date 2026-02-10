@@ -51,7 +51,7 @@ export default function DevToolsPage() {
   const handleActivateTester = async () => {
     setActivateError("");
 
-    const userId = localStorage.getItem("palmcosmic_user_id");
+    const userId = localStorage.getItem("astrorekha_user_id");
     if (!userId) {
       setActivateError("No userId found. Please log in first.");
       return;
@@ -430,7 +430,7 @@ export default function DevToolsPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  localStorage.removeItem("palmcosmic_palm_image");
+                  localStorage.removeItem("astrorekha_palm_image");
                   showMessage("Palm image cleared");
                 }}
                 className="w-full text-xs border-red-500/30 text-red-400 hover:bg-red-500/10"

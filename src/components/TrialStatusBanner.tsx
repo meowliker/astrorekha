@@ -40,8 +40,8 @@ export function TrialStatusBanner({ className = "" }: TrialStatusBannerProps) {
       }
 
       // Check subscription status from localStorage
-      const subscriptionStatus = localStorage.getItem("palmcosmic_subscription_status");
-      const trialEndDate = localStorage.getItem("palmcosmic_trial_end_date");
+      const subscriptionStatus = localStorage.getItem("astrorekha_subscription_status");
+      const trialEndDate = localStorage.getItem("astrorekha_trial_end_date");
 
       if (subscriptionStatus === "payment_failed") {
         setBannerType("payment_failed");
@@ -54,7 +54,7 @@ export function TrialStatusBanner({ className = "" }: TrialStatusBannerProps) {
         const endDate = new Date(trialEndDate);
         if (new Date() > endDate) {
           // Trial has ended, check if payment was successful
-          const paymentCompleted = localStorage.getItem("palmcosmic_payment_completed");
+          const paymentCompleted = localStorage.getItem("astrorekha_payment_completed");
           if (paymentCompleted !== "true") {
             setBannerType("trial_ended");
             setShowBanner(true);

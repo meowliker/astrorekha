@@ -20,7 +20,7 @@ export default function Step16Page() {
   const [croppedPalmImage, setCroppedPalmImage] = useState<string | null>(null);
 
   useEffect(() => {
-    const savedImage = localStorage.getItem("palmcosmic_palm_image");
+    const savedImage = localStorage.getItem("astrorekha_palm_image");
     if (savedImage) {
       setPalmImage(savedImage);
     }
@@ -91,7 +91,7 @@ export default function Step16Page() {
     pixelEvents.addToWishlist("Full Prediction Access");
     
     // Check if user is in Flow B (bundle flow)
-    const flow = localStorage.getItem("palmcosmic_onboarding_flow");
+    const flow = localStorage.getItem("astrorekha_onboarding_flow");
     if (flow === "flow-b") {
       router.push("/onboarding/bundle-pricing");
     } else {
@@ -113,8 +113,8 @@ export default function Step16Page() {
           animate={{ opacity: 1, y: 0 }}
           className="flex flex-col items-center gap-1 mb-2"
         >
-          <img src="/logo.png" alt="PalmCosmic" className="w-20 h-20 object-contain" />
-          <span className="text-sm text-muted-foreground">PalmCosmic</span>
+          <img src="/logo.png" alt="AstroRekha" className="w-20 h-20 object-contain" />
+          <span className="text-sm text-muted-foreground">AstroRekha</span>
         </motion.div>
 
         <motion.h1

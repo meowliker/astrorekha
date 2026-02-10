@@ -63,9 +63,9 @@ export default function LoginPage() {
       const user = userCredential.user;
       
       // Save user info to localStorage
-      localStorage.setItem("palmcosmic_user_id", user.uid);
-      localStorage.setItem("palmcosmic_email", user.email || "");
-      localStorage.setItem("palmcosmic_password", password); // For delete account verification
+      localStorage.setItem("astrorekha_user_id", user.uid);
+      localStorage.setItem("astrorekha_email", user.email || "");
+      localStorage.setItem("astrorekha_password", password); // For delete account verification
       
       // Set access cookie via API
       try {
@@ -89,11 +89,11 @@ export default function LoginPage() {
           
           // Detect and store user's flow type
           const userFlow = data.onboardingFlow || (data.purchaseType === "one-time" ? "flow-b" : "flow-a");
-          localStorage.setItem("palmcosmic_onboarding_flow", userFlow);
+          localStorage.setItem("astrorekha_onboarding_flow", userFlow);
           
           // Store purchase type for dashboard restrictions
           if (data.purchaseType) {
-            localStorage.setItem("palmcosmic_purchase_type", data.purchaseType);
+            localStorage.setItem("astrorekha_purchase_type", data.purchaseType);
           }
         }
       } catch (err) {
@@ -221,8 +221,8 @@ export default function LoginPage() {
       }
 
       // Login successful
-      localStorage.setItem("palmcosmic_user_id", data.user.id);
-      localStorage.setItem("palmcosmic_email", data.user.email);
+      localStorage.setItem("astrorekha_user_id", data.user.id);
+      localStorage.setItem("astrorekha_email", data.user.email);
       
       // Update user store
       if (Object.prototype.hasOwnProperty.call(data.user, "subscriptionPlan")) {
@@ -235,11 +235,11 @@ export default function LoginPage() {
       
       // Detect and store user's flow type from OTP login
       const userFlow = data.user.onboardingFlow || (data.user.purchaseType === "one-time" ? "flow-b" : "flow-a");
-      localStorage.setItem("palmcosmic_onboarding_flow", userFlow);
+      localStorage.setItem("astrorekha_onboarding_flow", userFlow);
       
       // Store purchase type for dashboard restrictions
       if (data.user.purchaseType) {
-        localStorage.setItem("palmcosmic_purchase_type", data.user.purchaseType);
+        localStorage.setItem("astrorekha_purchase_type", data.user.purchaseType);
       }
 
       // Set session
@@ -359,7 +359,7 @@ export default function LoginPage() {
             <div className="relative w-20 h-20 rounded-2xl overflow-hidden border border-primary/30">
               <Image
                 src="/logo.png"
-                alt="PalmCosmic"
+                alt="AstroRekha"
                 width={80}
                 height={80}
                 className="object-cover w-full h-full"

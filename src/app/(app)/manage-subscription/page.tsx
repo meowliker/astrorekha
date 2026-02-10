@@ -132,7 +132,7 @@ export default function ManageSubscriptionPage() {
 
   const fetchSubscriptionStatus = async () => {
     try {
-      const userId = localStorage.getItem("palmcosmic_user_id");
+      const userId = localStorage.getItem("astrorekha_user_id");
       if (!userId) return;
 
       const userDoc = await getDoc(doc(db, "users", userId));
@@ -231,8 +231,8 @@ export default function ManageSubscriptionPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           plan: planId,
-          userId: localStorage.getItem("palmcosmic_user_id") || "",
-          email: localStorage.getItem("palmcosmic_email") || "",
+          userId: localStorage.getItem("astrorekha_user_id") || "",
+          email: localStorage.getItem("astrorekha_email") || "",
         }),
       });
 
@@ -289,9 +289,9 @@ export default function ManageSubscriptionPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: localStorage.getItem("palmcosmic_user_id") || "",
+          userId: localStorage.getItem("astrorekha_user_id") || "",
           subscriptionId: subscriptionStatus.stripeSubscriptionId,
-          email: localStorage.getItem("palmcosmic_email") || "",
+          email: localStorage.getItem("astrorekha_email") || "",
         }),
       });
 
@@ -325,7 +325,7 @@ export default function ManageSubscriptionPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: localStorage.getItem("palmcosmic_user_id") || "",
+          userId: localStorage.getItem("astrorekha_user_id") || "",
           subscriptionId: subscriptionStatus.stripeSubscriptionId,
         }),
       });

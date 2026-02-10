@@ -58,8 +58,8 @@ function Step19Content() {
 
   // Route protection: Check if user has completed payment
   useEffect(() => {
-    const hasCompletedPayment = localStorage.getItem("palmcosmic_payment_completed") === "true";
-    const hasCompletedRegistration = localStorage.getItem("palmcosmic_registration_completed") === "true";
+    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
+    const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
     
     // If user has completed registration, redirect to app
     if (hasCompletedRegistration) {
@@ -79,7 +79,7 @@ function Step19Content() {
 
   // Get stored email from previous step
   useEffect(() => {
-    const storedEmail = localStorage.getItem("palmcosmic_email");
+    const storedEmail = localStorage.getItem("astrorekha_email");
     if (storedEmail) {
       setEmail(storedEmail);
     }
@@ -117,14 +117,14 @@ function Step19Content() {
     setIsLoading(true);
 
     try {
-      const anonId = localStorage.getItem("palmcosmic_anon_id") || localStorage.getItem("palmcosmic_user_id");
+      const anonId = localStorage.getItem("astrorekha_anon_id") || localStorage.getItem("astrorekha_user_id");
 
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const uid = userCredential.user.uid;
 
-      localStorage.setItem("palmcosmic_user_id", uid);
-      localStorage.setItem("palmcosmic_email", email);
-      if (anonId) localStorage.setItem("palmcosmic_prev_anon_id", anonId);
+      localStorage.setItem("astrorekha_user_id", uid);
+      localStorage.setItem("astrorekha_email", email);
+      if (anonId) localStorage.setItem("astrorekha_prev_anon_id", anonId);
 
       try {
         await fetch("/api/session", { method: "POST" });
@@ -203,7 +203,7 @@ function Step19Content() {
       
       console.log("User document created/updated:", uid, "with subscription:", migratedPlan, migratedStatus);
 
-      const palmImage = localStorage.getItem("palmcosmic_palm_image");
+      const palmImage = localStorage.getItem("astrorekha_palm_image");
 
       await saveUserProfile({
         userId: uid,
@@ -241,7 +241,7 @@ function Step19Content() {
   const handleContinue = () => {
     triggerLight();
     // Mark registration as completed
-    localStorage.setItem("palmcosmic_registration_completed", "true");
+    localStorage.setItem("astrorekha_registration_completed", "true");
     router.push("/onboarding/step-20");
   };
 
@@ -317,7 +317,7 @@ function Step19Content() {
           transition={{ delay: 0.1 }}
           className="text-muted-foreground text-center text-sm mb-8"
         >
-          Create an account to access your PalmCosmic account
+          Create an account to access your AstroRekha account
         </motion.p>
 
         {/* Form */}
@@ -486,7 +486,7 @@ function Step19Content() {
                   transition={{ delay: 0.4 }}
                   className="text-muted-foreground text-center mb-8 max-w-xs"
                 >
-                  You have successfully registered for PalmCosmic. You can now access the app.
+                  You have successfully registered for AstroRekha. You can now access the app.
                 </motion.p>
 
                 <motion.div

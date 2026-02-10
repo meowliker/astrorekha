@@ -49,7 +49,7 @@ export function OnboardingHeader({
         <div className="flex items-center gap-2">
           <Image
             src="/logo.png"
-            alt="PalmCosmic"
+            alt="AstroRekha"
             width={28}
             height={28}
             className="rounded-lg"
@@ -57,7 +57,7 @@ export function OnboardingHeader({
               e.currentTarget.style.display = "none";
             }}
           />
-          <span className="font-semibold text-lg">PalmCosmic</span>
+          <span className="font-semibold text-lg">AstroRekha</span>
         </div>
 
         <div className="w-10 text-right">

@@ -26,7 +26,7 @@ export default function PaywallPage() {
         body: JSON.stringify({
           plan,
           userId: generateUserId(),
-          email: localStorage.getItem("palmcosmic_email") || "",
+          email: localStorage.getItem("astrorekha_email") || "",
         }),
       });
       const data = await response.json();

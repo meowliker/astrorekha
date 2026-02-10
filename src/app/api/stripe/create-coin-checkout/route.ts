@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
       userId: userId || "",
     };
     // Get the base URL - use request origin as fallback
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.headers.get("origin") || "https://palmcosmic-web-app.vercel.app";
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.headers.get("origin") || "https://astrorekha.com";
     let successUrl = `${baseUrl}/dashboard?purchase_success=true`;
     let cancelUrl = `${baseUrl}/chat?cancelled=true`;
 
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
           currency: "usd",
           product_data: {
             name: coinPackage.name,
-            description: `${coinPackage.coins} coins for PalmCosmic chat`,
+            description: `${coinPackage.coins} coins for AstroRekha chat`,
           },
           unit_amount: coinPackage.amount,
         },

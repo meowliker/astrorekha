@@ -54,10 +54,10 @@ export default function Step20Page() {
 
   // Route protection: Check if user has completed registration
   useEffect(() => {
-    const hasCompletedPayment = localStorage.getItem("palmcosmic_payment_completed") === "true";
-    const hasCompletedRegistration = localStorage.getItem("palmcosmic_registration_completed") === "true";
-    const flow = localStorage.getItem("palmcosmic_onboarding_flow");
-    const bundle = localStorage.getItem("palmcosmic_bundle_id");
+    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
+    const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
+    const flow = localStorage.getItem("astrorekha_onboarding_flow");
+    const bundle = localStorage.getItem("astrorekha_bundle_id");
     
     setIsFlowB(flow === "flow-b");
     setBundleId(bundle);
@@ -71,7 +71,7 @@ export default function Step20Page() {
       return;
     } else {
       // No payment - redirect to payment page
-      const onboardingFlow = localStorage.getItem("palmcosmic_onboarding_flow");
+      const onboardingFlow = localStorage.getItem("astrorekha_onboarding_flow");
       if (onboardingFlow === "flow-b") {
         router.replace("/onboarding/bundle-pricing");
       } else {
@@ -175,7 +175,7 @@ export default function Step20Page() {
           transition={{ delay: 0.4 }}
           className="text-muted-foreground text-center text-sm mb-8 max-w-xs"
         >
-          Your PalmCosmic account is ready. Explore all the cosmic insights waiting for you.
+          Your AstroRekha account is ready. Explore all the cosmic insights waiting for you.
         </motion.p>
 
         {/* Features */}

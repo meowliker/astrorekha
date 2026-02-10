@@ -10,8 +10,8 @@ interface UserAvatarProps {
 }
 
 // Cache keys for localStorage
-const CACHE_KEY_NAME = "palmcosmic_user_name";
-const CACHE_KEY_EMAIL = "palmcosmic_email";
+const CACHE_KEY_NAME = "astrorekha_user_name";
+const CACHE_KEY_EMAIL = "astrorekha_email";
 
 // Helper to get cached user info
 export function getCachedUserInfo(): { name: string | null; email: string | null } {

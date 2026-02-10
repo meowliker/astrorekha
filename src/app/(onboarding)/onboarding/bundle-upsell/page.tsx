@@ -42,7 +42,7 @@ function BundleUpsellContent() {
   // Fulfill checkout to unlock features in Firebase
   const fulfillCheckout = async (sessionId: string, bundleId: string) => {
     try {
-      const userId = firebaseUserId || localStorage.getItem("palmcosmic_user_id") || generateUserId();
+      const userId = firebaseUserId || localStorage.getItem("astrorekha_user_id") || generateUserId();
       
       await fetch("/api/stripe/fulfill-checkout-session", {
         method: "POST",
@@ -63,9 +63,9 @@ function BundleUpsellContent() {
   // Route protection
   useEffect(() => {
     const sessionId = searchParams.get("session_id");
-    const hasCompletedPayment = localStorage.getItem("palmcosmic_payment_completed") === "true";
-    const hasCompletedRegistration = localStorage.getItem("palmcosmic_registration_completed") === "true";
-    const flow = localStorage.getItem("palmcosmic_onboarding_flow");
+    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
+    const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
+    const flow = localStorage.getItem("astrorekha_onboarding_flow");
     
     // If not flow-b, redirect to regular upsell
     if (flow !== "flow-b") {
@@ -82,13 +82,13 @@ function BundleUpsellContent() {
       setIsAuthorized(true);
       
       if (sessionId) {
-        localStorage.setItem("palmcosmic_payment_completed", "true");
-        localStorage.setItem("palmcosmic_payment_session_id", sessionId);
-        localStorage.setItem("palmcosmic_purchase_type", "one-time");
+        localStorage.setItem("astrorekha_payment_completed", "true");
+        localStorage.setItem("astrorekha_payment_session_id", sessionId);
+        localStorage.setItem("astrorekha_purchase_type", "one-time");
         
         // Save the bundle ID for later use
-        const selectedPlan = localStorage.getItem("palmcosmic_selected_plan") || "bundle-palm-birth";
-        localStorage.setItem("palmcosmic_bundle_id", selectedPlan);
+        const selectedPlan = localStorage.getItem("astrorekha_selected_plan") || "bundle-palm-birth";
+        localStorage.setItem("astrorekha_bundle_id", selectedPlan);
         
         // Track Purchase pixel
         const planPrices: Record<string, number> = {
@@ -120,8 +120,8 @@ function BundleUpsellContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           offers: ["2026-predictions"],
-          userId: firebaseUserId || localStorage.getItem("palmcosmic_user_id") || generateUserId(),
-          email: localStorage.getItem("palmcosmic_email") || "",
+          userId: firebaseUserId || localStorage.getItem("astrorekha_user_id") || generateUserId(),
+          email: localStorage.getItem("astrorekha_email") || "",
           flow: "flow-b",
         }),
       });

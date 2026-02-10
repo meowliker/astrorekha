@@ -12,10 +12,10 @@ export default function WelcomePage() {
   // Route protection: Check user status and redirect accordingly
   useEffect(() => {
     // Mark user as Flow A (subscription flow)
-    localStorage.setItem("palmcosmic_onboarding_flow", "flow-a");
+    localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
     
-    const hasCompletedPayment = localStorage.getItem("palmcosmic_payment_completed") === "true";
-    const hasCompletedRegistration = localStorage.getItem("palmcosmic_registration_completed") === "true";
+    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
+    const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
     
     if (hasCompletedRegistration) {
       // User has completed registration - redirect to app
@@ -229,10 +229,10 @@ export default function WelcomePage() {
           {/* Logo with glow effect */}
           <div className="relative mb-6">
             <div className="absolute inset-0 blur-2xl bg-primary/30 rounded-full scale-150" />
-            <div className="relative w-28 h-28 rounded-3xl overflow-hidden border-2 border-primary/30 shadow-2xl shadow-primary/20">
+            <div className="relative w-28 h-28 ">
               <Image
                 src="/logo.png"
-                alt="PalmCosmic"
+                alt="AstroRekha"
                 width={112}
                 height={112}
                 className="object-cover w-full h-full"
@@ -247,7 +247,7 @@ export default function WelcomePage() {
             transition={{ delay: 0.3, duration: 0.6 }}
             className="text-4xl font-bold text-white tracking-wide"
           >
-            PalmCosmic
+            AstroRekha
           </motion.h1>
           <motion.p
             initial={{ opacity: 0 }}

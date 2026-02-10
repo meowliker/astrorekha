@@ -1,4 +1,4 @@
-# PalmCosmic Analytics Audit Report
+# AstroRekha Analytics Audit Report
 
 **Date:** February 1, 2026  
 **Prepared for:** Meow (Visionary Era)  
@@ -296,7 +296,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid package" }, { status: 400 });
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.headers.get("origin") || "https://palmcosmic-web-app.vercel.app";
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.headers.get("origin") || "https://astrorekha.com";
     
     const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
     

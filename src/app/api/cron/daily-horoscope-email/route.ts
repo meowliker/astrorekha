@@ -281,7 +281,7 @@ export async function GET(request: NextRequest) {
               `Today brings new energy for ${sign}. Stay open to opportunities and trust your intuition.`;
           } else {
             // Fetch from the horoscope API
-            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://palmcosmic.com";
+            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://astrorekha.com";
             const res = await fetch(`${baseUrl}/api/horoscope/cached?sign=${sign.toLowerCase()}&period=daily`);
 
             if (res.ok) {
@@ -309,7 +309,7 @@ export async function GET(request: NextRequest) {
     // 4. Send emails
     let sentCount = 0;
     let errorCount = 0;
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://palmcosmic.com";
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://astrorekha.com";
     const formattedDate = today.toLocaleDateString("en-US", {
       weekday: "long",
       year: "numeric",

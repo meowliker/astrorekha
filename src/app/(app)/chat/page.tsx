@@ -116,7 +116,7 @@ export default function ChatPage() {
           type: "coins",
           packageId: coinPackageToStripeId[pkg.coins] || "coins-50",
           userId: generateUserId(),
-          email: localStorage.getItem("palmcosmic_email") || "",
+          email: localStorage.getItem("astrorekha_email") || "",
         }),
       });
 
@@ -160,7 +160,7 @@ export default function ChatPage() {
     setIsClient(true);
     
     // Load palm image from localStorage
-    const savedPalmImage = localStorage.getItem("palmcosmic_palm_image");
+    const savedPalmImage = localStorage.getItem("astrorekha_palm_image");
     if (savedPalmImage) {
       setPalmImage(savedPalmImage);
     }

@@ -72,8 +72,8 @@ function Step18Content() {
   // Route protection: Check if user has completed payment
   useEffect(() => {
     const sessionId = searchParams.get("session_id");
-    const hasCompletedPayment = localStorage.getItem("palmcosmic_payment_completed") === "true";
-    const hasCompletedRegistration = localStorage.getItem("palmcosmic_registration_completed") === "true";
+    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
+    const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
     
     // If user has completed registration, redirect to app
     if (hasCompletedRegistration) {
@@ -87,8 +87,8 @@ function Step18Content() {
       
       // Mark payment as completed if coming from Stripe
       if (sessionId) {
-        localStorage.setItem("palmcosmic_payment_completed", "true");
-        localStorage.setItem("palmcosmic_payment_session_id", sessionId);
+        localStorage.setItem("astrorekha_payment_completed", "true");
+        localStorage.setItem("astrorekha_payment_session_id", sessionId);
       }
     } else {
       // No valid payment - redirect to payment page
@@ -102,10 +102,10 @@ function Step18Content() {
     const sessionId = searchParams.get("session_id");
     if (sessionId) {
       // Prevent duplicate Purchase events by checking if already tracked for this session
-      const trackedSessionId = localStorage.getItem("palmcosmic_tracked_purchase_session");
+      const trackedSessionId = localStorage.getItem("astrorekha_tracked_purchase_session");
       if (trackedSessionId !== sessionId) {
         // Get the plan from localStorage to determine correct purchase value
-        const selectedPlan = localStorage.getItem("palmcosmic_selected_plan") || "2week";
+        const selectedPlan = localStorage.getItem("astrorekha_selected_plan") || "2week";
         const planPrices: Record<string, number> = {
           "1week": 1.00,
           "2week": 5.49,
@@ -122,7 +122,7 @@ function Step18Content() {
         pixelEvents.subscribe(purchaseValue, planName);
         
         // Mark this session as tracked to prevent duplicates
-        localStorage.setItem("palmcosmic_tracked_purchase_session", sessionId);
+        localStorage.setItem("astrorekha_tracked_purchase_session", sessionId);
       }
       
       // User just completed payment - analyze palm and add coins
@@ -156,7 +156,7 @@ function Step18Content() {
     }
 
     // Get palm image from localStorage
-    const palmImage = localStorage.getItem("palmcosmic_palm_image");
+    const palmImage = localStorage.getItem("astrorekha_palm_image");
     if (!palmImage) return;
 
     setIsAnalyzingPalm(true);
@@ -265,7 +265,7 @@ function Step18Content() {
         body: JSON.stringify({
           selectedOffers: Array.from(selectedOffers),
           userId: generateUserId(),
-          email: localStorage.getItem("palmcosmic_email") || "",
+          email: localStorage.getItem("astrorekha_email") || "",
         }),
       });
 

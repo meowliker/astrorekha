@@ -30,7 +30,7 @@ export async function middleware(request: NextRequest) {
   
   if (isProtectedRoute) {
     // Check for access cookie
-    const hasAccess = request.cookies.get("pc_access");
+    const hasAccess = request.cookies.get("ar_access");
     
     if (!hasAccess) {
       // Redirect to welcome/onboarding
@@ -38,7 +38,7 @@ export async function middleware(request: NextRequest) {
     }
     
     // Check for subscription cancelled cookie (set by client-side check)
-    const subscriptionCancelled = request.cookies.get("pc_sub_cancelled");
+    const subscriptionCancelled = request.cookies.get("ar_sub_cancelled");
     
     if (subscriptionCancelled?.value === "1" && !isAllowedForCancelled) {
       // Redirect cancelled users to manage subscription page

@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(place_name)}&format=json&limit=1`,
         {
           headers: {
-            "User-Agent": "PalmCosmic/1.0",
+            "User-Agent": "AstroRekha/1.0",
           },
         }
       );
