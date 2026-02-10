@@ -1,0 +1,15 @@
+{
+  "buildCommand": "npm run build",
+  "installCommand": "npm install --legacy-peer-deps",
+  "framework": "nextjs",
+  "crons": [
+    {
+      "path": "/api/admin/sync-sheets",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/daily-horoscope-email",
+      "schedule": "0 3 * * *"
+    }
+  ]
+}

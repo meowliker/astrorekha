@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Money-Back Policy - PalmCosmic</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html {
+            scroll-behavior: smooth;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            line-height: 1.7;
+            color: #F5F3FF;
+            background: #07060A;
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: #111018;
+            border-radius: 24px;
+            padding: 60px;
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 50px;
+            padding-bottom: 30px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .logo {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #E11D48 0%, #D4AF37 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .subtitle {
+            font-size: 1.1rem;
+            color: #A1A1AA;
+        }
+        
+        .effective-date {
+            display: inline-block;
+            background: linear-gradient(135deg, #E11D48 0%, #8B5CF6 100%);
+            color: #F5F3FF;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            margin-top: 15px;
+            font-weight: 500;
+        }
+        
+        .intro {
+            background: #0D0B12;
+            padding: 30px;
+            border-radius: 16px;
+            margin-bottom: 40px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-left: 4px solid #E11D48;
+        }
+        
+        .intro p {
+            margin-bottom: 15px;
+            color: #F5F3FF;
+        }
+        
+        .intro p:last-child {
+            margin-bottom: 0;
+        }
+        
+        .toc {
+            background: #1A1625;
+            padding: 30px;
+            border-radius: 16px;
+            margin-bottom: 40px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .toc h2 {
+            font-size: 1.3rem;
+            margin-bottom: 20px;
+            color: #F5F3FF;
+        }
+        
+        .toc ol {
+            padding-left: 25px;
+        }
+        
+        .toc li {
+            margin-bottom: 10px;
+            color: #A1A1AA;
+        }
+        
+        .toc a {
+            color: #D4AF37;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        
+        .toc a:hover {
+            color: #E11D48;
+            text-decoration: underline;
+        }
+        
+        section {
+            margin-bottom: 45px;
+            padding-bottom: 45px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        section:last-of-type {
+            border-bottom: none;
+        }
+        
+        h2 {
+            font-size: 1.6rem;
+            color: #F5F3FF;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #E11D48;
+            display: inline-block;
+        }
+        
+        h3 {
+            font-size: 1.2rem;
+            color: #D4AF37;
+            margin: 25px 0 15px 0;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: #A1A1AA;
+        }
+        
+        ul, ol {
+            padding-left: 25px;
+            margin: 15px 0;
+        }
+        
+        li {
+            margin-bottom: 10px;
+            color: #A1A1AA;
+        }
+        
+        .highlight-box {
+            background: #1A1625;
+            padding: 25px;
+            border-radius: 12px;
+            margin: 20px 0;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-left: 4px solid #06B6D4;
+        }
+        
+        .highlight-box.warning {
+            background: rgba(212, 175, 55, 0.1);
+            border-left-color: #D4AF37;
+        }
+        
+        .highlight-box.danger {
+            background: rgba(220, 38, 38, 0.1);
+            border-left-color: #E11D48;
+        }
+        
+        .highlight-box.success {
+            background: rgba(16, 185, 129, 0.1);
+            border-left-color: #10B981;
+        }
+        
+        .highlight-box h3 {
+            color: #06B6D4;
+            margin-top: 0;
+        }
+        
+        .highlight-box.warning h3 {
+            color: #D4AF37;
+        }
+        
+        .highlight-box.danger h3 {
+            color: #E11D48;
+        }
+        
+        .highlight-box.success h3 {
+            color: #10B981;
+        }
+        
+        .highlight-box p {
+            color: #F5F3FF;
+            margin-bottom: 10px;
+        }
+        
+        .highlight-box p:last-child {
+            margin-bottom: 0;
+        }
+        
+        .highlight-box ul, .highlight-box ol {
+            margin-bottom: 0;
+        }
+        
+        .highlight-box li {
+            color: #F5F3FF;
+        }
+        
+        .path-display {
+            background: #0D0B12;
+            padding: 15px 20px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            font-family: monospace;
+            font-size: 0.95rem;
+            color: #D4AF37;
+            margin: 15px 0;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        
+        .path-display span {
+            color: #A1A1AA;
+        }
+        
+        .path-display .arrow {
+            color: #8B5CF6;
+        }
+        
+        .legal-text {
+            background: #0D0B12;
+            padding: 20px;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            margin: 15px 0;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .legal-text p {
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            font-weight: 500;
+            color: #A1A1AA;
+        }
+        
+        .contact-box {
+            background: linear-gradient(135deg, #E11D48 0%, #8B5CF6 100%);
+            color: #F5F3FF;
+            padding: 35px;
+            border-radius: 16px;
+            text-align: center;
+            margin-top: 30px;
+        }
+        
+        .contact-box h2 {
+            color: #F5F3FF;
+            border-bottom-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .contact-box p {
+            color: rgba(255, 255, 255, 0.9);
+        }
+        
+        .contact-box a {
+            color: #D4AF37;
+            font-weight: 600;
+        }
+        
+        a {
+            color: #D4AF37;
+            text-decoration: none;
+        }
+        
+        a:hover {
+            color: #E11D48;
+            text-decoration: underline;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            color: #A1A1AA;
+            font-size: 0.9rem;
+        }
+        
+        strong {
+            color: #F5F3FF;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 30px 20px;
+            }
+            
+            h1 {
+                font-size: 1.8rem;
+            }
+            
+            h2 {
+                font-size: 1.3rem;
+            }
+            
+            .path-display {
+                font-size: 0.85rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo">💸</div>
+            <h1>Money-Back Policy</h1>
+            <p class="subtitle">PalmCosmic Web Application</p>
+            <span class="effective-date">Updated January 2026</span>
+        </header>
+        
+        <div class="intro">
+            <p>This Money-Back Policy describes how users can cancel a subscription and request a refund if they have purchased a subscription on our website <a href="https://palmcosmic.com">palmcosmic.com</a>.</p>
+            <p>The Money-Back Policy is incorporated into and subject to the <a href="palmcosmic-terms-of-service.html">Terms of Service</a> unless otherwise provided for therein.</p>
+        </div>
+        
+        <nav class="toc">
+            <h2>📋 Table of Contents</h2>
+            <ol>
+                <li><a href="#section1">How to Cancel Your Subscription</a></li>
+                <li><a href="#section2">What to Do to Request a Refund</a></li>
+                <li><a href="#section3">Important Statement</a></li>
+                <li><a href="#section4">Note for EU Residents</a></li>
+                <li><a href="#section5">Note for US Residents</a></li>
+                <li><a href="#section6">Contact Information</a></li>
+            </ol>
+        </nav>
+        
+        <section id="section1">
+            <h2>1. How to Cancel Your Subscription</h2>
+            <p>If you want to cancel your subscription, you can do so directly from the PalmCosmic app by following this path:</p>
+            
+            <div class="path-display">
+                <span>Dashboard</span> <span class="arrow">›</span>
+                <span>Profile</span> <span class="arrow">›</span>
+                <span>Settings</span> <span class="arrow">›</span>
+                <span>Manage Subscription</span> <span class="arrow">›</span>
+                <span>Cancel Subscription</span>
+            </div>
+            
+            <p>Your subscription will be stopped automatically after you confirm cancellation.</p>
+            
+            <div class="highlight-box success">
+                <h3>✓ After Cancellation</h3>
+                <p>Your subscription will remain <strong>active until the end of the current billing cycle</strong>. You will continue to have access to all premium features until that date.</p>
+                <p>You also have the option to <strong>resume your subscription</strong> at any time before the current cycle ends if you change your mind.</p>
+            </div>
+            
+            <p>Alternatively, you may send us a subscription cancellation request via email at <a href="mailto:weatpalmcosmic@gmail.com">weatpalmcosmic@gmail.com</a>. We will process your request and send you confirmation.</p>
+            
+            <p>More information about subscriptions can be found in the <a href="palmcosmic-billing-terms.html">Billing Terms</a>.</p>
+        </section>
+        
+        <section id="section2">
+            <h2>2. What to Do to Request a Refund</h2>
+            <p>If you canceled your subscription in accordance with Section 1 of this Money-Back Policy, but the subscription fee was still charged to your account due to technical reasons, you may submit a refund request to us that meets the following criteria:</p>
+            
+            <div class="highlight-box">
+                <h3>📋 Refund Eligibility Criteria</h3>
+                <ol>
+                    <li>You made a purchase directly on our website <a href="https://palmcosmic.com">palmcosmic.com</a></li>
+                    <li>You contacted us via email within <strong>14 days</strong> after your initial purchase and before the end of your subscription period</li>
+                </ol>
+            </div>
+            
+            <h3>Required Information for Refund Request</h3>
+            <p>Please send us a written application to <a href="mailto:weatpalmcosmic@gmail.com">weatpalmcosmic@gmail.com</a> containing the following information:</p>
+            
+            <ul>
+                <li>The email address related to your purchase</li>
+                <li>Payment method used (Card, PayPal, etc.)</li>
+                <li>The payment date</li>
+                <li>Payment receipt or any payment confirmation</li>
+                <li>A brief explanation of the reason for the refund request</li>
+            </ul>
+            
+            <div class="highlight-box warning">
+                <h3>⚠️ Please Note</h3>
+                <p>Only fulfilling the requirements above allows you to receive a complete refund under the Money-Back Policy for your last subscription cycle.</p>
+                <p>For clarity, this Money-Back Policy does <strong>not</strong> apply to:</p>
+                <ul>
+                    <li>Personal reasons (e.g., you dislike the product)</li>
+                    <li>Financial reasons (e.g., you did not expect to be charged, the trial would convert into a subscription, or the subscription would automatically renew)</li>
+                    <li>Subscription renewals</li>
+                </ul>
+            </div>
+            
+            <h3>Refund Processing</h3>
+            <p>We will review your application and notify you by email whether your application is approved. If the application is approved, your refund will be processed, and a credit will be automatically applied to your credit card or original method of payment, typically within <strong>30 days</strong>.</p>
+        </section>
+        
+        <section id="section3">
+            <h2>3. Important Statement</h2>
+            
+            <div class="highlight-box danger">
+                <h3>⚠️ Non-Refundable Fees</h3>
+                <p>Generally, if you do not meet the conditions of our Money-Back Policy set out above, the fees you have paid are <strong>non-refundable</strong> and <strong>non-exchangeable</strong> unless otherwise stated herein or as required by applicable law.</p>
+                <p>We may consider specific refund requests on a case-by-case basis and grant them at our sole discretion.</p>
+            </div>
+        </section>
+        
+        <section id="section4">
+            <h2>4. Note for EU Residents</h2>
+            <p>If you are an EEA or Switzerland resident, you have the right to withdraw from the agreement for the purchase of digital services without charge and without giving any reason within <strong>fourteen (14) days</strong> from the date of such agreement conclusion (withdrawal period).</p>
+            
+            <p>The withdrawal right does not apply if the performance of the agreement has begun with your prior express consent and your acknowledgment that you thereby lose your right of withdrawal.</p>
+            
+            <p>However, if you terminate the agreement during the withdrawal period, you have the right to receive a refund proportionate to the provided service.</p>
+            
+            <div class="legal-text">
+                <p>BY MAKING A PURCHASE, YOU HEREBY EXPRESSLY CONSENT TO THE IMMEDIATE PERFORMANCE OF THE AGREEMENT AND ACKNOWLEDGE THAT YOU WILL LOSE YOUR RIGHT OF WITHDRAWAL FROM THE AGREEMENT ONCE OUR SERVERS VALIDATE YOUR PURCHASE AND THE APPLICABLE PURCHASE IS SUCCESSFULLY DELIVERED TO YOU.</p>
+            </div>
+            
+            <p>Therefore, you will not be eligible for a refund unless the digital content or services are defective.</p>
+        </section>
+        
+        <section id="section5">
+            <h2>5. Note for US Residents</h2>
+            <p>If you reside in <strong>California</strong> or <strong>Connecticut</strong> and cancel the purchase at any time before midnight of the third business day after the purchase date, we will return the payment you made.</p>
+        </section>
+        
+        <section id="section6">
+            <div class="contact-box">
+                <h2>6. Contact Information</h2>
+                <p><strong>Visionary Era</strong></p>
+                <p><strong>Website:</strong> <a href="https://palmcosmic.com">palmcosmic.com</a></p>
+                <p><strong>Email:</strong> <a href="mailto:weatpalmcosmic@gmail.com">weatpalmcosmic@gmail.com</a></p>
+                <p style="margin-top: 15px; font-size: 0.9rem;">Please include "Refund Request" in your email subject line for faster processing.</p>
+            </div>
+        </section>
+        
+        <footer class="footer">
+            <p>Last Updated: January 2026</p>
+            <p>© 2026 Visionary Era. All rights reserved.</p>
+        </footer>
+    </div>
+    
+    <script>
+        // Smooth scroll for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                e.preventDefault();
+                const targetId = this.getAttribute('href').substring(1);
+                const targetElement = document.getElementById(targetId);
+                if (targetElement) {
+                    targetElement.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>

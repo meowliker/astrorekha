@@ -1,0 +1,127 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --radius: 0.75rem;
+  --background: #07060A;
+  --foreground: #F5F3FF;
+  --card: #111018;
+  --card-foreground: #F5F3FF;
+  --popover: #111018;
+  --popover-foreground: #F5F3FF;
+  --primary: #E11D48;
+  --primary-foreground: #FFFFFF;
+  --secondary: #1A1625;
+  --secondary-foreground: #F5F3FF;
+  --muted: #1A1625;
+  --muted-foreground: #A1A1AA;
+  --accent: #D4AF37;
+  --accent-foreground: #07060A;
+  --destructive: #DC2626;
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.1);
+  --ring: #E11D48;
+  --chart-1: #E11D48;
+  --chart-2: #D4AF37;
+  --chart-3: #8B5CF6;
+  --chart-4: #06B6D4;
+  --chart-5: #10B981;
+  --sidebar: #0D0B12;
+  --sidebar-foreground: #F5F3FF;
+  --sidebar-primary: #E11D48;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #1A1625;
+  --sidebar-accent-foreground: #F5F3FF;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-ring: #E11D48;
+  
+  --cosmic-red: #E11D48;
+  --cosmic-red-glow: rgba(225, 29, 72, 0.4);
+  --cosmic-gold: #D4AF37;
+  --cosmic-purple: #8B5CF6;
+  --surface-dark: #111018;
+  --surface-darker: #0D0B12;
+}
+
+.dark {
+  --background: #07060A;
+  --foreground: #F5F3FF;
+  --card: #111018;
+  --card-foreground: #F5F3FF;
+  --popover: #111018;
+  --popover-foreground: #F5F3FF;
+  --primary: #E11D48;
+  --primary-foreground: #FFFFFF;
+  --secondary: #1A1625;
+  --secondary-foreground: #F5F3FF;
+  --muted: #1A1625;
+  --muted-foreground: #A1A1AA;
+  --accent: #D4AF37;
+  --accent-foreground: #07060A;
+  --destructive: #DC2626;
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.1);
+  --ring: #E11D48;
+  --chart-1: #E11D48;
+  --chart-2: #D4AF37;
+  --chart-3: #8B5CF6;
+  --chart-4: #06B6D4;
+  --chart-5: #10B981;
+  --sidebar: #0D0B12;
+  --sidebar-foreground: #F5F3FF;
+  --sidebar-primary: #E11D48;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #1A1625;
+  --sidebar-accent-foreground: #F5F3FF;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-ring: #E11D48;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Scan line animation for palm analysis */
+@keyframes scan-line {
+  0% {
+    top: 0%;
+  }
+  50% {
+    top: 100%;
+  }
+  100% {
+    top: 0%;
+  }
+}
+
+.animate-scan-line {
+  animation: scan-line 4s ease-in-out infinite;
+}
+
+/* Infinite scroll animation for emails */
+@keyframes scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-scroll {
+  animation: scroll 15s linear infinite;
+}

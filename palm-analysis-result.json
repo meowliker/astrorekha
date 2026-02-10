@@ -1,0 +1,158 @@
+{
+  "success": true,
+  "analysis": {
+    "image_quality": {
+      "overall": "good",
+      "lighting": "good",
+      "focus": "sharp",
+      "palm_visible_percentage": 95
+    },
+    "hand_identification": {
+      "which_hand": "right",
+      "confidence": 0.95
+    },
+    "hand_shape": {
+      "type": "water",
+      "palm_shape": "rectangular",
+      "finger_length_relative": "proportionate",
+      "skin_texture": "fine",
+      "confidence": 0.75
+    },
+    "fingers": {
+      "index_vs_ring_length": "ring_longer",
+      "finger_gaps": "wide_spread",
+      "thumb_angle": "wide_over_45",
+      "thumb_flexibility": "moderate",
+      "confidence": 0.85
+    },
+    "heart_line": {
+      "present": true,
+      "start_position": "between_index_middle",
+      "length": "long",
+      "depth": "moderate",
+      "clarity": "clear",
+      "curvature": "gentle_curve",
+      "fork_at_end": false,
+      "islands": "none",
+      "breaks": "none",
+      "chains": "none",
+      "confidence": 0.8
+    },
+    "head_line": {
+      "present": true,
+      "origin": "joined_to_life_line",
+      "direction": "strong_curve_to_moon",
+      "length": "long",
+      "depth": "moderate",
+      "clarity": "clear",
+      "writers_fork": false,
+      "islands": "none",
+      "breaks": "none",
+      "confidence": 0.85
+    },
+    "life_line": {
+      "present": true,
+      "start_position": "between_thumb_index",
+      "arc": "wide_sweeping",
+      "length": "long",
+      "depth": "deep",
+      "clarity": "clear",
+      "breaks": {
+        "count": 0,
+        "overlap": false
+      },
+      "sister_line_present": false,
+      "islands": "none",
+      "confidence": 0.9
+    },
+    "fate_line": {
+      "present": true,
+      "start_point": "center_palm",
+      "end_point": "middle_finger",
+      "continuity": "unbroken",
+      "depth": "moderate",
+      "confidence": 0.7
+    },
+    "minor_lines": {
+      "sun_line": {
+        "present": false,
+        "quality": "clear",
+        "confidence": 0.3
+      },
+      "mercury_line": {
+        "present": false,
+        "quality": "clear",
+        "confidence": 0.2
+      },
+      "marriage_lines": {
+        "count": 0,
+        "confidence": 0
+      },
+      "girdle_of_venus": {
+        "present": false,
+        "confidence": 0.3
+      },
+      "intuition_line": {
+        "present": false,
+        "confidence": 0.2
+      },
+      "travel_lines": {
+        "count": 0,
+        "confidence": 0
+      }
+    },
+    "mounts": {
+      "jupiter": {
+        "prominence": "moderate"
+      },
+      "saturn": {
+        "prominence": "moderate"
+      },
+      "apollo": {
+        "prominence": "moderate"
+      },
+      "mercury": {
+        "prominence": "moderate"
+      },
+      "venus": {
+        "prominence": "prominent"
+      },
+      "luna": {
+        "prominence": "prominent"
+      },
+      "upper_mars": {
+        "prominence": "moderate"
+      },
+      "lower_mars": {
+        "prominence": "moderate"
+      },
+      "confidence": 0.65
+    },
+    "special_markings": {
+      "mystic_cross": false,
+      "stars": [],
+      "crosses": [],
+      "triangles": [],
+      "squares": [],
+      "grilles": [],
+      "confidence": 0.5
+    },
+    "bracelet_lines": {
+      "count": 2,
+      "confidence": 0.4
+    },
+    "overall_assessment": {
+      "most_notable_features": [
+        "Wide sweeping life line showing vitality and energy",
+        "Head line with strong curve toward Mount of Luna indicating imagination and creativity",
+        "Prominent Mount of Venus and Luna suggesting emotional depth",
+        "Wide finger spacing indicating independent thinking",
+        "Clear major lines with good depth showing strong life force"
+      ],
+      "dominant_element": "water",
+      "overall_confidence": 0.75,
+      "notes": "Right hand with clear major lines visible. The hand shows water characteristics with rectangular palm and fine skin texture. Head line curves strongly toward Luna mount suggesting creative and imaginative thinking. Life line is deep and well-formed. Fate line visible but would benefit from clearer view of palm center for complete assessment. Minor lines difficult to assess due to image angle and lighting on palm center."
+    }
+  },
+  "timestamp": "2026-02-05T07:02:48.258Z"
+}

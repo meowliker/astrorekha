@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terms of Service - PalmCosmic</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html {
+            scroll-behavior: smooth;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            line-height: 1.7;
+            color: #F5F3FF;
+            background: #07060A;
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: #111018;
+            border-radius: 24px;
+            padding: 60px;
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 50px;
+            padding-bottom: 30px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .logo {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #E11D48 0%, #D4AF37 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .subtitle {
+            font-size: 1.1rem;
+            color: #A1A1AA;
+        }
+        
+        .effective-date {
+            display: inline-block;
+            background: linear-gradient(135deg, #E11D48 0%, #8B5CF6 100%);
+            color: #F5F3FF;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            margin-top: 15px;
+            font-weight: 500;
+        }
+        
+        .intro {
+            background: #0D0B12;
+            padding: 30px;
+            border-radius: 16px;
+            margin-bottom: 40px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-left: 4px solid #E11D48;
+        }
+        
+        .intro p {
+            margin-bottom: 15px;
+            color: #F5F3FF;
+        }
+        
+        .warning {
+            background: rgba(220, 38, 38, 0.1);
+            border: 1px solid rgba(220, 38, 38, 0.3);
+            padding: 20px;
+            border-radius: 12px;
+            margin: 20px 0;
+        }
+        
+        .warning strong {
+            color: #E11D48;
+        }
+        
+        .warning p {
+            color: #F5F3FF;
+        }
+        
+        .toc {
+            background: #1A1625;
+            padding: 30px;
+            border-radius: 16px;
+            margin-bottom: 40px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .toc h2 {
+            font-size: 1.3rem;
+            margin-bottom: 20px;
+            color: #F5F3FF;
+        }
+        
+        .toc ol {
+            padding-left: 25px;
+            columns: 2;
+            column-gap: 40px;
+        }
+        
+        .toc li {
+            margin-bottom: 10px;
+            color: #A1A1AA;
+            break-inside: avoid;
+        }
+        
+        .toc a {
+            color: #D4AF37;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        
+        .toc a:hover {
+            color: #E11D48;
+            text-decoration: underline;
+        }
+        
+        section {
+            margin-bottom: 45px;
+            padding-bottom: 45px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        section:last-of-type {
+            border-bottom: none;
+        }
+        
+        h2 {
+            font-size: 1.6rem;
+            color: #F5F3FF;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #E11D48;
+            display: inline-block;
+        }
+        
+        h3 {
+            font-size: 1.2rem;
+            color: #D4AF37;
+            margin: 25px 0 15px 0;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: #A1A1AA;
+        }
+        
+        ul, ol {
+            padding-left: 25px;
+            margin: 15px 0;
+        }
+        
+        li {
+            margin-bottom: 10px;
+            color: #A1A1AA;
+        }
+        
+        .highlight-box {
+            background: #1A1625;
+            padding: 25px;
+            border-radius: 12px;
+            margin: 20px 0;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-left: 4px solid #06B6D4;
+        }
+        
+        .highlight-box.warning {
+            background: rgba(212, 175, 55, 0.1);
+            border-left-color: #D4AF37;
+        }
+        
+        .highlight-box.danger {
+            background: rgba(220, 38, 38, 0.1);
+            border-left-color: #E11D48;
+        }
+        
+        .highlight-box.success {
+            background: rgba(16, 185, 129, 0.1);
+            border-left-color: #10B981;
+        }
+        
+        .highlight-box.purple {
+            background: rgba(139, 92, 246, 0.1);
+            border-left-color: #8B5CF6;
+        }
+        
+        .highlight-box h3 {
+            color: #06B6D4;
+            margin-top: 0;
+        }
+        
+        .highlight-box.warning h3 {
+            color: #D4AF37;
+        }
+        
+        .highlight-box.danger h3 {
+            color: #E11D48;
+        }
+        
+        .highlight-box.success h3 {
+            color: #10B981;
+        }
+        
+        .highlight-box.purple h3 {
+            color: #8B5CF6;
+        }
+        
+        .highlight-box ul {
+            margin-bottom: 0;
+        }
+        
+        .highlight-box p {
+            color: #F5F3FF;
+        }
+        
+        .pricing-table {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        
+        .price-card {
+            flex: 1;
+            min-width: 200px;
+            background: linear-gradient(135deg, #E11D48 0%, #8B5CF6 100%);
+            color: #F5F3FF;
+            padding: 25px;
+            border-radius: 16px;
+            text-align: center;
+        }
+        
+        .price-card h4 {
+            font-size: 1.1rem;
+            margin-bottom: 10px;
+            opacity: 0.9;
+        }
+        
+        .price-card .price {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 5px;
+            color: #D4AF37;
+        }
+        
+        .price-card .period {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+        
+        .contact-box {
+            background: linear-gradient(135deg, #E11D48 0%, #8B5CF6 100%);
+            color: #F5F3FF;
+            padding: 35px;
+            border-radius: 16px;
+            text-align: center;
+            margin-top: 30px;
+        }
+        
+        .contact-box h2 {
+            color: #F5F3FF;
+            border-bottom-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .contact-box p {
+            color: rgba(255, 255, 255, 0.9);
+        }
+        
+        .contact-box a {
+            color: #D4AF37;
+            font-weight: 600;
+        }
+        
+        a {
+            color: #D4AF37;
+            text-decoration: none;
+        }
+        
+        a:hover {
+            color: #E11D48;
+            text-decoration: underline;
+        }
+        
+        .legal-text {
+            background: #0D0B12;
+            padding: 20px;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            margin: 15px 0;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .legal-text p {
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            font-weight: 500;
+            color: #A1A1AA;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            color: #A1A1AA;
+            font-size: 0.9rem;
+        }
+        
+        .agreement-box {
+            background: rgba(16, 185, 129, 0.1);
+            border: 2px solid #10B981;
+            padding: 25px;
+            border-radius: 16px;
+            text-align: center;
+            margin-top: 30px;
+        }
+        
+        .agreement-box p {
+            font-weight: 600;
+            color: #10B981;
+            margin: 0;
+        }
+        
+        strong {
+            color: #F5F3FF;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 30px 20px;
+            }
+            
+            h1 {
+                font-size: 1.8rem;
+            }
+            
+            h2 {
+                font-size: 1.3rem;
+            }
+            
+            .toc ol {
+                columns: 1;
+            }
+            
+            .pricing-table {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo">🖐️✨</div>
+            <h1>Terms of Service</h1>
+            <p class="subtitle">PalmCosmic Web Application</p>
+            <span class="effective-date">Updated January 2026</span>
+        </header>
+        
+        <div class="intro">
+            <p>These Terms of Service, including any policies and procedures incorporated by reference, including these Terms of Service and our Privacy Policy and Billing Terms (as updated from time to time, the "Terms," "Agreement," and "EULA") is a legal agreement between the User ("you," "your," or "user") and <strong>Visionary Era</strong> ("we," "us," "our," "Company") and govern your access to and use of our web application <strong>PalmCosmic</strong>, and all related services, features, and content offered by the Company.</p>
+            
+            <p><strong>Please read these Terms carefully before using the Service.</strong> By accepting these Terms or using the Service, you agree to be bound by them.</p>
+            
+            <div class="warning">
+                <p><strong>IF YOU DO NOT UNDERSTAND THE TERMS OR DO NOT ACCEPT ANY PART OF THEM, YOU SHOULD NOT USE THE SERVICE.</strong></p>
+            </div>
+            
+            <p>Contact: <a href="mailto:weatpalmcosmic@gmail.com">weatpalmcosmic@gmail.com</a></p>
+        </div>
+        
+        <nav class="toc">
+            <h2>📋 Table of Contents</h2>
+            <ol>
+                <li><a href="#section1">Changes and Modifications</a></li>
+                <li><a href="#section2">The Service</a></li>
+                <li><a href="#section3">Adults Only</a></li>
+                <li><a href="#section4">Accessibility</a></li>
+                <li><a href="#section5">Prohibited Uses</a></li>
+                <li><a href="#section6">Uses of the Service</a></li>
+                <li><a href="#section7">Subscription and Purchases</a></li>
+                <li><a href="#section8">Third-Party Services</a></li>
+                <li><a href="#section9">Termination</a></li>
+                <li><a href="#section10">Intellectual Property</a></li>
+                <li><a href="#section11">Disclaimer of Warranties</a></li>
+                <li><a href="#section12">Limitation of Liability</a></li>
+                <li><a href="#section13">Exclusions and Limitations</a></li>
+                <li><a href="#section14">Indemnification</a></li>
+                <li><a href="#section15">Governing Law</a></li>
+                <li><a href="#section16">Dispute Resolution</a></li>
+                <li><a href="#section17">Statute of Limitations</a></li>
+                <li><a href="#section18">Severability and Assignment</a></li>
+                <li><a href="#section19">Electronic Communications</a></li>
+                <li><a href="#section20">Contact Information</a></li>
+            </ol>
+        </nav>
+        
+        <section id="section1">
+            <h2>1. Changes and Modifications</h2>
+            <p>We reserve the right to modify or adjust the pricing for subscription plans and one-time purchases from time to time. Any price change applicable to your active subscription will be communicated to you at least <strong>thirty (30) days</strong> prior to the effective date of the change by email.</p>
+            <p>If you do not agree to the new price, you may cancel your subscription prior to the effective date. Continued use of the Services after the effective date of the price change constitutes acceptance of the amended price.</p>
+            <p>We may update these Terms from time to time. We will notify you of any material changes by posting the new Terms on the Service or as otherwise required by applicable law.</p>
+        </section>
+        
+        <section id="section2">
+            <h2>2. The Service</h2>
+            <p>As long as you comply with this Agreement, we grant you a personal, non-transferable, non-exclusive, non-sublicensable, non-assignable, and revocable right to access and use the Service under these Terms as it is intended to be accessed and used.</p>
+            
+            <h3>What PalmCosmic Offers</h3>
+            <div class="highlight-box purple">
+                <ul>
+                    <li>🖐️ Palm scanning and analysis using artificial intelligence</li>
+                    <li>💬 Interactive readings with our AI guide, <strong>Elysia</strong></li>
+                    <li>📅 Life timeline analysis and insights</li>
+                    <li>💰 Wealth and career interpretations</li>
+                    <li>❤️ Love and relationship readings</li>
+                    <li>📚 Reading history storage and access</li>
+                </ul>
+            </div>
+            
+            <div class="highlight-box danger">
+                <h3>⚠️ IMPORTANT: Entertainment Purposes Only</h3>
+                <p>The Service is developed for <strong>entertainment purposes and non-commercial use only</strong>.</p>
+                <p>We do not render psychological, health, fortune-telling guarantees, or any other professional services. We are not medical care providers, psychics, or fortune tellers, and our AI systems are not acting in any professional advisory capacity.</p>
+                <p><strong>Please consult a competent professional if you require emotional, psychological, health, financial, or additional assistance or advice.</strong></p>
+            </div>
+            
+            <h3>Your Acknowledgment</h3>
+            <p>By using the Service, you acknowledge that:</p>
+            <ul>
+                <li>Palm readings are for entertainment purposes only</li>
+                <li>AI-generated interpretations should not be used as the basis for important life decisions</li>
+                <li>Any activities you undertake as a result of using the Service are at your own risk</li>
+                <li>You are solely responsible for your own decisions, health, life, and well-being</li>
+            </ul>
+        </section>
+        
+        <section id="section3">
+            <h2>3. Adults Only</h2>
+            <div class="highlight-box warning">
+                <h3>🔞 Age Requirement</h3>
+                <p>To access the Service, you must be at least <strong>18 years old</strong> and not barred from using the Service under applicable law.</p>
+                <p>By using the Service, you confirm that you meet these requirements. If we reasonably believe that you do not sufficiently fulfill these criteria, we may suspend your use of the Service until you have provided us with acceptable proof of age.</p>
+            </div>
+        </section>
+        
+        <section id="section4">
+            <h2>4. Accessibility</h2>
+            <p>We are committed to making the Service usable and accessible to the widest possible audience, regardless of technology or ability.</p>
+            <p>While we strive to ensure the accessibility of the Service, you may find some limitations. Please report any problems to our support team at <a href="mailto:weatpalmcosmic@gmail.com">weatpalmcosmic@gmail.com</a>.</p>
+        </section>
+        
+        <section id="section5">
+            <h2>5. Prohibited Uses</h2>
+            <p>You shall <strong>NOT</strong>:</p>
+            <ul>
+                <li>Resell, rent, lease, loan, sublicense, distribute, or otherwise transfer rights to the Service</li>
+                <li>Copy, adapt, alter, modify, translate, or create derivative works of the Service without written authorization</li>
+                <li>Circumvent or disable any technological features or measures in the Service for protection of intellectual property rights</li>
+                <li>Use the Service to engage in any illegal conduct</li>
+                <li>Upload or transmit any communications that infringe or violate the rights of any party</li>
+                <li>Upload media containing hate, abuse, offensive content, obscenity, pornography, or sexually explicit material</li>
+                <li>Upload any material that contains software viruses or malicious code</li>
+                <li>Use the Service to harass, stalk, or harm another individual</li>
+                <li>Impersonate any person or entity</li>
+                <li>Attempt to gain unauthorized access to the Service or other user accounts</li>
+            </ul>
+            <p><strong>Any such forbidden use shall immediately terminate your license to use the Service.</strong></p>
+        </section>
+        
+        <section id="section6">
+            <h2>6. Uses of the Service</h2>
+            <p>You agree not to, and will not assist, encourage, or enable others to:</p>
+            <ol>
+                <li>Use the Service for any purpose prohibited by this Agreement</li>
+                <li>Upload any unsolicited advertising, "spam," "chain letters," or "pyramid schemes"</li>
+                <li>Reverse engineer any portion of the Service</li>
+                <li>Use automated devices to access, retrieve, scrape, or index any portion of Service</li>
+                <li>Record, process, or mine information about other users</li>
+                <li>Take any action that imposes an unreasonable load on our infrastructure</li>
+                <li>Interfere with the proper working of the Service or attempt unauthorized access</li>
+                <li>Use the Service for any illegal or unauthorized purpose</li>
+                <li>Use the Service for any commercial or revenue-generating endeavor</li>
+                <li>Create a competitive product or service using our IP</li>
+            </ol>
+        </section>
+        
+        <section id="section7">
+            <h2>7. Subscription and Purchases</h2>
+            
+            <h3>Pricing</h3>
+            <div class="pricing-table">
+                <div class="price-card">
+                    <h4>Monthly</h4>
+                    <div class="price">$9.99</div>
+                    <div class="period">per month</div>
+                </div>
+                <div class="price-card">
+                    <h4>Annual</h4>
+                    <div class="price">$39.99</div>
+                    <div class="period">per year (Save 67%)</div>
+                </div>
+            </div>
+            <p><em>Prices may vary by region and are subject to change.</em></p>
+            
+            <h3>Subscription Terms</h3>
+            <ul>
+                <li>Subscriptions automatically renew at the end of each billing period</li>
+                <li>Your account will be charged for renewal within 24 hours before the current subscription ends</li>
+                <li>You may cancel automatic renewal at least 24 hours before the end of the current subscription period</li>
+                <li>Cancellation takes effect at the end of the current billing period</li>
+            </ul>
+            
+            <h3>How to Cancel</h3>
+            <div class="highlight-box">
+                <p>To cancel your subscription, please contact our support team at <a href="mailto:weatpalmcosmic@gmail.com">weatpalmcosmic@gmail.com</a> or through the account settings in the web application.</p>
+                <p style="margin-top: 15px;"><strong>⚠️ Note:</strong> You must actively cancel your subscription to stop future charges.</p>
+            </div>
+            
+            <h3>Refunds</h3>
+            <p>For refund requests, please contact our support team at <a href="mailto:weatpalmcosmic@gmail.com">weatpalmcosmic@gmail.com</a>. Refunds are handled on a case-by-case basis in accordance with our refund policy.</p>
+            
+            <h3>EU Residents</h3>
+            <p>If you are an EEA or Switzerland resident, you have the right to withdraw from the agreement within fourteen (14) days. <strong>However</strong>, by making a purchase, you expressly consent to the immediate performance of the Agreement and acknowledge that you will lose your right of withdrawal once the digital content is delivered.</p>
+        </section>
+        
+        <section id="section8">
+            <h2>8. Links to Third-Party Services</h2>
+            <p>The Service may contain links to third-party websites or services that are not under our control. We have no control over and bear no responsibility for the accuracy, legality, or content of externally linked websites.</p>
+            <p>Your access to and use of such linked websites is entirely at your own risk.</p>
+        </section>
+        
+        <section id="section9">
+            <h2>9. Violation of this Agreement – Termination</h2>
+            <p>Your right to access and use the Service terminates automatically upon your breach of any of the terms of this Agreement.</p>
+            <p>We may, in our sole discretion and without prior notice:</p>
+            <ul>
+                <li>Terminate your access to the Service</li>
+                <li>Block your future access to the Service</li>
+                <li>Take legal action against you</li>
+            </ul>
+            <p>If we take legal action against you as a result of your violation, we will be entitled to recover all reasonable attorneys' fees and costs.</p>
+        </section>
+        
+        <section id="section10">
+            <h2>10. Intellectual Property</h2>
+            <p>All text, user interfaces, visual interfaces (including graphics, photographs, artwork), trademarks, logos, computer code, AI models, and any compilations thereof (collectively, "Our Content") is owned, controlled, or licensed by or to Us, and is protected by copyright, trademark, and other intellectual property laws.</p>
+            <p>Except as expressly provided in this Agreement, you are prohibited from copying, reproducing, modifying, distributing, displaying, performing, or transmitting any of Our Content for any purpose.</p>
+            
+            <h3>Your Content</h3>
+            <p>When you upload palm images or other content to the Service, you retain ownership of your content but grant us a license to use it for providing the Service as described in our Privacy Policy.</p>
+        </section>
+        
+        <section id="section11">
+            <h2>11. Disclaimer of Warranties</h2>
+            <div class="legal-text">
+                <p>YOUR USE OF THE SERVICE IS AT YOUR SOLE RISK. THE SERVICE IS PROVIDED ON AN "AS IS" AND "AS AVAILABLE" BASIS.</p>
+                <p>WE EXPRESSLY DISCLAIM ALL REPRESENTATIONS, WARRANTIES, AND CONDITIONS OF ANY KIND, WHETHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.</p>
+            </div>
+            
+            <div class="highlight-box danger">
+                <h3>🔮 Palm Reading Disclaimer</h3>
+                <p><strong>PALMISTRY READINGS PROVIDED BY THE SERVICE ARE FOR ENTERTAINMENT PURPOSES ONLY.</strong></p>
+                <p>We make no claims regarding the accuracy, validity, or predictive value of any palm readings, interpretations, or insights. Palm readings should not be used as the basis for making important life decisions.</p>
+            </div>
+            
+            <div class="highlight-box warning">
+                <h3>🤖 AI-Generated Content Disclaimer</h3>
+                <p><strong>CERTAIN CONTENT, ADVICE, AND DIALOGUES WITHIN THE SERVICE ARE GENERATED BY MACHINE LEARNING AND ARTIFICIAL INTELLIGENCE.</strong></p>
+                <p>We do not offer any warranties concerning AI-generated content, including guarantees of accuracy, reliability, or suitability for specific purposes.</p>
+            </div>
+        </section>
+        
+        <section id="section12">
+            <h2>12. Limitation of Liability</h2>
+            <div class="legal-text">
+                <p>WE AND OUR AFFILIATES WILL NOT BE LIABLE TO YOU FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, INCLUDING:</p>
+            </div>
+            <ul>
+                <li>Any loss of profits, goodwill, or business reputation</li>
+                <li>Any loss of data</li>
+                <li>Any cost of procurement of substitute goods or services</li>
+                <li>Any other intangible losses</li>
+            </ul>
+            <p>This includes damages resulting from changes to the Service, cessation of the Service, deletion of data, or your failure to keep your account secure.</p>
+        </section>
+        
+        <section id="section13">
+            <h2>13. Exclusions and Limitations</h2>
+            <p>Some jurisdictions do not permit the exclusion of certain warranties or the limitation of liability for certain damages. In such cases, only the limitations that are lawful in your jurisdiction will apply, and our liability will be limited to the maximum extent permitted by law.</p>
+        </section>
+        
+        <section id="section14">
+            <h2>14. Indemnification</h2>
+            <p>You agree to defend, indemnify, and hold Us and Our Affiliates harmless from and against any and all liabilities and costs (including reasonable attorneys' fees) we may incur in connection with any claim arising out of:</p>
+            <ul>
+                <li>Your breach of this Agreement</li>
+                <li>Your use of the Service</li>
+                <li>Your violation of any rights of any other person or entity</li>
+            </ul>
+        </section>
+        
+        <section id="section15">
+            <h2>15. Governing Law</h2>
+            <p>This Agreement shall be governed by and construed in accordance with the laws of the jurisdiction in which Visionary Era is registered, without regard to conflict of law provisions.</p>
+        </section>
+        
+        <section id="section16">
+            <h2>16. Dispute Resolution</h2>
+            <h3>Contact Us First</h3>
+            <p>In the event of a disagreement, we encourage you to reach out to us first at <a href="mailto:weatpalmcosmic@gmail.com">weatpalmcosmic@gmail.com</a>.</p>
+            
+            <h3>Arbitration</h3>
+            <p>Unless prohibited by law, you agree that any future claims must be resolved through confidential arbitration. By agreeing to this, you acknowledge that:</p>
+            <ul>
+                <li>You are waiving your right to a trial by jury</li>
+                <li>Any claim will be on an individual basis, not as part of a class action</li>
+            </ul>
+            
+            <h3>EU Residents</h3>
+            <p>If you are in the EU, you can use the European Commission's online dispute resolution center: <a href="https://ec.europa.eu/consumers/odr" target="_blank">https://ec.europa.eu/consumers/odr</a></p>
+        </section>
+        
+        <section id="section17">
+            <h2>17. Statute of Limitations</h2>
+            <p>You agree that any claim under this Agreement must be brought within <strong>one (1) year</strong> after the cause of action arises, or such claim is forever barred.</p>
+        </section>
+        
+        <section id="section18">
+            <h2>18. Severability and Assignment</h2>
+            <p>If any portion of the Agreement is held to be invalid or unenforceable, such provision shall be stricken, and the remainder enforced as written.</p>
+            <p>We may assign or delegate rights and obligations under this Agreement. You may not assign or delegate without our prior written consent.</p>
+        </section>
+        
+        <section id="section19">
+            <h2>19. Electronic Communications</h2>
+            <p>By using the Service, you agree that we may communicate with you electronically. By clicking on buttons labeled "SUBMIT," "CONTINUE," "I AGREE," "SUBSCRIBE," or similar, you are providing a legally binding electronic signature.</p>
+        </section>
+        
+        <section id="section20">
+            <div class="contact-box">
+                <h2>20. Contact Information</h2>
+                <p><strong>Visionary Era</strong></p>
+                <p><strong>Email:</strong> <a href="mailto:weatpalmcosmic@gmail.com">weatpalmcosmic@gmail.com</a></p>
+                <p style="margin-top: 15px; font-size: 0.9rem;">For the fastest response, please include "Terms of Service" in your email subject line.</p>
+            </div>
+        </section>
+        
+        <div class="agreement-box">
+            <p>✅ I HAVE READ THESE TERMS AND AGREE TO ALL OF THE PROVISIONS CONTAINED ABOVE.</p>
+        </div>
+        
+        <footer class="footer">
+            <p>Last Updated: January 2026</p>
+            <p>© 2026 Visionary Era. All rights reserved.</p>
+        </footer>
+    </div>
+    
+    <script>
+        // Smooth scroll for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                e.preventDefault();
+                const targetId = this.getAttribute('href').substring(1);
+                const targetElement = document.getElementById(targetId);
+                if (targetElement) {
+                    targetElement.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>
