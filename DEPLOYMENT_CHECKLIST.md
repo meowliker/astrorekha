@@ -3,17 +3,17 @@
 ## 1. Supabase Setup
 
 ### 1.1 Run Schema
-- [ ] Go to Supabase Dashboard → SQL Editor
-- [ ] Paste and run the contents of `supabase/schema.sql`
-- [ ] Verify all 22 tables are created (check Table Editor)
+- [x] Go to Supabase Dashboard → SQL Editor
+- [x] Paste and run the contents of `supabase/schema.sql`
+- [x] Verify all 22 tables are created (check Table Editor)
 
 ### 1.2 Storage Bucket
-- [ ] Go to Storage → Create new bucket
-- [ ] Name: `palm-images`
-- [ ] Public: **No** (private)
+- [x] Go to Storage → Create new bucket
+- [x] Name: `palm-images`
+- [x] Public: **No** (private)
 
 ### 1.3 Get Credentials
-- [ ] Copy from Settings → API:
+- [x] Copy from Settings → API:
   - `NEXT_PUBLIC_SUPABASE_URL`
   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
   - `SUPABASE_SERVICE_ROLE_KEY` (under "service_role" — keep secret!)
@@ -29,9 +29,9 @@ VALUES ('admin', '$2b$10$YOUR_BCRYPT_HASH_HERE');
 
 ## 2. Razorpay Setup
 
-- [ ] Create Razorpay account at https://dashboard.razorpay.com
-- [ ] Complete KYC verification
-- [ ] Get API keys from Settings → API Keys:
+- [x] Create Razorpay account at https://dashboard.razorpay.com
+- [x] Complete KYC verification
+- [x] Get API keys from Settings → API Keys:
   - `RAZORPAY_KEY_ID` (starts with `rzp_live_` or `rzp_test_`)
   - `RAZORPAY_KEY_SECRET`
   - `NEXT_PUBLIC_RAZORPAY_KEY_ID` (same as RAZORPAY_KEY_ID)
@@ -116,13 +116,13 @@ ASTRO_ENGINE_URL=https://your-astro-engine-url.com
 
 ## 4. Vercel Deployment
 
-- [ ] Connect GitHub repo to Vercel
-- [ ] Set custom domain: `astrorekha.com`
-- [ ] Add `www.astrorekha.com` redirect to `astrorekha.com`
-- [ ] Verify `vercel.json` crons are active:
+- [x] Connect GitHub repo to Vercel
+- [x] Set custom domain: `astrorekha.com`
+- [x] Add `www.astrorekha.com` redirect to `astrorekha.com`
+- [x] Verify `vercel.json` crons are active:
   - `/api/admin/sync-sheets` — daily at 6:00 UTC
   - `/api/cron/daily-horoscope-email` — daily at 3:00 UTC
-- [ ] Deploy and verify build succeeds
+- [x] Deploy and verify build succeeds
 
 ---
 
@@ -137,7 +137,7 @@ ASTRO_ENGINE_URL=https://your-astro-engine-url.com
 
 ## 6. Post-Deploy Verification
 
-- [ ] Visit `https://astrorekha.com` — homepage loads
+- [x] Visit `https://astrorekha.com` — homepage loads
 - [ ] Complete onboarding flow through bundle-pricing
 - [ ] Test Razorpay checkout (use test mode first)
 - [ ] Verify payment record appears in Supabase `payments` table

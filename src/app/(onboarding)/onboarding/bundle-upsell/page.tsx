@@ -148,6 +148,11 @@ function BundleUpsellContent() {
           },
           prefill: { email: localStorage.getItem("astrorekha_email") || "" },
           theme: { color: "#7C3AED" },
+          modal: {
+            ondismiss: () => {
+              setIsProcessing(false);
+            },
+          },
         };
         const rzp = new (window as any).Razorpay(options);
         rzp.on("payment.failed", () => {
@@ -313,9 +318,13 @@ function BundleUpsellContent() {
 
               {/* CTA Button */}
               <Button
-                onClick={handleAddUpsell}
-                disabled={!selectedOffer || isProcessing}
-                className="w-full h-14 text-lg font-semibold bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                onClick={selectedOffer ? handleAddUpsell : handleSkip}
+                disabled={isProcessing}
+                className={`w-full h-14 text-lg font-semibold ${
+                  selectedOffer
+                    ? "bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                    : "bg-white/10 hover:bg-white/20"
+                }`}
                 size="lg"
               >
                 {isProcessing ? (
@@ -323,8 +332,10 @@ function BundleUpsellContent() {
                     <Loader2 className="w-5 h-5 animate-spin" />
                     Processing...
                   </span>
-                ) : (
+                ) : selectedOffer ? (
                   "Add to Order - ₹499"
+                ) : (
+                  "Continue without this offer →"
                 )}
               </Button>
             </div>
@@ -350,16 +361,8 @@ function BundleUpsellContent() {
         </motion.div>
       </div>
 
-      {/* Skip Button */}
-      <div className="px-6 pb-8">
-        <button
-          onClick={handleSkip}
-          disabled={isProcessing}
-          className="w-full text-center text-muted-foreground text-sm py-3 hover:text-white transition-colors"
-        >
-          No thanks, continue without this offer →
-        </button>
-      </div>
+      {/* Bottom spacing */}
+      <div className="pb-8" />
     </motion.div>
   );
 }
