@@ -28,9 +28,11 @@ export async function GET(request: NextRequest) {
     const { data: insight } = await supabase.from("daily_insights").select("*").eq("id", userId).single();
 
     if (insight && insight.date === dateKey) {
+      // Return the insights JSONB data (contains lucky_number, dos, donts, daily_tip, etc.)
+      const insightsData = insight.insights || insight;
       return NextResponse.json({
         success: true,
-        data: insight,
+        data: insightsData,
         cached: true,
         date: dateKey,
       });
@@ -57,9 +59,10 @@ export async function GET(request: NextRequest) {
         // Re-fetch the newly generated data
         const { data: fresh } = await supabase.from("daily_insights").select("*").eq("id", userId).single();
         if (fresh && fresh.date === dateKey) {
+          const freshData = fresh.insights || fresh;
           return NextResponse.json({
             success: true,
-            data: fresh,
+            data: freshData,
             cached: false,
             date: dateKey,
           });

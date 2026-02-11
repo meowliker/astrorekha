@@ -211,12 +211,18 @@ Generate the daily insights JSON now.`;
         expiresAt.setUTCDate(expiresAt.getUTCDate() + 1);
         expiresAt.setUTCHours(0, 0, 0, 0);
 
-        // Store in Supabase
+        // Store in Supabase — put full response in insights JSONB column
+        // and map matching fields to their proper columns
         await supabase.from("daily_insights").upsert({
           id: userId,
-          ...insightsData,
           date: dateKey,
-          generated_at: new Date().toISOString(),
+          insights: insightsData,
+          mood: insightsData.mood || null,
+          lucky_numbers: insightsData.lucky_number ? [insightsData.lucky_number] : null,
+          lucky_colors: insightsData.lucky_color ? [insightsData.lucky_color] : null,
+          affirmation: insightsData.daily_tip || null,
+          focus_area: insightsData.sun_sign || null,
+          created_at: new Date().toISOString(),
         }, { onConflict: "id" });
 
         results[userId] = true;
