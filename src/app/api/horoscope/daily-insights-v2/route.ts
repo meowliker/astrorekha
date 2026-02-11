@@ -37,8 +37,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Not generated yet — trigger on-demand generation for this user
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin;
+    // Use request origin (actual server URL) to avoid localhost issues on Vercel
+    const baseUrl = request.nextUrl.origin;
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000); // 25s timeout
       const genRes = await fetch(`${baseUrl}/api/cron/generate-daily-insights`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -46,7 +49,9 @@ export async function GET(request: NextRequest) {
           secret: process.env.ADMIN_SYNC_SECRET || process.env.CRON_SECRET,
           userId,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       if (genRes.ok) {
         // Re-fetch the newly generated data
@@ -60,8 +65,8 @@ export async function GET(request: NextRequest) {
           });
         }
       }
-    } catch (genErr) {
-      console.error("On-demand insight generation failed:", genErr);
+    } catch (genErr: any) {
+      console.error("On-demand insight generation failed:", genErr?.message || genErr);
     }
 
     return NextResponse.json(
