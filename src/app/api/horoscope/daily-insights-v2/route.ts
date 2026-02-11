@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 function getDateKey(): string {
   const now = new Date();
@@ -21,24 +21,19 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const adminDb = getAdminDb();
+  const supabase = getSupabaseAdmin();
   const dateKey = getDateKey();
 
   try {
-    const insightRef = adminDb.collection("daily_insights").doc(userId);
-    const insightSnap = await insightRef.get();
+    const { data: insight } = await supabase.from("daily_insights").select("*").eq("id", userId).single();
 
-    if (insightSnap.exists) {
-      const data = insightSnap.data();
-      // Check if it's today's data
-      if (data?.date === dateKey) {
-        return NextResponse.json({
-          success: true,
-          data,
-          cached: true,
-          date: dateKey,
-        });
-      }
+    if (insight && insight.date === dateKey) {
+      return NextResponse.json({
+        success: true,
+        data: insight,
+        cached: true,
+        date: dateKey,
+      });
     }
 
     // Not generated yet — trigger on-demand generation for this user
@@ -55,11 +50,11 @@ export async function GET(request: NextRequest) {
 
       if (genRes.ok) {
         // Re-fetch the newly generated data
-        const freshSnap = await insightRef.get();
-        if (freshSnap.exists && freshSnap.data()?.date === dateKey) {
+        const { data: fresh } = await supabase.from("daily_insights").select("*").eq("id", userId).single();
+        if (fresh && fresh.date === dateKey) {
           return NextResponse.json({
             success: true,
-            data: freshSnap.data(),
+            data: fresh,
             cached: false,
             date: dateKey,
           });

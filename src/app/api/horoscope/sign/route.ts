@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 const ZODIAC_SIGNS = [
   "aries", "taurus", "gemini", "cancer", "leo", "virgo",
@@ -55,17 +55,16 @@ export async function GET(request: NextRequest) {
     cacheTimeKey = getDateKey();
   }
 
-  const adminDb = getAdminDb();
+  const supabase = getSupabaseAdmin();
   const cacheDocId = `sign_${period}_${sign}_${cacheTimeKey}`;
 
   try {
-    const docSnap = await adminDb.collection("horoscopes").doc(cacheDocId).get();
+    const { data: row } = await supabase.from("horoscope_cache").select("*").eq("id", cacheDocId).single();
 
-    if (docSnap.exists) {
-      const data = docSnap.data();
+    if (row) {
       return NextResponse.json({
         success: true,
-        data: data?.horoscope_data,
+        data: row.horoscope,
         sign,
         period,
         date: cacheTimeKey,

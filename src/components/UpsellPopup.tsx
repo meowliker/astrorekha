@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useUserStore, featureNames, featurePrices, UnlockedFeatures } from "@/lib/user-store";
 import { generateUserId } from "@/lib/user-profile";
 
-// Map feature keys to report IDs for Stripe checkout
+// Map feature keys to report IDs for Razorpay checkout
 const featureToReportId: Record<keyof UnlockedFeatures, string> = {
   palmReading: "report-palm",
   prediction2026: "report-2026",
@@ -38,28 +38,55 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
 
     try {
       const reportId = featureToReportId[feature];
+      const priceINR = Math.round(price * 100); // Convert to paise (price is already in INR)
       
-      const response = await fetch("/api/stripe/create-coin-checkout", {
+      const response = await fetch("/api/razorpay/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: "report",
-          packageId: reportId,
+          amount: priceINR * 100, // paise
           userId: generateUserId(),
-          email: localStorage.getItem("astrorekha_email") || "",
-          cancelPath: "/reports?cancelled=true",
+          bundleId: reportId,
+          type: "report",
         }),
       });
 
       const data = await response.json();
 
-      if (data.url) {
-        window.location.href = data.url;
-      } else if (data.error) {
-        setError(data.error);
-        setIsProcessing(false);
+      if (data.orderId) {
+        const options = {
+          key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+          amount: priceINR * 100,
+          currency: "INR",
+          name: "AstroRekha",
+          description: featureNames[feature],
+          order_id: data.orderId,
+          handler: async (res: any) => {
+            await fetch("/api/razorpay/verify-payment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                razorpay_order_id: res.razorpay_order_id,
+                razorpay_payment_id: res.razorpay_payment_id,
+                razorpay_signature: res.razorpay_signature,
+              }),
+            });
+            setIsProcessing(false);
+            onPurchase?.();
+            onClose();
+            window.location.reload();
+          },
+          prefill: { email: localStorage.getItem("astrorekha_email") || "" },
+          theme: { color: "#7C3AED" },
+        };
+        const rzp = new (window as any).Razorpay(options);
+        rzp.on("payment.failed", () => {
+          setError("Payment failed. Please try again.");
+          setIsProcessing(false);
+        });
+        rzp.open();
       } else {
-        setError("Unable to start checkout. Please try again.");
+        setError(data.error || "Unable to start checkout. Please try again.");
         setIsProcessing(false);
       }
     } catch (err) {
@@ -122,7 +149,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
                   <span className="text-white font-medium">{featureName}</span>
                 </div>
                 <div className="text-right">
-                  <span className="text-white text-xl font-bold">${price.toFixed(2)}</span>
+                  <span className="text-white text-xl font-bold">₹{price}</span>
                 </div>
               </div>
             </div>
@@ -178,28 +205,53 @@ export function AllUpsellsPopup({ isOpen, onClose, onPurchase }: AllUpsellsPopup
     setError("");
 
     try {
-      // Use the upsell checkout API with ultra-pack
-      const response = await fetch("/api/stripe/create-upsell-checkout", {
+      const response = await fetch("/api/razorpay/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          selectedOffers: ["ultra-pack"],
+          amount: totalPrice * 100, // paise
           userId: generateUserId(),
-          email: localStorage.getItem("astrorekha_email") || "",
-          successPath: "/dashboard?upsell_success=true&offers=ultra-pack",
-          cancelPath: "/reports?cancelled=true",
+          bundleId: "ultra-pack",
+          type: "upsell",
         }),
       });
 
       const data = await response.json();
 
-      if (data.url) {
-        window.location.href = data.url;
-      } else if (data.error) {
-        setError(data.error);
-        setIsProcessing(false);
+      if (data.orderId) {
+        const options = {
+          key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+          amount: totalPrice * 100,
+          currency: "INR",
+          name: "AstroRekha",
+          description: "Unlock All Reports",
+          order_id: data.orderId,
+          handler: async (res: any) => {
+            await fetch("/api/razorpay/verify-payment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                razorpay_order_id: res.razorpay_order_id,
+                razorpay_payment_id: res.razorpay_payment_id,
+                razorpay_signature: res.razorpay_signature,
+              }),
+            });
+            setIsProcessing(false);
+            onPurchase?.();
+            onClose();
+            window.location.reload();
+          },
+          prefill: { email: localStorage.getItem("astrorekha_email") || "" },
+          theme: { color: "#7C3AED" },
+        };
+        const rzp = new (window as any).Razorpay(options);
+        rzp.on("payment.failed", () => {
+          setError("Payment failed. Please try again.");
+          setIsProcessing(false);
+        });
+        rzp.open();
       } else {
-        setError("Unable to start checkout. Please try again.");
+        setError(data.error || "Unable to start checkout. Please try again.");
         setIsProcessing(false);
       }
     } catch (err) {
@@ -209,8 +261,8 @@ export function AllUpsellsPopup({ isOpen, onClose, onPurchase }: AllUpsellsPopup
     }
   };
 
-  const totalPrice = 14.99; // Discounted bundle price
-  const originalPrice = 6.99 * 3; // Individual prices
+  const totalPrice = 1249; // INR discounted bundle price
+  const originalPrice = 1749; // INR original price
 
   return (
     <AnimatePresence>
@@ -277,10 +329,10 @@ export function AllUpsellsPopup({ isOpen, onClose, onPurchase }: AllUpsellsPopup
             <div className="bg-white/5 rounded-2xl p-4 mb-6 border border-primary/20">
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-white/50 text-sm line-through">${originalPrice.toFixed(2)}</span>
+                  <span className="text-white/50 text-sm line-through">₹{originalPrice}</span>
                   <span className="ml-2 text-green-400 text-xs font-semibold">Save 28%</span>
                 </div>
-                <span className="text-white text-2xl font-bold">${totalPrice.toFixed(2)}</span>
+                <span className="text-white text-2xl font-bold">₹{totalPrice}</span>
               </div>
             </div>
 

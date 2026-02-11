@@ -6,15 +6,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { ArrowLeft, Mail, Lock, Eye, EyeOff, Loader2, X, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { 
-  signInWithEmailAndPassword, 
-  signInWithCustomToken,
-  sendPasswordResetEmail
-} from "firebase/auth";
-import { auth } from "@/lib/firebase";
 import { useUserStore } from "@/lib/user-store";
-import { db } from "@/lib/firebase";
-import { doc, getDoc } from "firebase/firestore";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -45,7 +37,7 @@ export default function LoginPage() {
   const [showUserNotFound, setShowUserNotFound] = useState(false);
   const [notFoundEmail, setNotFoundEmail] = useState("");
 
-  const { setSubscriptionPlan, setCoins, setFirebaseUserId } = useUserStore();
+  const { setCoins, setUserId, syncFromServer } = useUserStore();
 
   const handleEmailPasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,11 +51,36 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        // Handle specific error codes
+        switch (data.error) {
+          case "auth/user-not-found":
+            setError("No account found with this email. Please sign up first.");
+            break;
+          case "auth/wrong-password":
+            setError("Incorrect password. Please try again.");
+            break;
+          case "auth/no-password":
+            setError("This account uses OTP login. Please use the OTP option.");
+            break;
+          default:
+            setError(data.message || "Login failed. Please check your credentials.");
+        }
+        return;
+      }
+
+      const user = data.user;
       
       // Save user info to localStorage
-      localStorage.setItem("astrorekha_user_id", user.uid);
+      localStorage.setItem("astrorekha_user_id", user.id);
       localStorage.setItem("astrorekha_email", user.email || "");
       localStorage.setItem("astrorekha_password", password); // For delete account verification
       
@@ -74,57 +91,31 @@ export default function LoginPage() {
         console.error("Failed to set session:", err);
       }
 
-      // Hydrate store from Firestore and detect flow
-      try {
-        const snap = await getDoc(doc(db, "users", user.uid));
-        if (snap.exists()) {
-          const data: any = snap.data();
-          if (Object.prototype.hasOwnProperty.call(data, "subscriptionPlan")) {
-            setSubscriptionPlan(data.subscriptionPlan ?? null);
-          }
-          if (typeof data.coins === "number") {
-            setCoins(data.coins);
-          }
-          setFirebaseUserId(user.uid);
-          
-          // Detect and store user's flow type
-          const userFlow = data.onboardingFlow || (data.purchaseType === "one-time" ? "flow-b" : "flow-a");
-          localStorage.setItem("astrorekha_onboarding_flow", userFlow);
-          
-          // Store purchase type for dashboard restrictions
-          if (data.purchaseType) {
-            localStorage.setItem("astrorekha_purchase_type", data.purchaseType);
-          }
-        }
-      } catch (err) {
-        console.error("Failed to hydrate user after login:", err);
+      // Hydrate store from response data
+      if (typeof user.coins === "number") {
+        setCoins(user.coins);
+      }
+      setUserId(user.id);
+      syncFromServer({
+        coins: user.coins,
+        purchasedBundle: user.bundlePurchased || null,
+        unlockedFeatures: user.unlockedFeatures,
+      });
+      
+      // Detect and store user's flow type
+      const userFlow = user.onboardingFlow || (user.purchaseType === "one-time" ? "flow-b" : "flow-a");
+      localStorage.setItem("astrorekha_onboarding_flow", userFlow);
+      
+      // Store purchase type for dashboard restrictions
+      if (user.purchaseType) {
+        localStorage.setItem("astrorekha_purchase_type", user.purchaseType);
       }
       
       // Redirect to dashboard
       router.push("/reports");
     } catch (err: any) {
       console.error("Login error:", err);
-      
-      // Handle specific Firebase errors
-      switch (err.code) {
-        case "auth/unauthorized-domain":
-          setError("Login is misconfigured (unauthorized domain). Please contact support.");
-          break;
-        case "auth/user-not-found":
-          setError("No account found with this email. Please sign up first.");
-          break;
-        case "auth/wrong-password":
-          setError("Incorrect password. Please try again.");
-          break;
-        case "auth/invalid-email":
-          setError("Invalid email address.");
-          break;
-        case "auth/too-many-requests":
-          setError("Too many failed attempts. Please try again later.");
-          break;
-        default:
-          setError("Login failed. Please check your credentials.");
-      }
+      setError("Login failed. Please check your credentials.");
     } finally {
       setIsLoading(false);
     }
@@ -212,26 +203,20 @@ export default function LoginPage() {
         throw new Error(data.error || "Invalid OTP");
       }
 
-      if (data.customToken) {
-        try {
-          await signInWithCustomToken(auth, data.customToken);
-        } catch (err) {
-          console.error("Failed to sign in with custom token:", err);
-        }
-      }
-
       // Login successful
       localStorage.setItem("astrorekha_user_id", data.user.id);
       localStorage.setItem("astrorekha_email", data.user.email);
       
       // Update user store
-      if (Object.prototype.hasOwnProperty.call(data.user, "subscriptionPlan")) {
-        setSubscriptionPlan(data.user.subscriptionPlan ?? null);
-      }
       if (typeof data.user.coins === "number") {
         setCoins(data.user.coins);
       }
-      setFirebaseUserId(data.user.id);
+      setUserId(data.user.id);
+      syncFromServer({
+        coins: data.user.coins,
+        purchasedBundle: data.user.bundlePurchased || null,
+        unlockedFeatures: data.user.unlockedFeatures,
+      });
       
       // Detect and store user's flow type from OTP login
       const userFlow = data.user.onboardingFlow || (data.user.purchaseType === "one-time" ? "flow-b" : "flow-a");

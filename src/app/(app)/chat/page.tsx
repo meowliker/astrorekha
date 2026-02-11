@@ -8,8 +8,7 @@ import { Button } from "@/components/ui/button";
 import Image from "next/image";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { useUserStore } from "@/lib/user-store";
-import { db } from "@/lib/firebase";
-import { doc, getDoc, setDoc, updateDoc, increment } from "firebase/firestore";
+import { supabase } from "@/lib/supabase";
 import { generateUserId } from "@/lib/user-profile";
 
 interface Message {
@@ -96,12 +95,12 @@ export default function ChatPage() {
   // Get coins from user store
   const { coins, deductCoins } = useUserStore();
 
-  // Map coin packages to Stripe package IDs
-  const coinPackageToStripeId: Record<number, string> = {
-    50: "coins-50",
-    150: "coins-150",
-    300: "coins-300",
-    500: "coins-500",
+  // Map coin packages to Razorpay package IDs
+  const coinPackageMap: Record<number, { id: string; priceINR: number }> = {
+    50: { id: "coins-50", priceINR: 499 },
+    150: { id: "coins-150", priceINR: 999 },
+    300: { id: "coins-300", priceINR: 1499 },
+    500: { id: "coins-500", priceINR: 2499 },
   };
 
   const handlePurchaseCoins = async (pkg: typeof coinPackages[0]) => {
@@ -109,26 +108,52 @@ export default function ChatPage() {
     setPurchasingPackage(pkg.id);
 
     try {
-      const response = await fetch("/api/stripe/create-coin-checkout", {
+      const coinPkg = coinPackageMap[pkg.coins] || { id: "coins-50", priceINR: 499 };
+      const response = await fetch("/api/razorpay/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: "coins",
-          packageId: coinPackageToStripeId[pkg.coins] || "coins-50",
+          amount: coinPkg.priceINR * 100, // paise
           userId: generateUserId(),
-          email: localStorage.getItem("astrorekha_email") || "",
+          bundleId: coinPkg.id,
+          type: "coins",
         }),
       });
 
       const data = await response.json();
 
-      if (data.url) {
-        window.location.href = data.url;
-      } else if (data.error) {
-        setPurchaseError(data.error);
-        setPurchasingPackage(null);
+      if (data.orderId) {
+        const options = {
+          key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+          amount: coinPkg.priceINR * 100,
+          currency: "INR",
+          name: "AstroRekha",
+          description: `${pkg.coins} Coins`,
+          order_id: data.orderId,
+          handler: async (response: any) => {
+            await fetch("/api/razorpay/verify-payment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              }),
+            });
+            setPurchasingPackage(null);
+            window.location.reload();
+          },
+          prefill: { email: localStorage.getItem("astrorekha_email") || "" },
+          theme: { color: "#7C3AED" },
+        };
+        const rzp = new (window as any).Razorpay(options);
+        rzp.on("payment.failed", () => {
+          setPurchaseError("Payment failed. Please try again.");
+          setPurchasingPackage(null);
+        });
+        rzp.open();
       } else {
-        setPurchaseError("Unable to start checkout. Please try again.");
+        setPurchaseError(data.error || "Unable to start checkout. Please try again.");
         setPurchasingPackage(null);
       }
     } catch (error) {
@@ -155,7 +180,7 @@ export default function ChatPage() {
     ascendantSign,
   } = useOnboardingStore();
 
-  // Initialize welcome message and load palm reading + chat history from Firebase
+  // Initialize welcome message and load palm reading + chat history from Supabase
   useEffect(() => {
     setIsClient(true);
     
@@ -170,24 +195,23 @@ export default function ChatPage() {
       setCurrentUserId(userId);
       console.log("[Chat] Loading data for userId:", userId);
 
-      // Load palm reading from Firebase
+      // Load palm reading from Supabase
       try {
-        const palmDocSnap = await getDoc(doc(db, "palm_readings", userId));
-        if (palmDocSnap.exists()) {
-          const data = palmDocSnap.data();
-          setPalmReading(data.reading);
-          if (data.palmImageUrl) setPalmImage(data.palmImageUrl);
+        const { data: palmData } = await supabase.from("palm_readings").select("*").eq("id", userId).single();
+        if (palmData) {
+          setPalmReading(palmData.reading);
+          if (palmData.palm_image_url) setPalmImage(palmData.palm_image_url);
         }
       } catch (err) {
         console.error("[Chat] Failed to load palm reading:", err);
       }
 
-      // Load natal chart from Firebase (calculated by astro-engine)
+      // Load natal chart from Supabase (calculated by astro-engine)
       try {
-        const chartDocSnap = await getDoc(doc(db, "natal_charts", userId));
-        if (chartDocSnap.exists()) {
-          setNatalChart(chartDocSnap.data());
-          console.log("[Chat] Loaded natal chart from Firestore");
+        const { data: chartData } = await supabase.from("natal_charts").select("*").eq("id", userId).single();
+        if (chartData) {
+          setNatalChart(chartData);
+          console.log("[Chat] Loaded natal chart from Supabase");
         } else {
           // No chart saved yet — calculate it now via astro-engine
           console.log("[Chat] No natal chart found, calculating...");
@@ -210,9 +234,9 @@ export default function ChatPage() {
             });
             if (signsResponse.ok) {
               // Re-fetch the chart that was just saved
-              const newChartSnap = await getDoc(doc(db, "natal_charts", userId));
-              if (newChartSnap.exists()) {
-                setNatalChart(newChartSnap.data());
+              const { data: newChart } = await supabase.from("natal_charts").select("*").eq("id", userId).single();
+              if (newChart) {
+                setNatalChart(newChart);
                 console.log("[Chat] Natal chart calculated and loaded");
               }
             }
@@ -224,16 +248,15 @@ export default function ChatPage() {
         console.error("[Chat] Failed to load natal chart:", err);
       }
 
-      // Load chat history from Firebase
+      // Load chat history from Supabase
       try {
-        console.log("[Chat] Attempting to load chat from:", `chat_messages/${userId}`);
-        const chatDocSnap = await getDoc(doc(db, "chat_messages", userId));
-        console.log("[Chat] Chat doc exists:", chatDocSnap.exists());
-        if (chatDocSnap.exists()) {
-          const data = chatDocSnap.data();
-          console.log("[Chat] Loaded chat data:", data);
-          if (data.messages && data.messages.length > 0) {
-            const loadedMessages: Message[] = data.messages.map((m: StoredMessage) => ({
+        console.log("[Chat] Attempting to load chat for userId:", userId);
+        const { data: chatDoc } = await supabase.from("chat_messages").select("*").eq("id", userId).single();
+        console.log("[Chat] Chat doc exists:", !!chatDoc);
+        if (chatDoc) {
+          console.log("[Chat] Loaded chat data");
+          if (chatDoc.messages && chatDoc.messages.length > 0) {
+            const loadedMessages: Message[] = chatDoc.messages.map((m: StoredMessage) => ({
               ...m,
               timestamp: new Date(m.timestamp),
             }));
@@ -271,7 +294,7 @@ export default function ChatPage() {
     }
   }, [coins]);
 
-  // Save chat messages to Firebase whenever they change
+  // Save chat messages to Supabase whenever they change
   useEffect(() => {
     // Only save if we have loaded chat, have a userId, and user has sent at least one message
     const hasUserMessage = messages.some(m => m.role === "user");
@@ -283,7 +306,7 @@ export default function ChatPage() {
     const saveChat = async () => {
       try {
         console.log("[Chat] Saving chat for userId:", currentUserId, "messages count:", messages.length);
-        // Filter out undefined fields - Firebase doesn't allow undefined values
+        // Filter out undefined fields
         const storedMessages: StoredMessage[] = messages.map((m) => {
           const msg: StoredMessage = {
             role: m.role,
@@ -296,13 +319,13 @@ export default function ChatPage() {
           return msg;
         });
         
-        const chatRef = doc(db, "chat_messages", currentUserId);
-        await setDoc(chatRef, {
+        await supabase.from("chat_messages").upsert({
+          id: currentUserId,
           messages: storedMessages,
-          updatedAt: new Date().toISOString(),
-          userId: currentUserId,
-        });
-        console.log("[Chat] Chat saved successfully to:", `chat_messages/${currentUserId}`);
+          updated_at: new Date().toISOString(),
+          user_id: currentUserId,
+        }, { onConflict: "id" });
+        console.log("[Chat] Chat saved successfully for userId:", currentUserId);
       } catch (err: any) {
         console.error("[Chat] Failed to save chat:", err);
         console.error("[Chat] Error code:", err?.code);
@@ -386,10 +409,13 @@ export default function ChatPage() {
 
         try {
           const userId = generateUserId();
-          await updateDoc(doc(db, "users", userId), {
-            coins: increment(-3),
-            updatedAt: new Date().toISOString(),
-          });
+          const { data: currentUser } = await supabase.from("users").select("coins").eq("id", userId).single();
+          if (currentUser) {
+            await supabase.from("users").update({
+              coins: Math.max(0, (currentUser.coins || 0) - 3),
+              updated_at: new Date().toISOString(),
+            }).eq("id", userId);
+          }
         } catch (err) {
           console.error("Failed to persist coin deduction:", err);
         }
@@ -790,7 +816,7 @@ export default function ChatPage() {
               {/* Footer */}
               <div className="mt-2 sm:mt-3 text-center">
                 <p className="text-white/40 text-[10px] sm:text-xs">
-                  Secure payment powered by Stripe • Cancel anytime
+                  Secure payment powered by Razorpay
                 </p>
               </div>
             </motion.div>

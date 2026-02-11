@@ -9,8 +9,7 @@ import { Check, Loader2 } from "lucide-react";
 import Image from "next/image";
 import { useUserStore } from "@/lib/user-store";
 import { useOnboardingStore } from "@/lib/onboarding-store";
-import { db } from "@/lib/firebase";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import { supabase } from "@/lib/supabase";
 import { generateUserId } from "@/lib/user-profile";
 import { pixelEvents } from "@/lib/pixel-events";
 
@@ -25,33 +24,37 @@ const upsellOffers = [
   {
     id: "2026-predictions",
     name: "2026 Future Predictions",
-    price: "$6.99",
-    originalPrice: "$9.99",
-    discount: "30% OFF",
+    price: "₹499",
+    priceINR: 499,
+    originalPrice: "₹799",
+    discount: "37% OFF",
     icon: "🔮",
   },
   {
     id: "birth-chart",
     name: "Birth Chart Report",
-    price: "$6.99",
-    originalPrice: "$9.99",
-    discount: "30% OFF",
+    price: "₹499",
+    priceINR: 499,
+    originalPrice: "₹799",
+    discount: "37% OFF",
     icon: "🌙",
   },
   {
     id: "compatibility",
     name: "Compatibility Report",
-    price: "$6.99",
-    originalPrice: "$9.99",
-    discount: "30% OFF",
+    price: "₹499",
+    priceINR: 499,
+    originalPrice: "₹799",
+    discount: "37% OFF",
     icon: "🔮",
   },
   {
     id: "ultra-pack",
     name: "Ultra Pack 3 in 1",
-    price: "$9.99",
-    originalPrice: "$16.99",
-    discount: "40% OFF",
+    price: "₹999",
+    priceINR: 999,
+    originalPrice: "₹1,599",
+    discount: "37% OFF",
     icon: "📦",
     recommended: true,
   },
@@ -66,7 +69,7 @@ function Step18Content() {
   const [isAnalyzingPalm, setIsAnalyzingPalm] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState(false);
   
-  const { unlockFeature, unlockAllFeatures, purchaseSubscription, addCoins } = useUserStore();
+  const { unlockFeature, unlockAllFeatures, purchaseBundle, addCoins } = useUserStore();
   const { birthMonth, birthDay, birthYear } = useOnboardingStore();
 
   // Route protection: Check if user has completed payment
@@ -81,18 +84,18 @@ function Step18Content() {
       return;
     }
     
-    // Allow access if: valid session_id from Stripe OR already completed payment
+    // Allow access if: valid payment completed
     if (sessionId || hasCompletedPayment) {
       setIsAuthorized(true);
       
-      // Mark payment as completed if coming from Stripe
+      // Mark payment as completed if coming from Razorpay callback
       if (sessionId) {
         localStorage.setItem("astrorekha_payment_completed", "true");
         localStorage.setItem("astrorekha_payment_session_id", sessionId);
       }
     } else {
-      // No valid payment - redirect to payment page
-      router.replace("/onboarding/step-17");
+      // No valid payment - redirect to bundle pricing
+      router.replace("/onboarding/bundle-pricing");
       return;
     }
   }, [searchParams, router]);
@@ -146,9 +149,8 @@ function Step18Content() {
     // Check if reading already exists
     const userId = generateUserId();
     try {
-      const existingDoc = await getDoc(doc(db, "palm_readings", userId));
-      if (existingDoc.exists() && existingDoc.data()?.reading) {
-        // Reading already exists, no need to analyze again
+      const { data: existing } = await supabase.from("palm_readings").select("reading").eq("id", userId).single();
+      if (existing?.reading) {
         return;
       }
     } catch (err) {
@@ -178,14 +180,14 @@ function Step18Content() {
       const result = await response.json();
 
       if (result.success && result.reading) {
-        // Save to Firebase
-        await setDoc(doc(db, "palm_readings", userId), {
+        await supabase.from("palm_readings").upsert({
+          id: userId,
           reading: result.reading,
-          palmImageUrl: palmImage,
-          createdAt: new Date().toISOString(),
-          birthDate,
-          zodiacSign,
-        });
+          palm_image_url: palmImage,
+          created_at: new Date().toISOString(),
+          birth_date: birthDate,
+          zodiac_sign: zodiacSign,
+        }, { onConflict: "id" });
       }
     } catch (err) {
       console.error("Palm analysis error:", err);
@@ -246,10 +248,15 @@ function Step18Content() {
   };
 
   const calculateTotal = () => {
-    if (selectedOffers.has("ultra-pack")) return "$9.99";
+    if (selectedOffers.has("ultra-pack")) return "₹999";
     const count = selectedOffers.size;
-    if (count === 0) return "$0.00";
-    return `$${(count * 6.99).toFixed(2)}`;
+    if (count === 0) return "₹0";
+    return `₹${count * 499}`;
+  };
+
+  const calculateTotalINR = () => {
+    if (selectedOffers.has("ultra-pack")) return 999;
+    return selectedOffers.size * 499;
   };
 
   const handleGetReport = async () => {
@@ -259,34 +266,59 @@ function Step18Content() {
     setIsProcessing(true);
 
     try {
-      const response = await fetch("/api/stripe/create-upsell-checkout", {
+      const totalINR = calculateTotalINR();
+      const offerNames = Array.from(selectedOffers).join(", ");
+
+      const response = await fetch("/api/razorpay/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          selectedOffers: Array.from(selectedOffers),
+          amount: totalINR * 100, // paise
           userId: generateUserId(),
-          email: localStorage.getItem("astrorekha_email") || "",
+          bundleId: selectedOffers.has("ultra-pack") ? "ultra-pack" : Array.from(selectedOffers).join(","),
+          type: "upsell",
         }),
       });
 
       const data = await response.json();
 
-      if (data.url) {
-        // Calculate upsell value for pixel tracking
-        const upsellValue = selectedOffers.has("ultra-pack") ? 9.99 : selectedOffers.size * 6.99;
-        const offerNames = Array.from(selectedOffers).join(", ");
-        
+      if (data.orderId) {
         // Track pixel events for upsell checkout
-        pixelEvents.initiateCheckout(upsellValue, Array.from(selectedOffers));
-        pixelEvents.addPaymentInfo(upsellValue, `Upsell: ${offerNames}`);
-        
-        // Redirect to Stripe Checkout
-        window.location.href = data.url;
-      } else if (data.error) {
-        setPaymentError(data.error);
-        setIsProcessing(false);
+        pixelEvents.initiateCheckout(totalINR, Array.from(selectedOffers));
+        pixelEvents.addPaymentInfo(totalINR, `Upsell: ${offerNames}`);
+
+        const options = {
+          key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+          amount: totalINR * 100,
+          currency: "INR",
+          name: "AstroRekha",
+          description: `Upsell: ${offerNames}`,
+          order_id: data.orderId,
+          handler: async (res: any) => {
+            await fetch("/api/razorpay/verify-payment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                razorpay_order_id: res.razorpay_order_id,
+                razorpay_payment_id: res.razorpay_payment_id,
+                razorpay_signature: res.razorpay_signature,
+              }),
+            });
+            pixelEvents.purchase(totalINR, `upsell-${offerNames}`, offerNames);
+            setIsProcessing(false);
+            router.push("/onboarding/step-19");
+          },
+          prefill: { email: localStorage.getItem("astrorekha_email") || "" },
+          theme: { color: "#7C3AED" },
+        };
+        const rzp = new (window as any).Razorpay(options);
+        rzp.on("payment.failed", () => {
+          setPaymentError("Payment failed. Please try again.");
+          setIsProcessing(false);
+        });
+        rzp.open();
       } else {
-        setPaymentError("Unable to start checkout. Please try again.");
+        setPaymentError(data.error || "Unable to start checkout. Please try again.");
         setIsProcessing(false);
       }
     } catch (error) {
@@ -459,10 +491,9 @@ function Step18Content() {
         </button>
 
         <p className="text-[10px] text-muted-foreground text-center leading-relaxed">
-          Purchase the Ultra Pack 3 in 1 for $9.99, charged to your stored billing details.
-          By clicking &quot;Get my PDF report&quot;, you confirm your purchase. The report will be
-          delivered electronically after purchase. All sales are final, non-refundable, and
-          withdrawal rights expire upon purchase.
+          Purchase the Ultra Pack 3 in 1 for ₹999, charged via Razorpay.
+          By clicking &quot;Get my reports&quot;, you confirm your purchase. The report will be
+          delivered electronically after purchase. All sales are final and non-refundable.
         </p>
       </div>
     </motion.div>

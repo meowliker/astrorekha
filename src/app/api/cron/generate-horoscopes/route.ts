@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { fetchFromAstroEngine } from "@/lib/astro-client";
-import { getAdminDb } from "@/lib/firebase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "AI service not configured" }, { status: 500 });
     }
 
-    const adminDb = getAdminDb();
+    const supabase = getSupabaseAdmin();
     const periodsToGenerate = periods || ["daily", "tomorrow", "weekly", "monthly"];
     const results: Record<string, Record<string, boolean>> = {};
 
@@ -193,11 +193,10 @@ export async function POST(request: NextRequest) {
 
       for (const sign of ZODIAC_SIGNS) {
         const cacheDocId = `sign_${period}_${sign.toLowerCase()}_${cacheTimeKey}`;
-        const cacheRef = adminDb.collection("horoscopes").doc(cacheDocId);
 
         // Skip if already generated
-        const existing = await cacheRef.get();
-        if (existing.exists) {
+        const { data: existing } = await supabase.from("horoscope_cache").select("id").eq("id", cacheDocId).single();
+        if (existing) {
           results[period][sign] = true;
           continue;
         }
@@ -232,16 +231,15 @@ export async function POST(request: NextRequest) {
           const expiresAt = new Date();
           expiresAt.setUTCDate(expiresAt.getUTCDate() + (TTL_DAYS[period] || 1));
 
-          // Store in Firestore
-          await cacheRef.set({
-            horoscope_data: horoscopeData,
-            sign,
+          // Store in Supabase
+          await supabase.from("horoscope_cache").upsert({
+            id: cacheDocId,
+            horoscope: horoscopeData,
+            sign: sign.toLowerCase(),
             period,
-            date: cacheTimeKey,
-            generatedAt: new Date().toISOString(),
-            expiresAt: expiresAt.toISOString(),
-            source: "astro-engine+claude",
-          });
+            cache_key: cacheTimeKey,
+            fetched_at: new Date().toISOString(),
+          }, { onConflict: "id" });
 
           results[period][sign] = true;
 

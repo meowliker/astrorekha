@@ -1,7 +1,4 @@
-import { db } from "./firebase";
-import { auth } from "./firebase";
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
-import { getStorage, ref, uploadString, getDownloadURL } from "firebase/storage";
+import { supabase } from "./supabase";
 
 interface SignData {
   name: string;
@@ -96,12 +93,6 @@ export function calculateZodiacSign(month: string, day: string): string {
 export function generateUserId(): string {
   if (typeof window === "undefined") return "server";
 
-  const authUid = auth.currentUser?.uid;
-  if (authUid) {
-    localStorage.setItem("astrorekha_user_id", authUid);
-    return authUid;
-  }
-
   const currentId = localStorage.getItem("astrorekha_user_id");
   if (currentId) return currentId;
 
@@ -153,19 +144,74 @@ export async function saveUserProfile(onboardingData: {
     zodiacSign,
   };
 
-  await setDoc(doc(db, "user_profiles", userId), profile);
+  await supabase.from("user_profiles").upsert({
+    id: userId,
+    email: onboardingData.email,
+    gender: profile.gender,
+    birth_month: profile.birthMonth,
+    birth_day: profile.birthDay,
+    birth_year: profile.birthYear,
+    birth_hour: profile.birthHour,
+    birth_minute: profile.birthMinute,
+    birth_period: profile.birthPeriod,
+    birth_place: profile.birthPlace,
+    knows_birth_time: profile.knowsBirthTime,
+    relationship_status: profile.relationshipStatus,
+    goals: profile.goals,
+    color_preference: profile.colorPreference,
+    element_preference: profile.elementPreference,
+    zodiac_sign: profile.zodiacSign,
+    sun_sign: profile.sunSign || null,
+    moon_sign: profile.moonSign || null,
+    ascendant_sign: profile.ascendantSign || null,
+    palm_image: profile.palmImage || null,
+    created_at: profile.createdAt,
+    updated_at: profile.updatedAt,
+  }, { onConflict: "id" });
+
   return profile;
 }
 
-// Get user profile from Firestore
+// Get user profile from Supabase
 export async function getUserProfile(): Promise<UserProfile | null> {
   const userId = generateUserId();
   
   try {
-    const docSnap = await getDoc(doc(db, "user_profiles", userId));
-    if (docSnap.exists()) {
-      return docSnap.data() as UserProfile;
-    }
+    const { data, error } = await supabase
+      .from("user_profiles")
+      .select("*")
+      .eq("id", userId)
+      .single();
+
+    if (error || !data) return null;
+
+    return {
+      id: data.id,
+      email: data.email,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+      gender: data.gender,
+      birthMonth: data.birth_month,
+      birthDay: data.birth_day,
+      birthYear: data.birth_year,
+      birthHour: data.birth_hour,
+      birthMinute: data.birth_minute,
+      birthPeriod: data.birth_period,
+      birthPlace: data.birth_place,
+      knowsBirthTime: data.knows_birth_time,
+      relationshipStatus: data.relationship_status,
+      goals: data.goals || [],
+      colorPreference: data.color_preference,
+      elementPreference: data.element_preference,
+      zodiacSign: data.zodiac_sign,
+      sunSign: data.sun_sign,
+      moonSign: data.moon_sign,
+      ascendantSign: data.ascendant_sign,
+      palmImageUrl: data.palm_image_url,
+      palmImage: data.palm_image,
+      palmReadingResult: data.palm_reading_result,
+      palmReadingDate: data.palm_reading_date,
+    };
   } catch (error) {
     console.error("Failed to get user profile:", error);
   }
@@ -176,11 +222,32 @@ export async function getUserProfile(): Promise<UserProfile | null> {
 // Update user profile
 export async function updateUserProfile(updates: Partial<UserProfile>): Promise<void> {
   const userId = generateUserId();
-  
-  await updateDoc(doc(db, "user_profiles", userId), {
-    ...updates,
-    updatedAt: new Date().toISOString(),
-  });
+
+  // Convert camelCase keys to snake_case for Supabase
+  const dbUpdates: Record<string, any> = { updated_at: new Date().toISOString() };
+  if (updates.gender !== undefined) dbUpdates.gender = updates.gender;
+  if (updates.birthMonth !== undefined) dbUpdates.birth_month = updates.birthMonth;
+  if (updates.birthDay !== undefined) dbUpdates.birth_day = updates.birthDay;
+  if (updates.birthYear !== undefined) dbUpdates.birth_year = updates.birthYear;
+  if (updates.birthHour !== undefined) dbUpdates.birth_hour = updates.birthHour;
+  if (updates.birthMinute !== undefined) dbUpdates.birth_minute = updates.birthMinute;
+  if (updates.birthPeriod !== undefined) dbUpdates.birth_period = updates.birthPeriod;
+  if (updates.birthPlace !== undefined) dbUpdates.birth_place = updates.birthPlace;
+  if (updates.knowsBirthTime !== undefined) dbUpdates.knows_birth_time = updates.knowsBirthTime;
+  if (updates.relationshipStatus !== undefined) dbUpdates.relationship_status = updates.relationshipStatus;
+  if (updates.goals !== undefined) dbUpdates.goals = updates.goals;
+  if (updates.colorPreference !== undefined) dbUpdates.color_preference = updates.colorPreference;
+  if (updates.elementPreference !== undefined) dbUpdates.element_preference = updates.elementPreference;
+  if (updates.zodiacSign !== undefined) dbUpdates.zodiac_sign = updates.zodiacSign;
+  if (updates.sunSign !== undefined) dbUpdates.sun_sign = updates.sunSign;
+  if (updates.moonSign !== undefined) dbUpdates.moon_sign = updates.moonSign;
+  if (updates.ascendantSign !== undefined) dbUpdates.ascendant_sign = updates.ascendantSign;
+  if (updates.palmImageUrl !== undefined) dbUpdates.palm_image_url = updates.palmImageUrl;
+  if (updates.palmImage !== undefined) dbUpdates.palm_image = updates.palmImage;
+  if (updates.palmReadingResult !== undefined) dbUpdates.palm_reading_result = updates.palmReadingResult;
+  if (updates.palmReadingDate !== undefined) dbUpdates.palm_reading_date = updates.palmReadingDate;
+
+  await supabase.from("user_profiles").update(dbUpdates).eq("id", userId);
 }
 
 // Save palm image and update profile
@@ -188,20 +255,33 @@ export async function savePalmImage(imageDataUrl: string): Promise<string> {
   const userId = generateUserId();
   
   try {
-    const storage = getStorage();
-    const imageRef = ref(storage, `palm_images/${userId}_${Date.now()}.jpg`);
-    
-    // Upload base64 image
-    await uploadString(imageRef, imageDataUrl, "data_url");
-    
-    // Get download URL
-    const downloadUrl = await getDownloadURL(imageRef);
-    
+    // Convert data URL to blob
+    const base64Data = imageDataUrl.split(",")[1];
+    const byteArray = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+    const filePath = `palm_images/${userId}_${Date.now()}.jpg`;
+
+    // Upload to Supabase Storage
+    const { error: uploadError } = await supabase.storage
+      .from("palm-images")
+      .upload(filePath, byteArray, {
+        contentType: "image/jpeg",
+        upsert: true,
+      });
+
+    if (uploadError) throw uploadError;
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from("palm-images")
+      .getPublicUrl(filePath);
+
+    const downloadUrl = urlData.publicUrl;
+
     // Update user profile with palm image URL
-    await updateDoc(doc(db, "user_profiles", userId), {
-      palmImageUrl: downloadUrl,
-      updatedAt: new Date().toISOString(),
-    });
+    await supabase.from("user_profiles").update({
+      palm_image_url: downloadUrl,
+      updated_at: new Date().toISOString(),
+    }).eq("id", userId);
     
     return downloadUrl;
   } catch (error) {
@@ -214,9 +294,9 @@ export async function savePalmImage(imageDataUrl: string): Promise<string> {
 export async function savePalmReadingResult(result: any): Promise<void> {
   const userId = generateUserId();
   
-  await updateDoc(doc(db, "user_profiles", userId), {
-    palmReadingResult: result,
-    palmReadingDate: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  });
+  await supabase.from("user_profiles").update({
+    palm_reading_result: result,
+    palm_reading_date: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }).eq("id", userId);
 }

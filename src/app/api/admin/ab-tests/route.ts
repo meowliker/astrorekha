@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 // Admin API for managing A/B tests
 
@@ -8,37 +8,32 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const testId = searchParams.get("testId");
 
-    const adminDb = getAdminDb();
+    const supabase = getSupabaseAdmin();
 
     if (testId) {
       // Get specific test with detailed stats
-      const testDoc = await adminDb.collection("abTests").doc(testId).get();
+      const { data: testData } = await supabase.from("ab_tests").select("*").eq("id", testId).single();
       
-      // Get stats for both variants
-      const statsA = await adminDb.collection("abTestStats").doc(`${testId}_A`).get();
-      const statsB = await adminDb.collection("abTestStats").doc(`${testId}_B`).get();
+      const { data: statsA } = await supabase.from("ab_test_stats").select("*").eq("id", `${testId}_A`).single();
+      const { data: statsB } = await supabase.from("ab_test_stats").select("*").eq("id", `${testId}_B`).single();
 
-      // Simplified: Skip complex queries that require indexes
       let recentEvents: any[] = [];
       let dailyBreakdown: any[] = [];
       
       try {
-        // Try to get recent events (may fail if no index)
-        const eventsSnapshot = await adminDb
-          .collection("abTestEvents")
-          .where("testId", "==", testId)
-          .limit(50)
-          .get();
+        const { data: events } = await supabase
+          .from("ab_test_events")
+          .select("*")
+          .eq("test_id", testId)
+          .limit(50);
         
-        recentEvents = eventsSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        recentEvents = events || [];
         
-        // Aggregate daily data from events
         const dailyData: Record<string, { A: any; B: any }> = {};
-        eventsSnapshot.docs.forEach((doc) => {
-          const data = doc.data();
-          if (!data.timestamp) return;
-          const date = data.timestamp.split("T")[0];
-          const variant = data.variant;
+        (events || []).forEach((evt: any) => {
+          if (!evt.created_at) return;
+          const date = evt.created_at.split("T")[0];
+          const variant = evt.variant;
 
           if (!dailyData[date]) {
             dailyData[date] = {
@@ -49,12 +44,12 @@ export async function GET(request: NextRequest) {
 
           if (variant === "A" || variant === "B") {
             const v = variant as "A" | "B";
-            if (data.eventType === "impression") {
+            if (evt.event_type === "impression") {
               dailyData[date][v].impressions++;
-            } else if (data.eventType === "conversion") {
+            } else if (evt.event_type === "conversion") {
               dailyData[date][v].conversions++;
-              dailyData[date][v].revenue += data.metadata?.amount || 0;
-            } else if (data.eventType === "bounce") {
+              dailyData[date][v].revenue += evt.metadata?.amount || 0;
+            } else if (evt.event_type === "bounce") {
               dailyData[date][v].bounces++;
             }
           }
@@ -64,16 +59,15 @@ export async function GET(request: NextRequest) {
           .map(([date, data]) => ({ date, ...data }))
           .sort((a, b) => a.date.localeCompare(b.date));
       } catch (eventsErr) {
-        console.error("Failed to fetch events (index may be missing):", eventsErr);
+        console.error("Failed to fetch events:", eventsErr);
       }
 
-      const calculateRates = (statsDoc: any) => {
-        const stats = statsDoc?.exists ? statsDoc.data() : {};
+      const calculateRates = (stats: any) => {
         const impressions = stats?.impressions || 0;
         const conversions = stats?.conversions || 0;
         const bounces = stats?.bounces || 0;
-        const checkoutsStarted = stats?.checkoutsStarted || 0;
-        const totalRevenue = stats?.totalRevenue || 0;
+        const checkoutsStarted = stats?.checkouts_started || 0;
+        const totalRevenue = stats?.total_revenue || 0;
 
         return {
           impressions,
@@ -90,7 +84,7 @@ export async function GET(request: NextRequest) {
         };
       };
 
-      const testData = testDoc.exists ? testDoc.data() : {
+      const resolvedTestData = testData || {
         id: testId,
         name: "Pricing Page A/B Test",
         status: "active",
@@ -98,12 +92,12 @@ export async function GET(request: NextRequest) {
           A: { weight: 50, page: "step-17" },
           B: { weight: 50, page: "a-step-17" },
         },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
       
       return NextResponse.json({
-        test: { id: testId, ...testData },
+        test: { id: testId, ...resolvedTestData },
         stats: {
           A: calculateRates(statsA),
           B: calculateRates(statsB),
@@ -114,22 +108,18 @@ export async function GET(request: NextRequest) {
     }
 
     // Get all tests
-    const testsSnapshot = await adminDb.collection("abTests").get();
+    const { data: allTests } = await supabase.from("ab_tests").select("*");
     const tests = [];
 
-    for (const doc of testsSnapshot.docs) {
-      const testData = doc.data();
-      
-      // Get quick stats for each test
-      const statsA = await adminDb.collection("abTestStats").doc(`${doc.id}_A`).get();
-      const statsB = await adminDb.collection("abTestStats").doc(`${doc.id}_B`).get();
+    for (const test of (allTests || [])) {
+      const { data: sA } = await supabase.from("ab_test_stats").select("*").eq("id", `${test.id}_A`).single();
+      const { data: sB } = await supabase.from("ab_test_stats").select("*").eq("id", `${test.id}_B`).single();
 
-      const aData = statsA.data() || { impressions: 0, conversions: 0 };
-      const bData = statsB.data() || { impressions: 0, conversions: 0 };
+      const aData = sA || { impressions: 0, conversions: 0 };
+      const bData = sB || { impressions: 0, conversions: 0 };
 
       tests.push({
-        id: doc.id,
-        ...testData,
+        ...test,
         quickStats: {
           totalImpressions: (aData.impressions || 0) + (bData.impressions || 0),
           totalConversions: (aData.conversions || 0) + (bData.conversions || 0),
@@ -163,43 +153,18 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "testId is required" }, { status: 400 });
     }
 
-    const adminDb = getAdminDb();
+    const supabase = getSupabaseAdmin();
     
-    // Handle reset analytics request
     if (resetAnalytics) {
-      // Delete all stats for this test
-      await adminDb.collection("abTestStats").doc(`${testId}_A`).delete();
-      await adminDb.collection("abTestStats").doc(`${testId}_B`).delete();
+      await supabase.from("ab_test_stats").delete().eq("id", `${testId}_A`);
+      await supabase.from("ab_test_stats").delete().eq("id", `${testId}_B`);
+      await supabase.from("ab_test_events").delete().eq("test_id", testId);
+      await supabase.from("ab_test_assignments").delete().eq("test_id", testId);
       
-      // Delete all events for this test
-      const eventsSnapshot = await adminDb
-        .collection("abTestEvents")
-        .where("testId", "==", testId)
-        .get();
-      
-      const batch = adminDb.batch();
-      eventsSnapshot.docs.forEach((doc) => {
-        batch.delete(doc.ref);
-      });
-      await batch.commit();
-      
-      // Delete all assignments for this test (so users get re-assigned)
-      const assignmentsSnapshot = await adminDb
-        .collection("abTestAssignments")
-        .where("testId", "==", testId)
-        .get();
-      
-      const assignmentBatch = adminDb.batch();
-      assignmentsSnapshot.docs.forEach((doc) => {
-        assignmentBatch.delete(doc.ref);
-      });
-      await assignmentBatch.commit();
-      
-      // Update test with reset timestamp
-      await adminDb.collection("abTests").doc(testId).update({
-        lastResetAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
+      await supabase.from("ab_tests").update({
+        last_reset_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("id", testId);
       
       return NextResponse.json({
         success: true,
@@ -207,7 +172,6 @@ export async function PUT(request: NextRequest) {
       });
     }
 
-    // Validate weights sum to 100
     if (variants) {
       const totalWeight = Object.values(variants).reduce(
         (sum: number, v: any) => sum + (v.weight || 0),
@@ -223,20 +187,20 @@ export async function PUT(request: NextRequest) {
     }
 
     const updateData: any = {
-      updatedAt: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     };
 
     if (variants) updateData.variants = variants;
     if (status) updateData.status = status;
     if (name) updateData.name = name;
 
-    await adminDb.collection("abTests").doc(testId).set(updateData, { merge: true });
+    await supabase.from("ab_tests").upsert({ id: testId, ...updateData }, { onConflict: "id" });
 
-    const updatedDoc = await adminDb.collection("abTests").doc(testId).get();
+    const { data: updatedTest } = await supabase.from("ab_tests").select("*").eq("id", testId).single();
 
     return NextResponse.json({
       success: true,
-      test: updatedDoc.data(),
+      test: updatedTest,
     });
   } catch (error) {
     console.error("Admin A/B test update error:", error);
@@ -260,11 +224,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const adminDb = getAdminDb();
+    const supabase = getSupabaseAdmin();
 
-    // Check if test already exists
-    const existingTest = await adminDb.collection("abTests").doc(testId).get();
-    if (existingTest.exists) {
+    const { data: existing } = await supabase.from("ab_tests").select("id").eq("id", testId).single();
+    if (existing) {
       return NextResponse.json(
         { error: "Test with this ID already exists" },
         { status: 400 }
@@ -279,11 +242,11 @@ export async function POST(request: NextRequest) {
         A: { weight: 50, page: "step-17" },
         B: { weight: 50, page: "a-step-17" },
       },
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     };
 
-    await adminDb.collection("abTests").doc(testId).set(testData);
+    await supabase.from("ab_tests").insert(testData);
 
     return NextResponse.json({
       success: true,
@@ -308,16 +271,11 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "testId is required" }, { status: 400 });
     }
 
-    const adminDb = getAdminDb();
+    const supabase = getSupabaseAdmin();
 
-    // Delete test document
-    await adminDb.collection("abTests").doc(testId).delete();
-
-    // Delete stats documents
-    await adminDb.collection("abTestStats").doc(`${testId}_A`).delete();
-    await adminDb.collection("abTestStats").doc(`${testId}_B`).delete();
-
-    // Note: We don't delete events for historical purposes
+    await supabase.from("ab_tests").delete().eq("id", testId);
+    await supabase.from("ab_test_stats").delete().eq("id", `${testId}_A`);
+    await supabase.from("ab_test_stats").delete().eq("id", `${testId}_B`);
 
     return NextResponse.json({ success: true });
   } catch (error) {

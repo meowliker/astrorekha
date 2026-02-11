@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -16,22 +16,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const adminDb = getAdminDb();
+    const supabase = getSupabaseAdmin();
 
     let userData: any = null;
 
     if (userId) {
-      const snap = await adminDb.collection("users").doc(userId).get();
-      if (snap.exists) userData = snap.data();
+      const { data } = await supabase.from("users").select("*").eq("id", userId).single();
+      if (data) userData = data;
     }
 
     if (!userData && email) {
-      const qs = await adminDb
-        .collection("users")
-        .where("email", "==", email.toLowerCase())
-        .limit(1)
-        .get();
-      if (!qs.empty) userData = qs.docs[0].data();
+      const { data } = await supabase.from("users").select("*").eq("email", email.toLowerCase()).limit(1).single();
+      if (data) userData = data;
     }
 
     if (!userData) {
@@ -43,12 +39,12 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
-      trialCompleted: userData.trialCompleted || false,
-      trialEndedAt: userData.trialEndedAt || null,
-      hasSubscription: !!userData.subscriptionPlan,
-      subscriptionStatus: userData.subscriptionStatus || null,
-      subscriptionCancelled: userData.subscriptionCancelled || false,
-      paymentStatus: userData.paymentStatus || null,
+      trialCompleted: userData.trial_completed || false,
+      trialEndedAt: userData.trial_ended_at || null,
+      hasSubscription: !!userData.subscription_plan,
+      subscriptionStatus: userData.subscription_status || null,
+      subscriptionCancelled: userData.subscription_cancelled || false,
+      paymentStatus: userData.payment_status || null,
     });
   } catch (error: any) {
     console.error("Check trial status error:", error);

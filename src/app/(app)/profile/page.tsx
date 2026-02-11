@@ -7,9 +7,7 @@ import { ArrowLeft, User, Settings, ChevronRight } from "lucide-react";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { useUserStore } from "@/lib/user-store";
 import { getZodiacSign, getZodiacSymbol, getZodiacColor } from "@/lib/astrology-api";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { db, auth } from "@/lib/firebase";
-import { onAuthStateChanged } from "firebase/auth";
+import { supabase } from "@/lib/supabase";
 import { UserAvatar, getUserDisplayName } from "@/components/UserAvatar";
 
 // Zodiac symbols mapping
@@ -71,41 +69,32 @@ export default function ProfilePage() {
     ascendantSign: storeAscendantSign, moonSign: storeMoonSign
   } = useOnboardingStore();
   
-  const { subscriptionPlan } = useUserStore();
+  const { purchasedBundle } = useUserStore();
 
   useEffect(() => {
     setIsClient(true);
     
-    // Wait for Firebase Auth to be ready before loading user data
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      loadUserData();
-    });
-
-    return () => unsubscribe();
+    loadUserData();
   }, []);
 
   const loadUserData = async () => {
     setIsLoading(true);
     try {
-      const authUid = auth.currentUser?.uid;
-      const storedId = localStorage.getItem("astrorekha_user_id");
-      const userId = authUid || storedId;
+      const userId = localStorage.getItem("astrorekha_user_id");
 
       if (userId) {
-        const userRef = doc(db, "users", userId);
-        const userSnap = await getDoc(userRef);
+        const { data: dbUser } = await supabase.from("users").select("*").eq("id", userId).single();
 
-        if (userSnap.exists()) {
-          const data = userSnap.data();
-          const month = data.birthMonth ? String(data.birthMonth) : storeBirthMonth;
-          const day = data.birthDay ? String(data.birthDay) : storeBirthDay;
-          const year = data.birthYear ? String(data.birthYear) : storeBirthYear;
-          const hour = data.birthHour || storeBirthHour || "12";
-          const minute = data.birthMinute || storeBirthMinute || "00";
-          const period = data.birthPeriod || storeBirthPeriod || "PM";
-          const place = data.birthPlace || "";
+        if (dbUser) {
+          const data = dbUser;
+          const month = data.birth_month ? String(data.birth_month) : storeBirthMonth;
+          const day = data.birth_day ? String(data.birth_day) : storeBirthDay;
+          const year = data.birth_year ? String(data.birth_year) : storeBirthYear;
+          const hour = data.birth_hour || storeBirthHour || "12";
+          const minute = data.birth_minute || storeBirthMinute || "00";
+          const period = data.birth_period || storeBirthPeriod || "PM";
+          const place = data.birth_place || "";
           
-          // Handle signs - they may be stored as objects with .name or as strings
           const extractSignName = (sign: any): string | null => {
             if (!sign) return null;
             if (typeof sign === "string") return sign;
@@ -113,29 +102,24 @@ export default function ProfilePage() {
             return null;
           };
 
-          let sunSignValue = extractSignName(data.sunSign);
-          let moonSignValue = extractSignName(data.moonSign);
-          let ascendantValue = extractSignName(data.ascendantSign);
+          let sunSignValue = extractSignName(data.sun_sign);
+          let moonSignValue = extractSignName(data.moon_sign);
+          let ascendantValue = extractSignName(data.ascendant_sign);
           
-          // If signs are missing from users/{userId}, check user_profiles/{userId}
-          // (onboarding saves astro-engine signs there via saveUserProfile)
           if (!sunSignValue || !moonSignValue || !ascendantValue) {
             try {
-              const profileRef = doc(db, "user_profiles", userId);
-              const profileSnap = await getDoc(profileRef);
-              if (profileSnap.exists()) {
-                const profileData = profileSnap.data();
-                if (!sunSignValue) sunSignValue = extractSignName(profileData.sunSign);
-                if (!moonSignValue) moonSignValue = extractSignName(profileData.moonSign);
-                if (!ascendantValue) ascendantValue = extractSignName(profileData.ascendantSign);
+              const { data: profileData } = await supabase.from("user_profiles").select("*").eq("id", userId).single();
+              if (profileData) {
+                if (!sunSignValue) sunSignValue = extractSignName(profileData.sun_sign);
+                if (!moonSignValue) moonSignValue = extractSignName(profileData.moon_sign);
+                if (!ascendantValue) ascendantValue = extractSignName(profileData.ascendant_sign);
                 
-                // Save signs back to users/{userId} for future reads
                 if (sunSignValue || moonSignValue || ascendantValue) {
-                  await setDoc(userRef, {
-                    ...(sunSignValue ? { sunSign: profileData.sunSign } : {}),
-                    ...(moonSignValue ? { moonSign: profileData.moonSign } : {}),
-                    ...(ascendantValue ? { ascendantSign: profileData.ascendantSign } : {}),
-                  }, { merge: true });
+                  await supabase.from("users").update({
+                    ...(sunSignValue ? { sun_sign: profileData.sun_sign } : {}),
+                    ...(moonSignValue ? { moon_sign: profileData.moon_sign } : {}),
+                    ...(ascendantValue ? { ascendant_sign: profileData.ascendant_sign } : {}),
+                  }).eq("id", userId);
                 }
               }
             } catch (profileError) {
@@ -143,7 +127,6 @@ export default function ProfilePage() {
             }
           }
           
-          // If signs are still missing, fetch from astro-engine API
           if (!sunSignValue || !moonSignValue || !ascendantValue) {
             try {
               const response = await fetch("/api/astrology/signs", {
@@ -165,12 +148,11 @@ export default function ProfilePage() {
                 if (!moonSignValue) moonSignValue = extractSignName(signsData.moonSign);
                 if (!ascendantValue) ascendantValue = extractSignName(signsData.ascendant);
                 
-                // Save signs to Firebase for future use
-                await setDoc(userRef, {
-                  sunSign: signsData.sunSign,
-                  moonSign: signsData.moonSign,
-                  ascendantSign: signsData.ascendant,
-                }, { merge: true });
+                await supabase.from("users").update({
+                  sun_sign: signsData.sunSign,
+                  moon_sign: signsData.moonSign,
+                  ascendant_sign: signsData.ascendant,
+                }).eq("id", userId);
               }
             } catch (signsError) {
               console.error("Error fetching signs:", signsError);
@@ -179,7 +161,6 @@ export default function ProfilePage() {
             }
           }
 
-          // Get email from Firebase or localStorage
           const email = data.email || localStorage.getItem("astrorekha_email") || undefined;
           
           // Final fallback: use Western tropical calculation only if astro-engine signs unavailable

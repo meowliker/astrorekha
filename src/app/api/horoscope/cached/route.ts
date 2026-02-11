@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { supabase } from "@/lib/supabase";
 
 // Divine API Configuration
 const DIVINE_API_KEY = process.env.DIVINE_API_KEY || "";
@@ -196,14 +195,13 @@ export async function GET(request: NextRequest) {
         break;
     }
 
-    // Try to get cached horoscope from Firebase
-    const cachedDoc = await getDoc(doc(db, "horoscopes", cacheDocId));
+    // Try to get cached horoscope from Supabase
+    const { data: cachedRow } = await supabase.from("horoscope_cache").select("*").eq("id", cacheDocId).single();
     
-    if (cachedDoc.exists()) {
-      const cachedData = cachedDoc.data();
+    if (cachedRow) {
       return NextResponse.json({
         success: true,
-        data: cachedData.horoscope,
+        data: cachedRow.horoscope,
         period,
         sign,
         day: apiDay,
@@ -216,14 +214,15 @@ export async function GET(request: NextRequest) {
     const apiResponse = await fetchHoroscopeFromAPI(sign, period, apiDay);
     const horoscopeData = apiResponse.data;
 
-    // Save to Firebase cache
-    await setDoc(doc(db, "horoscopes", cacheDocId), {
+    // Save to Supabase cache
+    await supabase.from("horoscope_cache").upsert({
+      id: cacheDocId,
       horoscope: horoscopeData,
       sign,
       period,
-      cacheKey,
-      fetchedAt: new Date().toISOString(),
-    });
+      cache_key: cacheKey,
+      fetched_at: new Date().toISOString(),
+    }, { onConflict: "id" });
 
     return NextResponse.json({
       success: true,
@@ -278,21 +277,22 @@ export async function POST(request: NextRequest) {
         }
 
         // Check if already cached
-        const existingDoc = await getDoc(doc(db, "horoscopes", cacheDocId));
-        if (existingDoc.exists()) {
+        const { data: existing } = await supabase.from("horoscope_cache").select("id").eq("id", cacheDocId).single();
+        if (existing) {
           results[sign] = true; // Already cached
           continue;
         }
 
         // Fetch and cache
         const apiResponse = await fetchHoroscopeFromAPI(sign, period, day);
-        await setDoc(doc(db, "horoscopes", cacheDocId), {
+        await supabase.from("horoscope_cache").upsert({
+          id: cacheDocId,
           horoscope: apiResponse.data,
           sign,
           period,
-          cacheKey,
-          fetchedAt: new Date().toISOString(),
-        });
+          cache_key: cacheKey,
+          fetched_at: new Date().toISOString(),
+        }, { onConflict: "id" });
         
         results[sign] = true;
         

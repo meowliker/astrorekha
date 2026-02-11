@@ -6,8 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronDown, Loader2, Sparkles, Star } from "lucide-react";
 import { getZodiacSign, getZodiacSymbol } from "@/lib/astrology-api";
 import { useOnboardingStore } from "@/lib/onboarding-store";
-import { doc, getDoc } from "firebase/firestore";
-import { db, auth } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 
 const ZODIAC_SIGNS = [
   { sign: "Aries", symbol: "♈", gradient: "from-red-500 to-orange-500", element: "Fire" },
@@ -65,17 +64,13 @@ export default function HoroscopePage() {
         return null;
       };
 
-      const authUid = auth.currentUser?.uid;
-      const storedId = localStorage.getItem("astrorekha_user_id");
-      const userId = authUid || storedId;
+      const userId = localStorage.getItem("astrorekha_user_id");
 
       if (userId) {
-        const userRef = doc(db, "users", userId);
-        const userSnap = await getDoc(userRef);
+        const { data: userData } = await supabase.from("users").select("*").eq("id", userId).single();
 
-        if (userSnap.exists()) {
-          const data = userSnap.data();
-          const storedSunSign = extractSignName(data.sunSign);
+        if (userData) {
+          const storedSunSign = extractSignName(userData.sun_sign);
           if (storedSunSign) {
             setSelectedSign(storedSunSign);
             setUserSign(storedSunSign);
@@ -83,9 +78,9 @@ export default function HoroscopePage() {
           }
 
           try {
-            const profileSnap = await getDoc(doc(db, "user_profiles", userId));
-            if (profileSnap.exists()) {
-              const profileSunSign = extractSignName(profileSnap.data().sunSign);
+            const { data: profile } = await supabase.from("user_profiles").select("sun_sign").eq("id", userId).single();
+            if (profile) {
+              const profileSunSign = extractSignName(profile.sun_sign);
               if (profileSunSign) {
                 setSelectedSign(profileSunSign);
                 setUserSign(profileSunSign);
@@ -96,8 +91,8 @@ export default function HoroscopePage() {
             console.error("Error reading user_profiles:", profileErr);
           }
 
-          if (data.birthMonth && data.birthDay) {
-            const sign = getZodiacSign(Number(data.birthMonth), Number(data.birthDay));
+          if (userData.birth_month && userData.birth_day) {
+            const sign = getZodiacSign(Number(userData.birth_month), Number(userData.birth_day));
             setSelectedSign(sign);
             setUserSign(sign);
             return;

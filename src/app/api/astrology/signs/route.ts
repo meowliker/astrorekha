@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchFromAstroEngine } from "@/lib/astro-client";
-import { db } from "@/lib/firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { supabase } from "@/lib/supabase";
 
 const SIGN_SYMBOLS: Record<string, string> = {
   Aries: "♈", Taurus: "♉", Gemini: "♊", Cancer: "♋",
@@ -82,11 +81,11 @@ export async function POST(request: NextRequest) {
     // Check cache first
     const cacheKey = generateCacheKey(birthMonth, birthDay, birthYear, birthHour, birthMinute, birthPeriod, birthPlace);
     try {
-      const cachedDoc = await getDoc(doc(db, "astrology_signs_cache", cacheKey));
-      if (cachedDoc.exists()) {
+      const { data: cached } = await supabase.from("astrology_signs_cache").select("*").eq("id", cacheKey).single();
+      if (cached) {
         return NextResponse.json({
           success: true,
-          ...cachedDoc.data(),
+          ...cached.data,
         });
       }
     } catch (cacheError) {
@@ -145,10 +144,11 @@ export async function POST(request: NextRequest) {
 
     // Cache the signs result
     try {
-      await setDoc(doc(db, "astrology_signs_cache", cacheKey), {
-        ...signs,
-        cachedAt: new Date().toISOString(),
-      });
+      await supabase.from("astrology_signs_cache").upsert({
+        id: cacheKey,
+        data: signs,
+        cached_at: new Date().toISOString(),
+      }, { onConflict: "id" });
     } catch (cacheWriteError) {
       console.error("Cache write error:", cacheWriteError);
     }
@@ -157,12 +157,13 @@ export async function POST(request: NextRequest) {
     try {
       const userId = request.headers.get("x-user-id");
       if (userId) {
-        await setDoc(doc(db, "natal_charts", userId), {
+        await supabase.from("natal_charts").upsert({
+          id: userId,
           chart: astroResult.chart,
           dasha: astroResult.dasha,
           active_transits: astroResult.active_transits,
-          calculatedAt: new Date().toISOString(),
-        });
+          calculated_at: new Date().toISOString(),
+        }, { onConflict: "id" });
       }
     } catch (chartSaveError) {
       console.error("Failed to save full chart:", chartSaveError);

@@ -32,18 +32,6 @@ import {
   HelpCircle,
 } from "lucide-react";
 
-interface SubscriberInfo {
-  id: string;
-  email: string;
-  name: string;
-  plan: string;
-  status: string;
-  startedAt: string | null;
-  currentPeriodEnd?: string | null;
-  trialEndsAt?: string | null;
-  cancelledAt?: string | null;
-}
-
 interface RevenueData {
   mrr: string;
   arr: string;
@@ -91,14 +79,9 @@ interface RevenueData {
     userEmail: string;
     userName: string;
   }[];
-  activeSubscribersList?: SubscriberInfo[];
-  trialingSubscribersList?: SubscriberInfo[];
-  cancelledSubscribersList?: SubscriberInfo[];
   totalPayments: number;
   totalUsers: number;
   uniquePayingUsers: number;
-  unregisteredSubscribers?: number;
-  stripeSubscriptionsCount?: number;
   customDateRevenue?: string;
   customDatePaymentCount?: number;
   customDateTransactions?: {
@@ -153,8 +136,6 @@ export default function AdminRevenuePage() {
   const [sortField, setSortField] = useState<string>("date");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   
-  // Subscriber tab
-  const [subscriberTab, setSubscriberTab] = useState<"active" | "trialing" | "cancelled">("active");
   
   // Flow tab (All, Flow A, Flow B)
   const [flowTab, setFlowTab] = useState<"all" | "flow-a" | "flow-b">("all");
@@ -274,9 +255,9 @@ export default function AdminRevenuePage() {
 
   const formatCurrency = (value: string | number) => {
     const num = typeof value === "string" ? parseFloat(value) : value;
-    return new Intl.NumberFormat("en-US", {
+    return new Intl.NumberFormat("en-IN", {
       style: "currency",
-      currency: "USD",
+      currency: "INR",
     }).format(num);
   };
 
@@ -894,7 +875,7 @@ export default function AdminRevenuePage() {
               value={data.totalActiveSubscribers.toString()}
               icon={<Users className="w-4 h-4" />}
               color="text-green-400"
-              tooltip="Total number of active paying subscribers and trialing users verified in Stripe."
+              tooltip="Total number of active paying users."
             />
             <KPICard
               title="New This Month"
@@ -934,103 +915,25 @@ export default function AdminRevenuePage() {
           </div>
         </section>
 
-        {/* Subscriber Management */}
+        {/* Paying Users Summary */}
         <section>
           <h2 className="text-white/70 text-sm font-medium mb-3 flex items-center gap-2">
-            <Users className="w-4 h-4" /> Subscriber Management
+            <Users className="w-4 h-4" /> Paying Users
           </h2>
-          <div className="bg-[#1A2235] rounded-xl border border-white/10 overflow-hidden">
-            {/* Tabs */}
-            <div className="flex border-b border-white/10">
-              <button
-                onClick={() => setSubscriberTab("active")}
-                className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                  subscriberTab === "active"
-                    ? "bg-green-500/20 text-green-400 border-b-2 border-green-400"
-                    : "text-white/60 hover:bg-white/5"
-                }`}
-              >
-                Active ({data.activePayingSubscribers || 0})
-              </button>
-              <button
-                onClick={() => setSubscriberTab("trialing")}
-                className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                  subscriberTab === "trialing"
-                    ? "bg-blue-500/20 text-blue-400 border-b-2 border-blue-400"
-                    : "text-white/60 hover:bg-white/5"
-                }`}
-              >
-                On Trial ({data.trialingSubscribers || 0})
-              </button>
-              <button
-                onClick={() => setSubscriberTab("cancelled")}
-                className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                  subscriberTab === "cancelled"
-                    ? "bg-red-500/20 text-red-400 border-b-2 border-red-400"
-                    : "text-white/60 hover:bg-white/5"
-                }`}
-              >
-                Cancelled ({data.churnedSubscribers || 0})
-              </button>
-            </div>
-            
-            {/* Subscriber Table */}
-            <div className="overflow-x-auto max-h-80 overflow-y-auto">
-              <table className="w-full">
-                <thead className="sticky top-0 bg-[#1A2235]">
-                  <tr className="border-b border-white/10">
-                    <th className="text-left text-white/50 text-xs font-medium px-4 py-3">Email</th>
-                    <th className="text-left text-white/50 text-xs font-medium px-4 py-3">Plan</th>
-                    <th className="text-left text-white/50 text-xs font-medium px-4 py-3">Started</th>
-                    <th className="text-left text-white/50 text-xs font-medium px-4 py-3">
-                      {subscriberTab === "trialing" ? "Trial Ends" : subscriberTab === "cancelled" ? "Cancelled" : "Next Billing"}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(() => {
-                    const list = subscriberTab === "active" 
-                      ? data.activeSubscribersList 
-                      : subscriberTab === "trialing" 
-                        ? data.trialingSubscribersList 
-                        : data.cancelledSubscribersList;
-                    
-                    if (!list || list.length === 0) {
-                      return (
-                        <tr>
-                          <td colSpan={4} className="text-center text-white/40 py-8">
-                            No {subscriberTab} subscribers
-                          </td>
-                        </tr>
-                      );
-                    }
-                    
-                    return list.map((sub) => (
-                      <tr key={sub.id} className="border-b border-white/5 hover:bg-white/5">
-                        <td className="px-4 py-3">
-                          <div>
-                            <p className="text-white/80 text-sm">{sub.email}</p>
-                            {sub.name && <p className="text-white/40 text-xs">{sub.name}</p>}
-                          </div>
-                        </td>
-                        <td className="text-white/70 text-sm px-4 py-3 capitalize">{sub.plan || "-"}</td>
-                        <td className="text-white/70 text-sm px-4 py-3">
-                          {formatDateTime(sub.startedAt)}
-                        </td>
-                        <td className="text-white/70 text-sm px-4 py-3">
-                          {subscriberTab === "trialing" && sub.trialEndsAt
-                            ? formatDateTime(sub.trialEndsAt)
-                            : subscriberTab === "cancelled" && sub.cancelledAt
-                              ? formatDateTime(sub.cancelledAt)
-                              : sub.currentPeriodEnd
-                                ? formatDateTime(sub.currentPeriodEnd)
-                                : "-"}
-                        </td>
-                      </tr>
-                    ));
-                  })()}
-                </tbody>
-              </table>
+          <div className="bg-[#1A2235] rounded-xl border border-white/10 p-4">
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <p className="text-white/40 text-xs">Total Buyers</p>
+                <p className="text-green-400 text-lg font-semibold">{data.totalActiveSubscribers}</p>
+              </div>
+              <div>
+                <p className="text-white/40 text-xs">New This Month</p>
+                <p className="text-blue-400 text-lg font-semibold">{data.newSubscribersThisMonth}</p>
+              </div>
+              <div>
+                <p className="text-white/40 text-xs">Unique Paying</p>
+                <p className="text-white text-lg font-semibold">{data.uniquePayingUsers}</p>
+              </div>
             </div>
           </div>
         </section>
@@ -1259,7 +1162,7 @@ export default function AdminRevenuePage() {
         {/* Summary Stats */}
         <section className="pb-8">
           <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
-            <div className="grid grid-cols-5 gap-4 text-center">
+            <div className="grid grid-cols-3 gap-4 text-center">
               <div>
                 <p className="text-white/40 text-xs">Total Payments</p>
                 <p className="text-white text-lg font-semibold">{data.totalPayments}</p>
@@ -1271,16 +1174,6 @@ export default function AdminRevenuePage() {
               <div>
                 <p className="text-white/40 text-xs">Paying Users</p>
                 <p className="text-white text-lg font-semibold">{data.uniquePayingUsers}</p>
-              </div>
-              <div>
-                <p className="text-white/40 text-xs">Stripe Subs</p>
-                <p className="text-green-400 text-lg font-semibold">{data.stripeSubscriptionsCount || 0}</p>
-              </div>
-              <div>
-                <p className="text-white/40 text-xs">Unregistered</p>
-                <p className={`text-lg font-semibold ${(data.unregisteredSubscribers || 0) > 0 ? "text-amber-400" : "text-white"}`}>
-                  {data.unregisteredSubscribers || 0}
-                </p>
               </div>
             </div>
           </div>

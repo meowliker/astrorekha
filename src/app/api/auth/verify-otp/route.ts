@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminAuth, getAdminDb } from "@/lib/firebase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,24 +15,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const adminDb = getAdminDb();
-    const adminAuth = getAdminAuth();
+    const supabase = getSupabaseAdmin();
 
     // Get stored OTP
-    const otpDoc = await adminDb.collection("otp_codes").doc(normalizedEmail).get();
+    const { data: otpData } = await supabase
+      .from("otp_codes")
+      .select("*")
+      .eq("email", normalizedEmail)
+      .single();
 
-    if (!otpDoc.exists) {
+    if (!otpData) {
       return NextResponse.json(
         { success: false, error: "No OTP found. Please request a new code." },
         { status: 404 }
       );
     }
 
-    const otpData: any = otpDoc.data();
-
     // Check if OTP is expired
-    if (new Date(otpData.expiresAt) < new Date()) {
-      await adminDb.collection("otp_codes").doc(normalizedEmail).delete();
+    if (new Date(otpData.expires_at) < new Date()) {
+      await supabase.from("otp_codes").delete().eq("email", normalizedEmail);
       return NextResponse.json(
         { success: false, error: "OTP has expired. Please request a new code." },
         { status: 400 }
@@ -48,71 +49,41 @@ export async function POST(request: NextRequest) {
     }
 
     // OTP is valid - get user data
-    const querySnapshot = await adminDb
-      .collection("users")
-      .where("email", "==", normalizedEmail)
+    const { data: userData } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", normalizedEmail)
       .limit(1)
-      .get();
+      .single();
 
-    if (querySnapshot.empty) {
+    if (!userData) {
       return NextResponse.json(
         { success: false, error: "User not found" },
         { status: 404 }
       );
     }
 
-    const userDoc = querySnapshot.docs[0];
-    const userData = userDoc.data();
-
-    // Determine canonical uid (Firebase Auth uid)
-    let uid: string | null = null;
-    try {
-      const authUser = await adminAuth.getUserByEmail(normalizedEmail);
-      uid = authUser.uid;
-    } catch {
-      // If user exists in Firestore but not in Auth (legacy), create an Auth user.
-      const created = await adminAuth.createUser({ email: normalizedEmail });
-      uid = created.uid;
-    }
-
-    // Ensure there is a users/{uid} doc. If legacy doc id differs, copy/migrate.
-    if (uid && uid !== userDoc.id) {
-      await adminDb.collection("users").doc(uid).set(
-        {
-          ...userData,
-          email: normalizedEmail,
-          migratedFromUserId: userDoc.id,
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
-    } else if (uid) {
-      await adminDb.collection("users").doc(uid).set(
-        {
-          email: normalizedEmail,
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
-    }
-
-    const customToken = uid ? await adminAuth.createCustomToken(uid) : null;
+    // Update last login timestamp
+    await supabase
+      .from("users")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", userData.id);
 
     // Delete used OTP
-    await adminDb.collection("otp_codes").doc(normalizedEmail).delete();
+    await supabase.from("otp_codes").delete().eq("email", normalizedEmail);
 
     return NextResponse.json({
       success: true,
       message: "OTP verified successfully",
-      customToken,
       user: {
-        id: uid || userDoc.id,
+        id: userData.id,
         email: normalizedEmail,
         name: userData.name,
-        subscriptionPlan: userData.subscriptionPlan,
         coins: userData.coins,
-        onboardingFlow: userData.onboardingFlow,
-        purchaseType: userData.purchaseType,
+        onboardingFlow: userData.onboarding_flow,
+        purchaseType: userData.purchase_type,
+        bundlePurchased: userData.bundle_purchased,
+        unlockedFeatures: userData.unlocked_features,
       },
     });
   } catch (error: any) {

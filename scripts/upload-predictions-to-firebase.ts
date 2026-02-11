@@ -1,5 +1,4 @@
-import { initializeApp } from "firebase/app";
-import { getFirestore, doc, setDoc } from "firebase/firestore";
+import { createClient } from "@supabase/supabase-js";
 import * as dotenv from "dotenv";
 import * as path from "path";
 import * as fs from "fs";
@@ -7,23 +6,15 @@ import * as fs from "fs";
 // Load environment variables from .env.local
 dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
 
-// Firebase config
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 const INPUT_FILE = path.resolve(process.cwd(), "data/predictions-2026.json");
 
 async function main() {
-  console.log("📤 Uploading predictions to Firebase...\n");
+  console.log("📤 Uploading predictions to Supabase...\n");
 
   if (!fs.existsSync(INPUT_FILE)) {
     console.error("❌ Predictions file not found:", INPUT_FILE);
@@ -39,7 +30,7 @@ async function main() {
     try {
       console.log(`⏳ Uploading ${sign}...`);
       
-      await setDoc(doc(db, "predictions_2026_global", sign), predictions[sign]);
+      await supabase.from("predictions_2026_global").upsert({ id: sign, ...predictions[sign] }, { onConflict: "id" });
       
       console.log(`✅ ${sign} uploaded\n`);
       
@@ -50,7 +41,7 @@ async function main() {
     }
   }
 
-  console.log("\n🎉 All predictions uploaded to Firebase!");
+  console.log("\n🎉 All predictions uploaded to Supabase!");
   process.exit(0);
 }
 

@@ -6,8 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Share2, Trash2, ChevronDown, ChevronUp, Camera, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useOnboardingStore } from "@/lib/onboarding-store";
-import { db } from "@/lib/firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { supabase } from "@/lib/supabase";
 import { calculateZodiacSign, generateUserId } from "@/lib/user-profile";
 
 type TabKey = "ageTimeline" | "wealth" | "mounts" | "love";
@@ -57,16 +56,13 @@ export default function PalmReadingPage() {
   const loadExistingReading = async () => {
     try {
       const userId = generateUserId();
-      const docSnap = await getDoc(doc(db, "palm_readings", userId));
+      const { data: palmData } = await supabase.from("palm_readings").select("*").eq("id", userId).single();
       
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.reading) {
-          setReading(data.reading);
-          setCapturedImage(data.palmImageUrl || null);
-          setLoading(false);
-          return;
-        }
+      if (palmData?.reading) {
+        setReading(palmData.reading);
+        setCapturedImage(palmData.palm_image_url || null);
+        setLoading(false);
+        return;
       }
       
       // Check if palm image exists in localStorage (from onboarding)
@@ -173,13 +169,14 @@ export default function PalmReadingPage() {
 
       // Save to Firestore
       const userId = generateUserId();
-      await setDoc(doc(db, "palm_readings", userId), {
+      await supabase.from("palm_readings").upsert({
+        id: userId,
         reading: palmReading,
-        palmImageUrl: imageData,
-        createdAt: new Date().toISOString(),
-        birthDate,
-        zodiacSign,
-      });
+        palm_image_url: imageData,
+        created_at: new Date().toISOString(),
+        birth_date: birthDate,
+        zodiac_sign: zodiacSign,
+      }, { onConflict: "id" });
 
     } catch (err) {
       console.error("Palm analysis error:", err);
@@ -207,11 +204,11 @@ export default function PalmReadingPage() {
     
     try {
       const userId = generateUserId();
-      await setDoc(doc(db, "palm_readings", userId), {
+      await supabase.from("palm_readings").update({
         reading: null,
-        palmImageUrl: null,
-        deletedAt: new Date().toISOString(),
-      });
+        palm_image_url: null,
+        deleted_at: new Date().toISOString(),
+      }).eq("id", userId);
       setReading(null);
       setCapturedImage(null);
     } catch (err) {

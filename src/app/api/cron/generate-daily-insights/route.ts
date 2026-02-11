@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { fetchFromAstroEngine } from "@/lib/astro-client";
-import { getAdminDb } from "@/lib/firebase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "AI service not configured" }, { status: 500 });
     }
 
-    const adminDb = getAdminDb();
+    const supabase = getSupabaseAdmin();
     const dateKey = getDateKey();
     const results: Record<string, boolean> = {};
 
@@ -68,35 +68,33 @@ export async function POST(request: NextRequest) {
       userIds = [singleUserId];
     } else {
       // Get all active/trialing users
-      const usersSnap = await adminDb.collection("users")
-        .where("subscriptionStatus", "in", ["active", "trialing"])
-        .get();
-      userIds = usersSnap.docs.map((d) => d.id);
+      const { data: activeUsers } = await supabase.from("users")
+        .select("id")
+        .in("subscription_status", ["active", "trialing"]);
+      userIds = (activeUsers || []).map((u: any) => u.id);
     }
 
     console.log(`Generating daily insights for ${userIds.length} users`);
 
     for (const userId of userIds) {
       // Check if already generated today
-      const insightRef = adminDb.collection("daily_insights").doc(userId);
-      const existing = await insightRef.get();
-      if (existing.exists && existing.data()?.date === dateKey) {
+      const { data: existingInsight } = await supabase.from("daily_insights").select("date").eq("id", userId).single();
+      if (existingInsight?.date === dateKey) {
         results[userId] = true;
         continue;
       }
 
       try {
-        // Get user birth data
-        const userDoc = await adminDb.collection("users").doc(userId).get();
-        if (!userDoc.exists) {
+        // Get user birth data from user_profiles
+        const { data: profileData } = await supabase.from("user_profiles").select("*").eq("id", userId).single();
+        if (!profileData) {
           results[userId] = false;
           continue;
         }
 
-        const userData = userDoc.data()!;
-        const birthYear = userData.birthYear;
-        const birthMonth = userData.birthMonth;
-        const birthDay = userData.birthDay;
+        const birthYear = profileData.birth_year;
+        const birthMonth = profileData.birth_month;
+        const birthDay = profileData.birth_day;
 
         if (!birthYear || !birthMonth || !birthDay) {
           results[userId] = false;
@@ -104,9 +102,9 @@ export async function POST(request: NextRequest) {
         }
 
         // Parse birth time
-        let hour = parseInt(userData.birthHour) || 12;
-        const minute = parseInt(userData.birthMinute) || 0;
-        const birthPeriod = userData.birthPeriod || userData.birthAmPm;
+        let hour = parseInt(profileData.birth_hour) || 12;
+        const minute = parseInt(profileData.birth_minute) || 0;
+        const birthPeriod = profileData.birth_period;
         if (birthPeriod) {
           const p = birthPeriod.toUpperCase();
           if (p === "PM" && hour !== 12) hour += 12;
@@ -127,7 +125,7 @@ export async function POST(request: NextRequest) {
             hour,
             minute,
             second: 0,
-            place: userData.birthPlace || userData.birthCity || "New Delhi, India",
+            place: profileData.birth_place || "New Delhi, India",
           });
         } catch {
           console.error(`Astro engine failed for user ${userId}`);
@@ -184,15 +182,13 @@ Generate the daily insights JSON now.`;
         expiresAt.setUTCDate(expiresAt.getUTCDate() + 1);
         expiresAt.setUTCHours(0, 0, 0, 0);
 
-        // Store in Firestore
-        await insightRef.set({
+        // Store in Supabase
+        await supabase.from("daily_insights").upsert({
+          id: userId,
           ...insightsData,
-          userId,
           date: dateKey,
-          generatedAt: new Date().toISOString(),
-          expiresAt: expiresAt.toISOString(),
-          source: "astro-engine+claude",
-        });
+          generated_at: new Date().toISOString(),
+        }, { onConflict: "id" });
 
         results[userId] = true;
 

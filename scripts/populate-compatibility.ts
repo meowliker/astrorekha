@@ -1,22 +1,13 @@
 /**
- * Script to pre-populate Firestore with all 78 zodiac compatibility combinations
+ * Script to pre-populate Supabase with all 78 zodiac compatibility combinations
  * Run with: npx ts-node scripts/populate-compatibility.ts
  */
 
-import { initializeApp } from "firebase/app";
-import { getFirestore, doc, setDoc } from "firebase/firestore";
+import { createClient } from "@supabase/supabase-js";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyCAZeMkiUY6w1aDXZGL9HFZ9Rm9x-3WEMA",
-  authDomain: "palm-cosmic.firebaseapp.com",
-  projectId: "palm-cosmic",
-  storageBucket: "palm-cosmic.firebasestorage.app",
-  messagingSenderId: "35594331902",
-  appId: "1:35594331902:web:493024eeb709b32a77e7af"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const ZODIAC_SIGNS = [
   "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
@@ -239,8 +230,8 @@ function generateScores(sign1: string, sign2: string): { overall: number; emotio
   };
 }
 
-async function populateFirestore() {
-  console.log("Starting Firestore population...");
+async function populateSupabase() {
+  console.log("Starting Supabase population...");
   
   let count = 0;
   const combinations: Array<[string, string]> = [];
@@ -278,8 +269,7 @@ async function populateFirestore() {
     };
     
     try {
-      const docRef = doc(db, "compatibility", docId);
-      await setDoc(docRef, data);
+      await supabase.from("compatibility").upsert({ id: docId, ...data, created_at: data.createdAt }, { onConflict: "id" });
       count++;
       console.log(`✓ ${count}/78: ${s1} + ${s2} (${docId})`);
     } catch (error) {
@@ -291,4 +281,4 @@ async function populateFirestore() {
   process.exit(0);
 }
 
-populateFirestore().catch(console.error);
+populateSupabase().catch(console.error);

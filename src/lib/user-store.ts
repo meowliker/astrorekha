@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type SubscriptionPlan = "1week" | "2week" | "4week" | "weekly" | "monthly" | "yearly" | "Yearly2" | "1week-v2" | "4week-v2" | "12week-v2" | null;
+export type PurchasedBundle = "palm-reading" | "palm-birth" | "palm-birth-compat" | null;
 
 export interface UnlockedFeatures {
   palmReading: boolean;
@@ -13,61 +13,61 @@ export interface UnlockedFeatures {
 }
 
 interface UserState {
-  // Subscription & Purchase State
-  subscriptionPlan: SubscriptionPlan;
+  // Purchase State (one-time purchases only)
+  purchasedBundle: PurchasedBundle;
   unlockedFeatures: UnlockedFeatures;
   coins: number;
   
-  // Firebase user ID (set after registration)
-  firebaseUserId: string | null;
+  // User ID (set after registration)
+  userId: string | null;
   
   // Birth chart generation state
   birthChartGenerating: boolean;
   birthChartReady: boolean;
   
   // Actions
-  setSubscriptionPlan: (plan: SubscriptionPlan) => void;
+  setPurchasedBundle: (bundle: PurchasedBundle) => void;
   unlockFeature: (feature: keyof UnlockedFeatures) => void;
   unlockAllFeatures: () => void;
   setCoins: (coins: number) => void;
   deductCoins: (amount: number) => boolean;
   addCoins: (amount: number) => void;
-  setFirebaseUserId: (id: string) => void;
+  setUserId: (id: string) => void;
   setBirthChartGenerating: (generating: boolean) => void;
   setBirthChartReady: (ready: boolean) => void;
   
-  // Purchase actions (will integrate with Stripe later)
-  purchaseSubscription: (plan: SubscriptionPlan) => void;
+  // Purchase actions
+  purchaseBundle: (bundle: PurchasedBundle, features: (keyof UnlockedFeatures)[]) => void;
   purchaseUpsell: (feature: keyof UnlockedFeatures) => void;
   purchaseAllUpsells: () => void;
   
   // Reset for testing
   resetUserState: () => void;
   
-  // Sync features from Firebase data
-  syncFromFirebase: (data: {
+  // Sync features from server data
+  syncFromServer: (data: {
     unlockedFeatures?: Partial<UnlockedFeatures>;
     palmReading?: boolean;
     birthChart?: boolean;
     compatibilityTest?: boolean;
     prediction2026?: boolean;
     coins?: number;
-    subscriptionPlan?: SubscriptionPlan;
+    purchasedBundle?: PurchasedBundle;
   }) => void;
 }
 
 const initialUnlockedFeatures: UnlockedFeatures = {
-  palmReading: true, // Always unlocked with base subscription
+  palmReading: false,
   prediction2026: false,
   birthChart: false,
   compatibilityTest: false,
 };
 
 const initialState = {
-  subscriptionPlan: null as SubscriptionPlan,
+  purchasedBundle: null as PurchasedBundle,
   unlockedFeatures: initialUnlockedFeatures,
   coins: 0,
-  firebaseUserId: null as string | null,
+  userId: null as string | null,
   birthChartGenerating: false,
   birthChartReady: false,
 };
@@ -77,7 +77,7 @@ export const useUserStore = create<UserState>()(
     (set, get) => ({
       ...initialState,
 
-      setSubscriptionPlan: (plan) => set({ subscriptionPlan: plan }),
+      setPurchasedBundle: (bundle) => set({ purchasedBundle: bundle }),
 
       unlockFeature: (feature) =>
         set((state) => ({
@@ -110,29 +110,23 @@ export const useUserStore = create<UserState>()(
 
       addCoins: (amount) => set((state) => ({ coins: state.coins + amount })),
 
-      setFirebaseUserId: (id) => set({ firebaseUserId: id }),
+      setUserId: (id) => set({ userId: id }),
 
       setBirthChartGenerating: (generating) => set({ birthChartGenerating: generating }),
 
       setBirthChartReady: (ready) => set({ birthChartReady: ready }),
 
-      // Purchase subscription - sets coins based on plan
-      purchaseSubscription: (plan) => {
-        let coins = 0;
-        if (plan === "weekly") {
-          coins = 15;
-        } else if (plan === "monthly") {
-          coins = 30;
-        } else if (plan === "yearly") {
-          coins = 100;
-        }
-        set({
-          subscriptionPlan: plan,
-          coins,
-          unlockedFeatures: {
-            ...initialUnlockedFeatures,
-            palmReading: true, // Base subscription includes palm reading
-          },
+      // Purchase bundle — unlock features based on bundle tier
+      purchaseBundle: (bundle, features) => {
+        set((state) => {
+          const updated = { ...state.unlockedFeatures };
+          for (const f of features) {
+            updated[f] = true;
+          }
+          return {
+            purchasedBundle: bundle,
+            unlockedFeatures: updated,
+          };
         });
       },
 
@@ -159,11 +153,10 @@ export const useUserStore = create<UserState>()(
       // Reset for testing
       resetUserState: () => set(initialState),
       
-      // Sync features from Firebase data
-      syncFromFirebase: (data) => {
+      // Sync features from server data
+      syncFromServer: (data) => {
         const updates: Partial<UserState> = {};
         
-        // Sync unlocked features - check both nested object and flat fields
         const features: UnlockedFeatures = {
           palmReading: data.unlockedFeatures?.palmReading ?? data.palmReading ?? false,
           birthChart: data.unlockedFeatures?.birthChart ?? data.birthChart ?? false,
@@ -172,14 +165,12 @@ export const useUserStore = create<UserState>()(
         };
         updates.unlockedFeatures = features;
         
-        // Sync coins if provided
         if (typeof data.coins === "number") {
           updates.coins = data.coins;
         }
         
-        // Sync subscription plan if provided
-        if (data.subscriptionPlan) {
-          updates.subscriptionPlan = data.subscriptionPlan;
+        if (data.purchasedBundle) {
+          updates.purchasedBundle = data.purchasedBundle;
         }
         
         set(updates);
@@ -207,10 +198,10 @@ export const featureNames: Record<keyof UnlockedFeatures, string> = {
   compatibilityTest: "Compatibility Test",
 };
 
-// Feature prices
+// Feature prices (INR)
 export const featurePrices: Record<keyof UnlockedFeatures, number> = {
-  palmReading: 6.99,
-  prediction2026: 6.99,
-  birthChart: 6.99,
-  compatibilityTest: 6.99,
+  palmReading: 582,
+  prediction2026: 582,
+  birthChart: 582,
+  compatibilityTest: 582,
 };

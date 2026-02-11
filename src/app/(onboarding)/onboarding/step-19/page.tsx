@@ -8,9 +8,7 @@ import { useRouter } from "next/navigation";
 import { Check, Eye, EyeOff, ThumbsUp, Loader2 } from "lucide-react";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { saveUserProfile } from "@/lib/user-profile";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth, db } from "@/lib/firebase";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import { supabase } from "@/lib/supabase";
 import { useHaptic } from "@/hooks/useHaptic";
 import { pixelEvents } from "@/lib/pixel-events";
 import { useSearchParams } from "next/navigation";
@@ -119,8 +117,20 @@ function Step19Content() {
     try {
       const anonId = localStorage.getItem("astrorekha_anon_id") || localStorage.getItem("astrorekha_user_id");
 
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const uid = userCredential.user.uid;
+      // Register via API (handles password hashing + anon user migration)
+      const registerResponse = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, anonId }),
+      });
+
+      const registerData = await registerResponse.json();
+
+      if (!registerResponse.ok) {
+        throw new Error(registerData.message || "Registration failed");
+      }
+
+      const uid = registerData.user.id;
 
       localStorage.setItem("astrorekha_user_id", uid);
       localStorage.setItem("astrorekha_email", email);
@@ -132,76 +142,11 @@ function Step19Content() {
         console.error("Failed to set session:", err);
       }
 
-      // IMPORTANT: Migrate data from anonymous user FIRST before creating new user doc
-      // This preserves subscription data set by the Stripe webhook
-      let migratedPlan: string | null = null;
-      let migratedStatus: string = "none";
-      let migratedCoins: number = 0;
-      let migratedUnlocked: Record<string, boolean> = {};
-      let migratedStripeCustomerId: string | null = null;
-      let migratedStripeSubscriptionId: string | null = null;
-      let migratedTrialEndsAt: string | null = null;
-
-      if (anonId && anonId !== uid) {
-        try {
-          const anonUserSnap = await getDoc(doc(db, "users", anonId));
-          if (anonUserSnap.exists()) {
-            const anonData: any = anonUserSnap.data();
-            migratedPlan = anonData.subscriptionPlan || null;
-            migratedStatus = anonData.subscriptionStatus || "none";
-            migratedCoins = anonData.coins || 0;
-            migratedUnlocked = anonData.unlockedFeatures || {};
-            migratedStripeCustomerId = anonData.stripeCustomerId || null;
-            migratedStripeSubscriptionId = anonData.stripeSubscriptionId || null;
-            migratedTrialEndsAt = anonData.trialEndsAt || null;
-            
-            console.log("Migrating from anon user:", anonId, "Plan:", migratedPlan, "Status:", migratedStatus);
-          }
-        } catch (err) {
-          console.error("Failed to read anon user data:", err);
-        }
-
-        // Migrate other collections
-        const migrateDoc = async (collectionName: string) => {
-          try {
-            const oldSnap = await getDoc(doc(db, collectionName, anonId));
-            if (!oldSnap.exists()) return;
-            await setDoc(doc(db, collectionName, uid), oldSnap.data(), { merge: true });
-            console.log(`Migrated ${collectionName} from ${anonId} to ${uid}`);
-          } catch (err) {
-            console.error(`Failed to migrate ${collectionName}:`, err);
-          }
-        };
-
-        await migrateDoc("user_profiles");
-        await migrateDoc("palm_readings");
-        await migrateDoc("chat_messages");
-      }
-
-      // Now create/update the user document with migrated data
-      // Only set defaults if no migrated data exists
-      // Auto-detect user's timezone for personalized email delivery
+      // Update timezone
       const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata";
-
-      const userData: Record<string, any> = {
-        email: email.toLowerCase(),
-        timezone: userTimezone,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      // Preserve subscription data from migration (set by webhook on anon user)
-      if (migratedPlan) userData.subscriptionPlan = migratedPlan;
-      if (migratedStatus !== "none") userData.subscriptionStatus = migratedStatus;
-      if (migratedCoins > 0) userData.coins = migratedCoins;
-      if (Object.keys(migratedUnlocked).length > 0) userData.unlockedFeatures = migratedUnlocked;
-      if (migratedStripeCustomerId) userData.stripeCustomerId = migratedStripeCustomerId;
-      if (migratedStripeSubscriptionId) userData.stripeSubscriptionId = migratedStripeSubscriptionId;
-      if (migratedTrialEndsAt) userData.trialEndsAt = migratedTrialEndsAt;
-
-      await setDoc(doc(db, "users", uid), userData, { merge: true });
+      await supabase.from("users").update({ timezone: userTimezone }).eq("id", uid);
       
-      console.log("User document created/updated:", uid, "with subscription:", migratedPlan, migratedStatus);
+      console.log("User registered:", uid);
 
       const palmImage = localStorage.getItem("astrorekha_palm_image");
 

@@ -45,7 +45,7 @@ export default function SettingsPage() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isFlowB, setIsFlowB] = useState(false);
   const [bundleId, setBundleId] = useState<string | null>(null);
-  const { subscriptionPlan, resetUserState, unlockedFeatures } = useUserStore();
+  const { purchasedBundle, resetUserState, unlockedFeatures } = useUserStore();
 
   const userEmail = typeof window !== "undefined" 
     ? localStorage.getItem("astrorekha_email") || "user@example.com"
@@ -61,7 +61,7 @@ export default function SettingsPage() {
     }
   }, []);
 
-  const displayBenefits = isFlowB ? getBundleBenefits(bundleId, unlockedFeatures) : subscriptionBenefits;
+  const displayBenefits = getBundleBenefits(bundleId || purchasedBundle, unlockedFeatures);
 
   const handleLogout = () => {
     // Clear local storage

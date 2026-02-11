@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import crypto from "crypto";
 
 export async function POST(request: NextRequest) {
@@ -13,44 +13,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const adminDb = getAdminDb();
+    const supabase = getSupabaseAdmin();
 
-    // Look up admin credentials in the 'admins' collection
-    const adminDoc = await adminDb.collection("admins").doc(adminId).get();
+    const { data: adminData } = await supabase.from("admins").select("*").eq("id", adminId).single();
 
-    if (!adminDoc.exists) {
+    if (!adminData) {
       return NextResponse.json(
         { error: "Invalid credentials" },
         { status: 401 }
       );
     }
 
-    const adminData = adminDoc.data();
-
-    // Check password (stored as plain text for simplicity - you can hash it for production)
-    if (adminData?.password !== password) {
+    if (adminData.password !== password) {
       return NextResponse.json(
         { error: "Invalid credentials" },
         { status: 401 }
       );
     }
 
-    // Generate a session token
     const token = crypto.randomBytes(32).toString("hex");
-    const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
+    const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-    // Store the session token in Firebase
-    await adminDb.collection("admin_sessions").doc(token).set({
-      adminId,
-      createdAt: new Date().toISOString(),
-      expiresAt: expiry,
+    await supabase.from("admin_sessions").insert({
+      id: token,
+      admin_id: adminId,
+      created_at: new Date().toISOString(),
+      expires_at: expiry,
     });
 
     return NextResponse.json({
       success: true,
       token,
       expiry,
-      adminName: adminData?.name || adminId,
+      adminName: adminData.name || adminId,
     });
   } catch (error: any) {
     console.error("Admin login error:", error);

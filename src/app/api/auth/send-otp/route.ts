@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminAuth, getAdminDb } from "@/lib/firebase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import nodemailer from "nodemailer";
 
 // Generate 6-digit OTP
@@ -31,41 +31,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const adminDb = getAdminDb();
-    const adminAuth = getAdminAuth();
+    const supabase = getSupabaseAdmin();
 
-    // Check if user exists in Firestore (preferred)
-    const querySnapshot = await adminDb
-      .collection("users")
-      .where("email", "==", normalizedEmail)
+    // Check if user exists in Supabase
+    const { data: userRow } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", normalizedEmail)
       .limit(1)
-      .get();
+      .single();
 
-    let userId: string | null = querySnapshot.empty ? null : querySnapshot.docs[0]!.id;
-
-    // Fallback: user exists in Firebase Auth but Firestore doc missing (common prod issue)
-    if (!userId) {
-      try {
-        const authUser = await adminAuth.getUserByEmail(normalizedEmail);
-        userId = authUser.uid;
-
-        const existing = await adminDb.collection("users").doc(userId).get();
-        if (!existing.exists) {
-          await adminDb.collection("users").doc(userId).set(
-            {
-              email: normalizedEmail,
-              subscriptionPlan: null,
-              subscriptionStatus: "none",
-              coins: 0,
-              createdAt: new Date().toISOString(),
-            },
-            { merge: true }
-          );
-        }
-      } catch {
-        // ignore; will return USER_NOT_FOUND below
-      }
-    }
+    let userId: string | null = userRow?.id ?? null;
 
     if (!userId) {
       return NextResponse.json(
@@ -78,14 +54,16 @@ export async function POST(request: NextRequest) {
     const otp = generateOTP();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    // Store OTP in Firebase
-    await adminDb.collection("otp_codes").doc(normalizedEmail).set({
-      otp,
-      email: normalizedEmail,
-      expiresAt: expiresAt.toISOString(),
-      createdAt: new Date().toISOString(),
-      verified: false,
-    });
+    // Store OTP in Supabase (upsert by email)
+    await supabase
+      .from("otp_codes")
+      .upsert({
+        email: normalizedEmail,
+        otp,
+        expires_at: expiresAt.toISOString(),
+        verified: false,
+        created_at: new Date().toISOString(),
+      }, { onConflict: "email" });
 
     // Send email with OTP
     if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {

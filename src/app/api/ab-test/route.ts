@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 // A/B Test configuration API
 // Handles getting assigned variant for a user and managing test configs
@@ -10,12 +10,12 @@ export async function GET(request: NextRequest) {
     const testId = searchParams.get("testId") || "pricing-test-1";
     const visitorId = searchParams.get("visitorId");
 
-    const adminDb = getAdminDb();
+    const supabase = getSupabaseAdmin();
 
     // Get test configuration
-    const testDoc = await adminDb.collection("abTests").doc(testId).get();
+    const { data: testData } = await supabase.from("ab_tests").select("*").eq("id", testId).single();
     
-    if (!testDoc.exists) {
+    if (!testData) {
       // Create default test if it doesn't exist
       const defaultTest = {
         id: testId,
@@ -25,13 +25,12 @@ export async function GET(request: NextRequest) {
           A: { weight: 50, page: "step-17" },
           B: { weight: 50, page: "a-step-17" },
         },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
       
-      await adminDb.collection("abTests").doc(testId).set(defaultTest);
+      await supabase.from("ab_tests").insert(defaultTest);
       
-      // Assign variant based on random selection
       const variant = Math.random() < 0.5 ? "A" : "B";
       
       return NextResponse.json({
@@ -42,10 +41,8 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const testData = testDoc.data();
-    
     // Check if test is active
-    if (testData?.status !== "active") {
+    if (testData.status !== "active") {
       return NextResponse.json({
         testId,
         variant: "A",
@@ -57,17 +54,17 @@ export async function GET(request: NextRequest) {
 
     // Check if visitor already has an assigned variant
     if (visitorId) {
-      const assignmentDoc = await adminDb
-        .collection("abTestAssignments")
-        .doc(`${testId}_${visitorId}`)
-        .get();
+      const { data: assignment } = await supabase
+        .from("ab_test_assignments")
+        .select("variant")
+        .eq("id", `${testId}_${visitorId}`)
+        .single();
       
-      if (assignmentDoc.exists) {
-        const assignment = assignmentDoc.data();
+      if (assignment) {
         return NextResponse.json({
           testId,
-          variant: assignment?.variant,
-          page: assignment?.variant === "A" ? "step-17" : "a-step-17",
+          variant: assignment.variant,
+          page: assignment.variant === "A" ? "step-17" : "a-step-17",
           test: testData,
           cached: true,
         });
@@ -75,7 +72,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Assign variant based on weights
-    const variants = testData?.variants || { A: { weight: 50 }, B: { weight: 50 } };
+    const variants = testData.variants || { A: { weight: 50 }, B: { weight: 50 } };
     const totalWeight = Object.values(variants).reduce(
       (sum: number, v: any) => sum + (v.weight || 0),
       0
@@ -94,15 +91,13 @@ export async function GET(request: NextRequest) {
 
     // Save assignment if visitor ID provided
     if (visitorId) {
-      await adminDb
-        .collection("abTestAssignments")
-        .doc(`${testId}_${visitorId}`)
-        .set({
-          testId,
-          visitorId,
-          variant: assignedVariant,
-          assignedAt: new Date().toISOString(),
-        });
+      await supabase.from("ab_test_assignments").upsert({
+        id: `${testId}_${visitorId}`,
+        test_id: testId,
+        visitor_id: visitorId,
+        variant: assignedVariant,
+        assigned_at: new Date().toISOString(),
+      }, { onConflict: "id" });
     }
 
     return NextResponse.json({
@@ -113,7 +108,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("A/B test error:", error);
-    // Default to variant A on error
     return NextResponse.json({
       testId: "pricing-test-1",
       variant: "A",
@@ -133,9 +127,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "testId is required" }, { status: 400 });
     }
 
-    const adminDb = getAdminDb();
+    const supabase = getSupabaseAdmin();
 
-    // Validate weights sum to 100
     if (variants) {
       const totalWeight = Object.values(variants).reduce(
         (sum: number, v: any) => sum + (v.weight || 0),
@@ -151,20 +144,20 @@ export async function POST(request: NextRequest) {
     }
 
     const updateData: any = {
-      updatedAt: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     };
 
     if (variants) updateData.variants = variants;
     if (status) updateData.status = status;
     if (name) updateData.name = name;
 
-    await adminDb.collection("abTests").doc(testId).set(updateData, { merge: true });
+    await supabase.from("ab_tests").upsert({ id: testId, ...updateData }, { onConflict: "id" });
 
-    const updatedDoc = await adminDb.collection("abTests").doc(testId).get();
+    const { data: updatedTest } = await supabase.from("ab_tests").select("*").eq("id", testId).single();
 
     return NextResponse.json({
       success: true,
-      test: updatedDoc.data(),
+      test: updatedTest,
     });
   } catch (error) {
     console.error("A/B test update error:", error);

@@ -26,14 +26,14 @@ function generateRandomStats() {
   }));
 }
 
-// Bundle pricing plans
+// Bundle pricing plans (INR)
 const bundlePlans = [
   {
-    id: "bundle-palm",
+    id: "palm-reading",
     name: "Palm Reading",
-    price: "$13.99",
-    priceValue: 13.99,
-    originalPrice: "$17.49",
+    price: "₹1,163",
+    priceValue: 1163,
+    originalPrice: "₹1,454",
     discount: "20% OFF",
     description: "Personalized palm reading report delivered instantly.",
     features: ["palmReading"],
@@ -44,12 +44,12 @@ const bundlePlans = [
     ],
   },
   {
-    id: "bundle-palm-birth",
+    id: "palm-birth",
     name: "Palm + Birth Chart",
-    price: "$18.99",
-    priceValue: 18.99,
-    originalPrice: "$37.98",
-    discount: "50% OFF",
+    price: "₹1,578",
+    priceValue: 1578,
+    originalPrice: "₹5,261",
+    discount: "70% OFF",
     description: "Deep palm insights plus your full zodiac reading.",
     features: ["palmReading", "birthChart"],
     featureList: [
@@ -60,12 +60,12 @@ const bundlePlans = [
     popular: true,
   },
   {
-    id: "bundle-full",
-    name: "Palm + Birth Chart + Compatibility Report Bundle",
-    price: "$37.99",
-    priceValue: 37.99,
-    originalPrice: "$126.63",
-    discount: "70% OFF",
+    id: "palm-birth-compat",
+    name: "Palm + Birth Chart + Compatibility Report",
+    price: "₹3,158",
+    priceValue: 3158,
+    originalPrice: "₹6,315",
+    discount: "50% OFF",
     description: "Complete cosmic package with all reports included.",
     features: ["palmReading", "birthChart", "compatibilityTest"],
     featureList: [
@@ -79,7 +79,7 @@ const bundlePlans = [
 
 export default function BundlePricingPage() {
   const router = useRouter();
-  const [selectedPlan, setSelectedPlan] = useState<string>("bundle-palm-birth");
+  const [selectedPlan, setSelectedPlan] = useState<string>("palm-birth");
   const [agreedToTerms, setAgreedToTerms] = useState(true);
   const [paymentError, setPaymentError] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -88,7 +88,7 @@ export default function BundlePricingPage() {
   const [readingStats, setReadingStats] = useState<{ label: string; color: string; value: number }[]>([]);
   const paymentSectionRef = useRef<HTMLDivElement>(null);
   
-  const { firebaseUserId } = useUserStore();
+  const { userId } = useUserStore();
 
   useEffect(() => {
     const handlePageShow = () => setIsProcessing(false);
@@ -216,23 +216,70 @@ export default function BundlePricingPage() {
     }
 
     try {
-      const response = await fetch("/api/stripe/create-bundle-checkout", {
+      const response = await fetch("/api/razorpay/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          type: "bundle",
           bundleId: selectedPlan,
-          userId: firebaseUserId || generateUserId(),
+          userId: userId || generateUserId(),
           email: localStorage.getItem("astrorekha_email") || "",
-          flow: "flow-b",
         }),
       });
 
       const data = await response.json();
 
-      if (data.url) {
+      if (data.orderId) {
         pixelEvents.initiateCheckout(plan.priceValue, [plan.name]);
         pixelEvents.addPaymentInfo(plan.priceValue, plan.name);
-        window.location.href = data.url;
+        
+        // Open Razorpay checkout
+        const options = {
+          key: data.keyId,
+          amount: data.amount,
+          currency: data.currency,
+          name: "AstroRekha",
+          description: plan.name,
+          order_id: data.orderId,
+          prefill: {
+            email: localStorage.getItem("astrorekha_email") || "",
+          },
+          theme: { color: "#7C3AED" },
+          handler: async (response: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => {
+            // Verify payment on server
+            const verifyRes = await fetch("/api/razorpay/verify-payment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_signature: response.razorpay_signature,
+                userId: userId || generateUserId(),
+                bundleId: selectedPlan,
+                type: "bundle",
+              }),
+            });
+            const verifyData = await verifyRes.json();
+            if (verifyData.success) {
+              localStorage.setItem("astrorekha_payment_completed", "true");
+              localStorage.setItem("astrorekha_purchase_type", "one-time");
+              localStorage.setItem("astrorekha_bundle_id", selectedPlan);
+              pixelEvents.purchase(plan.priceValue, selectedPlan, plan.name);
+              router.push("/onboarding/bundle-upsell");
+            } else {
+              setPaymentError("Payment verification failed. Please contact support.");
+              setIsProcessing(false);
+            }
+          },
+          modal: {
+            ondismiss: () => {
+              setIsProcessing(false);
+            },
+          },
+        };
+        
+        const rzp = new (window as any).Razorpay(options);
+        rzp.open();
       } else if (data.error) {
         setPaymentError(data.error);
         setIsProcessing(false);

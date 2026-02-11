@@ -10,7 +10,7 @@ declare global {
 /**
  * Track a standard event with Meta Pixel.
  * Retries up to 10 times (500ms apart) if fbq isn't loaded yet,
- * which commonly happens after returning from Stripe checkout.
+ * which commonly happens after returning from Razorpay checkout.
  */
 export const trackPixelEvent = (eventName: string, params?: Record<string, any>) => {
   if (typeof window === "undefined") return;
@@ -68,7 +68,7 @@ export const pixelEvents = {
   addToCart: (value: number, contentName: string) => 
     trackPixelEvent("AddToCart", { 
       value, 
-      currency: "USD",
+      currency: "INR",
       content_name: contentName,
       content_type: "product"
     }),
@@ -80,23 +80,23 @@ export const pixelEvents = {
       ...(email && { email })
     }),
   
-  // --- Trial & Subscription ---
+  // --- One-Time Purchases ---
   
-  /** User starts free trial */
+  /** User starts a purchase flow */
   startTrial: (value: number = 0) => 
     trackPixelEvent("StartTrial", { 
       value, 
-      currency: "USD",
-      content_name: "AstroRekha Trial"
+      currency: "INR",
+      content_name: "AstroRekha Bundle"
     }),
   
-  /** User subscribes (weekly/monthly/yearly) */
+  /** User completes a bundle purchase */
   subscribe: (value: number, plan: string) => 
     trackPixelEvent("Subscribe", { 
       value, 
-      currency: "USD",
+      currency: "INR",
       content_name: plan,
-      predicted_ltv: value * 12 // Estimated yearly value
+      predicted_ltv: value
     }),
   
   // --- Purchases ---
@@ -105,25 +105,25 @@ export const pixelEvents = {
   initiateCheckout: (value: number, items: string[]) => 
     trackPixelEvent("InitiateCheckout", { 
       value, 
-      currency: "USD",
+      currency: "INR",
       content_ids: items,
       num_items: items.length
     }),
   
-  /** User adds payment info (redirected to Stripe checkout) */
+  /** User adds payment info (redirected to Razorpay checkout) */
   addPaymentInfo: (value: number, contentName: string) => 
     trackPixelEvent("AddPaymentInfo", { 
       value, 
-      currency: "USD",
+      currency: "INR",
       content_name: contentName,
-      content_category: "Subscription"
+      content_category: "Bundle"
     }),
   
   /** User completes a purchase */
   purchase: (value: number, productId: string, productName: string) => 
     trackPixelEvent("Purchase", { 
       value, 
-      currency: "USD",
+      currency: "INR",
       content_ids: [productId],
       content_name: productName,
       content_type: "product"
@@ -133,7 +133,7 @@ export const pixelEvents = {
   purchaseCoins: (value: number, coinAmount: number) => 
     trackPixelEvent("Purchase", { 
       value, 
-      currency: "USD",
+      currency: "INR",
       content_ids: [`coins-${coinAmount}`],
       content_name: `${coinAmount} Coins`,
       content_type: "product"

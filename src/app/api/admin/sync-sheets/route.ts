@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
-import { getAdminDb } from "@/lib/firebase-admin";
-import { QueryDocumentSnapshot, DocumentData } from "firebase-admin/firestore";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
@@ -67,24 +66,23 @@ export async function GET(request: NextRequest) {
 
 async function syncSheets() {
   const sheets = await getGoogleSheetsClient();
-  const adminDb = getAdminDb();
+  const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
 
   // ========== SYNC ABANDONED LEADS ==========
   // Users who entered email at step-15 but didn't subscribe
-  const leadsSnapshot = await adminDb.collection("leads")
-    .where("subscriptionStatus", "==", "no")
-    .get();
+  const { data: leadsData } = await supabase.from("leads")
+    .select("*")
+    .eq("subscription_status", "no");
 
-  const abandonedLeads = leadsSnapshot.docs.map((doc: QueryDocumentSnapshot<DocumentData>) => {
-    const data = doc.data();
+  const abandonedLeads = (leadsData || []).map((data: any) => {
     return [
       data.email || "",
       data.gender || "",
       data.age?.toString() || "",
-      data.relationshipStatus || "",
+      data.relationship_status || "",
       (data.goals || []).join(", "),
-      data.createdAt || "",
+      data.created_at || "",
       data.source || "",
     ];
   });
@@ -127,29 +125,24 @@ async function syncSheets() {
 
   // ========== SYNC ACTIVE/TRIAL SUBSCRIBERS ==========
   // Users who are currently on trial or have active subscriptions
-  const usersSnapshot = await adminDb.collection("users").get();
+  const { data: allUsers } = await supabase.from("users")
+    .select("*")
+    .in("subscription_status", ["active", "trialing"]);
   
-  const activeSubscribers = usersSnapshot.docs
-    .filter((doc: QueryDocumentSnapshot<DocumentData>) => {
-      const data = doc.data();
-      const status = data.subscriptionStatus;
-      return status === "active" || status === "trialing";
-    })
-    .map((doc: QueryDocumentSnapshot<DocumentData>) => {
-      const data = doc.data();
-      return [
-        data.email || "",
-        data.name || "",
-        data.gender || "",
-        data.age?.toString() || "",
-        data.relationshipStatus || "",
-        (data.goals || []).join(", "),
-        data.subscriptionStatus || "",
-        data.subscriptionPlan || "",
-        data.trialEndsAt || "",
-        data.createdAt || "",
-      ];
-    });
+  const activeSubscribers = (allUsers || []).map((data: any) => {
+    return [
+      data.email || "",
+      data.name || "",
+      data.gender || "",
+      data.age?.toString() || "",
+      data.relationship_status || "",
+      (data.goals || []).join(", "),
+      data.subscription_status || "",
+      data.subscription_plan || "",
+      data.trial_ends_at || "",
+      data.created_at || "",
+    ];
+  });
 
   // Update Active Subscribers sheet
   const activeSheetId = process.env.GOOGLE_SHEET_ACTIVE_SUBSCRIBERS;

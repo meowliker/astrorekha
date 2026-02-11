@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, Cormorant_Garamond } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import { MetaPixel } from "@/components/MetaPixel";
 import { Clarity } from "@/components/Clarity";
@@ -39,6 +40,7 @@ export default function RootLayout({
         {children}
         <Analytics />
         <SpeedInsights />
+        <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
       </body>
     </html>
   );

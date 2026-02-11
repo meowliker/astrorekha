@@ -9,8 +9,7 @@ import { Shield } from "lucide-react";
 import { useHaptic } from "@/hooks/useHaptic";
 import { pixelEvents } from "@/lib/pixel-events";
 import { useOnboardingStore } from "@/lib/onboarding-store";
-import { db } from "@/lib/firebase";
-import { doc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { supabase } from "@/lib/supabase";
 import { generateUserId } from "@/lib/user-profile";
 
 // Generate random stats with some variation for authenticity
@@ -61,43 +60,32 @@ export default function Step15Page() {
   // Check if email already has an active subscription or bundle purchase
   const checkExistingSubscription = async (emailToCheck: string): Promise<boolean> => {
     try {
-      // Check in users collection for existing subscription OR bundle purchase
-      const usersQuery = query(
-        collection(db, "users"),
-        where("email", "==", emailToCheck)
-      );
-      const usersSnapshot = await getDocs(usersQuery);
+      // Check in users table for existing subscription OR bundle purchase
+      const { data: existingUsers } = await supabase
+        .from("users")
+        .select("subscription_status, is_subscribed, bundle_purchased, purchase_type")
+        .eq("email", emailToCheck);
       
-      for (const userDoc of usersSnapshot.docs) {
-        const userData = userDoc.data();
-        // Check if user has an active subscription
-        if (userData.subscriptionStatus === "active" || userData.isSubscribed === true) {
+      for (const userData of (existingUsers || [])) {
+        if (userData.subscription_status === "active" || userData.is_subscribed === true) {
           return true;
         }
-        // Check if user has purchased a bundle (Flow B)
-        if (userData.bundlePurchased || userData.purchaseType === "one-time") {
+        if (userData.bundle_purchased || userData.purchase_type === "one-time") {
           return true;
         }
       }
       
-      // Also check payments collection for completed subscription OR bundle payments
-      const paymentsQuery = query(
-        collection(db, "payments"),
-        where("customerEmail", "==", emailToCheck)
-      );
-      const paymentsSnapshot = await getDocs(paymentsQuery);
+      // Also check payments table
+      const { data: existingPayments } = await supabase
+        .from("payments")
+        .select("type, payment_status, status")
+        .eq("customer_email", emailToCheck);
       
-      if (!paymentsSnapshot.empty) {
-        // Check if any payment has active/succeeded status
-        for (const paymentDoc of paymentsSnapshot.docs) {
-          const paymentData = paymentDoc.data();
-          const paymentType = paymentData.type;
-          const isSuccessful = paymentData.paymentStatus === "paid" || paymentData.status === "succeeded";
-          
-          // Block if subscription or bundle payment is successful
-          if (isSuccessful && (paymentType === "subscription" || paymentType === "bundle_payment")) {
-            return true;
-          }
+      for (const paymentData of (existingPayments || [])) {
+        const paymentType = paymentData.type;
+        const isSuccessful = paymentData.payment_status === "paid" || paymentData.status === "succeeded";
+        if (isSuccessful && (paymentType === "subscription" || paymentType === "bundle_payment")) {
+          return true;
         }
       }
       
@@ -126,7 +114,7 @@ export default function Step15Page() {
 
     setEmailError(null);
 
-    // Store email and save to Firebase
+    // Store email and save to Supabase
     {
       // Check if email already has an active subscription
       setIsCheckingEmail(true);
@@ -142,34 +130,36 @@ export default function Step15Page() {
       // Track AddToWishlist when user provides email
       pixelEvents.addToWishlist("Personalized Palm Reading Report");
       
-      // Save lead data to Firebase
+      // Save lead data to Supabase
       setIsSaving(true);
       try {
         const userId = generateUserId();
         const currentYear = new Date().getFullYear();
         const age = birthYear ? currentYear - parseInt(birthYear) : null;
         
-        await setDoc(doc(db, "leads", `lead_${Date.now()}_${userId.slice(-6)}`), {
+        await supabase.from("leads").insert({
+          id: `lead_${Date.now()}_${userId.slice(-6)}`,
           email: trimmed,
           gender: gender || "not specified",
           age: age,
-          relationshipStatus: relationshipStatus || "not specified",
+          relationship_status: relationshipStatus || "not specified",
           goals: goals || [],
-          subscriptionStatus: "no",
-          userId: userId,
-          createdAt: new Date().toISOString(),
+          subscription_status: "no",
+          user_id: userId,
+          created_at: new Date().toISOString(),
           source: "onboarding_step_15",
         });
         
         // Also update the user document with email
-        await setDoc(doc(db, "users", userId), {
+        await supabase.from("users").upsert({
+          id: userId,
           email: trimmed,
           gender: gender || null,
           age: age,
-          relationshipStatus: relationshipStatus || null,
+          relationship_status: relationshipStatus || null,
           goals: goals || [],
-          updatedAt: new Date().toISOString(),
-        }, { merge: true });
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "id" });
       } catch (err) {
         console.error("Failed to save lead data:", err);
       } finally {

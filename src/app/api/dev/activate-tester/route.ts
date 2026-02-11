@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,28 +17,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "userId is required" }, { status: 400 });
     }
 
-    const adminDb = getAdminDb();
+    const supabase = getSupabaseAdmin();
     const now = new Date().toISOString();
 
-    await adminDb
-      .collection("users")
-      .doc(String(userId))
-      .set(
-        {
-          isDevTester: true,
-          subscriptionPlan: "yearly",
-          subscriptionStatus: "active",
-          coins: 999999,
-          unlockedFeatures: {
-            palmReading: true,
-            prediction2026: true,
-            birthChart: true,
-            compatibilityTest: true,
-          },
-          updatedAt: now,
-        },
-        { merge: true }
-      );
+    await supabase.from("users").upsert({
+      id: String(userId),
+      is_dev_tester: true,
+      subscription_plan: "yearly",
+      subscription_status: "active",
+      coins: 999999,
+      unlocked_features: {
+        palmReading: true,
+        prediction2026: true,
+        birthChart: true,
+        compatibilityTest: true,
+      },
+      updated_at: now,
+    }, { onConflict: "id" });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

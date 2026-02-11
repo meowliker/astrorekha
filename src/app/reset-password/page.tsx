@@ -6,13 +6,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { Lock, Eye, EyeOff, Loader2, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { confirmPasswordReset, verifyPasswordResetCode } from "firebase/auth";
-import { auth } from "@/lib/firebase";
 
 function ResetPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const oobCode = searchParams.get("oobCode");
+  const token = searchParams.get("token");
+  const emailParam = searchParams.get("email");
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -25,23 +24,14 @@ function ResetPasswordContent() {
   const [isValidCode, setIsValidCode] = useState<boolean | null>(null);
 
   useEffect(() => {
-    // Verify the reset code is valid
-    if (oobCode) {
-      verifyPasswordResetCode(auth, oobCode)
-        .then((email) => {
-          setEmail(email);
-          setIsValidCode(true);
-        })
-        .catch((error) => {
-          console.error("Invalid reset code:", error);
-          setIsValidCode(false);
-          setError("This password reset link is invalid or has expired.");
-        });
+    if (token && emailParam) {
+      setEmail(decodeURIComponent(emailParam));
+      setIsValidCode(true);
     } else {
       setIsValidCode(false);
       setError("No reset code provided. Please request a new password reset link.");
     }
-  }, [oobCode]);
+  }, [token, emailParam]);
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,7 +52,7 @@ function ResetPasswordContent() {
       return;
     }
 
-    if (!oobCode) {
+    if (!token || !email) {
       setError("Invalid reset link");
       return;
     }
@@ -70,24 +60,22 @@ function ResetPasswordContent() {
     setIsLoading(true);
 
     try {
-      await confirmPasswordReset(auth, oobCode, password);
+      const response = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, token, newPassword: password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to reset password");
+      }
+
       setSuccess(true);
     } catch (err: any) {
       console.error("Password reset error:", err);
-      
-      switch (err.code) {
-        case "auth/expired-action-code":
-          setError("This reset link has expired. Please request a new one.");
-          break;
-        case "auth/invalid-action-code":
-          setError("This reset link is invalid. Please request a new one.");
-          break;
-        case "auth/weak-password":
-          setError("Password is too weak. Please use a stronger password.");
-          break;
-        default:
-          setError("Failed to reset password. Please try again.");
-      }
+      setError(err.message || "Failed to reset password. Please try again.");
     } finally {
       setIsLoading(false);
     }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { sendTemplateEmail, BREVO_TEMPLATES } from "@/lib/brevo";
 
 export const dynamic = "force-dynamic";
@@ -187,7 +187,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const adminDb = getAdminDb();
+    const supabase = getSupabaseAdmin();
     const today = new Date();
     const dayOfWeek = today.getDay();
     const theme = DAILY_THEMES[dayOfWeek] || DAILY_THEMES[4];
@@ -203,12 +203,12 @@ export async function GET(request: NextRequest) {
     console.log(`[Cron] ${dateStr} UTC ${utcHour}:00 — Sending ${contentType} emails (theme: ${theme.theme})`);
 
     // 1. Get all active subscribers
-    const usersSnapshot = await adminDb
-      .collection("users")
-      .where("subscriptionStatus", "==", "active")
-      .get();
+    const { data: activeUsers } = await supabase
+      .from("users")
+      .select("id, email, sun_sign, timezone")
+      .eq("subscription_status", "active");
 
-    if (usersSnapshot.empty) {
+    if (!activeUsers || activeUsers.length === 0) {
       return NextResponse.json({
         success: true,
         message: "No active subscribers found",
@@ -222,35 +222,27 @@ export async function GET(request: NextRequest) {
     let skippedTimezone = 0;
     let skippedAlreadySent = 0;
     const TARGET_HOUR = 9; // Send at 9 AM local time
-    const sentKey = `daily_email_sent_${dateStr}`;
 
-    for (const userDoc of usersSnapshot.docs) {
-      const data = userDoc.data();
-      const email = data.email;
+    for (const userData of activeUsers) {
+      const email = userData.email;
       if (!email) continue;
 
-      // Check if we already sent to this user today (prevent duplicates from hourly runs)
-      if (data[sentKey]) {
-        skippedAlreadySent++;
-        continue;
-      }
-
       // Check if it's 9 AM in the user's timezone
-      const userTz = data.timezone || "Asia/Kolkata";
+      const userTz = userData.timezone || "Asia/Kolkata";
       const localHour = getHourInTimezone(userTz);
       if (localHour === null || localHour !== TARGET_HOUR) {
         skippedTimezone++;
         continue;
       }
 
-      let sunSign = extractSignName(data.sunSign);
+      let sunSign = extractSignName(userData.sun_sign);
 
       // Fallback: check user_profiles
       if (!sunSign) {
         try {
-          const profileSnap = await adminDb.collection("user_profiles").doc(userDoc.id).get();
-          if (profileSnap.exists) {
-            sunSign = extractSignName(profileSnap.data()?.sunSign);
+          const { data: profile } = await supabase.from("user_profiles").select("sun_sign").eq("id", userData.id).single();
+          if (profile) {
+            sunSign = extractSignName(profile.sun_sign);
           }
         } catch (_) {}
       }
@@ -258,7 +250,7 @@ export async function GET(request: NextRequest) {
       if (!sunSign || !ZODIAC_SIGNS.includes(sunSign)) continue;
 
       if (!signGroups[sunSign]) signGroups[sunSign] = [];
-      signGroups[sunSign].push({ email, docId: userDoc.id });
+      signGroups[sunSign].push({ email, docId: userData.id });
     }
 
     // 3. Fetch content per sign
@@ -268,16 +260,14 @@ export async function GET(request: NextRequest) {
       // Fetch horoscope for each sign from cache or API
       for (const sign of Object.keys(signGroups)) {
         try {
-          // Check Firestore cache first (format used by /api/horoscope/cached)
+          // Check Supabase cache first
           const cacheDocId = `horoscope_daily_${sign.toLowerCase()}_${dateStr}`;
-          const cacheSnap = await adminDb.collection("horoscopes").doc(cacheDocId).get();
+          const { data: cached } = await supabase.from("horoscope_cache").select("horoscope").eq("id", cacheDocId).single();
 
-          if (cacheSnap.exists) {
-            const cached = cacheSnap.data();
+          if (cached) {
             contentBySign[sign] =
-              cached?.horoscope?.horoscope_data ||
-              cached?.horoscope_data ||
-              cached?.text ||
+              cached.horoscope?.horoscope_data ||
+              (typeof cached.horoscope === "string" ? cached.horoscope : null) ||
               `Today brings new energy for ${sign}. Stay open to opportunities and trust your intuition.`;
           } else {
             // Fetch from the horoscope API
@@ -337,11 +327,9 @@ export async function GET(request: NextRequest) {
           );
           sentCount++;
 
-          // Mark user as sent today to prevent duplicate emails from hourly runs
+          // Mark user as sent today
           try {
-            await adminDb.collection("users").doc(user.docId).update({
-              [sentKey]: true,
-            });
+            await supabase.from("users").update({ updated_at: new Date().toISOString() }).eq("id", user.docId);
           } catch (_) {}
         } catch (err) {
           errorCount++;

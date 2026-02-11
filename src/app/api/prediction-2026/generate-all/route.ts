@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { db } from "@/lib/firebase";
-import { doc, setDoc } from "firebase/firestore";
+import { supabase } from "@/lib/supabase";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -103,13 +102,14 @@ export async function POST(request: NextRequest) {
         
         const prediction = await generatePredictionForSign(sign);
         
-        // Store in Firebase with zodiac sign as the document ID
-        await setDoc(doc(db, "predictions_2026_global", sign.toLowerCase()), {
+        // Store in Supabase
+        await supabase.from("predictions_2026_global").upsert({
+          id: sign.toLowerCase(),
           prediction,
-          zodiacSign: sign,
-          createdAt: new Date().toISOString(),
+          zodiac_sign: sign,
+          created_at: new Date().toISOString(),
           version: "1.0",
-        });
+        }, { onConflict: "id" });
 
         results[sign] = { success: true };
         console.log(`✓ ${sign} prediction saved`);

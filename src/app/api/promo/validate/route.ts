@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/firebase";
-import { doc, getDoc, updateDoc, increment } from "firebase/firestore";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,32 +13,27 @@ export async function POST(request: NextRequest) {
     }
 
     const trimmedCode = code.trim();
+    const supabase = getSupabaseAdmin();
 
-    // Try exact match first, then uppercase, then lowercase
-    let promoRef = doc(db, "promo_codes", trimmedCode);
-    let promoDoc = await getDoc(promoRef);
+    // Try exact match, then uppercase, then lowercase
+    let promoData: any = null;
+    let foundCode = "";
 
-    // If not found, try uppercase version
-    if (!promoDoc.exists()) {
-      promoRef = doc(db, "promo_codes", trimmedCode.toUpperCase());
-      promoDoc = await getDoc(promoRef);
+    for (const variant of [trimmedCode, trimmedCode.toUpperCase(), trimmedCode.toLowerCase()]) {
+      const { data } = await supabase.from("promo_codes").select("*").eq("id", variant).single();
+      if (data) {
+        promoData = data;
+        foundCode = variant;
+        break;
+      }
     }
 
-    // If still not found, try lowercase version
-    if (!promoDoc.exists()) {
-      promoRef = doc(db, "promo_codes", trimmedCode.toLowerCase());
-      promoDoc = await getDoc(promoRef);
-    }
-
-    if (!promoDoc.exists()) {
+    if (!promoData) {
       return NextResponse.json(
         { success: false, error: "Invalid promo code" },
         { status: 404 }
       );
     }
-
-    const promoData = promoDoc.data();
-    const foundCode = promoRef.id;
 
     // Check if code is active
     if (!promoData.active) {
@@ -50,7 +44,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if code has expired
-    if (promoData.expiresAt && new Date(promoData.expiresAt) < new Date()) {
+    if (promoData.expires_at && new Date(promoData.expires_at) < new Date()) {
       return NextResponse.json(
         { success: false, error: "This promo code has expired" },
         { status: 400 }
@@ -58,7 +52,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check usage limit
-    if (promoData.maxUses && promoData.usedCount >= promoData.maxUses) {
+    if (promoData.max_uses && promoData.used_count >= promoData.max_uses) {
       return NextResponse.json(
         { success: false, error: "This promo code has reached its usage limit" },
         { status: 400 }
@@ -66,20 +60,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Increment usage count
-    await updateDoc(promoRef, {
-      usedCount: increment(1),
-      lastUsedAt: new Date().toISOString(),
-    });
+    await supabase.from("promo_codes").update({
+      used_count: (promoData.used_count || 0) + 1,
+      last_used_at: new Date().toISOString(),
+    }).eq("id", foundCode);
 
     return NextResponse.json({
       success: true,
       data: {
         code: foundCode,
-        discount: promoData.discount || 100, // Default 100% off (free)
-        type: promoData.type || "percent", // "percent" or "fixed"
-        coins: promoData.coins || 100, // Bonus coins
-        plan: promoData.plan || "yearly", // Which plan to give
-        unlockAll: promoData.unlockAll !== false, // Unlock all features by default
+        discount: promoData.discount || 100,
+        type: promoData.type || "percent",
+        coins: promoData.coins || 100,
+        plan: promoData.plan || "yearly",
+        unlockAll: promoData.unlock_all !== false,
       },
     });
   } catch (error: any) {

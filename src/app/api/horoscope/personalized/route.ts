@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { fetchFromAstroEngine } from "@/lib/astro-client";
-import { getAdminDb } from "@/lib/firebase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -102,41 +102,38 @@ export async function GET(request: NextRequest) {
     cacheTimeKey = getDateKey();
   }
 
-  const adminDb = getAdminDb();
+  const supabase = getSupabaseAdmin();
 
   try {
     // 1. Check cache first
     const cacheDocId = `personalized_${period}_${userId}_${cacheTimeKey}`;
-    const cacheRef = adminDb.collection("horoscopes").doc(cacheDocId);
-    const cacheSnap = await cacheRef.get();
+    const { data: cached } = await supabase.from("horoscope_cache").select("*").eq("id", cacheDocId).single();
 
-    if (cacheSnap.exists) {
-      const cached = cacheSnap.data();
+    if (cached) {
       return NextResponse.json({
         success: true,
-        data: cached?.horoscope_data,
+        data: cached.horoscope,
         cached: true,
         period,
         date: cacheTimeKey,
       });
     }
 
-    // 2. Get user's birth data from Firestore
-    const userDoc = await adminDb.collection("users").doc(userId).get();
-    if (!userDoc.exists) {
+    // 2. Get user's birth data from user_profiles
+    const { data: profileData } = await supabase.from("user_profiles").select("*").eq("id", userId).single();
+    if (!profileData) {
       return NextResponse.json(
         { success: false, error: "User not found" },
         { status: 404 }
       );
     }
 
-    const userData = userDoc.data()!;
-    const birthYear = userData.birthYear;
-    const birthMonth = userData.birthMonth;
-    const birthDay = userData.birthDay;
-    const birthHour = userData.birthHour;
-    const birthMinute = userData.birthMinute;
-    const birthPlace = userData.birthPlace || userData.birthCity;
+    const birthYear = profileData.birth_year;
+    const birthMonth = profileData.birth_month;
+    const birthDay = profileData.birth_day;
+    const birthHour = profileData.birth_hour;
+    const birthMinute = profileData.birth_minute;
+    const birthPlace = profileData.birth_place;
 
     if (!birthYear || !birthMonth || !birthDay) {
       return NextResponse.json(
@@ -148,7 +145,7 @@ export async function GET(request: NextRequest) {
     // Convert 12h to 24h if needed
     let hour = parseInt(birthHour) || 12;
     const minute = parseInt(birthMinute) || 0;
-    const birthPeriod = userData.birthPeriod || userData.birthAmPm;
+    const birthPeriod = profileData.birth_period;
     if (birthPeriod) {
       const p = birthPeriod.toUpperCase();
       if (p === "PM" && hour !== 12) hour += 12;
@@ -254,15 +251,15 @@ Generate the personalized ${periodLabel} horoscope JSON now. Remember: DO NOT st
     horoscopeData.date = cacheTimeKey;
     horoscopeData.period = period;
 
-    // 7. Cache in Firestore
-    await cacheRef.set({
-      horoscope_data: horoscopeData,
-      userId,
+    // 7. Cache in Supabase
+    await supabase.from("horoscope_cache").upsert({
+      id: cacheDocId,
+      horoscope: horoscopeData,
+      sign: bigThree.sun?.sign?.toLowerCase() || "aries",
       period,
-      date: cacheTimeKey,
-      generatedAt: new Date().toISOString(),
-      source: "astro-engine+claude",
-    });
+      cache_key: cacheTimeKey,
+      fetched_at: new Date().toISOString(),
+    }, { onConflict: "id" });
 
     return NextResponse.json({
       success: true,

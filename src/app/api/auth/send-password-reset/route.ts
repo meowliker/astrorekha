@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminAuth } from "@/lib/firebase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import nodemailer from "nodemailer";
+import crypto from "crypto";
 
 function createTransporter() {
   return nodemailer.createTransport({
@@ -25,25 +26,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const adminAuth = getAdminAuth();
+    const supabase = getSupabaseAdmin();
 
     // Check if user exists
-    try {
-      await adminAuth.getUserByEmail(normalizedEmail);
-    } catch (err: any) {
-      if (err.code === "auth/user-not-found") {
-        return NextResponse.json(
-          { success: false, error: "USER_NOT_FOUND", message: "No account found with this email" },
-          { status: 404 }
-        );
-      }
-      throw err;
+    const { data: user } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", normalizedEmail)
+      .limit(1)
+      .single();
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: "USER_NOT_FOUND", message: "No account found with this email" },
+        { status: 404 }
+      );
     }
 
-    // Generate password reset link
-    const resetLink = await adminAuth.generatePasswordResetLink(normalizedEmail, {
-      url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/login`,
-    });
+    // Generate a secure reset token and store it
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await supabase
+      .from("otp_codes")
+      .upsert({
+        email: normalizedEmail,
+        otp: resetToken,
+        expires_at: expiresAt.toISOString(),
+        verified: false,
+        created_at: new Date().toISOString(),
+      }, { onConflict: "email" });
+
+    const resetLink = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/reset-password?token=${resetToken}&email=${encodeURIComponent(normalizedEmail)}`;
 
     // Send custom email with beautiful design
     if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {

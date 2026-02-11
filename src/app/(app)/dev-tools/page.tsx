@@ -16,12 +16,12 @@ export default function DevToolsPage() {
   const [activateError, setActivateError] = useState("");
 
   const {
-    subscriptionPlan,
+    purchasedBundle,
     unlockedFeatures,
     coins,
     birthChartGenerating,
     birthChartReady,
-    purchaseSubscription,
+    purchaseBundle,
     unlockFeature,
     unlockAllFeatures,
     setCoins,
@@ -154,8 +154,8 @@ export default function DevToolsPage() {
             </h2>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-white/60">Subscription</span>
-                <span className="text-white">{subscriptionPlan || "None"}</span>
+                <span className="text-white/60">Bundle</span>
+                <span className="text-white">{purchasedBundle || "None"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-white/60">Coins</span>
@@ -219,42 +219,42 @@ export default function DevToolsPage() {
             </div>
           </div>
 
-          {/* Subscription Controls */}
+          {/* Bundle Purchase Controls */}
           <div className="bg-[#1A1F2E] rounded-2xl p-4 border border-white/10">
-            <h2 className="text-white font-semibold mb-3">Simulate Subscription</h2>
+            <h2 className="text-white font-semibold mb-3">Simulate Bundle Purchase</h2>
             <div className="grid grid-cols-3 gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  purchaseSubscription("weekly");
-                  showMessage("Weekly plan activated (15 coins)");
+                  purchaseBundle("palm-reading", ["palmReading"]);
+                  showMessage("Palm Reading bundle activated");
                 }}
                 className="text-xs"
               >
-                1-Week
+                Palm
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  purchaseSubscription("monthly");
-                  showMessage("Monthly plan activated (15 coins)");
+                  purchaseBundle("palm-birth", ["palmReading", "birthChart"]);
+                  showMessage("Palm + Birth bundle activated");
                 }}
                 className="text-xs"
               >
-                2-Week
+                Palm+Birth
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  purchaseSubscription("yearly");
-                  showMessage("Yearly plan activated (30 coins)");
+                  purchaseBundle("palm-birth-compat", ["palmReading", "birthChart", "compatibilityTest"]);
+                  showMessage("Full bundle activated");
                 }}
                 className="text-xs"
               >
-                4-Week
+                Full
               </Button>
             </div>
           </div>

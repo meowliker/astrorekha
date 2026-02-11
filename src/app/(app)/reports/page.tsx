@@ -10,8 +10,7 @@ import { useOnboardingStore } from "@/lib/onboarding-store";
 import { useUserStore, UnlockedFeatures } from "@/lib/user-store";
 import { UpsellPopup } from "@/components/UpsellPopup";
 import { TrialStatusBanner } from "@/components/TrialStatusBanner";
-import { doc, getDoc } from "firebase/firestore";
-import { db, auth } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { UserAvatar, cacheUserInfo } from "@/components/UserAvatar";
 import { BirthChartTimer } from "@/components/BirthChartTimer";
 
@@ -58,7 +57,7 @@ export default function DashboardPage() {
   const { birthMonth: storeBirthMonth, birthDay: storeBirthDay, sunSign: storeSunSign } = useOnboardingStore();
   
   // Get unlocked features from user store
-  const { unlockedFeatures, birthChartGenerating, birthChartReady, syncFromFirebase } = useUserStore();
+  const { unlockedFeatures, birthChartGenerating, birthChartReady, syncFromServer } = useUserStore();
 
   useEffect(() => {
     loadUserZodiac();
@@ -71,44 +70,33 @@ export default function DashboardPage() {
 
   const loadUserZodiac = async () => {
     try {
-      // Get userId - prefer Firebase Auth uid
-      const authUid = auth.currentUser?.uid;
-      const storedId = localStorage.getItem("astrorekha_user_id");
-      const userId = authUid || storedId;
+      const userId = localStorage.getItem("astrorekha_user_id");
 
       if (userId) {
-        // Load ascendant sign from Firebase
-        const userRef = doc(db, "users", userId);
-        const userSnap = await getDoc(userRef);
+        const { data: userData } = await supabase.from("users").select("*").eq("id", userId).single();
 
-        if (userSnap.exists()) {
-          const data = userSnap.data();
+        if (userData) {
+          if (userData.name) setUserName(userData.name);
+          if (userData.email) setUserEmail(userData.email);
+          cacheUserInfo(userData.name, userData.email);
           
-          // Load user name and email for avatar and cache them
-          if (data.name) setUserName(data.name);
-          if (data.email) setUserEmail(data.email);
-          cacheUserInfo(data.name, data.email);
-          
-          // Sync unlocked features from Firebase to user store
-          syncFromFirebase({
-            unlockedFeatures: data.unlockedFeatures,
-            palmReading: data.palmReading,
-            birthChart: data.birthChart,
-            compatibilityTest: data.compatibilityTest,
-            prediction2026: data.prediction2026,
-            coins: data.coins,
-            subscriptionPlan: data.subscriptionPlan,
+          syncFromServer({
+            unlockedFeatures: userData.unlocked_features,
+            palmReading: userData.palm_reading,
+            birthChart: userData.birth_chart,
+            compatibilityTest: userData.compatibility_test,
+            prediction2026: userData.prediction_2026,
+            coins: userData.coins,
+            purchasedBundle: userData.bundle_purchased || null,
           });
           
-          // Load birth chart timer data
-          if (data.birthChartTimerActive !== undefined) {
-            setBirthChartTimerActive(data.birthChartTimerActive);
+          if (userData.birth_chart_timer_active !== undefined) {
+            setBirthChartTimerActive(userData.birth_chart_timer_active);
           }
-          if (data.birthChartTimerStartedAt) {
-            setBirthChartTimerStartedAt(data.birthChartTimerStartedAt);
+          if (userData.birth_chart_timer_started_at) {
+            setBirthChartTimerStartedAt(userData.birth_chart_timer_started_at);
           }
           
-          // Helper to extract sign name from string or object
           const extractSignName = (sign: any): string | null => {
             if (!sign) return null;
             if (typeof sign === "string") return sign;
@@ -116,24 +104,21 @@ export default function DashboardPage() {
             return null;
           };
 
-          // Use astro-engine sun sign from Firestore as source of truth
-          let sunSignName = extractSignName(data.sunSign);
+          let sunSignName = extractSignName(userData.sun_sign);
 
-          // Fallback: check user_profiles/{userId} for astro-engine signs
           if (!sunSignName && userId) {
             try {
-              const profileSnap = await getDoc(doc(db, "user_profiles", userId));
-              if (profileSnap.exists()) {
-                sunSignName = extractSignName(profileSnap.data().sunSign);
+              const { data: profile } = await supabase.from("user_profiles").select("sun_sign").eq("id", userId).single();
+              if (profile) {
+                sunSignName = extractSignName(profile.sun_sign);
               }
             } catch (profileErr) {
               console.error("Error reading user_profiles:", profileErr);
             }
           }
 
-          // Last resort: calculate from birth date (Western tropical)
-          if (!sunSignName && data.birthMonth && data.birthDay) {
-            sunSignName = getZodiacSign(Number(data.birthMonth), Number(data.birthDay));
+          if (!sunSignName && userData.birth_month && userData.birth_day) {
+            sunSignName = getZodiacSign(Number(userData.birth_month), Number(userData.birth_day));
           }
 
           if (sunSignName) {
@@ -143,13 +128,11 @@ export default function DashboardPage() {
               color: getZodiacColor(sunSignName),
             });
             
-            // Also try to get email from localStorage as fallback
             const storedEmail = localStorage.getItem("astrorekha_email");
             if (storedEmail && !userEmail) {
               setUserEmail(storedEmail);
             }
             
-            // We got the sun sign, exit early
             return;
           }
         }
@@ -165,7 +148,7 @@ export default function DashboardPage() {
     }
     
     // Fallback to onboarding store sun sign or calculate from birth date
-    // This only runs if Firebase fetch failed or user not found
+    // This only runs if Supabase fetch failed or user not found
     if (storeSunSign?.name) {
       setUserZodiac({
         sign: storeSunSign.name,
@@ -213,9 +196,7 @@ export default function DashboardPage() {
   const fetchDailyInsightsV2 = async () => {
     try {
       setInsightsLoading(true);
-      const authUid = auth.currentUser?.uid;
-      const storedId = localStorage.getItem("astrorekha_user_id");
-      const userId = authUid || storedId;
+      const userId = localStorage.getItem("astrorekha_user_id");
       if (!userId) return;
 
       const response = await fetch(`/api/horoscope/daily-insights-v2?userId=${userId}`);
@@ -581,16 +562,13 @@ export default function DashboardPage() {
                         if (!birthChartGenerating) {
                           // Deactivate timer when user opens the report (with delay so user doesn't see it disappear)
                           if (birthChartTimerActive) {
-                            // Update Firebase to deactivate timer after a delay
+                            // Update Supabase to deactivate timer after a delay
                             setTimeout(async () => {
                               setBirthChartTimerActive(false);
                               const userId = localStorage.getItem("astrorekha_user_id");
                               if (userId) {
                                 try {
-                                  const { doc, updateDoc } = await import("firebase/firestore");
-                                  await updateDoc(doc(db, "users", userId), {
-                                    birthChartTimerActive: false,
-                                  });
+                                  await supabase.from("users").update({ birth_chart_timer_active: false }).eq("id", userId);
                                 } catch (err) {
                                   console.error("Failed to deactivate timer:", err);
                                 }

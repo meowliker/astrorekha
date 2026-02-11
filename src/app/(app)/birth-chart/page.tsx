@@ -6,8 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Sun, Moon, RefreshCw, Star, AlertTriangle, Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useOnboardingStore } from "@/lib/onboarding-store";
-import { db } from "@/lib/firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { supabase } from "@/lib/supabase";
 
 const MONTH_MAP: Record<string, number> = {
   January: 1, February: 2, March: 3, April: 4, May: 5, June: 6,
@@ -66,9 +65,9 @@ export default function BirthChartPage() {
     const cacheKey = `${getUserChartId()}_${chartType}`;
 
     try {
-      const cachedDoc = await getDoc(doc(db, "birth_charts", cacheKey));
-      if (cachedDoc.exists()) {
-        setChartData(cachedDoc.data());
+      const { data: cached } = await supabase.from("birth_charts").select("data").eq("id", cacheKey).single();
+      if (cached?.data) {
+        setChartData(cached.data);
         setLoading(false);
         return;
       }
@@ -127,7 +126,7 @@ export default function BirthChartPage() {
         };
         setChartData(chartDataWithDetails);
         try {
-          await setDoc(doc(db, "birth_charts", cacheKey), chartDataWithDetails);
+          await supabase.from("birth_charts").upsert({ id: cacheKey, data: chartDataWithDetails, cached_at: new Date().toISOString() }, { onConflict: "id" });
         } catch (cacheErr) {
           console.error("Failed to cache chart:", cacheErr);
         }

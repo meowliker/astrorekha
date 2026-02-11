@@ -7,8 +7,7 @@ import { ArrowLeft, ChevronRight, Loader2, MapPin, Search, Eye, EyeOff } from "l
 import { Button } from "@/components/ui/button";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { useUserStore } from "@/lib/user-store";
-import { doc, setDoc, getDoc, deleteDoc } from "firebase/firestore";
-import { db, auth } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { getZodiacSign } from "@/lib/astrology-api";
 
 const months = [
@@ -60,45 +59,33 @@ export default function EditProfilePage() {
   const loadUserProfile = async () => {
     setIsLoading(true);
     try {
-      // Get userId - prefer Firebase Auth uid
-      const authUid = auth.currentUser?.uid;
       const storedId = localStorage.getItem("astrorekha_user_id");
-      const userId = authUid || storedId;
+      const userId = storedId;
 
       if (!userId) {
         setIsLoading(false);
         return;
       }
 
-      // Update localStorage if using auth uid
-      if (authUid && storedId !== authUid) {
-        localStorage.setItem("astrorekha_user_id", authUid);
-      }
+      // Load from Supabase
+      const { data: userData } = await supabase.from("users").select("*").eq("id", userId).single();
 
-      // Load from Firebase
-      const userRef = doc(db, "users", userId);
-      const userSnap = await getDoc(userRef);
-
-      if (userSnap.exists()) {
-        const data = userSnap.data();
-        
-        // Populate all fields from Firebase
-        if (data.name) setLocalName(data.name);
-        if (data.gender) setGender(data.gender);
-        if (data.relationshipStatus) setRelationshipStatus(data.relationshipStatus);
-        if (data.birthMonth && data.birthDay && data.birthYear) {
-          setBirthDate(String(data.birthMonth), String(data.birthDay), String(data.birthYear));
+      if (userData) {
+        if (userData.name) setLocalName(userData.name);
+        if (userData.gender) setGender(userData.gender);
+        if (userData.relationship_status) setRelationshipStatus(userData.relationship_status);
+        if (userData.birth_month && userData.birth_day && userData.birth_year) {
+          setBirthDate(String(userData.birth_month), String(userData.birth_day), String(userData.birth_year));
         }
-        if (data.birthPlace) setBirthPlace(data.birthPlace);
-        if (data.birthHour) {
+        if (userData.birth_place) setBirthPlace(userData.birth_place);
+        if (userData.birth_hour) {
           setBirthTime(
-            String(data.birthHour),
-            String(data.birthMinute || 0),
-            data.birthPeriod || "AM"
+            String(userData.birth_hour),
+            String(userData.birth_minute || 0),
+            userData.birth_period || "AM"
           );
         }
       } else {
-        // Fallback to localStorage for name
         const savedName = localStorage.getItem("astrorekha_name");
         if (savedName) setLocalName(savedName);
       }
@@ -155,10 +142,9 @@ export default function EditProfilePage() {
           break;
       }
 
-      // Save to Firebase
+      // Save to Supabase
       const userId = localStorage.getItem("astrorekha_user_id");
       if (userId) {
-        const userRef = doc(db, "users", userId);
         
         // Determine the new birth details
         const newBirthMonth = field === "birthDate" ? value.month : birthMonth;
@@ -226,7 +212,7 @@ export default function EditProfilePage() {
           }
         }
         
-        await setDoc(userRef, updateData, { merge: true });
+        await supabase.from("users").update(updateData).eq("id", userId);
       }
     } catch (error) {
       console.error("Error saving:", error);
@@ -260,7 +246,7 @@ export default function EditProfilePage() {
   };
 
   const handleDeleteAccount = async () => {
-    // Verify password (simple check - in production, verify against Firebase Auth)
+    // Verify password (simple check - in production, verify against Supabase Auth)
     const storedPassword = localStorage.getItem("astrorekha_password");
     if (storedPassword && deletePassword !== storedPassword) {
       setDeleteError("Incorrect password. Please try again.");
@@ -274,37 +260,10 @@ export default function EditProfilePage() {
       const userId = localStorage.getItem("astrorekha_user_id");
       const userEmail = localStorage.getItem("astrorekha_email");
       
-      // Step 1: Cancel Stripe subscription first (set cancel_at_period_end)
-      // This prevents continued billing after account deletion
-      if (userId || userEmail) {
-        try {
-          const cancelResponse = await fetch("/api/stripe/cancel-subscription", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              userId: userId || "",
-              email: userEmail || "",
-            }),
-          });
-          
-          const cancelData = await cancelResponse.json();
-          if (cancelData.success) {
-            console.log("Subscription cancelled successfully before account deletion");
-          } else if (cancelData.error && !cancelData.error.includes("Subscription ID is required")) {
-            // Only log non-critical errors (user might not have a subscription)
-            console.log("Subscription cancellation note:", cancelData.error);
-          }
-        } catch (cancelError) {
-          // Don't block deletion if subscription cancellation fails
-          // The subscription might not exist or already be cancelled
-          console.log("Subscription cancellation skipped:", cancelError);
-        }
-      }
-      
-      // Step 2: Delete from Firebase
+      // Step 1: Delete from Supabase
       if (userId) {
-        await deleteDoc(doc(db, "users", userId));
-        await deleteDoc(doc(db, "palm_readings", userId));
+        await supabase.from("users").delete().eq("id", userId);
+        await supabase.from("palm_readings").delete().eq("id", userId);
       }
       
       // Step 3: Clear all local data

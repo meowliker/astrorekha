@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { addContactToList, BREVO_LISTS } from "@/lib/brevo";
 
 export async function POST(request: NextRequest) {
@@ -12,19 +12,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const adminDb = getAdminDb();
+    const supabase = getSupabaseAdmin();
     
-    // Get all users with active or trialing subscriptions
-    const usersSnapshot = await adminDb.collection("users").get();
+    const { data: allUsers } = await supabase.from("users").select("id, email, subscription_status");
     
     let added = 0;
     let skipped = 0;
     const errors: string[] = [];
 
-    for (const doc of usersSnapshot.docs) {
-      const data = doc.data();
-      const email = data.email;
-      const status = data.subscriptionStatus;
+    for (const userData of (allUsers || [])) {
+      const email = userData.email;
+      const status = userData.subscription_status;
       
       // Only add users who are trialing or active and have an email
       if (!email) {

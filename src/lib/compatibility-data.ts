@@ -1,5 +1,4 @@
-import { db } from "./firebase";
-import { doc, getDoc, setDoc, collection } from "firebase/firestore";
+import { supabase } from "./supabase";
 
 export interface ChallengeItem {
   title: string;
@@ -23,21 +22,19 @@ export interface CompatibilityResult {
   createdAt: string;
 }
 
-// Get compatibility result from Firestore
+// Get compatibility result from Supabase
 export async function getCompatibilityResult(
   sign1: string,
   sign2: string
 ): Promise<CompatibilityResult | null> {
   try {
-    // Normalize key (alphabetical order for consistency)
     const [s1, s2] = [sign1, sign2].sort();
     const docId = `${s1.toLowerCase()}_${s2.toLowerCase()}`;
     
-    const docRef = doc(db, "compatibility", docId);
-    const docSnap = await getDoc(docRef);
+    const { data } = await supabase.from("compatibility").select("*").eq("id", docId).single();
     
-    if (docSnap.exists()) {
-      return docSnap.data() as CompatibilityResult;
+    if (data) {
+      return data as CompatibilityResult;
     }
     
     return null;
@@ -47,7 +44,7 @@ export async function getCompatibilityResult(
   }
 }
 
-// Save compatibility result to Firestore
+// Save compatibility result to Supabase
 export async function saveCompatibilityResult(
   result: CompatibilityResult
 ): Promise<boolean> {
@@ -55,11 +52,11 @@ export async function saveCompatibilityResult(
     const [s1, s2] = [result.sign1, result.sign2].sort();
     const docId = `${s1.toLowerCase()}_${s2.toLowerCase()}`;
     
-    const docRef = doc(db, "compatibility", docId);
-    await setDoc(docRef, {
+    await supabase.from("compatibility").upsert({
+      id: docId,
       ...result,
-      createdAt: new Date().toISOString(),
-    });
+      created_at: new Date().toISOString(),
+    }, { onConflict: "id" });
     
     return true;
   } catch (error) {
