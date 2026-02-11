@@ -57,6 +57,8 @@ export async function POST(request: NextRequest) {
           purchase_type: anonUser.purchase_type,
           bundle_purchased: anonUser.bundle_purchased,
           payment_status: anonUser.payment_status,
+          razorpay_payment_id: anonUser.razorpay_payment_id,
+          razorpay_order_id: anonUser.razorpay_order_id,
           scans_used: anonUser.scans_used,
           scans_allowed: anonUser.scans_allowed,
           birth_chart_timer_active: anonUser.birth_chart_timer_active,
