@@ -175,8 +175,9 @@ function Step19Content() {
 
       setShowSuccess(true);
       pixelEvents.completeRegistration(email); // Track registration completion
-    } catch (err) {
+    } catch (err: any) {
       console.error("Sign up failed:", err);
+      setPasswordError(err.message || "Registration failed. Please try again.");
     } finally {
       setIsLoading(false);
     }

@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   payment_status TEXT,               -- 'paid', 'pending', 'failed'
   razorpay_payment_id TEXT,
   razorpay_order_id TEXT,
+  password_hash TEXT,
   
   -- Coins & Features
   coins INTEGER DEFAULT 0,
