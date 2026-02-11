@@ -83,6 +83,8 @@ export async function POST(request: NextRequest) {
         for (const f of featuresToUnlock) {
           updatedFeatures[f] = true;
         }
+        // Give 15 starter coins with every bundle purchase
+        updatedCoins += 15;
       } else if (type === "upsell" && feature) {
         // Unlock single feature (upsell)
         updatedFeatures[feature] = true;

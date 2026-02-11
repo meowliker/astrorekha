@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { Check, Eye, EyeOff, ThumbsUp, Loader2 } from "lucide-react";
 import { useOnboardingStore } from "@/lib/onboarding-store";
-import { saveUserProfile } from "@/lib/user-profile";
+import { saveUserProfile, calculateZodiacSign, generateUserId } from "@/lib/user-profile";
 import { supabase } from "@/lib/supabase";
 import { useHaptic } from "@/hooks/useHaptic";
 import { pixelEvents } from "@/lib/pixel-events";
@@ -175,6 +175,88 @@ function Step19Content() {
 
       setShowSuccess(true);
       pixelEvents.completeRegistration(email); // Track registration completion
+
+      // Pre-generate palm reading in background (so it's instant on dashboard)
+      const bundleId = localStorage.getItem("astrorekha_bundle_id");
+      const birthDate = `${onboardingData.birthYear}-${onboardingData.birthMonth}-${onboardingData.birthDay}`;
+      const zodiacSign = calculateZodiacSign(onboardingData.birthMonth, onboardingData.birthDay);
+
+      if (palmImage) {
+        fetch("/api/palm-reading", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageData: palmImage, birthDate, zodiacSign }),
+        })
+          .then((res) => res.json())
+          .then(async (result) => {
+            if (result.success && result.reading) {
+              await supabase.from("palm_readings").upsert(
+                {
+                  id: uid,
+                  reading: result.reading,
+                  palm_image_url: palmImage,
+                  created_at: new Date().toISOString(),
+                  birth_date: birthDate,
+                  zodiac_sign: zodiacSign,
+                },
+                { onConflict: "id" }
+              );
+              console.log("Palm reading pre-generated successfully");
+            }
+          })
+          .catch((err) => console.error("Background palm analysis error:", err));
+      }
+
+      // Pre-generate birth chart if user bought a bundle that includes it
+      if (bundleId === "palm-birth" || bundleId === "palm-birth-compat") {
+        const birthTime = onboardingData.knowsBirthTime
+          ? (() => {
+              let hour = parseInt(onboardingData.birthHour) || 12;
+              const minute = onboardingData.birthMinute || "00";
+              if (onboardingData.birthPeriod === "PM" && hour !== 12) hour += 12;
+              if (onboardingData.birthPeriod === "AM" && hour === 12) hour = 0;
+              return `${String(hour).padStart(2, "0")}:${minute}`;
+            })()
+          : "12:00";
+
+        // Get geo coordinates first, then generate chart
+        (async () => {
+          try {
+            let latitude = 28.6139, longitude = 77.209, timezone = 5.5;
+            if (onboardingData.birthPlace) {
+              const geoRes = await fetch("/api/astrology/geo", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ place_name: onboardingData.birthPlace }),
+              });
+              if (geoRes.ok) {
+                const geoData = await geoRes.json();
+                if (geoData.success && geoData.data) {
+                  latitude = geoData.data.latitude;
+                  longitude = geoData.data.longitude;
+                  timezone = geoData.data.timezone;
+                }
+              }
+            }
+            const chartRes = await fetch("/api/astrology/birth-chart", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ birthDate, birthTime, latitude, longitude, timezone, chartType: "vedic" }),
+            });
+            const chartResult = await chartRes.json();
+            if (chartResult.success && chartResult.data) {
+              const cacheKey = `chart_${birthDate}_${birthTime}_${onboardingData.birthPlace || "unknown"}`.replace(/[^a-zA-Z0-9_]/g, "_") + "_vedic";
+              await supabase.from("birth_charts").upsert(
+                { id: cacheKey, data: { ...chartResult.data, cachedAt: new Date().toISOString() }, cached_at: new Date().toISOString() },
+                { onConflict: "id" }
+              );
+              console.log("Birth chart pre-generated successfully");
+            }
+          } catch (err) {
+            console.error("Background birth chart generation error:", err);
+          }
+        })();
+      }
     } catch (err: any) {
       console.error("Sign up failed:", err);
       setPasswordError(err.message || "Registration failed. Please try again.");

@@ -31,12 +31,12 @@ const getBundleFeatures = (bundleId: string | null) => {
   features.push({ icon: "🖐️", title: "Palm Reading", description: "AI-powered palm analysis for life insights" });
   
   // Palm + Birth Chart and Full Bundle include birth chart
-  if (bundleId === "bundle-palm-birth" || bundleId === "bundle-full") {
+  if (bundleId === "palm-birth" || bundleId === "palm-birth-compat") {
     features.push({ icon: "📊", title: "Birth Chart", description: "Complete astrological birth chart analysis" });
   }
   
   // Full Bundle includes compatibility
-  if (bundleId === "bundle-full") {
+  if (bundleId === "palm-birth-compat") {
     features.push({ icon: "💕", title: "Compatibility Report", description: "Find your perfect cosmic match" });
   }
   
