@@ -94,18 +94,21 @@ async function fetchFromDivineAPI(sign: string, period: string, day: string = "t
     }
   }
   
-  // Combine all prediction text
-  const horoscopeText = [
-    prediction.personal,
-    prediction.health,
-    prediction.profession,
-    prediction.emotions,
-    prediction.travel,
-  ].filter(Boolean).join(" ");
+  // Build structured sections from Divine API response
+  const sections: { title: string; icon: string; content: string }[] = [];
+  if (prediction.personal) sections.push({ title: "Overview", icon: "overview", content: prediction.personal });
+  if (prediction.emotions) sections.push({ title: "Love & Relationships", icon: "love", content: prediction.emotions });
+  if (prediction.profession) sections.push({ title: "Career & Finance", icon: "career", content: prediction.profession });
+  if (prediction.health) sections.push({ title: "Health & Wellness", icon: "health", content: prediction.health });
+  if (prediction.travel) sections.push({ title: "Travel & Adventure", icon: "travel", content: prediction.travel });
+
+  // Also keep combined text as fallback
+  const horoscopeText = sections.map(s => s.content).join(" ");
   
   return {
     data: {
       horoscope_data: horoscopeText || "",
+      horoscope_sections: sections,
       date: dateStr,
       lucky_number: luckyNumber,
       lucky_color: luckyColor,

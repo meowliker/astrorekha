@@ -30,8 +30,15 @@ const PERIODS = [
   { id: "month", label: "This Month", apiPeriod: "monthly" },
 ];
 
+interface HoroscopeSection {
+  title: string;
+  icon: string;
+  content: string;
+}
+
 interface SignHoroscopeData {
   horoscope: string;
+  horoscope_sections?: HoroscopeSection[];
   focus_areas?: string[];
   challenges?: string[];
   sign?: string;
@@ -145,6 +152,7 @@ export default function HoroscopePage() {
         if (fallbackResult.success && fallbackResult.data) {
           setHoroscopeData({
             horoscope: fallbackResult.data.horoscope_data || "",
+            horoscope_sections: fallbackResult.data.horoscope_sections || undefined,
           });
         }
       }
@@ -276,25 +284,8 @@ export default function HoroscopePage() {
               )}
 
               {/* Horoscope Text - Organized by Sections */}
-              <div className="space-y-5 mb-6">
+              <div className="space-y-4 mb-6">
                 {(() => {
-                  const text = horoscopeData.horoscope;
-                  // Split by section headers like **Overview**, **Love & Relationships**, etc.
-                  const sectionRegex = /\*\*(.+?)\*\*/g;
-                  const parts = text.split(sectionRegex);
-
-                  // If no section headers found, fall back to paragraph splitting
-                  if (parts.length <= 1) {
-                    return text
-                      .split(/\n\n|\n/)
-                      .filter((p: string) => p.trim())
-                      .map((paragraph: string, idx: number) => (
-                        <p key={idx} className="text-white/75 leading-relaxed text-[15px]">
-                          {paragraph.trim()}
-                        </p>
-                      ));
-                  }
-
                   const sectionIcons: Record<string, string> = {
                     "overview": "✨",
                     "love & relationships": "💕",
@@ -306,42 +297,97 @@ export default function HoroscopePage() {
                     "health & wellness": "🌿",
                     "health": "🌿",
                     "wellness": "🧘",
+                    "travel & adventure": "✈️",
+                    "travel": "✈️",
                   };
 
-                  const sections: { title: string; content: string }[] = [];
-                  for (let i = 1; i < parts.length; i += 2) {
-                    const title = parts[i]?.trim();
-                    const content = parts[i + 1]?.trim();
-                    if (title && content) {
-                      sections.push({ title, content });
-                    }
-                  }
-
-                  // If leading text before first header
-                  if (parts[0]?.trim()) {
-                    sections.unshift({ title: "", content: parts[0].trim() });
-                  }
-
-                  return sections.map((section, idx) => (
-                    <div key={idx} className="bg-white/[0.03] rounded-xl p-4 border border-white/5">
-                      {section.title && (
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-base">
+                  // Use structured sections if available (from Divine API)
+                  if (horoscopeData.horoscope_sections && horoscopeData.horoscope_sections.length > 0) {
+                    return horoscopeData.horoscope_sections.map((section, idx) => (
+                      <div key={idx} className="bg-white/[0.03] rounded-xl p-4 border border-white/5">
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-lg">
                             {sectionIcons[section.title.toLowerCase()] || "🔮"}
                           </span>
                           <h3 className="text-white font-semibold text-sm">{section.title}</h3>
                         </div>
-                      )}
-                      {section.content
-                        .split(/\n\n|\n/)
-                        .filter((p: string) => p.trim())
-                        .map((paragraph: string, pIdx: number) => (
-                          <p key={pIdx} className="text-white/70 leading-relaxed text-[14px] mb-2 last:mb-0">
-                            {paragraph.trim()}
-                          </p>
-                        ))}
+                        <p className="text-white/70 leading-relaxed text-[14px]">
+                          {section.content}
+                        </p>
+                      </div>
+                    ));
+                  }
+
+                  // Fallback: try to parse **Section** markdown headers
+                  const text = horoscopeData.horoscope;
+                  const sectionRegex = /\*\*(.+?)\*\*/g;
+                  const parts = text.split(sectionRegex);
+
+                  if (parts.length > 1) {
+                    const sections: { title: string; content: string }[] = [];
+                    for (let i = 1; i < parts.length; i += 2) {
+                      const title = parts[i]?.trim();
+                      const content = parts[i + 1]?.trim();
+                      if (title && content) {
+                        sections.push({ title, content });
+                      }
+                    }
+                    if (parts[0]?.trim()) {
+                      sections.unshift({ title: "", content: parts[0].trim() });
+                    }
+
+                    return sections.map((section, idx) => (
+                      <div key={idx} className="bg-white/[0.03] rounded-xl p-4 border border-white/5">
+                        {section.title && (
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className="text-lg">
+                              {sectionIcons[section.title.toLowerCase()] || "🔮"}
+                            </span>
+                            <h3 className="text-white font-semibold text-sm">{section.title}</h3>
+                          </div>
+                        )}
+                        {section.content
+                          .split(/\n\n|\n/)
+                          .filter((p: string) => p.trim())
+                          .map((paragraph: string, pIdx: number) => (
+                            <p key={pIdx} className="text-white/70 leading-relaxed text-[14px] mb-2 last:mb-0">
+                              {paragraph.trim()}
+                            </p>
+                          ))}
+                      </div>
+                    ));
+                  }
+
+                  // Last fallback: split long text into logical sections by sentence grouping
+                  const sentences = text.split(/(?<=\.)\s+/).filter((s: string) => s.trim());
+                  if (sentences.length > 4) {
+                    const chunkSize = Math.ceil(sentences.length / 4);
+                    const autoSections = [
+                      { title: "Overview", icon: "✨", sentences: sentences.slice(0, chunkSize) },
+                      { title: "Love & Relationships", icon: "💕", sentences: sentences.slice(chunkSize, chunkSize * 2) },
+                      { title: "Health & Wellness", icon: "🌿", sentences: sentences.slice(chunkSize * 2, chunkSize * 3) },
+                      { title: "Career & Finance", icon: "💼", sentences: sentences.slice(chunkSize * 3) },
+                    ].filter(s => s.sentences.length > 0);
+
+                    return autoSections.map((section, idx) => (
+                      <div key={idx} className="bg-white/[0.03] rounded-xl p-4 border border-white/5">
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-lg">{section.icon}</span>
+                          <h3 className="text-white font-semibold text-sm">{section.title}</h3>
+                        </div>
+                        <p className="text-white/70 leading-relaxed text-[14px]">
+                          {section.sentences.join(" ")}
+                        </p>
+                      </div>
+                    ));
+                  }
+
+                  // Absolute fallback: just render the text
+                  return (
+                    <div className="bg-white/[0.03] rounded-xl p-4 border border-white/5">
+                      <p className="text-white/70 leading-relaxed text-[15px]">{text}</p>
                     </div>
-                  ));
+                  );
                 })()}
               </div>
 

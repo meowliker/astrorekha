@@ -333,7 +333,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
               ) : (
-                <p className="text-white/30 text-sm text-center py-4">Insights loading...</p>
+                <p className="text-white/30 text-sm text-center py-4">Insights unavailable right now. Check back later!</p>
               )}
             </motion.div>
 
@@ -511,39 +511,6 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* Prediction 2026 Report */}
-                <div 
-                  onClick={() => {
-                    if (unlockedFeatures.prediction2026) {
-                      router.push("/prediction-2026");
-                    } else {
-                      setUpsellPopup({ isOpen: true, feature: "prediction2026" });
-                    }
-                  }}
-                  className="bg-[#1A2235] rounded-2xl border border-primary/20 p-3 cursor-pointer hover:border-primary/40 transition-colors relative"
-                >
-                  {!unlockedFeatures.prediction2026 && (
-                    <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
-                      <Lock className="w-3 h-3 text-white/60" />
-                    </div>
-                  )}
-                  <div className="flex items-center gap-3">
-                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-500/30 to-purple-600/30 flex items-center justify-center flex-shrink-0 overflow-hidden border border-white/10">
-                      <span className="text-3xl">🔮</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-white font-semibold">Prediction 2026 Report</h3>
-                      <p className="text-white/50 text-xs mt-0.5">What the stars hold for your future</p>
-                      {!unlockedFeatures.prediction2026 && (
-                        <button className="mt-1 px-3 py-1 bg-primary/20 text-primary text-xs rounded-full">
-                          Get Report
-                        </button>
-                      )}
-                    </div>
-                    <ChevronRight className="w-6 h-6 text-white/40" />
-                  </div>
-                </div>
-
                 {/* Birth Chart Report */}
                 <div 
                   className={`bg-[#1A2235] border border-primary/20 transition-colors ${
@@ -663,6 +630,40 @@ export default function DashboardPage() {
                     <ChevronRight className="w-6 h-6 text-white/40" />
                   </div>
                 </div>
+
+                {/* Prediction 2026 Report */}
+                <div 
+                  onClick={() => {
+                    if (unlockedFeatures.prediction2026) {
+                      router.push("/prediction-2026");
+                    } else {
+                      setUpsellPopup({ isOpen: true, feature: "prediction2026" });
+                    }
+                  }}
+                  className="bg-[#1A2235] rounded-2xl border border-primary/20 p-3 cursor-pointer hover:border-primary/40 transition-colors relative"
+                >
+                  {!unlockedFeatures.prediction2026 && (
+                    <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
+                      <Lock className="w-3 h-3 text-white/60" />
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-500/30 to-purple-600/30 flex items-center justify-center flex-shrink-0 overflow-hidden border border-white/10">
+                      <span className="text-3xl">🔮</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-semibold">Prediction 2026 Report</h3>
+                      <p className="text-white/50 text-xs mt-0.5">What the stars hold for your future</p>
+                      {!unlockedFeatures.prediction2026 && (
+                        <button className="mt-1 px-3 py-1 bg-primary/20 text-primary text-xs rounded-full">
+                          Get Report
+                        </button>
+                      )}
+                    </div>
+                    <ChevronRight className="w-6 h-6 text-white/40" />
+                  </div>
+                </div>
+                
               </div>
             </motion.div>
           </div>

@@ -115,8 +115,8 @@ export async function POST(request: NextRequest) {
           ? MONTH_MAP[birthMonth.toLowerCase()] || 1
           : parseInt(birthMonth);
 
-        // Call astro-engine
-        let natalData: any;
+        // Try astro-engine for detailed natal data, but fall back gracefully
+        let natalData: any = null;
         try {
           natalData = await fetchFromAstroEngine("/calculate", {
             year: parseInt(birthYear),
@@ -128,17 +128,36 @@ export async function POST(request: NextRequest) {
             place: profileData.birth_place || "New Delhi, India",
           });
         } catch {
-          console.error(`Astro engine failed for user ${userId}`);
-          results[userId] = false;
-          continue;
+          console.log(`Astro engine unavailable for user ${userId}, using zodiac fallback`);
         }
 
-        const bigThree = natalData.chart?.big_three || {};
-        const currentDasha = natalData.dasha?.current_period || {};
-        const transits = natalData.active_transits || [];
+        const bigThree = natalData?.chart?.big_three || {};
+        const currentDasha = natalData?.dasha?.current_period || {};
+        const transits = natalData?.active_transits || [];
+
+        // Calculate zodiac sign from birth date as fallback
+        const ZODIAC_DATES = [
+          { sign: "Capricorn", start: [1, 1], end: [1, 19] },
+          { sign: "Aquarius", start: [1, 20], end: [2, 18] },
+          { sign: "Pisces", start: [2, 19], end: [3, 20] },
+          { sign: "Aries", start: [3, 21], end: [4, 19] },
+          { sign: "Taurus", start: [4, 20], end: [5, 20] },
+          { sign: "Gemini", start: [5, 21], end: [6, 20] },
+          { sign: "Cancer", start: [6, 21], end: [7, 22] },
+          { sign: "Leo", start: [7, 23], end: [8, 22] },
+          { sign: "Virgo", start: [8, 23], end: [9, 22] },
+          { sign: "Libra", start: [9, 23], end: [10, 22] },
+          { sign: "Scorpio", start: [10, 23], end: [11, 21] },
+          { sign: "Sagittarius", start: [11, 22], end: [12, 21] },
+          { sign: "Capricorn", start: [12, 22], end: [12, 31] },
+        ];
+        const d = parseInt(birthDay);
+        const sunSign = bigThree.sun?.sign || ZODIAC_DATES.find(z => (monthNum >= z.start[0] && d >= z.start[1]) && (monthNum <= z.end[0] && d <= z.end[1]))?.sign || "Aries";
 
         // Generate insights with Claude
-        const userMessage = `Generate personalized daily insights for this user.
+        let userMessage: string;
+        if (natalData) {
+          userMessage = `Generate personalized daily insights for this user.
 
 DATE: ${dateKey}
 
@@ -153,6 +172,16 @@ ACTIVE TRANSITS:
 ${JSON.stringify(transits.slice(0, 8), null, 2)}
 
 Generate the daily insights JSON now.`;
+        } else {
+          userMessage = `Generate personalized daily insights for this user.
+
+DATE: ${dateKey}
+SUN SIGN: ${sunSign}
+BIRTH DATE: ${birthYear}-${String(monthNum).padStart(2, "0")}-${String(d).padStart(2, "0")}
+BIRTH PLACE: ${profileData.birth_place || "India"}
+
+Generate the daily insights JSON now.`;
+        }
 
         const response = await anthropic.messages.create({
           model: "claude-sonnet-4-5-20250929",
@@ -172,7 +201,7 @@ Generate the daily insights JSON now.`;
         const insightsData = JSON.parse(jsonStr);
 
         // Add metadata
-        insightsData.sun_sign = bigThree.sun?.sign || "Unknown";
+        insightsData.sun_sign = bigThree.sun?.sign || sunSign || "Unknown";
         insightsData.moon_sign = bigThree.moon?.sign || "Unknown";
         insightsData.rising_sign = bigThree.rising?.sign || "Unknown";
         insightsData.current_dasha = currentDasha.label || "Unknown";
