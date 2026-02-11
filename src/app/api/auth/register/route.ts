@@ -56,6 +56,7 @@ export async function POST(request: NextRequest) {
           onboarding_flow: anonUser.onboarding_flow,
           purchase_type: anonUser.purchase_type,
           bundle_purchased: anonUser.bundle_purchased,
+          payment_status: anonUser.payment_status,
           scans_used: anonUser.scans_used,
           scans_allowed: anonUser.scans_allowed,
           birth_chart_timer_active: anonUser.birth_chart_timer_active,
@@ -102,6 +103,12 @@ export async function POST(request: NextRequest) {
         { success: false, error: "Failed to create account" },
         { status: 500 }
       );
+    }
+
+    // Delete the old anonymous user row to avoid duplicates
+    if (anonId && anonId !== uid) {
+      await supabase.from("user_profiles").delete().eq("id", anonId);
+      await supabase.from("users").delete().eq("id", anonId);
     }
 
     return NextResponse.json({
