@@ -682,6 +682,18 @@ export default function AdminRevenuePage() {
             </div>
           )}
         </section>
+        
+        {/* Meta / Facebook Ads */}
+        <MetaAdsSection
+          metaAds={metaAds}
+          metaLoading={metaLoading}
+          metaDatePreset={metaDatePreset}
+          setMetaDatePreset={setMetaDatePreset}
+          showMetaCampaigns={showMetaCampaigns}
+          setShowMetaCampaigns={setShowMetaCampaigns}
+          formatCurrency={formatCurrency}
+          onRefresh={() => fetchMetaAds()}
+        />
 
         {/* Bundle Breakdown */}
         <section>
@@ -932,18 +944,6 @@ export default function AdminRevenuePage() {
             </div>
           </div>
         </section>
-
-        {/* Meta / Facebook Ads */}
-        <MetaAdsSection
-          metaAds={metaAds}
-          metaLoading={metaLoading}
-          metaDatePreset={metaDatePreset}
-          setMetaDatePreset={setMetaDatePreset}
-          showMetaCampaigns={showMetaCampaigns}
-          setShowMetaCampaigns={setShowMetaCampaigns}
-          formatCurrency={formatCurrency}
-          onRefresh={() => fetchMetaAds()}
-        />
 
         {/* Summary Stats */}
         <section className="pb-8">
