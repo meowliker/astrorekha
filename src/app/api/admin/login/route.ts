@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (adminData.password !== password) {
+    if (adminData.password_hash !== password) {
       return NextResponse.json(
         { error: "Invalid credentials" },
         { status: 401 }
