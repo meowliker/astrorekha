@@ -24,6 +24,11 @@ import {
   Package,
   X,
   HelpCircle,
+  Megaphone,
+  Eye,
+  MousePointerClick,
+  Target,
+  ChevronDown,
 } from "lucide-react";
 
 interface RevenueData {
@@ -76,6 +81,62 @@ interface RevenueData {
   customDateRange?: { start: string; end: string };
 }
 
+interface MetaAdsData {
+  configured: boolean;
+  error?: string;
+  datePreset?: string;
+  account?: {
+    spend: number;
+    impressions: number;
+    clicks: number;
+    cpc: number;
+    cpm: number;
+    ctr: number;
+    reach: number;
+    frequency: number;
+    linkClicks: number;
+    leads: number;
+    purchases: number;
+    addToCart: number;
+    initiateCheckout: number;
+    pageViews: number;
+    costPerLead: number;
+    costPerPurchase: number;
+    costPerLinkClick: number;
+  };
+  campaigns?: {
+    name: string;
+    id: string;
+    spend: number;
+    impressions: number;
+    clicks: number;
+    cpc: number;
+    ctr: number;
+    reach: number;
+    leads: number;
+    purchases: number;
+    linkClicks: number;
+    costPerLead: number;
+    costPerPurchase: number;
+  }[];
+  dailyBreakdown?: {
+    date: string;
+    spend: number;
+    impressions: number;
+    clicks: number;
+    reach: number;
+    linkClicks: number;
+  }[];
+  activeCampaigns?: {
+    name: string;
+    status: string;
+    objective: string;
+    dailyBudget: number | null;
+    lifetimeBudget: number | null;
+  }[];
+  activeCampaignCount?: number;
+}
+
 export default function AdminRevenuePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -99,6 +160,12 @@ export default function AdminRevenuePage() {
   // Sorting
   const [sortField, setSortField] = useState<string>("date");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+
+  // Meta Ads
+  const [metaAds, setMetaAds] = useState<MetaAdsData | null>(null);
+  const [metaLoading, setMetaLoading] = useState(false);
+  const [metaDatePreset, setMetaDatePreset] = useState<string>("last_30d");
+  const [showMetaCampaigns, setShowMetaCampaigns] = useState(false);
 
   const formatDateTime = (dateString: string | null) => {
     if (!dateString) return "-";
@@ -158,9 +225,32 @@ export default function AdminRevenuePage() {
     }
   };
 
+  const fetchMetaAds = async (preset?: string) => {
+    try {
+      setMetaLoading(true);
+      const token = localStorage.getItem("admin_session_token");
+      if (!token) return;
+      const dp = preset || metaDatePreset;
+      const res = await fetch(`/api/admin/meta-ads?token=${token}&datePreset=${dp}`);
+      if (res.ok) {
+        const result = await res.json();
+        setMetaAds(result);
+      }
+    } catch (err) {
+      console.error("Meta ads fetch error:", err);
+    } finally {
+      setMetaLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchData();
+    fetchMetaAds();
   }, [router, selectedDate]);
+
+  useEffect(() => {
+    fetchMetaAds(metaDatePreset);
+  }, [metaDatePreset]);
 
   if (loading) {
     return (
@@ -843,6 +933,18 @@ export default function AdminRevenuePage() {
           </div>
         </section>
 
+        {/* Meta / Facebook Ads */}
+        <MetaAdsSection
+          metaAds={metaAds}
+          metaLoading={metaLoading}
+          metaDatePreset={metaDatePreset}
+          setMetaDatePreset={setMetaDatePreset}
+          showMetaCampaigns={showMetaCampaigns}
+          setShowMetaCampaigns={setShowMetaCampaigns}
+          formatCurrency={formatCurrency}
+          onRefresh={() => fetchMetaAds()}
+        />
+
         {/* Summary Stats */}
         <section className="pb-8">
           <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
@@ -935,5 +1037,293 @@ function PlanBar({ label, value, total, color, count }: { label: string; value: 
         <div className={`h-full ${color} rounded-full`} style={{ width: `${percentage}%` }} />
       </div>
     </div>
+  );
+}
+
+function MetaAdsSection({
+  metaAds,
+  metaLoading,
+  metaDatePreset,
+  setMetaDatePreset,
+  showMetaCampaigns,
+  setShowMetaCampaigns,
+  formatCurrency,
+  onRefresh,
+}: {
+  metaAds: MetaAdsData | null;
+  metaLoading: boolean;
+  metaDatePreset: string;
+  setMetaDatePreset: (v: string) => void;
+  showMetaCampaigns: boolean;
+  setShowMetaCampaigns: (v: boolean) => void;
+  formatCurrency: (v: string | number) => string;
+  onRefresh: () => void;
+}) {
+  const formatNum = (n: number) => {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
+    if (n >= 1000) return (n / 1000).toFixed(1) + "K";
+    return n.toLocaleString();
+  };
+
+  const datePresetLabels: Record<string, string> = {
+    today: "Today",
+    yesterday: "Yesterday",
+    last_3d: "Last 3 Days",
+    last_7d: "Last 7 Days",
+    last_14d: "Last 14 Days",
+    last_30d: "Last 30 Days",
+    this_month: "This Month",
+    last_month: "Last Month",
+    last_90d: "Last 90 Days",
+  };
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-white/70 text-sm font-medium flex items-center gap-2">
+          <Megaphone className="w-4 h-4" /> Meta / Facebook Ads
+        </h2>
+        <div className="flex items-center gap-2">
+          <select
+            value={metaDatePreset}
+            onChange={(e) => setMetaDatePreset(e.target.value)}
+            className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-primary/50"
+          >
+            {Object.entries(datePresetLabels).map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
+          </select>
+          <button
+            onClick={onRefresh}
+            disabled={metaLoading}
+            className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 text-white ${metaLoading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+      </div>
+
+      {metaLoading && !metaAds && (
+        <div className="bg-[#1A2235] rounded-xl p-8 border border-white/10 flex items-center justify-center gap-2">
+          <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+          <p className="text-white/40 text-sm">Loading Meta Ads data...</p>
+        </div>
+      )}
+
+      {metaAds && !metaAds.configured && (
+        <div className="bg-[#1A2235] rounded-xl p-6 border border-white/10 text-center">
+          <Megaphone className="w-10 h-10 text-blue-400/40 mx-auto mb-3" />
+          <p className="text-white/60 text-sm mb-2">Meta Ads not configured</p>
+          <p className="text-white/40 text-xs">
+            Add <code className="bg-white/10 px-1.5 py-0.5 rounded text-blue-300">META_ACCESS_TOKEN</code> and{" "}
+            <code className="bg-white/10 px-1.5 py-0.5 rounded text-blue-300">META_AD_ACCOUNT_ID</code> to your environment variables.
+          </p>
+        </div>
+      )}
+
+      {metaAds && metaAds.configured && metaAds.error && (
+        <div className="bg-[#1A2235] rounded-xl p-6 border border-red-500/20 text-center">
+          <ShieldAlert className="w-10 h-10 text-red-400/60 mx-auto mb-3" />
+          <p className="text-white/60 text-sm mb-1">Meta API Error</p>
+          <p className="text-red-400/80 text-xs">{metaAds.error}</p>
+        </div>
+      )}
+
+      {metaAds && metaAds.configured && !metaAds.error && metaAds.account && (
+        <div className="space-y-4">
+          {/* Ad Spend & Performance KPIs */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-[#1A2235] rounded-xl p-4 border border-blue-500/20"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-white/50 text-xs">Ad Spend</span>
+                <DollarSign className="w-4 h-4 text-blue-400" />
+              </div>
+              <p className="text-xl font-bold text-blue-400">{formatCurrency(metaAds.account.spend)}</p>
+              <p className="text-white/40 text-xs mt-1">{datePresetLabels[metaDatePreset]}</p>
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-[#1A2235] rounded-xl p-4 border border-white/10"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-white/50 text-xs">Impressions</span>
+                <Eye className="w-4 h-4 text-purple-400" />
+              </div>
+              <p className="text-xl font-bold text-purple-400">{formatNum(metaAds.account.impressions)}</p>
+              <p className="text-white/40 text-xs mt-1">CPM: {formatCurrency(metaAds.account.cpm)}</p>
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-[#1A2235] rounded-xl p-4 border border-white/10"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-white/50 text-xs">Link Clicks</span>
+                <MousePointerClick className="w-4 h-4 text-cyan-400" />
+              </div>
+              <p className="text-xl font-bold text-cyan-400">{formatNum(metaAds.account.linkClicks || metaAds.account.clicks)}</p>
+              <p className="text-white/40 text-xs mt-1">CPC: {formatCurrency(metaAds.account.costPerLinkClick || metaAds.account.cpc)}</p>
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-[#1A2235] rounded-xl p-4 border border-white/10"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-white/50 text-xs">Reach</span>
+                <Users className="w-4 h-4 text-green-400" />
+              </div>
+              <p className="text-xl font-bold text-green-400">{formatNum(metaAds.account.reach)}</p>
+              <p className="text-white/40 text-xs mt-1">Freq: {metaAds.account.frequency.toFixed(2)}</p>
+            </motion.div>
+          </div>
+
+          {/* Conversion Metrics */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="bg-[#1A2235] rounded-xl p-3 border border-white/10">
+              <p className="text-white/50 text-xs mb-1">CTR</p>
+              <p className="text-lg font-semibold text-white">{metaAds.account.ctr.toFixed(2)}%</p>
+            </div>
+            <div className="bg-[#1A2235] rounded-xl p-3 border border-white/10">
+              <p className="text-white/50 text-xs mb-1">Page Views</p>
+              <p className="text-lg font-semibold text-white">{formatNum(metaAds.account.pageViews)}</p>
+            </div>
+            <div className="bg-[#1A2235] rounded-xl p-3 border border-white/10">
+              <p className="text-white/50 text-xs mb-1">Leads</p>
+              <p className="text-lg font-semibold text-amber-400">{formatNum(metaAds.account.leads)}</p>
+              {metaAds.account.costPerLead > 0 && (
+                <p className="text-white/40 text-xs">CPL: {formatCurrency(metaAds.account.costPerLead)}</p>
+              )}
+            </div>
+            <div className="bg-[#1A2235] rounded-xl p-3 border border-white/10">
+              <p className="text-white/50 text-xs mb-1">Purchases</p>
+              <p className="text-lg font-semibold text-green-400">{formatNum(metaAds.account.purchases)}</p>
+              {metaAds.account.costPerPurchase > 0 && (
+                <p className="text-white/40 text-xs">CPA: {formatCurrency(metaAds.account.costPerPurchase)}</p>
+              )}
+            </div>
+            <div className="bg-[#1A2235] rounded-xl p-3 border border-white/10">
+              <p className="text-white/50 text-xs mb-1">ROAS</p>
+              <p className="text-lg font-semibold text-white">
+                {metaAds.account.spend > 0 && metaAds.account.purchases > 0
+                  ? "—"
+                  : "N/A"}
+              </p>
+              <p className="text-white/40 text-xs">Return on Ad Spend</p>
+            </div>
+          </div>
+
+          {/* Daily Ad Spend Chart */}
+          {metaAds.dailyBreakdown && metaAds.dailyBreakdown.length > 0 && (
+            <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
+              <h3 className="text-white/60 text-xs mb-3">Daily Ad Spend</h3>
+              <div className="flex items-end gap-1 h-32">
+                {(() => {
+                  const maxSpend = Math.max(...metaAds.dailyBreakdown!.map((d) => d.spend), 1);
+                  return metaAds.dailyBreakdown!.map((day) => (
+                    <div
+                      key={day.date}
+                      className="flex-1 bg-blue-500/20 hover:bg-blue-500/40 transition-colors rounded-t relative group"
+                      style={{ height: `${Math.max((day.spend / maxSpend) * 100, 2)}%` }}
+                    >
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black/80 rounded text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                        {day.date}: {formatCurrency(day.spend)}
+                        <br />
+                        {formatNum(day.impressions)} imp • {formatNum(day.clicks)} clicks
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+              <div className="flex justify-between mt-2 text-xs text-white/40">
+                <span>{metaAds.dailyBreakdown[0]?.date}</span>
+                <span>{metaAds.dailyBreakdown[metaAds.dailyBreakdown.length - 1]?.date}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Campaign Breakdown */}
+          {metaAds.campaigns && metaAds.campaigns.length > 0 && (
+            <div className="bg-[#1A2235] rounded-xl border border-white/10 overflow-hidden">
+              <button
+                onClick={() => setShowMetaCampaigns(!showMetaCampaigns)}
+                className="w-full px-4 py-3 flex items-center justify-between hover:bg-white/5 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Target className="w-4 h-4 text-white/50" />
+                  <span className="text-white/60 text-xs font-medium">
+                    Campaign Breakdown ({metaAds.campaigns.length} campaigns)
+                  </span>
+                </div>
+                <ChevronDown className={`w-4 h-4 text-white/40 transition-transform ${showMetaCampaigns ? "rotate-180" : ""}`} />
+              </button>
+              {showMetaCampaigns && (
+                <div className="overflow-x-auto border-t border-white/10">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-white/10">
+                        <th className="text-left text-white/50 text-xs font-medium px-4 py-2">Campaign</th>
+                        <th className="text-right text-white/50 text-xs font-medium px-4 py-2">Spend</th>
+                        <th className="text-right text-white/50 text-xs font-medium px-4 py-2">Impressions</th>
+                        <th className="text-right text-white/50 text-xs font-medium px-4 py-2">Clicks</th>
+                        <th className="text-right text-white/50 text-xs font-medium px-4 py-2">CTR</th>
+                        <th className="text-right text-white/50 text-xs font-medium px-4 py-2">CPC</th>
+                        <th className="text-right text-white/50 text-xs font-medium px-4 py-2">Reach</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metaAds.campaigns.map((c) => (
+                        <tr key={c.id} className="border-b border-white/5 hover:bg-white/5">
+                          <td className="text-white/80 text-sm px-4 py-2 max-w-[200px] truncate">{c.name}</td>
+                          <td className="text-blue-400 text-sm px-4 py-2 text-right font-medium">{formatCurrency(c.spend)}</td>
+                          <td className="text-white/70 text-sm px-4 py-2 text-right">{formatNum(c.impressions)}</td>
+                          <td className="text-white/70 text-sm px-4 py-2 text-right">{formatNum(c.clicks)}</td>
+                          <td className="text-white/70 text-sm px-4 py-2 text-right">{c.ctr.toFixed(2)}%</td>
+                          <td className="text-white/70 text-sm px-4 py-2 text-right">{formatCurrency(c.cpc)}</td>
+                          <td className="text-white/70 text-sm px-4 py-2 text-right">{formatNum(c.reach)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Active Campaigns */}
+          {metaAds.activeCampaigns && metaAds.activeCampaigns.length > 0 && (
+            <div className="bg-[#1A2235] rounded-xl p-4 border border-green-500/20">
+              <h3 className="text-white/60 text-xs mb-3 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                {metaAds.activeCampaignCount} Active Campaign{metaAds.activeCampaignCount !== 1 ? "s" : ""}
+              </h3>
+              <div className="space-y-2">
+                {metaAds.activeCampaigns.map((c, i) => (
+                  <div key={i} className="flex items-center justify-between py-1.5 border-b border-white/5 last:border-0">
+                    <div>
+                      <p className="text-white/80 text-sm">{c.name}</p>
+                      <p className="text-white/40 text-xs capitalize">{(c.objective || "").replace(/_/g, " ").toLowerCase()}</p>
+                    </div>
+                    <div className="text-right">
+                      {c.dailyBudget && (
+                        <p className="text-white/60 text-xs">{formatCurrency(c.dailyBudget)}/day</p>
+                      )}
+                      {c.lifetimeBudget && (
+                        <p className="text-white/60 text-xs">{formatCurrency(c.lifetimeBudget)} lifetime</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
