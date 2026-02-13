@@ -36,14 +36,6 @@ export async function middleware(request: NextRequest) {
       // Redirect to welcome/onboarding
       return NextResponse.redirect(new URL("/welcome", request.url));
     }
-    
-    // Check for subscription cancelled cookie (set by client-side check)
-    const subscriptionCancelled = request.cookies.get("ar_sub_cancelled");
-    
-    if (subscriptionCancelled?.value === "1" && !isAllowedForCancelled) {
-      // Redirect cancelled users to manage subscription page
-      return NextResponse.redirect(new URL("/manage-subscription", request.url));
-    }
   }
   
   return NextResponse.next();
