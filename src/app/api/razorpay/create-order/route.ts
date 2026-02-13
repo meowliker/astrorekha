@@ -15,17 +15,17 @@ const BUNDLE_CONFIG: Record<string, {
 }> = {
   "palm-reading": {
     name: "Palm Reading Report",
-    amount: 116300,
+    amount: 55900,
     features: ["palmReading"],
   },
   "palm-birth": {
     name: "Palm + Birth Chart Report",
-    amount: 157800,
+    amount: 83900,
     features: ["palmReading", "birthChart"],
   },
   "palm-birth-compat": {
     name: "Palm + Birth Chart + Compatibility Report",
-    amount: 315800,
+    amount: 159900,
     features: ["palmReading", "birthChart", "compatibilityTest"],
   },
 };
@@ -38,7 +38,7 @@ const UPSELL_CONFIG: Record<string, {
 }> = {
   "2026-predictions": {
     name: "2026 Future Predictions",
-    amount: 58200, // ₹582 in paise (TBD — placeholder)
+    amount: 49900, // ₹582 in paise (TBD — placeholder)
     feature: "prediction2026",
   },
 };
