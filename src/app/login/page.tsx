@@ -4,9 +4,10 @@ import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { ArrowLeft, Mail, Lock, Eye, EyeOff, Loader2, X, KeyRound } from "lucide-react";
+import { ArrowLeft, Mail, Lock, Eye, EyeOff, Loader2, X, KeyRound, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUserStore } from "@/lib/user-store";
+import { OnboardingSidebar } from "@/components/OnboardingSidebar";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -38,6 +39,9 @@ export default function LoginPage() {
   const [notFoundEmail, setNotFoundEmail] = useState("");
 
   const { setCoins, setUserId, syncFromServer } = useUserStore();
+
+  // Sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleEmailPasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -300,6 +304,7 @@ export default function LoginPage() {
   };
 
   return (
+    <>
     <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
       <div className="w-full max-w-md h-screen bg-[#0A0E1A] overflow-hidden shadow-2xl shadow-black/50 flex flex-col relative">
         {/* Starry background */}
@@ -321,17 +326,26 @@ export default function LoginPage() {
           ))}
         </div>
 
+        {/* Header with Back and Menu buttons */}
+        <header className="relative z-10 flex items-center justify-between px-4 py-4">
+          <motion.button
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            onClick={() => router.push("/welcome")}
+            className="p-2 -ml-2 text-white/70 hover:text-white transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </motion.button>
+          <button 
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 -mr-2 text-white/70 hover:text-white transition-colors"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        </header>
+
         {/* Content */}
         <div className="relative z-10 flex-1 flex flex-col px-6">
-        {/* Back Button */}
-        <motion.button
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          onClick={() => router.push("/welcome")}
-          className="pt-6 pb-2 text-white/70 hover:text-white transition-colors self-start"
-        >
-          <ArrowLeft className="w-6 h-6" />
-        </motion.button>
 
         {/* Logo and Title */}
         <motion.div
@@ -759,5 +773,7 @@ export default function LoginPage() {
         )}
       </AnimatePresence>
     </div>
+    <OnboardingSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+    </>
   );
 }

@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About Us - AstroRekha</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            line-height: 1.7;
+            color: #F5F3FF;
+            background: #07060A;
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: #111018;
+            border-radius: 24px;
+            padding: 60px;
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 50px;
+            padding-bottom: 30px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .logo {
+            font-size: 4rem;
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #E11D48 0%, #D4AF37 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .tagline {
+            font-size: 1.2rem;
+            color: #A1A1AA;
+            font-style: italic;
+        }
+        
+        section {
+            margin-bottom: 45px;
+            padding-bottom: 45px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        section:last-of-type {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        
+        h2 {
+            font-size: 1.6rem;
+            color: #F5F3FF;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #E11D48;
+            display: inline-block;
+        }
+        
+        h3 {
+            font-size: 1.2rem;
+            color: #D4AF37;
+            margin: 25px 0 15px 0;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: #A1A1AA;
+        }
+        
+        .intro-text {
+            background: #0D0B12;
+            padding: 30px;
+            border-radius: 16px;
+            margin-bottom: 40px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-left: 4px solid #E11D48;
+            text-align: center;
+        }
+        
+        .intro-text p {
+            color: #F5F3FF;
+            font-size: 1.1rem;
+            margin-bottom: 0;
+        }
+        
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 25px 0;
+        }
+        
+        .feature-card {
+            background: #0D0B12;
+            padding: 25px;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center;
+            transition: transform 0.3s ease, border-color 0.3s ease;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-5px);
+            border-color: #E11D48;
+        }
+        
+        .feature-icon {
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+        }
+        
+        .feature-card h3 {
+            color: #F5F3FF;
+            margin: 0 0 10px 0;
+            font-size: 1.1rem;
+        }
+        
+        .feature-card p {
+            color: #A1A1AA;
+            font-size: 0.95rem;
+            margin: 0;
+        }
+        
+        .elysia-section {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(225, 29, 72, 0.1) 100%);
+            padding: 40px;
+            border-radius: 20px;
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            margin: 30px 0;
+            text-align: center;
+        }
+        
+        .elysia-avatar {
+            font-size: 4rem;
+            margin-bottom: 20px;
+        }
+        
+        .elysia-section h3 {
+            color: #8B5CF6;
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+        }
+        
+        .elysia-section p {
+            color: #F5F3FF;
+            font-size: 1.05rem;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .values-list {
+            list-style: none;
+            padding: 0;
+            margin: 25px 0;
+        }
+        
+        .values-list li {
+            background: #0D0B12;
+            padding: 20px 25px;
+            border-radius: 12px;
+            margin-bottom: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: flex-start;
+            gap: 15px;
+        }
+        
+        .values-list li:last-child {
+            margin-bottom: 0;
+        }
+        
+        .value-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+        
+        .value-content h4 {
+            color: #D4AF37;
+            margin-bottom: 5px;
+            font-size: 1.1rem;
+        }
+        
+        .value-content p {
+            color: #A1A1AA;
+            margin: 0;
+            font-size: 0.95rem;
+        }
+        
+        .highlight-box {
+            background: #1A1625;
+            padding: 25px;
+            border-radius: 12px;
+            margin: 20px 0;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-left: 4px solid #D4AF37;
+        }
+        
+        .highlight-box p {
+            color: #F5F3FF;
+            margin-bottom: 0;
+        }
+        
+        .contact-box {
+            background: linear-gradient(135deg, #E11D48 0%, #8B5CF6 100%);
+            color: #F5F3FF;
+            padding: 35px;
+            border-radius: 16px;
+            text-align: center;
+            margin-top: 30px;
+        }
+        
+        .contact-box h2 {
+            color: #F5F3FF;
+            border-bottom-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .contact-box p {
+            color: rgba(255, 255, 255, 0.9);
+        }
+        
+        .contact-box a {
+            color: #D4AF37;
+            font-weight: 600;
+        }
+        
+        a {
+            color: #D4AF37;
+            text-decoration: none;
+        }
+        
+        a:hover {
+            color: #E11D48;
+            text-decoration: underline;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            color: #A1A1AA;
+            font-size: 0.9rem;
+        }
+        
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-top: 15px;
+        }
+        
+        .footer-links a {
+            color: #D4AF37;
+        }
+        
+        strong {
+            color: #F5F3FF;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 30px 20px;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+            
+            h2 {
+                font-size: 1.3rem;
+            }
+            
+            .logo {
+                font-size: 3rem;
+            }
+            
+            .elysia-section {
+                padding: 30px 20px;
+            }
+            
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo">🌟✨</div>
+            <h1>About AstroRekha</h1>
+            <p class="tagline">AI-Powered Palm Reading & Cosmic Insights</p>
+        </header>
+        
+        <div class="intro-text">
+            <p>AstroRekha is a revolutionary web application that combines the ancient art of palmistry and Vedic astrology with cutting-edge artificial intelligence to deliver personalized cosmic insights right at your fingertips.</p>
+        </div>
+        
+        <section>
+            <h2>Our Story</h2>
+            <p>AstroRekha was born from a simple yet powerful idea: to make the mystical arts of palmistry and Vedic astrology accessible to everyone, anywhere in the world. We believe that the lines on your palm and the positions of celestial bodies at your birth hold stories waiting to be told — stories about your past, insights into your present, and glimpses of your future.</p>
+            <p>By combining centuries-old palmistry and astrological knowledge with advanced AI technology, we've created an experience that's both deeply personal and remarkably accurate. Our team has spent countless hours researching traditional techniques and translating them into sophisticated algorithms that can analyze the unique patterns of your palm and birth chart.</p>
+        </section>
+        
+        <section>
+            <h2>What We Offer</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🖐️</div>
+                    <h3>Palm Reading</h3>
+                    <p>Advanced AI-powered palm analysis that identifies your heart, head, life, and fate lines</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🌙</div>
+                    <h3>Birth Chart Analysis</h3>
+                    <p>Complete Vedic birth chart with planetary positions, houses, and dasha predictions</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">�</div>
+                    <h3>Compatibility Test</h3>
+                    <p>Find your perfect cosmic match with detailed relationship compatibility reports</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔮</div>
+                    <h3>2026 Predictions</h3>
+                    <p>Discover what the stars hold for your future with personalized yearly predictions</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⭐</div>
+                    <h3>Daily Horoscopes</h3>
+                    <p>Personalized cosmic guidance with dos, don'ts, and lucky insights delivered daily</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">�</div>
+                    <h3>AI Chat</h3>
+                    <p>Chat with Elysia, your personal AI astrologer, for instant cosmic guidance</p>
+                </div>
+            </div>
+        </section>
+        
+        <section>
+            <h2>Meet Elysia</h2>
+            <div class="elysia-section">
+                <div class="elysia-avatar">🔮</div>
+                <h3>Your Personal AI Cosmic Guide</h3>
+                <p>Elysia is your intelligent companion throughout your AstroRekha journey. Powered by advanced artificial intelligence, Elysia provides personalized palm readings, birth chart interpretations, and answers your questions about the cosmos. Think of her as your personal mystic — always available, endlessly knowledgeable, and uniquely attuned to your cosmic signature.</p>
+            </div>
+        </section>
+        
+        <section>
+            <h2>Our Values</h2>
+            <ul class="values-list">
+                <li>
+                    <span class="value-icon">🎭</span>
+                    <div class="value-content">
+                        <h4>Entertainment First</h4>
+                        <p>AstroRekha is designed for entertainment and self-reflection. We encourage users to enjoy the experience while making their own informed life decisions.</p>
+                    </div>
+                </li>
+                <li>
+                    <span class="value-icon">🔒</span>
+                    <div class="value-content">
+                        <h4>Privacy & Security</h4>
+                        <p>Your palm images and personal data are handled with the utmost care. We never sell your data or use it for purposes beyond providing our service.</p>
+                    </div>
+                </li>
+                <li>
+                    <span class="value-icon">🌟</span>
+                    <div class="value-content">
+                        <h4>Continuous Innovation</h4>
+                        <p>We're constantly improving our AI algorithms and adding new features to make your cosmic journey even more insightful and engaging.</p>
+                    </div>
+                </li>
+                <li>
+                    <span class="value-icon">💜</span>
+                    <div class="value-content">
+                        <h4>User-Centered Design</h4>
+                        <p>Every feature we build starts with you in mind. We listen to feedback and strive to create the most intuitive and enjoyable experience possible.</p>
+                    </div>
+                </li>
+            </ul>
+        </section>
+        
+        <section>
+            <h2>The Company</h2>
+            <p>AstroRekha is developed and maintained by <strong>Visionary Era</strong>, a company dedicated to creating innovative digital experiences that inspire and delight users around the world.</p>
+            
+            <div class="highlight-box">
+                <p>We're passionate about blending technology with timeless Vedic wisdom to create products that bring joy, curiosity, and a touch of magic to everyday life.</p>
+            </div>
+        </section>
+        
+        <section>
+            <div class="contact-box">
+                <h2>Get in Touch</h2>
+                <p>Have questions, feedback, or just want to say hello? We'd love to hear from you!</p>
+                <p style="margin-top: 20px;">
+                    <strong>Website:</strong> <a href="https://astrorekha.com" target="_blank">astrorekha.com</a>
+                </p>
+                <p>
+                    <strong>Email:</strong> <a href="mailto:team.astrorekha@gmail.com">team.astrorekha@gmail.com</a>
+                </p>
+                <p>
+                    <strong>Phone:</strong> <a href="tel:+917828991668">+91 7828991668</a>
+                </p>
+                <p>
+                    <strong>Address:</strong> Iris-47, Chauhan Green Valley, Junwani, Bhilai (C.G.) - 490020, India
+                </p>
+            </div>
+        </section>
+        
+        <footer class="footer">
+            <p>© 2026 Visionary Era. All rights reserved.</p>
+            <div class="footer-links">
+                <a href="privacy-policy.html" target="_blank">Privacy Policy</a>
+                <a href="terms-of-service.html" target="_blank">Terms of Service</a>
+                <a href="contact-us.html" target="_blank">Contact Us</a>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>

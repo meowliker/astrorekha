@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
+import { Menu } from "lucide-react";
+import { OnboardingSidebar } from "@/components/OnboardingSidebar";
 import Image from "next/image";
 
 export default function WelcomePage() {
   const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Route protection: Check user status and redirect accordingly
   useEffect(() => {
@@ -206,6 +209,7 @@ export default function WelcomePage() {
   }, []);
 
   return (
+    <>
     <div className="min-h-screen bg-[#0A0E1A] flex items-center justify-center relative overflow-hidden">
       {/* Animated starry background */}
       <canvas
@@ -218,6 +222,16 @@ export default function WelcomePage() {
 
       {/* Content Container - matching other pages */}
       <div className="relative z-10 w-full max-w-md h-screen bg-[#0A0E1A] overflow-hidden shadow-2xl shadow-black/50 flex flex-col">
+        {/* Menu Button - inside app container */}
+        <header className="flex items-center justify-end px-4 py-4">
+          <button 
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 -mr-2 text-white/70 hover:text-white transition-colors"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        </header>
+
         <div className="flex-1 flex flex-col items-center justify-center px-6">
         {/* Logo and App Name */}
         <motion.div
@@ -302,5 +316,7 @@ export default function WelcomePage() {
         </div>
       </div>
     </div>
+    <OnboardingSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+    </>
   );
 }

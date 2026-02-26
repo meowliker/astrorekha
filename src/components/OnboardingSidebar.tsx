@@ -10,9 +10,10 @@ interface OnboardingSidebarProps {
 
 export function OnboardingSidebar({ isOpen, onClose }: OnboardingSidebarProps) {
   const menuItems = [
-    { label: "Contact us", href: "/contact-us" },
-    { label: "Privacy Policy", href: "/privacy-policy" },
-    { label: "Terms of Service", href: "/terms-of-service" },
+    { label: "About us", href: "Terms/about-us.html" },
+    { label: "Contact us", href: "Terms/contact-us.html" },
+    { label: "Privacy Policy", href: "Terms/privacy-policy.html" },
+    { label: "Terms of Service", href: "Terms/terms-of-service.html" },
   ];
 
   return (
