@@ -18,12 +18,15 @@ export async function POST(request: NextRequest) {
     const supabase = getSupabaseAdmin();
 
     // Check if user already exists
-    const { data: existing } = await supabase
+    const { data: existing, error: checkError } = await supabase
       .from("users")
       .select("id")
       .eq("email", normalizedEmail)
-      .limit(1)
-      .single();
+      .maybeSingle();
+
+    if (checkError) {
+      console.error("Error checking existing user:", checkError);
+    }
 
     if (existing) {
       return NextResponse.json(
@@ -107,19 +110,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Migrate related tables and delete the old anonymous user row
+    // Migrate related tables in background (non-blocking for faster registration)
     if (anonId && anonId !== uid) {
-      // Migrate payments to new user ID
-      await supabase.from("payments").update({ user_id: uid }).eq("user_id", anonId);
-      // Migrate palm_readings
-      await supabase.from("palm_readings").update({ id: uid }).eq("id", anonId);
-      // Migrate chat_messages
-      await supabase.from("chat_messages").update({ user_id: uid }).eq("user_id", anonId);
-      // Migrate daily_insights
-      await supabase.from("daily_insights").update({ id: uid }).eq("id", anonId);
-      // Delete old profile and user
-      await supabase.from("user_profiles").delete().eq("id", anonId);
-      await supabase.from("users").delete().eq("id", anonId);
+      (async () => {
+        try {
+          await Promise.all([
+            supabase.from("payments").update({ user_id: uid }).eq("user_id", anonId),
+            supabase.from("palm_readings").update({ id: uid }).eq("id", anonId),
+            supabase.from("chat_messages").update({ user_id: uid }).eq("user_id", anonId),
+            supabase.from("daily_insights").update({ id: uid }).eq("id", anonId),
+          ]);
+          await supabase.from("user_profiles").delete().eq("id", anonId);
+          await supabase.from("users").delete().eq("id", anonId);
+        } catch (err) {
+          console.error("Background migration error:", err);
+        }
+      })();
     }
 
     return NextResponse.json({

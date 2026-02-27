@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { ZodiacWheel } from "@/components/onboarding/ZodiacWheel";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { useRouter } from "next/navigation";
-import { Sparkles, Circle, Flame, Moon } from "lucide-react";
 import { useHaptic } from "@/hooks/useHaptic";
 
 const insightTags = [
@@ -29,11 +28,40 @@ export default function Step5Page() {
   const router = useRouter();
   const [phase, setPhase] = useState<"loading" | "results">("loading");
   const [visibleTags, setVisibleTags] = useState(0);
-  const [sunSign, setSunSign] = useState<SignData>({ name: "...", symbol: "✦", element: "", description: "" });
-  const [moonSign, setMoonSign] = useState<SignData>({ name: "...", symbol: "✦", element: "", description: "" });
-  const [ascendant, setAscendant] = useState<SignData>({ name: "...", symbol: "✦", element: "", description: "" });
   
-  const { birthMonth, birthDay, birthYear, birthHour, birthMinute, birthPeriod, birthPlace, setSigns } = useOnboardingStore();
+  // Get signs from store - will be calculated instantly on mount
+  const { 
+    birthMonth, birthDay, birthYear, birthHour, birthMinute, birthPeriod, birthPlace,
+    sunSign: storeSunSign, 
+    moonSign: storeMoonSign, 
+    ascendantSign: storeAscendant,
+    calculateLocalSigns,
+    fetchAccurateSigns,
+    signsFromApi
+  } = useOnboardingStore();
+  
+  // Local state for display (starts with store values or defaults)
+  const [sunSign, setSunSign] = useState<SignData>(storeSunSign || { name: "...", symbol: "✦", element: "", description: "" });
+  const [moonSign, setMoonSign] = useState<SignData>(storeMoonSign || { name: "...", symbol: "✦", element: "", description: "" });
+  const [ascendant, setAscendant] = useState<SignData>(storeAscendant || { name: "...", symbol: "✦", element: "", description: "" });
+
+  // Calculate local signs IMMEDIATELY on mount
+  useEffect(() => {
+    // Step 1: Calculate instant local signs (no API call)
+    calculateLocalSigns();
+    
+    // Step 2: Start background API fetch for accurate Moon/Ascendant
+    if (!signsFromApi) {
+      fetchAccurateSigns();
+    }
+  }, []);
+  
+  // Sync local state with store when store updates
+  useEffect(() => {
+    if (storeSunSign) setSunSign(storeSunSign);
+    if (storeMoonSign) setMoonSign(storeMoonSign);
+    if (storeAscendant) setAscendant(storeAscendant);
+  }, [storeSunSign, storeMoonSign, storeAscendant]);
 
   useEffect(() => {
     const tagInterval = setInterval(() => {
@@ -46,46 +74,16 @@ export default function Step5Page() {
       });
     }, 800);
 
-    // Fetch AI-calculated signs
-    const fetchSigns = async () => {
-      try {
-        const response = await fetch("/api/astrology/signs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            birthMonth,
-            birthDay,
-            birthYear,
-            birthHour,
-            birthMinute,
-            birthPeriod,
-            birthPlace,
-          }),
-        });
-        const data = await response.json();
-        if (data.success) {
-          setSunSign(data.sunSign);
-          setMoonSign(data.moonSign);
-          setAscendant(data.ascendant);
-          // Save to store for use across the app
-          setSigns(data.sunSign, data.moonSign, data.ascendant);
-        }
-      } catch (error) {
-        console.error("Failed to fetch signs:", error);
-      }
-    };
-
-    fetchSigns();
-
+    // Shorter loading phase since signs are instant now
     const phaseTimer = setTimeout(() => {
       setPhase("results");
-    }, 4500);
+    }, 3500);
 
     return () => {
       clearInterval(tagInterval);
       clearTimeout(phaseTimer);
     };
-  }, [birthMonth, birthDay, birthYear, birthHour, birthMinute, birthPeriod, birthPlace]);
+  }, []);
 
   const { triggerLight } = useHaptic();
   

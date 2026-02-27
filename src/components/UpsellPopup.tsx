@@ -38,53 +38,77 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
 
     try {
       const reportId = featureToReportId[feature];
-      const priceINR = Math.round(price * 100); // Convert to paise (price is already in INR)
       
-      const response = await fetch("/api/razorpay/create-order", {
+      const response = await fetch("/api/payu/initiate-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: priceINR * 100, // paise
           userId: generateUserId(),
-          bundleId: reportId,
+          packageId: reportId,
           type: "report",
+          email: localStorage.getItem("astrorekha_email") || "",
+          firstName: localStorage.getItem("astrorekha_name") || "Customer",
         }),
       });
 
       const data = await response.json();
 
-      if (data.orderId) {
-        const options = {
-          key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-          amount: priceINR * 100,
-          currency: "INR",
-          name: "AstroRekha",
-          description: featureNames[feature],
-          order_id: data.orderId,
-          handler: async (res: any) => {
-            await fetch("/api/razorpay/verify-payment", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                razorpay_order_id: res.razorpay_order_id,
-                razorpay_payment_id: res.razorpay_payment_id,
-                razorpay_signature: res.razorpay_signature,
-              }),
-            });
-            setIsProcessing(false);
-            onPurchase?.();
-            onClose();
-            window.location.reload();
+      if (data.txnId) {
+        const bolt = (window as any).bolt;
+        bolt.launch({
+          key: data.key,
+          txnid: data.txnId,
+          hash: data.hash,
+          amount: data.amount,
+          firstname: data.firstName,
+          email: data.email,
+          phone: "",
+          productinfo: data.productInfo,
+          udf1: data.udf1,
+          udf2: data.udf2,
+          udf3: data.udf3,
+          udf4: data.udf4,
+          udf5: data.udf5,
+          surl: `${window.location.origin}/api/payu/success`,
+          furl: `${window.location.origin}/api/payu/failure`,
+        }, {
+          responseHandler: async (response: any) => {
+            if (response.response.txnStatus === "SUCCESS") {
+              await fetch("/api/payu/verify-payment", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  txnid: response.response.txnid,
+                  mihpayid: response.response.mihpayid,
+                  status: "success",
+                  hash: response.response.hash,
+                  amount: data.amount,
+                  productinfo: data.productInfo,
+                  firstname: data.firstName,
+                  email: data.email,
+                  udf1: data.udf1,
+                  udf2: data.udf2,
+                  udf3: data.udf3,
+                  udf4: data.udf4,
+                  udf5: data.udf5,
+                  key: data.key,
+                }),
+              });
+              setIsProcessing(false);
+              onPurchase?.();
+              onClose();
+              window.location.reload();
+            } else {
+              setError("Payment failed. Please try again.");
+              setIsProcessing(false);
+            }
           },
-          prefill: { email: localStorage.getItem("astrorekha_email") || "" },
-          theme: { color: "#7C3AED" },
-        };
-        const rzp = new (window as any).Razorpay(options);
-        rzp.on("payment.failed", () => {
-          setError("Payment failed. Please try again.");
-          setIsProcessing(false);
+          catchException: (error: any) => {
+            console.error("PayU Bolt error:", error);
+            setError("Payment was cancelled or failed.");
+            setIsProcessing(false);
+          }
         });
-        rzp.open();
       } else {
         setError(data.error || "Unable to start checkout. Please try again.");
         setIsProcessing(false);

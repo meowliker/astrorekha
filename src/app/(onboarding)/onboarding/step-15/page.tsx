@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { fadeUp } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
@@ -12,34 +12,25 @@ import { useOnboardingStore } from "@/lib/onboarding-store";
 import { supabase } from "@/lib/supabase";
 import { generateUserId } from "@/lib/user-profile";
 
-// Generate random stats with some variation for authenticity
-function generateRandomStats() {
-  const baseStats = [
-    { label: "Love", color: "#EF6B6B", min: 72, max: 95 },
-    { label: "Health", color: "#4ECDC4", min: 68, max: 92 },
-    { label: "Wisdom", color: "#F5C542", min: 65, max: 88 },
-    { label: "Career", color: "#8B5CF6", min: 58, max: 85 },
-  ];
-  return baseStats.map((stat) => ({
-    label: stat.label,
-    color: stat.color,
-    value: Math.floor(Math.random() * (stat.max - stat.min + 1)) + stat.min,
-  }));
-}
+// Fixed stats to avoid hydration mismatch (server vs client random values)
+const READING_STATS = [
+  { label: "Love", color: "#EF6B6B", value: 85 },
+  { label: "Health", color: "#4ECDC4", value: 91 },
+  { label: "Wisdom", color: "#F5C542", value: 78 },
+  { label: "Career", color: "#8B5CF6", value: 65 },
+];
 
 export default function Step15Page() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState<string | null>(null);
   const [palmImage, setPalmImage] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isCheckingEmail, setIsCheckingEmail] = useState(false);
 
   // Get user data from onboarding store
   const { gender, birthYear, relationshipStatus, goals } = useOnboardingStore();
 
-  // Generate random stats once on mount
-  const readingStats = useMemo(() => generateRandomStats(), []);
+  // Use fixed stats to avoid hydration mismatch
+  const readingStats = READING_STATS;
 
   // Load captured palm image from localStorage and track ViewContent
   useEffect(() => {
@@ -114,29 +105,20 @@ export default function Step15Page() {
 
     setEmailError(null);
 
-    // Store email and save to Supabase
-    {
-      // Check if email already has an active subscription
-      setIsCheckingEmail(true);
-      const hasSubscription = await checkExistingSubscription(trimmed);
-      setIsCheckingEmail(false);
-      
-      if (hasSubscription) {
-        setEmailError("This email is already registered with an active subscription. Please use a different email or log in to your existing account.");
-        return;
-      }
-      
-      localStorage.setItem("astrorekha_email", trimmed);
-      // Track AddToWishlist when user provides email
-      pixelEvents.addToWishlist("Personalized Palm Reading Report");
-      
-      // Save lead data to Supabase
-      setIsSaving(true);
+    // Store email locally and navigate immediately (no database check)
+    localStorage.setItem("astrorekha_email", trimmed);
+    pixelEvents.addToWishlist("Personalized Palm Reading Report");
+    
+    // Navigate to next step immediately
+    router.push("/onboarding/step-17");
+    
+    // Save lead data in background (non-blocking)
+    const userId = generateUserId();
+    const currentYear = new Date().getFullYear();
+    const age = birthYear ? currentYear - parseInt(birthYear) : null;
+    
+    (async () => {
       try {
-        const userId = generateUserId();
-        const currentYear = new Date().getFullYear();
-        const age = birthYear ? currentYear - parseInt(birthYear) : null;
-        
         await supabase.from("leads").insert({
           id: `lead_${Date.now()}_${userId.slice(-6)}`,
           email: trimmed,
@@ -150,7 +132,6 @@ export default function Step15Page() {
           source: "onboarding_step_15",
         });
         
-        // Also update the user document with email
         await supabase.from("users").upsert({
           id: userId,
           email: trimmed,
@@ -162,11 +143,8 @@ export default function Step15Page() {
         }, { onConflict: "id" });
       } catch (err) {
         console.error("Failed to save lead data:", err);
-      } finally {
-        setIsSaving(false);
       }
-    }
-    router.push("/onboarding/step-17");
+    })();
   };
 
   return (
@@ -281,14 +259,13 @@ export default function Step15Page() {
         </motion.div>
       </div>
 
-      <div className="px-6 pb-24">
+      <div className="px-6 py-6 bg-background">
         <Button
           onClick={handleContinue}
           className="w-full h-14 text-lg font-semibold"
           size="lg"
-          disabled={isCheckingEmail || isSaving}
         >
-          {isCheckingEmail ? "Checking..." : isSaving ? "Saving..." : "Continue"}
+          Continue
         </Button>
       </div>
     </motion.div>

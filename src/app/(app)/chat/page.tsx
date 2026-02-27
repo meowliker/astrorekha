@@ -10,6 +10,7 @@ import { useOnboardingStore } from "@/lib/onboarding-store";
 import { useUserStore } from "@/lib/user-store";
 import { supabase } from "@/lib/supabase";
 import { generateUserId } from "@/lib/user-profile";
+import Script from "next/script";
 
 interface Message {
   role: "user" | "assistant";
@@ -95,11 +96,11 @@ export default function ChatPage() {
   // Get coins from user store
   const { coins, deductCoins } = useUserStore();
 
-  // Map coin packages to Razorpay package IDs
+  // Map coin packages to PayU package IDs
   const coinPackageMap: Record<number, { id: string; priceINR: number }> = {
-    50: { id: "coins-50", priceINR: 499 },
-    150: { id: "coins-150", priceINR: 999 },
-    300: { id: "coins-300", priceINR: 1499 },
+    50: { id: "coins-50", priceINR: 416 },
+    150: { id: "coins-150", priceINR: 1082 },
+    300: { id: "coins-300", priceINR: 1666 },
     500: { id: "coins-500", priceINR: 2499 },
   };
 
@@ -108,50 +109,75 @@ export default function ChatPage() {
     setPurchasingPackage(pkg.id);
 
     try {
-      const coinPkg = coinPackageMap[pkg.coins] || { id: "coins-50", priceINR: 499 };
-      const response = await fetch("/api/razorpay/create-order", {
+      const coinPkg = coinPackageMap[pkg.coins] || { id: "coins-50", priceINR: 416 };
+      const response = await fetch("/api/payu/initiate-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: coinPkg.priceINR * 100, // paise
           userId: generateUserId(),
-          bundleId: coinPkg.id,
+          packageId: coinPkg.id,
           type: "coins",
+          email: localStorage.getItem("astrorekha_email") || "",
+          firstName: localStorage.getItem("astrorekha_name") || "Customer",
         }),
       });
 
       const data = await response.json();
 
-      if (data.orderId) {
-        const options = {
-          key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-          amount: coinPkg.priceINR * 100,
-          currency: "INR",
-          name: "AstroRekha",
-          description: `${pkg.coins} Coins`,
-          order_id: data.orderId,
-          handler: async (response: any) => {
-            await fetch("/api/razorpay/verify-payment", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
-              }),
-            });
-            setPurchasingPackage(null);
-            window.location.reload();
+      if (data.txnId) {
+        const bolt = (window as any).bolt;
+        bolt.launch({
+          key: data.key,
+          txnid: data.txnId,
+          hash: data.hash,
+          amount: data.amount,
+          firstname: data.firstName,
+          email: data.email,
+          phone: "",
+          productinfo: data.productInfo,
+          udf1: data.udf1,
+          udf2: data.udf2,
+          udf3: data.udf3,
+          udf4: data.udf4,
+          udf5: data.udf5,
+          surl: `${window.location.origin}/api/payu/success`,
+          furl: `${window.location.origin}/api/payu/failure`,
+        }, {
+          responseHandler: async (response: any) => {
+            if (response.response.txnStatus === "SUCCESS") {
+              await fetch("/api/payu/verify-payment", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  txnid: response.response.txnid,
+                  mihpayid: response.response.mihpayid,
+                  status: "success",
+                  hash: response.response.hash,
+                  amount: data.amount,
+                  productinfo: data.productInfo,
+                  firstname: data.firstName,
+                  email: data.email,
+                  udf1: data.udf1,
+                  udf2: data.udf2,
+                  udf3: data.udf3,
+                  udf4: data.udf4,
+                  udf5: data.udf5,
+                  key: data.key,
+                }),
+              });
+              setPurchasingPackage(null);
+              window.location.reload();
+            } else {
+              setPurchaseError("Payment failed. Please try again.");
+              setPurchasingPackage(null);
+            }
           },
-          prefill: { email: localStorage.getItem("astrorekha_email") || "" },
-          theme: { color: "#7C3AED" },
-        };
-        const rzp = new (window as any).Razorpay(options);
-        rzp.on("payment.failed", () => {
-          setPurchaseError("Payment failed. Please try again.");
-          setPurchasingPackage(null);
+          catchException: (error: any) => {
+            console.error("PayU Bolt error:", error);
+            setPurchaseError("Payment was cancelled or failed.");
+            setPurchasingPackage(null);
+          }
         });
-        rzp.open();
       } else {
         setPurchaseError(data.error || "Unable to start checkout. Please try again.");
         setPurchasingPackage(null);
@@ -824,6 +850,8 @@ export default function ChatPage() {
         )}
       </AnimatePresence>
       </div>
+      {/* Load PayU Bolt script only on this page */}
+      <Script src="https://jssdk.payu.in/bolt/bolt.min.js" strategy="afterInteractive" />
     </div>
   );
 }

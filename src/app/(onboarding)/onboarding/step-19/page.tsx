@@ -136,21 +136,21 @@ function Step19Content() {
       localStorage.setItem("astrorekha_email", email);
       if (anonId) localStorage.setItem("astrorekha_prev_anon_id", anonId);
 
-      try {
-        await fetch("/api/session", { method: "POST" });
-      } catch (err) {
-        console.error("Failed to set session:", err);
-      }
-
-      // Update timezone
-      const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata";
-      await supabase.from("users").update({ timezone: userTimezone }).eq("id", uid);
-      
+      // Show success immediately - do background tasks after
+      setShowSuccess(true);
+      pixelEvents.completeRegistration(email);
       console.log("User registered:", uid);
 
+      // Background tasks (non-blocking)
       const palmImage = localStorage.getItem("astrorekha_palm_image");
-
-      await saveUserProfile({
+      
+      // Fire and forget - don't wait for these
+      fetch("/api/session", { method: "POST" }).catch(() => {});
+      
+      const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata";
+      supabase.from("users").update({ timezone: userTimezone }).eq("id", uid);
+      
+      saveUserProfile({
         userId: uid,
         email,
         gender: onboardingData.gender,
@@ -171,10 +171,7 @@ function Step19Content() {
         ascendantSign: onboardingData.ascendantSign,
         palmImage: palmImage || null,
         createdAt: new Date().toISOString(),
-      });
-
-      setShowSuccess(true);
-      pixelEvents.completeRegistration(email); // Track registration completion
+      }).catch((err) => console.error("Profile save error:", err));
 
       // Pre-generate palm reading in background (so it's instant on dashboard)
       const bundleId = localStorage.getItem("astrorekha_bundle_id");

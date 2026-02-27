@@ -11,6 +11,7 @@ import { useOnboardingStore } from "@/lib/onboarding-store";
 import { supabase } from "@/lib/supabase";
 import { generateUserId } from "@/lib/user-profile";
 import { pixelEvents } from "@/lib/pixel-events";
+import Script from "next/script";
 
 const progressSteps = [
   { label: "Order submitted", completed: true },
@@ -109,57 +110,77 @@ function BundleUpsellContent() {
     pixelEvents.addToCart(upsellPriceINR, "2026 Future Predictions");
 
     try {
-      const response = await fetch("/api/razorpay/create-order", {
+      const response = await fetch("/api/payu/initiate-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: upsellPriceINR * 100, // paise
           userId: storeUserId || localStorage.getItem("astrorekha_user_id") || generateUserId(),
           bundleId: "2026-predictions",
           type: "upsell",
+          email: localStorage.getItem("astrorekha_email") || "",
+          firstName: localStorage.getItem("astrorekha_name") || "Customer",
         }),
       });
 
       const data = await response.json();
 
-      if (data.orderId) {
+      if (data.txnId) {
         pixelEvents.initiateCheckout(upsellPriceINR, ["2026 Future Predictions"]);
 
-        const options = {
-          key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-          amount: upsellPriceINR * 100,
-          currency: "INR",
-          name: "AstroRekha",
-          description: "2026 Future Predictions",
-          order_id: data.orderId,
-          handler: async (res: any) => {
-            await fetch("/api/razorpay/verify-payment", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                razorpay_order_id: res.razorpay_order_id,
-                razorpay_payment_id: res.razorpay_payment_id,
-                razorpay_signature: res.razorpay_signature,
-              }),
-            });
-            pixelEvents.purchase(upsellPriceINR, "2026-predictions", "2026 Future Predictions");
-            setIsProcessing(false);
-            router.push("/onboarding/step-19");
-          },
-          prefill: { email: localStorage.getItem("astrorekha_email") || "" },
-          theme: { color: "#7C3AED" },
-          modal: {
-            ondismiss: () => {
+        const bolt = (window as any).bolt;
+        bolt.launch({
+          key: data.key,
+          txnid: data.txnId,
+          hash: data.hash,
+          amount: data.amount,
+          firstname: data.firstName,
+          email: data.email,
+          phone: "",
+          productinfo: data.productInfo,
+          udf1: data.udf1,
+          udf2: data.udf2,
+          udf3: data.udf3,
+          udf4: data.udf4,
+          udf5: data.udf5,
+          surl: `${window.location.origin}/api/payu/success`,
+          furl: `${window.location.origin}/api/payu/failure`,
+        }, {
+          responseHandler: async (response: any) => {
+            if (response.response.txnStatus === "SUCCESS") {
+              await fetch("/api/payu/verify-payment", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  txnid: response.response.txnid,
+                  mihpayid: response.response.mihpayid,
+                  status: "success",
+                  hash: response.response.hash,
+                  amount: data.amount,
+                  productinfo: data.productInfo,
+                  firstname: data.firstName,
+                  email: data.email,
+                  udf1: data.udf1,
+                  udf2: data.udf2,
+                  udf3: data.udf3,
+                  udf4: data.udf4,
+                  udf5: data.udf5,
+                  key: data.key,
+                }),
+              });
+              pixelEvents.purchase(upsellPriceINR, "2026-predictions", "2026 Future Predictions");
               setIsProcessing(false);
-            },
+              router.push("/onboarding/step-19");
+            } else {
+              setPaymentError("Payment failed. Please try again.");
+              setIsProcessing(false);
+            }
           },
-        };
-        const rzp = new (window as any).Razorpay(options);
-        rzp.on("payment.failed", () => {
-          setPaymentError("Payment failed. Please try again.");
-          setIsProcessing(false);
+          catchException: (error: any) => {
+            console.error("PayU Bolt error:", error);
+            setPaymentError("Payment was cancelled or failed.");
+            setIsProcessing(false);
+          }
         });
-        rzp.open();
       } else if (data.error) {
         setPaymentError(data.error);
         setIsProcessing(false);
@@ -369,14 +390,18 @@ function BundleUpsellContent() {
 
 export default function BundleUpsellPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex-1 flex items-center justify-center min-h-screen bg-background">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
-      }
-    >
-      <BundleUpsellContent />
-    </Suspense>
+    <>
+      <Suspense
+        fallback={
+          <div className="flex-1 flex items-center justify-center min-h-screen bg-background">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          </div>
+        }
+      >
+        <BundleUpsellContent />
+      </Suspense>
+      {/* Load PayU Bolt script only on this page */}
+      <Script src="https://jssdk.payu.in/bolt/bolt.min.js" strategy="afterInteractive" />
+    </>
   );
 }

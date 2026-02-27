@@ -11,6 +11,8 @@ import { pixelEvents } from "@/lib/pixel-events";
 import { detectHandLandmarks } from "@/lib/palm-detection";
 import { useUserStore } from "@/lib/user-store";
 import Link from "next/link";
+import Script from "next/script";
+import { usePricing } from "@/hooks/usePricing";
 
 const predictionLabels = [
   { text: "Children", emoji: "👶", top: "15%", left: "20%", rotation: -15 },
@@ -78,59 +80,13 @@ const scrollingEmails = [
   "Dav***@icloud.com",
 ];
 
-// Bundle pricing plans (INR)
-const bundlePlans = [
-  {
-    id: "palm-reading",
-    name: "Palm Reading",
-    price: "₹559",
-    priceValue: 559,
-    originalPrice: "₹699",
-    discount: "20% OFF",
-    description: "Personalized palm reading report delivered instantly.",
-    features: ["palmReading"],
-    featureList: [
-      "Complete palm line analysis",
-      "Life, heart, head line insights",
-      "Personality traits revealed",
-    ],
-  },
-  {
-    id: "palm-birth",
-    name: "Palm + Birth Chart",
-    price: "₹839",
-    priceValue: 839,
-    originalPrice: "₹1199",
-    discount: "30% OFF",
-    description: "Deep palm insights plus your full zodiac reading.",
-    features: ["palmReading", "birthChart"],
-    featureList: [
-      "Everything in Palm Reading",
-      "Complete birth chart analysis",
-      "Planetary positions & houses",
-    ],
-    popular: true,
-  },
-  {
-    id: "palm-birth-compat",
-    name: "Palm + Birth Chart + Compatibility Report",
-    price: "₹1599",
-    priceValue: 1599,
-    originalPrice: "₹3199",
-    discount: "50% OFF",
-    description: "Complete cosmic package with all reports included.",
-    features: ["palmReading", "birthChart", "compatibilityTest"],
-    featureList: [
-      "Everything in Palm + Birth Chart",
-      "Full compatibility analysis",
-      "Partner matching report",
-    ],
-    limitedOffer: true,
-  },
-];
+// Bundle pricing plans are now fetched dynamically via usePricing hook
 
 export default function BundlePricingPage() {
   const router = useRouter();
+  const { pricing } = usePricing();
+  const bundlePlans = pricing.bundles.filter(b => b.active);
+  
   const [selectedPlan, setSelectedPlan] = useState<string>("palm-birth");
   const [agreedToTerms, setAgreedToTerms] = useState(true);
   const [paymentError, setPaymentError] = useState("");
@@ -292,7 +248,7 @@ export default function BundlePricingPage() {
     localStorage.setItem("astrorekha_onboarding_flow", "flow-b");
     
     // Track AddToCart
-    pixelEvents.addToCart(plan.priceValue, plan.name);
+    pixelEvents.addToCart(plan.price, plan.name);
 
     // Track Brevo checkout_started for abandoned checkout automation (30-min email)
     const userEmail = localStorage.getItem("astrorekha_email");
@@ -303,13 +259,13 @@ export default function BundlePricingPage() {
         body: JSON.stringify({
           email: userEmail,
           event: "checkout_started",
-          properties: { plan: selectedPlan, price: plan.priceValue, flow: "bundle" },
+          properties: { plan: selectedPlan, price: plan.price, flow: "bundle" },
         }),
       }).catch(() => {});
     }
 
     try {
-      const response = await fetch("/api/razorpay/create-order", {
+      const response = await fetch("/api/payu/initiate-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -317,62 +273,80 @@ export default function BundlePricingPage() {
           bundleId: selectedPlan,
           userId: userId || generateUserId(),
           email: localStorage.getItem("astrorekha_email") || "",
+          firstName: localStorage.getItem("astrorekha_name") || "Customer",
         }),
       });
 
       const data = await response.json();
 
-      if (data.orderId) {
-        pixelEvents.initiateCheckout(plan.priceValue, [plan.name]);
-        pixelEvents.addPaymentInfo(plan.priceValue, plan.name);
+      if (data.txnId) {
+        pixelEvents.initiateCheckout(plan.price, [plan.name]);
+        pixelEvents.addPaymentInfo(plan.price, plan.name);
         
-        // Open Razorpay checkout
-        const options = {
-          key: data.keyId,
+        // Open PayU Bolt checkout
+        const bolt = (window as any).bolt;
+        bolt.launch({
+          key: data.key,
+          txnid: data.txnId,
+          hash: data.hash,
           amount: data.amount,
-          currency: data.currency,
-          name: "AstroRekha",
-          description: plan.name,
-          order_id: data.orderId,
-          prefill: {
-            email: localStorage.getItem("astrorekha_email") || "",
-          },
-          theme: { color: "#7C3AED" },
-          handler: async (response: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => {
-            // Verify payment on server
-            const verifyRes = await fetch("/api/razorpay/verify-payment", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_signature: response.razorpay_signature,
-                userId: userId || generateUserId(),
-                bundleId: selectedPlan,
-                type: "bundle",
-              }),
-            });
-            const verifyData = await verifyRes.json();
-            if (verifyData.success) {
-              localStorage.setItem("astrorekha_payment_completed", "true");
-              localStorage.setItem("astrorekha_purchase_type", "one-time");
-              localStorage.setItem("astrorekha_bundle_id", selectedPlan);
-              pixelEvents.purchase(plan.priceValue, selectedPlan, plan.name);
-              router.push("/onboarding/bundle-upsell");
+          firstname: data.firstName,
+          email: data.email,
+          phone: "",
+          productinfo: data.productInfo,
+          udf1: data.udf1,
+          udf2: data.udf2,
+          udf3: data.udf3,
+          udf4: data.udf4,
+          udf5: data.udf5,
+          surl: `${window.location.origin}/api/payu/success`,
+          furl: `${window.location.origin}/api/payu/failure`,
+        }, {
+          responseHandler: async (response: any) => {
+            if (response.response.txnStatus === "SUCCESS") {
+              // Verify payment on server
+              const verifyRes = await fetch("/api/payu/verify-payment", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  txnid: response.response.txnid,
+                  mihpayid: response.response.mihpayid,
+                  status: "success",
+                  hash: response.response.hash,
+                  amount: data.amount,
+                  productinfo: data.productInfo,
+                  firstname: data.firstName,
+                  email: data.email,
+                  udf1: data.udf1,
+                  udf2: data.udf2,
+                  udf3: data.udf3,
+                  udf4: data.udf4,
+                  udf5: data.udf5,
+                  key: data.key,
+                }),
+              });
+              const verifyData = await verifyRes.json();
+              if (verifyData.success) {
+                localStorage.setItem("astrorekha_payment_completed", "true");
+                localStorage.setItem("astrorekha_purchase_type", "one-time");
+                localStorage.setItem("astrorekha_bundle_id", selectedPlan);
+                pixelEvents.purchase(plan.price, selectedPlan, plan.name);
+                router.push("/onboarding/bundle-upsell");
+              } else {
+                setPaymentError("Payment verification failed. Please contact support.");
+                setIsProcessing(false);
+              }
             } else {
-              setPaymentError("Payment verification failed. Please contact support.");
+              setPaymentError("Payment failed. Please try again.");
               setIsProcessing(false);
             }
           },
-          modal: {
-            ondismiss: () => {
-              setIsProcessing(false);
-            },
-          },
-        };
-        
-        const rzp = new (window as any).Razorpay(options);
-        rzp.open();
+          catchException: (error: any) => {
+            console.error("PayU Bolt error:", error);
+            setPaymentError("Payment was cancelled or failed.");
+            setIsProcessing(false);
+          }
+        });
       } else if (data.error) {
         setPaymentError(data.error);
         setIsProcessing(false);
@@ -1120,6 +1094,9 @@ export default function BundlePricingPage() {
           </div>
         </motion.div>
       )}
+      
+      {/* Load PayU Bolt script eagerly for faster checkout */}
+      <Script src="https://jssdk.payu.in/bolt/bolt.min.js" strategy="afterInteractive" />
     </motion.div>
   );
 }

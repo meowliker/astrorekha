@@ -40,11 +40,6 @@ const relationshipLabels: Record<string, string> = {
 export default function Step11Page() {
   const router = useRouter();
   const [phase, setPhase] = useState(0);
-  const [sunSign, setSunSign] = useState<SignData>({ name: "...", symbol: "✦", element: "", description: "" });
-  const [moonSign, setMoonSign] = useState<SignData>({ name: "...", symbol: "✦", element: "", description: "" });
-  const [ascendant, setAscendant] = useState<SignData>({ name: "...", symbol: "✦", element: "", description: "" });
-  const [modality, setModality] = useState("Cardinal");
-  const [polarity, setPolarity] = useState("Feminine");
   
   const {
     gender,
@@ -58,53 +53,49 @@ export default function Step11Page() {
     relationshipStatus,
     goals,
     elementPreference,
+    sunSign: storeSunSign,
+    moonSign: storeMoonSign,
+    ascendantSign: storeAscendant,
+    modality: storeModality,
+    polarity: storePolarity,
+    calculateLocalSigns,
+    fetchAccurateSigns,
+    signsFromApi,
   } = useOnboardingStore();
+  
+  // Use store values directly, with fallbacks
+  const sunSign = storeSunSign || { name: "...", symbol: "✦", element: "", description: "" };
+  const moonSign = storeMoonSign || { name: "...", symbol: "✦", element: "", description: "" };
+  const ascendant = storeAscendant || { name: "...", symbol: "✦", element: "", description: "" };
+  const modality = storeModality || "Cardinal";
+  const polarity = storePolarity || "Feminine";
 
   const genderLabel = gender === "male" ? "Man" : gender === "female" ? "Woman" : "Person";
   const elementLabel = elementPreference ? elementPreference.charAt(0).toUpperCase() + elementPreference.slice(1) : "Water";
 
+  // Ensure signs are calculated (should already be done from step-5)
+  useEffect(() => {
+    // If signs aren't loaded yet, calculate them instantly
+    if (!storeSunSign) {
+      calculateLocalSigns();
+    }
+    // If not from API yet, fetch in background
+    if (!signsFromApi) {
+      fetchAccurateSigns();
+    }
+  }, []);
+
   useEffect(() => {
     const timers = [
-      setTimeout(() => setPhase(1), 500),
-      setTimeout(() => setPhase(2), 1800),
-      setTimeout(() => setPhase(3), 5000),
-      setTimeout(() => setPhase(4), 6200),
-      setTimeout(() => setPhase(5), 7200),
+      setTimeout(() => setPhase(1), 800),
+      setTimeout(() => setPhase(2), 2500),
+      setTimeout(() => setPhase(3), 5500),
+      setTimeout(() => setPhase(4), 7500),
+      setTimeout(() => setPhase(5), 9000),
     ];
 
-    // Fetch AI-calculated signs
-    const fetchSigns = async () => {
-      try {
-        const response = await fetch("/api/astrology/signs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            birthMonth,
-            birthDay,
-            birthYear,
-            birthHour,
-            birthMinute,
-            birthPeriod,
-            birthPlace,
-          }),
-        });
-        const data = await response.json();
-        if (data.success) {
-          setSunSign(data.sunSign);
-          setMoonSign(data.moonSign);
-          setAscendant(data.ascendant);
-          if (data.modality) setModality(data.modality);
-          if (data.polarity) setPolarity(data.polarity);
-        }
-      } catch (error) {
-        console.error("Failed to fetch signs:", error);
-      }
-    };
-
-    fetchSigns();
-
     return () => timers.forEach(clearTimeout);
-  }, [birthMonth, birthDay, birthYear, birthHour, birthMinute, birthPeriod, birthPlace]);
+  }, []);
 
   const { triggerLight } = useHaptic();
   const handleContinue = () => {

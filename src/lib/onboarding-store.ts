@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { calculateInstantSigns } from "./zodiac-utils";
 
 export type Gender = "female" | "male" | "non-binary" | null;
 export type RelationshipStatus = "in-relationship" | "just-broke-up" | "engaged" | "married" | "looking-for-soulmate" | "single" | "complicated" | null;
@@ -32,6 +33,10 @@ interface OnboardingState {
   sunSign: SignData | null;
   moonSign: SignData | null;
   ascendantSign: SignData | null;
+  signsLoading: boolean;
+  signsFromApi: boolean;
+  modality: string | null;
+  polarity: string | null;
   
   setGender: (gender: Gender) => void;
   setBirthDate: (month: string, day: string, year: string) => void;
@@ -42,7 +47,12 @@ interface OnboardingState {
   setGoals: (goals: string[]) => void;
   setColorPreference: (color: ColorPreference) => void;
   setElementPreference: (element: ElementPreference) => void;
-  setSigns: (sunSign: SignData, moonSign: SignData, ascendantSign: SignData) => void;
+  setSigns: (sunSign: SignData, moonSign: SignData, ascendantSign: SignData, fromApi?: boolean) => void;
+  setSignsLoading: (loading: boolean) => void;
+  setModality: (modality: string) => void;
+  setPolarity: (polarity: string) => void;
+  calculateLocalSigns: () => void;
+  fetchAccurateSigns: () => Promise<void>;
   reset: () => void;
 }
 
@@ -63,6 +73,10 @@ const initialState = {
   sunSign: null as SignData | null,
   moonSign: null as SignData | null,
   ascendantSign: null as SignData | null,
+  signsLoading: false,
+  signsFromApi: false,
+  modality: null as string | null,
+  polarity: null as string | null,
 };
 
 export const useOnboardingStore = create<OnboardingState>()(
@@ -90,7 +104,77 @@ export const useOnboardingStore = create<OnboardingState>()(
       
       setElementPreference: (elementPreference) => set({ elementPreference }),
       
-      setSigns: (sunSign, moonSign, ascendantSign) => set({ sunSign, moonSign, ascendantSign }),
+      setSigns: (sunSign, moonSign, ascendantSign, fromApi = false) => set({ 
+        sunSign, 
+        moonSign, 
+        ascendantSign: { ...ascendantSign, name: ascendantSign.name, symbol: ascendantSign.symbol, element: ascendantSign.element, description: ascendantSign.description },
+        signsFromApi: fromApi 
+      }),
+      
+      setSignsLoading: (signsLoading) => set({ signsLoading }),
+      
+      setModality: (modality) => set({ modality }),
+      
+      setPolarity: (polarity) => set({ polarity }),
+      
+      calculateLocalSigns: () => set((state) => {
+        const signs = calculateInstantSigns(
+          state.birthMonth,
+          state.birthDay,
+          state.birthYear,
+          state.birthHour,
+          state.birthMinute,
+          state.birthPeriod
+        );
+        return {
+          sunSign: signs.sunSign,
+          moonSign: signs.moonSign,
+          ascendantSign: signs.ascendant,
+          modality: signs.modality,
+          polarity: signs.polarity,
+          signsFromApi: false,
+        };
+      }),
+      
+      fetchAccurateSigns: async () => {
+        const state = useOnboardingStore.getState();
+        if (state.signsFromApi) return; // Already fetched from API
+        
+        set({ signsLoading: true });
+        
+        try {
+          const response = await fetch("/api/astrology/signs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              birthMonth: state.birthMonth,
+              birthDay: state.birthDay,
+              birthYear: state.birthYear,
+              birthHour: state.birthHour,
+              birthMinute: state.birthMinute,
+              birthPeriod: state.birthPeriod,
+              birthPlace: state.birthPlace,
+            }),
+          });
+          const data = await response.json();
+          if (data.success) {
+            set({
+              sunSign: data.sunSign,
+              moonSign: data.moonSign,
+              ascendantSign: data.ascendant,
+              modality: data.modality,
+              polarity: data.polarity,
+              signsFromApi: true,
+              signsLoading: false,
+            });
+          } else {
+            set({ signsLoading: false });
+          }
+        } catch (error) {
+          console.error("Failed to fetch accurate signs:", error);
+          set({ signsLoading: false });
+        }
+      },
       
       reset: () => set(initialState),
     }),

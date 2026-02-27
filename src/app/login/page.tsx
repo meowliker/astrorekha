@@ -305,12 +305,12 @@ export default function LoginPage() {
 
   return (
     <>
-    <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
-      <div className="w-full max-w-md h-screen bg-[#0A0E1A] overflow-hidden shadow-2xl shadow-black/50 flex flex-col relative">
-        {/* Starry background */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          {[...Array(80)].map((_, i) => (
-            <div
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+        <div className="w-full max-w-md h-screen bg-[#0A0E1A] overflow-hidden shadow-2xl shadow-black/50 flex flex-col relative">
+          {/* Starry background */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            {[...Array(80)].map((_, i) => (
+              <div
               key={i}
               className="absolute rounded-full bg-white animate-pulse"
               style={{
