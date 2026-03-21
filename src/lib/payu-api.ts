@@ -55,16 +55,61 @@ export async function getPayUTransactions(
     throw new Error("PayU credentials not configured");
   }
 
-  // Build date strings with time if provided
-  const fromDateTime = fromTime ? `${fromDate} ${fromTime}` : `${fromDate} 00:00:00`;
-  const toDateTime = toTime ? `${toDate} ${toTime}` : `${toDate} 23:59:59`;
+  // If caller provides specific time boundaries, run a single request.
+  if (fromTime || toTime) {
+    const fromDateTime = fromTime ? `${fromDate} ${fromTime}` : `${fromDate} 00:00:00`;
+    const toDateTime = toTime ? `${toDate} ${toTime}` : `${toDate} 23:59:59`;
+    return fetchPayUTransactionsChunk(merchantKey, merchantSalt, fromDateTime, toDateTime);
+  }
 
-  // Hash format: key|command|var1|salt
+  // PayU postservice is most reliable when queried in <= 7-day chunks.
+  const startDate = new Date(`${fromDate}T00:00:00Z`);
+  const endDate = new Date(`${toDate}T00:00:00Z`);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    throw new Error("Invalid date range for PayU fetch");
+  }
+
+  const allTransactions: PayUTransaction[] = [];
+  const seenTxnIds = new Set<string>();
+  const maxDaysPerChunk = 7;
+  let currentStart = new Date(startDate);
+
+  while (currentStart <= endDate) {
+    const currentEnd = new Date(currentStart);
+    currentEnd.setUTCDate(currentEnd.getUTCDate() + (maxDaysPerChunk - 1));
+    if (currentEnd > endDate) {
+      currentEnd.setTime(endDate.getTime());
+    }
+
+    const chunkFromDate = toYMD(currentStart);
+    const chunkToDate = toYMD(currentEnd);
+    const chunkTransactions = await fetchPayUTransactionsChunk(
+      merchantKey,
+      merchantSalt,
+      chunkFromDate,
+      chunkToDate
+    );
+
+    for (const txn of chunkTransactions) {
+      if (!txn?.txnid) continue;
+      if (seenTxnIds.has(txn.txnid)) continue;
+      seenTxnIds.add(txn.txnid);
+      allTransactions.push(txn);
+    }
+
+    currentStart.setUTCDate(currentEnd.getUTCDate() + 1);
+  }
+
+  return allTransactions;
+}
+
+async function fetchPayUTransactionsChunk(
+  merchantKey: string,
+  merchantSalt: string,
+  var1: string,
+  var2: string
+): Promise<PayUTransaction[]> {
   const command = "get_Transaction_Details";
-  const var1 = fromDateTime;
-  const var2 = toDateTime;
-  
-  // PayU hash for get_Transaction_Details: key|command|var1|salt
   const hashString = `${merchantKey}|${command}|${var1}|${merchantSalt}`;
   const hash = generateHash(hashString);
 
@@ -94,10 +139,13 @@ export async function getPayUTransactions(
     }
 
     if (data.status === 1 && data.Transaction_details) {
-      // Filter only successful transactions
-      return data.Transaction_details.filter(
-        (txn) => txn.status === "success" || txn.status === "captured"
-      );
+      const details = Array.isArray(data.Transaction_details)
+        ? data.Transaction_details
+        : Object.values(data.Transaction_details as any);
+      return details.filter((txn: any) => {
+        const status = String(txn?.status || "").toLowerCase();
+        return status === "success" || status === "captured";
+      }) as PayUTransaction[];
     }
 
     // Return empty array if no transactions or error
@@ -107,6 +155,13 @@ export async function getPayUTransactions(
     console.error("PayU API error:", error);
     throw error;
   }
+}
+
+function toYMD(date: Date): string {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(date.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 export interface ProcessedTransaction {
