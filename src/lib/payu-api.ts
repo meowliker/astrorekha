@@ -1,8 +1,8 @@
 import crypto from "crypto";
 
-const PAYU_BASE_URL = process.env.PAYU_MODE === "live" 
-  ? "https://info.payu.in/merchant/postservice.php"
-  : "https://test.payu.in/merchant/postservice.php";
+const PAYU_BASE_URL = process.env.PAYU_MODE === "live"
+  ? "https://info.payu.in/merchant/postservice.php?form=2"
+  : "https://test.payu.in/merchant/postservice.php?form=2";
 
 interface PayUTransaction {
   mihpayid: string;
@@ -85,7 +85,13 @@ export async function getPayUTransactions(
       body: formData.toString(),
     });
 
-    const data = await response.json() as PayUTransactionResponse;
+    const raw = await response.text();
+    let data: PayUTransactionResponse;
+    try {
+      data = JSON.parse(raw) as PayUTransactionResponse;
+    } catch {
+      throw new Error(`PayU returned non-JSON response: ${raw.slice(0, 200)}`);
+    }
 
     if (data.status === 1 && data.Transaction_details) {
       // Filter only successful transactions
