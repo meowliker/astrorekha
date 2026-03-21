@@ -42,7 +42,8 @@ function generateHash(params: string): string {
   return crypto.createHash("sha512").update(params).digest("hex");
 }
 
-async function fetchPayUTransactions(fromDate: string, toDate: string): Promise<PayUTransaction[]> {
+// Fetch PayU transactions for a single chunk (max 7 days)
+async function fetchPayUTransactionsChunk(fromDate: string, toDate: string): Promise<PayUTransaction[]> {
   const merchantKey = process.env.PAYU_MERCHANT_KEY;
   const merchantSalt = process.env.PAYU_MERCHANT_SALT;
 
@@ -52,22 +53,14 @@ async function fetchPayUTransactions(fromDate: string, toDate: string): Promise<
   }
 
   const command = "get_Transaction_Details";
-  // PayU expects dates in format: YYYY-MM-DD (without time for var1, var2)
-  const var1 = fromDate; // Start date
-  const var2 = toDate;   // End date
-  
-  // PayU hash format for get_Transaction_Details: key|command|var1|salt
-  const hashString = `${merchantKey}|${command}|${var1}|${merchantSalt}`;
+  const hashString = `${merchantKey}|${command}|${fromDate}|${merchantSalt}`;
   const hash = generateHash(hashString);
-
-  console.log("PayU API request - key:", merchantKey.slice(0, 4) + "***", "fromDate:", var1, "toDate:", var2);
-  console.log("PayU hash string (masked):", `${merchantKey.slice(0, 4)}***|${command}|${var1}|***`);
 
   const formData = new URLSearchParams();
   formData.append("key", merchantKey);
   formData.append("command", command);
-  formData.append("var1", var1);
-  formData.append("var2", var2);
+  formData.append("var1", fromDate);
+  formData.append("var2", toDate);
   formData.append("hash", hash);
 
   try {
@@ -81,43 +74,65 @@ async function fetchPayUTransactions(fromDate: string, toDate: string): Promise<
     });
 
     const responseText = await response.text();
-    console.log("PayU raw response (first 1000 chars):", responseText.slice(0, 1000));
-
     let data;
     try {
       data = JSON.parse(responseText);
     } catch (parseError) {
-      console.error("PayU response is not JSON:", responseText.slice(0, 500));
-      throw new Error("PayU API returned invalid response: " + responseText.slice(0, 100));
+      console.error("PayU response parse error for chunk", fromDate, "-", toDate);
+      return [];
     }
 
-    console.log("PayU parsed response - status:", data.status, "msg:", data.msg);
-
-    // PayU returns status=1 for success
     if (data.status === 1 && data.Transaction_details) {
       const allTxns = Array.isArray(data.Transaction_details) ? data.Transaction_details : Object.values(data.Transaction_details);
-      console.log("PayU returned", allTxns.length, "total transactions");
-      
-      const successTxns = allTxns.filter(
+      return allTxns.filter(
         (txn: PayUTransaction) => txn.status === "success" || txn.status === "captured"
       );
-      console.log("PayU successful transactions:", successTxns.length);
-      
-      return successTxns;
     }
 
-    // Check for error messages
     if (data.msg) {
-      console.error("PayU API error message:", data.msg);
-      throw new Error("PayU API error: " + data.msg);
+      console.log("PayU chunk response:", fromDate, "-", toDate, "msg:", data.msg);
     }
 
-    console.log("PayU returned no transactions or unexpected format");
     return [];
   } catch (fetchError: any) {
-    console.error("PayU fetch error:", fetchError.message);
-    throw fetchError;
+    console.error("PayU fetch error for chunk:", fromDate, "-", toDate, fetchError.message);
+    return [];
   }
+}
+
+// Fetch PayU transactions for a date range (handles >7 day ranges by chunking)
+async function fetchPayUTransactions(fromDate: string, toDate: string): Promise<PayUTransaction[]> {
+  const startDate = new Date(fromDate);
+  const endDate = new Date(toDate);
+  const allTransactions: PayUTransaction[] = [];
+  
+  // PayU API has a 7-day limit, so we fetch in chunks
+  const MAX_DAYS = 7;
+  let currentStart = new Date(startDate);
+  
+  while (currentStart <= endDate) {
+    const currentEnd = new Date(currentStart);
+    currentEnd.setDate(currentEnd.getDate() + MAX_DAYS - 1);
+    
+    // Don't go past the end date
+    if (currentEnd > endDate) {
+      currentEnd.setTime(endDate.getTime());
+    }
+    
+    const chunkFromDate = currentStart.toISOString().split("T")[0];
+    const chunkToDate = currentEnd.toISOString().split("T")[0];
+    
+    console.log(`Fetching PayU chunk: ${chunkFromDate} to ${chunkToDate}`);
+    
+    const chunkTransactions = await fetchPayUTransactionsChunk(chunkFromDate, chunkToDate);
+    allTransactions.push(...chunkTransactions);
+    
+    // Move to next chunk
+    currentStart.setDate(currentEnd.getDate() + 1);
+  }
+  
+  console.log(`Total PayU transactions fetched: ${allTransactions.length}`);
+  return allTransactions;
 }
 
 // Convert Costa Rica time (UTC-6) to IST (UTC+5:30)

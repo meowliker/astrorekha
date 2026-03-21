@@ -52,8 +52,8 @@ function generateHash(params: string): string {
   return crypto.createHash("sha512").update(params).digest("hex");
 }
 
-// Fetch PayU transactions for a date range
-async function fetchPayUTransactions(fromDate: string, toDate: string): Promise<PayUTransaction[]> {
+// Fetch PayU transactions for a single chunk (max 7 days)
+async function fetchPayUTransactionsChunk(fromDate: string, toDate: string): Promise<PayUTransaction[]> {
   const merchantKey = process.env.PAYU_MERCHANT_KEY;
   const merchantSalt = process.env.PAYU_MERCHANT_SALT;
 
@@ -86,6 +86,7 @@ async function fetchPayUTransactions(fromDate: string, toDate: string): Promise<
   try {
     data = JSON.parse(responseText);
   } catch {
+    console.error("PayU response parse error for chunk", fromDate, "-", toDate);
     return [];
   }
 
@@ -98,7 +99,46 @@ async function fetchPayUTransactions(fromDate: string, toDate: string): Promise<
     );
   }
 
+  if (data.msg) {
+    console.log("PayU chunk response:", fromDate, "-", toDate, "msg:", data.msg);
+  }
+
   return [];
+}
+
+// Fetch PayU transactions for a date range (handles >7 day ranges by chunking)
+async function fetchPayUTransactions(fromDate: string, toDate: string): Promise<PayUTransaction[]> {
+  const startDate = new Date(fromDate);
+  const endDate = new Date(toDate);
+  const allTransactions: PayUTransaction[] = [];
+  
+  // PayU API has a 7-day limit, so we fetch in chunks
+  const MAX_DAYS = 7;
+  let currentStart = new Date(startDate);
+  
+  while (currentStart <= endDate) {
+    const currentEnd = new Date(currentStart);
+    currentEnd.setDate(currentEnd.getDate() + MAX_DAYS - 1);
+    
+    // Don't go past the end date
+    if (currentEnd > endDate) {
+      currentEnd.setTime(endDate.getTime());
+    }
+    
+    const chunkFromDate = currentStart.toISOString().split("T")[0];
+    const chunkToDate = currentEnd.toISOString().split("T")[0];
+    
+    console.log(`Fetching PayU chunk: ${chunkFromDate} to ${chunkToDate}`);
+    
+    const chunkTransactions = await fetchPayUTransactionsChunk(chunkFromDate, chunkToDate);
+    allTransactions.push(...chunkTransactions);
+    
+    // Move to next chunk
+    currentStart.setDate(currentEnd.getDate() + 1);
+  }
+  
+  console.log(`Total PayU transactions fetched: ${allTransactions.length}`);
+  return allTransactions;
 }
 
 // Fetch Meta Ads daily spend for a date range
