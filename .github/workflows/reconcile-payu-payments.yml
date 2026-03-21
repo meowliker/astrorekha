@@ -1,0 +1,52 @@
+name: Reconcile PayU Payments
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      lookbackDays:
+        description: "How many days back to reconcile"
+        required: false
+        default: "30"
+      maxRows:
+        description: "Max rows to reconcile per run"
+        required: false
+        default: "500"
+
+concurrency:
+  group: reconcile-payu-payments
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Call reconcile endpoint
+        env:
+          RECONCILE_URL: ${{ secrets.RECONCILE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          LOOKBACK_DAYS: ${{ github.event.inputs.lookbackDays || '30' }}
+          MAX_ROWS: ${{ github.event.inputs.maxRows || '500' }}
+        run: |
+          if [ -z "$RECONCILE_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "Missing required secrets: RECONCILE_URL and/or CRON_SECRET"
+            exit 1
+          fi
+
+          URL="${RECONCILE_URL}?lookbackDays=${LOOKBACK_DAYS}&maxRows=${MAX_ROWS}"
+          echo "Calling: ${URL}"
+
+          STATUS=$(curl -sS -o response.json -w "%{http_code}" \
+            -X GET "${URL}" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Accept: application/json")
+
+          cat response.json
+          echo ""
+          echo "HTTP status: ${STATUS}"
+
+          if [ "${STATUS}" -lt 200 ] || [ "${STATUS}" -ge 300 ]; then
+            exit 1
+          fi
