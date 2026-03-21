@@ -35,13 +35,13 @@ jobs:
             exit 1
           fi
 
-          URL="${RECONCILE_URL}?lookbackDays=${LOOKBACK_DAYS}&maxRows=${MAX_ROWS}"
-          echo "Calling: ${URL}"
-
-          STATUS=$(curl -sS -o response.json -w "%{http_code}" \
-            -X GET "${URL}" \
-            -H "Authorization: Bearer ${CRON_SECRET}" \
-            -H "Accept: application/json")
+          echo "Calling: ${RECONCILE_URL}"
+          BODY=$(printf '{"secret":"%s","lookbackDays":%s,"maxRows":%s}' "$CRON_SECRET" "$LOOKBACK_DAYS" "$MAX_ROWS")
+          STATUS=$(curl -sSL -o response.json -w "%{http_code}" \
+            -X POST "${RECONCILE_URL}" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
+            --data "$BODY")
 
           cat response.json
           echo ""
