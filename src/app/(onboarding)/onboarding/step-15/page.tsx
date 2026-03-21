@@ -48,42 +48,33 @@ export default function Step15Page() {
 
   const { triggerLight } = useHaptic();
   
-  // Check if email already has an active subscription or bundle purchase
-  const checkExistingSubscription = async (emailToCheck: string): Promise<boolean> => {
+  const checkPaymentStateByEmail = async (emailToCheck: string): Promise<{
+    hasPaidPayment: boolean;
+    hasRegisteredAccount: boolean;
+    latestBundleId: string | null;
+  }> => {
     try {
-      // Check in users table for existing subscription OR bundle purchase
-      const { data: existingUsers } = await supabase
-        .from("users")
-        .select("subscription_status, is_subscribed, bundle_purchased, purchase_type")
-        .eq("email", emailToCheck);
-      
-      for (const userData of (existingUsers || [])) {
-        if (userData.subscription_status === "active" || userData.is_subscribed === true) {
-          return true;
+      const userId = generateUserId();
+      const response = await fetch(
+        `/api/user/payment-state?email=${encodeURIComponent(emailToCheck)}&userId=${encodeURIComponent(userId)}`,
+        {
+        cache: "no-store",
         }
-        if (userData.bundle_purchased || userData.purchase_type === "one-time") {
-          return true;
-        }
+      );
+
+      if (!response.ok) {
+        return { hasPaidPayment: false, hasRegisteredAccount: false, latestBundleId: null };
       }
-      
-      // Also check payments table
-      const { data: existingPayments } = await supabase
-        .from("payments")
-        .select("type, payment_status, status")
-        .eq("customer_email", emailToCheck);
-      
-      for (const paymentData of (existingPayments || [])) {
-        const paymentType = paymentData.type;
-        const isSuccessful = paymentData.payment_status === "paid" || paymentData.status === "succeeded";
-        if (isSuccessful && (paymentType === "subscription" || paymentType === "bundle_payment")) {
-          return true;
-        }
-      }
-      
-      return false;
+
+      const data = await response.json();
+      return {
+        hasPaidPayment: !!data?.hasPaidPayment,
+        hasRegisteredAccount: !!data?.hasRegisteredAccount,
+        latestBundleId: data?.latestBundleId || null,
+      };
     } catch (err) {
-      console.error("Error checking subscription:", err);
-      return false;
+      console.error("Error checking payment state:", err);
+      return { hasPaidPayment: false, hasRegisteredAccount: false, latestBundleId: null };
     }
   };
 
@@ -105,9 +96,26 @@ export default function Step15Page() {
 
     setEmailError(null);
 
-    // Store email locally and navigate immediately (no database check)
+    // Store email first so restore/login paths can use it.
     localStorage.setItem("astrorekha_email", trimmed);
+    localStorage.setItem("astrorekha_checkout_email", trimmed);
     pixelEvents.addToWishlist("Personalized Palm Reading Report");
+
+    // Recovery path: if user already paid earlier, skip repurchase flow.
+    const paymentState = await checkPaymentStateByEmail(trimmed);
+    if (paymentState.hasPaidPayment) {
+      localStorage.setItem("astrorekha_payment_completed", "true");
+      if (paymentState.latestBundleId) {
+        localStorage.setItem("astrorekha_bundle_id", paymentState.latestBundleId);
+      }
+
+      if (paymentState.hasRegisteredAccount) {
+        router.push(`/login?email=${encodeURIComponent(trimmed)}`);
+      } else {
+        router.push("/onboarding/step-19");
+      }
+      return;
+    }
     
     // Navigate to next step immediately
     router.push("/onboarding/step-17");

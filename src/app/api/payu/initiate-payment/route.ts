@@ -28,6 +28,7 @@ function generateHash(params: Record<string, string>, salt: string): string {
 export async function POST(request: NextRequest) {
   try {
     const { type, bundleId, packageId, userId, email, firstName } = await request.json();
+    const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
 
     const merchantKey = process.env.PAYU_MERCHANT_KEY;
     const merchantSalt = process.env.PAYU_MERCHANT_SALT;
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
       amount: amount.toFixed(2),
       productinfo: productInfo,
       firstname: firstName || "Customer",
-      email: email || "customer@astrorekha.com",
+      email: normalizedEmail || "customer@astrorekha.com",
       phone: "",
       udf1: userId || "",
       udf2: type || "",
@@ -119,7 +120,7 @@ export async function POST(request: NextRequest) {
       bundle_id: bundleId || packageId || null,
       feature: metadata.feature || null,
       coins: metadata.coins ? parseInt(metadata.coins) : null,
-      customer_email: email || null,
+      customer_email: normalizedEmail || null,
       amount: Math.round(amount * 100), // Store in paise for consistency
       currency: "INR",
       payment_status: "created",

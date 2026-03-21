@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import bcrypt from "bcryptjs";
+import { reconcilePaidPaymentsForEmail } from "@/lib/payment-reconciliation";
 
 export async function POST(request: NextRequest) {
   try {
@@ -110,6 +111,18 @@ export async function POST(request: NextRequest) {
         { success: false, error: "Failed to create account" },
         { status: 500 }
       );
+    }
+
+    // Re-link and reconcile any successful payments for this email.
+    // This recovers users who paid but dropped before finishing registration.
+    try {
+      await reconcilePaidPaymentsForEmail({
+        supabase,
+        userId: uid,
+        email: normalizedEmail,
+      });
+    } catch (reconcileError) {
+      console.error("Payment reconciliation error during register:", reconcileError);
     }
 
     // Migrate related tables in background (non-blocking for faster registration)

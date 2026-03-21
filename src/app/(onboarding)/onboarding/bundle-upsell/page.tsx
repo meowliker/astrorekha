@@ -66,7 +66,7 @@ function BundleUpsellContent() {
     }
     
     if (hasCompletedRegistration) {
-      router.replace("/home");
+      router.replace("/dashboard");
       return;
     }
     

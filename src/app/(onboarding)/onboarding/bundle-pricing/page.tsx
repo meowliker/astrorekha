@@ -115,7 +115,7 @@ export default function BundlePricingPage() {
     const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
     
     if (hasCompletedRegistration) {
-      router.replace("/home");
+      router.replace("/dashboard");
       return;
     } else if (hasCompletedPayment) {
       router.replace("/onboarding/bundle-upsell");
@@ -265,6 +265,11 @@ export default function BundlePricingPage() {
     }
 
     try {
+      const checkoutEmail = (localStorage.getItem("astrorekha_email") || "").trim().toLowerCase();
+      if (checkoutEmail) {
+        localStorage.setItem("astrorekha_checkout_email", checkoutEmail);
+      }
+
       const response = await fetch("/api/payu/initiate-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

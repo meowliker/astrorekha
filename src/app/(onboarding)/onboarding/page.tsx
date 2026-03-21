@@ -28,7 +28,7 @@ export default function OnboardingPage() {
     const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
     
     if (hasCompletedRegistration) {
-      router.replace("/home");
+      router.replace("/dashboard");
       return;
     } else if (hasCompletedPayment) {
       router.replace("/onboarding/step-18");

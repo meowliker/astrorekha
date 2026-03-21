@@ -19,7 +19,7 @@ export default function WelcomeBPage() {
     
     if (hasCompletedRegistration) {
       // User has completed registration - redirect to app
-      router.replace("/home");
+      router.replace("/dashboard");
       return;
     } else if (hasCompletedPayment) {
       // User has paid but not registered - redirect to bundle upsell page

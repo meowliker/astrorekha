@@ -50,36 +50,75 @@ function Step19Content() {
   const [isLoading, setIsLoading] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [isPaymentEmailLocked, setIsPaymentEmailLocked] = useState(false);
 
   const onboardingData = useOnboardingStore();
   const searchParams = useSearchParams();
 
   // Route protection: Check if user has completed payment
   useEffect(() => {
-    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
-    const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
-    
-    // If user has completed registration, redirect to app
-    if (hasCompletedRegistration) {
-      router.replace("/home");
-      return;
-    }
-    
-    // Allow access only if payment is completed
-    if (hasCompletedPayment) {
-      setIsAuthorized(true);
-    } else {
-      // No valid payment - redirect to payment page
+    const run = async () => {
+      const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
+      const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
+
+      // If user has completed registration, redirect to app
+      if (hasCompletedRegistration) {
+        router.replace("/dashboard");
+        return;
+      }
+
+      // Fast path from local state
+      if (hasCompletedPayment) {
+        setIsPaymentEmailLocked(true);
+        setIsAuthorized(true);
+        return;
+      }
+
+      // Recovery path: user may have paid on another attempt/device but never finished registration.
+      const storedEmail = localStorage.getItem("astrorekha_email");
+      const storedUserId = localStorage.getItem("astrorekha_user_id");
+      if (storedEmail) {
+        try {
+          const query = new URLSearchParams({
+            email: storedEmail,
+          });
+          if (storedUserId) {
+            query.set("userId", storedUserId);
+          }
+
+          const response = await fetch(`/api/user/payment-state?${query.toString()}`, {
+            cache: "no-store",
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (data?.hasPaidPayment) {
+              localStorage.setItem("astrorekha_payment_completed", "true");
+              if (data?.latestBundleId) {
+                localStorage.setItem("astrorekha_bundle_id", data.latestBundleId);
+              }
+              setIsPaymentEmailLocked(true);
+              setIsAuthorized(true);
+              return;
+            }
+          }
+        } catch (error) {
+          console.error("Payment state restore failed:", error);
+        }
+      }
+
+      // No valid paid state found.
       router.replace("/onboarding/step-17");
-      return;
-    }
+    };
+
+    run();
   }, [router]);
 
   // Get stored email from previous step
   useEffect(() => {
-    const storedEmail = localStorage.getItem("astrorekha_email");
+    const storedEmail = localStorage.getItem("astrorekha_checkout_email") || localStorage.getItem("astrorekha_email");
     if (storedEmail) {
       setEmail(storedEmail);
+      localStorage.setItem("astrorekha_checkout_email", storedEmail);
     }
   }, []);
 
@@ -101,6 +140,14 @@ function Step19Content() {
   }, [searchParams]);
 
   const handleSignUp = async () => {
+    const checkoutEmail = (localStorage.getItem("astrorekha_checkout_email") || "").trim().toLowerCase();
+    const enteredEmail = email.trim().toLowerCase();
+
+    if (isPaymentEmailLocked && checkoutEmail && enteredEmail !== checkoutEmail) {
+      setPasswordError("Please use the same email used during payment.");
+      return;
+    }
+
     if (!email || !password || password !== confirmPassword) {
       return;
     }
@@ -355,8 +402,16 @@ function Step19Content() {
               placeholder="Enter your email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full h-12 px-4 bg-transparent border-b border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors"
+              readOnly={isPaymentEmailLocked}
+              className={`w-full h-12 px-4 bg-transparent border-b border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors ${
+                isPaymentEmailLocked ? "opacity-80 cursor-not-allowed" : ""
+              }`}
             />
+            {isPaymentEmailLocked && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Email is locked to match your completed payment.
+              </p>
+            )}
           </motion.div>
 
           {/* Password */}

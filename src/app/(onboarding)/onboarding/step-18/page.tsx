@@ -81,7 +81,7 @@ function Step18Content() {
     
     // If user has completed registration, redirect to app
     if (hasCompletedRegistration) {
-      router.replace("/home");
+      router.replace("/dashboard");
       return;
     }
     
