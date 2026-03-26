@@ -24,6 +24,52 @@ export const ZODIAC_SIGNS: Record<string, ZodiacSign> = {
   Pisces: { name: "Pisces", symbol: "♓", element: "Water", description: "Compassionate, imaginative, and spiritually attuned" },
 };
 
+const ZODIAC_SIGN_NAMES = Object.keys(ZODIAC_SIGNS);
+
+function normalizeSignName(sign: string): string | null {
+  const trimmed = sign.trim();
+  if (!trimmed) return null;
+
+  const direct = ZODIAC_SIGNS[trimmed];
+  if (direct) return trimmed;
+
+  const lower = trimmed.toLowerCase();
+  const matched = ZODIAC_SIGN_NAMES.find((name) => name.toLowerCase() === lower);
+  return matched || null;
+}
+
+/**
+ * Safely extract sign name from:
+ * - plain string ("Libra")
+ * - JSON object ({ name: "Libra", ... })
+ * - serialized JSON string ('{"name":"Libra","symbol":"♎",...}')
+ */
+export function extractStoredSignName(sign: unknown): string | null {
+  if (!sign) return null;
+
+  if (typeof sign === "string") {
+    const normalized = normalizeSignName(sign);
+    if (normalized) return normalized;
+
+    // Handle wrongly persisted JSON string payloads.
+    try {
+      const parsed = JSON.parse(sign);
+      return extractStoredSignName(parsed);
+    } catch {
+      return null;
+    }
+  }
+
+  if (typeof sign === "object") {
+    const candidate = (sign as { name?: unknown }).name;
+    if (typeof candidate === "string") {
+      return normalizeSignName(candidate);
+    }
+  }
+
+  return null;
+}
+
 export const SIGN_MODALITIES: Record<string, string> = {
   Aries: "Cardinal", Taurus: "Fixed", Gemini: "Mutable", Cancer: "Cardinal",
   Leo: "Fixed", Virgo: "Mutable", Libra: "Cardinal", Scorpio: "Fixed",

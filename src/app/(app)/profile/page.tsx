@@ -9,6 +9,7 @@ import { useUserStore } from "@/lib/user-store";
 import { getZodiacSign, getZodiacSymbol, getZodiacColor } from "@/lib/astrology-api";
 import { supabase } from "@/lib/supabase";
 import { UserAvatar, getUserDisplayName } from "@/components/UserAvatar";
+import { extractStoredSignName } from "@/lib/zodiac-utils";
 
 // Zodiac symbols mapping
 const zodiacSymbols: Record<string, string> = {
@@ -95,24 +96,17 @@ export default function ProfilePage() {
           const period = data.birth_period || storeBirthPeriod || "PM";
           const place = data.birth_place || "";
           
-          const extractSignName = (sign: any): string | null => {
-            if (!sign) return null;
-            if (typeof sign === "string") return sign;
-            if (sign.name) return sign.name;
-            return null;
-          };
-
-          let sunSignValue = extractSignName(data.sun_sign);
-          let moonSignValue = extractSignName(data.moon_sign);
-          let ascendantValue = extractSignName(data.ascendant_sign);
+          let sunSignValue = extractStoredSignName(data.sun_sign);
+          let moonSignValue = extractStoredSignName(data.moon_sign);
+          let ascendantValue = extractStoredSignName(data.ascendant_sign);
           
           if (!sunSignValue || !moonSignValue || !ascendantValue) {
             try {
               const { data: profileData } = await supabase.from("user_profiles").select("*").eq("id", userId).single();
               if (profileData) {
-                if (!sunSignValue) sunSignValue = extractSignName(profileData.sun_sign);
-                if (!moonSignValue) moonSignValue = extractSignName(profileData.moon_sign);
-                if (!ascendantValue) ascendantValue = extractSignName(profileData.ascendant_sign);
+                if (!sunSignValue) sunSignValue = extractStoredSignName(profileData.sun_sign);
+                if (!moonSignValue) moonSignValue = extractStoredSignName(profileData.moon_sign);
+                if (!ascendantValue) ascendantValue = extractStoredSignName(profileData.ascendant_sign);
                 
                 if (sunSignValue || moonSignValue || ascendantValue) {
                   await supabase.from("users").update({
@@ -144,9 +138,9 @@ export default function ProfilePage() {
               });
               const signsData = await response.json();
               if (signsData.success) {
-                if (!sunSignValue) sunSignValue = extractSignName(signsData.sunSign);
-                if (!moonSignValue) moonSignValue = extractSignName(signsData.moonSign);
-                if (!ascendantValue) ascendantValue = extractSignName(signsData.ascendant);
+                if (!sunSignValue) sunSignValue = extractStoredSignName(signsData.sunSign);
+                if (!moonSignValue) moonSignValue = extractStoredSignName(signsData.moonSign);
+                if (!ascendantValue) ascendantValue = extractStoredSignName(signsData.ascendant);
                 
                 await supabase.from("users").update({
                   sun_sign: signsData.sunSign?.name || signsData.sunSign,

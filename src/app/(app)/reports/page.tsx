@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, Star, Sun, Moon, Sparkles, Loader2, Lock, MessageCircle, Lightbulb, CheckCircle, XCircle, Clock } from "lucide-react";
 import Image from "next/image";
 import { getZodiacSign, getZodiacSymbol, getZodiacColor } from "@/lib/astrology-api";
+import { extractStoredSignName } from "@/lib/zodiac-utils";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { useUserStore, UnlockedFeatures } from "@/lib/user-store";
 import { UpsellPopup } from "@/components/UpsellPopup";
@@ -89,20 +90,13 @@ export default function DashboardPage() {
             setBirthChartTimerStartedAt(userData.birth_chart_timer_started_at);
           }
           
-          const extractSignName = (sign: any): string | null => {
-            if (!sign) return null;
-            if (typeof sign === "string") return sign;
-            if (sign.name) return sign.name;
-            return null;
-          };
-
-          let sunSignName = extractSignName(userData.sun_sign);
+          let sunSignName = extractStoredSignName(userData.sun_sign);
 
           if (!sunSignName && userId) {
             try {
               const { data: profile } = await supabase.from("user_profiles").select("sun_sign").eq("id", userId).single();
               if (profile) {
-                sunSignName = extractSignName(profile.sun_sign);
+                sunSignName = extractStoredSignName(profile.sun_sign);
               }
             } catch (profileErr) {
               console.error("Error reading user_profiles:", profileErr);

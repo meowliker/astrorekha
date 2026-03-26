@@ -7,6 +7,7 @@ import { ArrowLeft, ChevronDown, Loader2, Sparkles, Star } from "lucide-react";
 import { getZodiacSign, getZodiacSymbol } from "@/lib/astrology-api";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { supabase } from "@/lib/supabase";
+import { extractStoredSignName } from "@/lib/zodiac-utils";
 
 const ZODIAC_SIGNS = [
   { sign: "Aries", symbol: "♈", gradient: "from-red-500 to-orange-500", element: "Fire" },
@@ -63,20 +64,13 @@ export default function HoroscopePage() {
 
   const loadUserSign = async () => {
     try {
-      const extractSignName = (sign: any): string | null => {
-        if (!sign) return null;
-        if (typeof sign === "string") return sign;
-        if (sign.name) return sign.name;
-        return null;
-      };
-
       const userId = localStorage.getItem("astrorekha_user_id");
 
       if (userId) {
         const { data: userData } = await supabase.from("users").select("*").eq("id", userId).single();
 
         if (userData) {
-          const storedSunSign = extractSignName(userData.sun_sign);
+          const storedSunSign = extractStoredSignName(userData.sun_sign);
           if (storedSunSign) {
             setSelectedSign(storedSunSign);
             setUserSign(storedSunSign);
@@ -86,7 +80,7 @@ export default function HoroscopePage() {
           try {
             const { data: profile } = await supabase.from("user_profiles").select("sun_sign").eq("id", userId).single();
             if (profile) {
-              const profileSunSign = extractSignName(profile.sun_sign);
+              const profileSunSign = extractStoredSignName(profile.sun_sign);
               if (profileSunSign) {
                 setSelectedSign(profileSunSign);
                 setUserSign(profileSunSign);

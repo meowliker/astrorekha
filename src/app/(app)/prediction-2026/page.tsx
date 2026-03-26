@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronDown, ChevronUp, Loader2, Star, Heart, Briefcase, Activity, Sparkles } from "lucide-react";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { supabase } from "@/lib/supabase";
+import { extractStoredSignName } from "@/lib/zodiac-utils";
 import predictions2026Data from "../../../../data/predictions-2026.json";
 
 const MONTHS = [
@@ -49,7 +50,7 @@ export default function Prediction2026Page() {
       if (userId) {
         const { data: dbUser } = await supabase.from("users").select("sun_sign").eq("id", userId).single();
         if (dbUser?.sun_sign) {
-          const signName = typeof dbUser.sun_sign === "string" ? dbUser.sun_sign : dbUser.sun_sign?.name;
+          const signName = extractStoredSignName(dbUser.sun_sign);
           if (signName) {
             setZodiacSign(signName);
             return;

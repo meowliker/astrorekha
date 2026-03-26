@@ -153,6 +153,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const hasMainChart = typeof chartData?.output === "string" && chartData.output.trim().length > 0;
+    const hasNavamsaChart = typeof navamsaChart?.output === "string" && navamsaChart.output.trim().length > 0;
+    const hasKundliDetails = !!kundliData?.data;
+
+    if (!hasMainChart && !hasNavamsaChart && !hasKundliDetails) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Birth chart provider returned empty data. Please try again shortly.",
+        },
+        { status: 502 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
       data: {

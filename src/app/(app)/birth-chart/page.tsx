@@ -12,6 +12,35 @@ const MONTH_MAP: Record<string, number> = {
   January: 1, February: 2, March: 3, April: 4, May: 5, June: 6,
   July: 7, August: 8, September: 9, October: 10, November: 11, December: 12,
 };
+const MONTH_NAMES = Object.keys(MONTH_MAP);
+
+function getMonthNumber(month: string): number {
+  const trimmed = String(month || "").trim();
+  const direct = MONTH_MAP[trimmed];
+  if (direct) return direct;
+
+  const numeric = Number(trimmed);
+  if (Number.isFinite(numeric) && numeric >= 1 && numeric <= 12) {
+    return numeric;
+  }
+
+  return 1;
+}
+
+function getDisplayMonth(month: string): string {
+  const monthNumber = getMonthNumber(month);
+  return MONTH_NAMES[monthNumber - 1] || String(month || "January");
+}
+
+function hasRenderableChartData(data: any): boolean {
+  if (!data) return false;
+
+  const hasMainChart = typeof data.chart?.output === "string" && data.chart.output.trim().length > 0;
+  const hasNavamsa = typeof data.navamsaChart?.output === "string" && data.navamsaChart.output.trim().length > 0;
+  const hasKundli = !!data.kundli;
+
+  return hasMainChart || hasNavamsa || hasKundli;
+}
 
 export default function BirthChartPage() {
   const router = useRouter();
@@ -42,7 +71,7 @@ export default function BirthChartPage() {
   const isMissingRequiredData = !birthMonth || !birthDay || !birthYear;
 
   const getBirthDate = () => {
-    const month = MONTH_MAP[birthMonth] || 1;
+    const month = getMonthNumber(birthMonth);
     const day = parseInt(birthDay) || 1;
     const year = parseInt(birthYear) || 2000;
     return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -72,7 +101,32 @@ export default function BirthChartPage() {
     try {
       const userId = localStorage.getItem("astrorekha_user_id");
       if (userId) {
-        const { data: dbUser } = await supabase.from("users").select("birth_month, birth_day, birth_year, birth_hour, birth_minute, birth_period, birth_place").eq("id", userId).single();
+        const { data: profileData } = await supabase
+          .from("user_profiles")
+          .select("birth_month, birth_day, birth_year, birth_hour, birth_minute, birth_period, birth_place, knows_birth_time")
+          .eq("id", userId)
+          .single();
+
+        if (profileData && profileData.birth_month && profileData.birth_day && profileData.birth_year) {
+          setBirthMonthState(String(profileData.birth_month));
+          setBirthDayState(String(profileData.birth_day));
+          setBirthYearState(String(profileData.birth_year));
+          setBirthHourState(profileData.birth_hour || "12");
+          setBirthMinuteState(profileData.birth_minute || "00");
+          setBirthPeriodState(profileData.birth_period || "PM");
+          setBirthPlaceState(profileData.birth_place || "");
+          setKnowsBirthTimeState(profileData.knows_birth_time ?? true);
+          setUserDataLoaded(true);
+          return;
+        }
+
+        // Legacy fallback for environments where birth fields still exist in users
+        const { data: dbUser } = await supabase
+          .from("users")
+          .select("birth_month, birth_day, birth_year, birth_hour, birth_minute, birth_period, birth_place")
+          .eq("id", userId)
+          .single();
+
         if (dbUser && dbUser.birth_month && dbUser.birth_day && dbUser.birth_year) {
           setBirthMonthState(String(dbUser.birth_month));
           setBirthDayState(String(dbUser.birth_day));
@@ -81,6 +135,7 @@ export default function BirthChartPage() {
           setBirthMinuteState(dbUser.birth_minute || "00");
           setBirthPeriodState(dbUser.birth_period || "PM");
           setBirthPlaceState(dbUser.birth_place || "");
+          setKnowsBirthTimeState(true);
           setUserDataLoaded(true);
           return;
         }
@@ -122,7 +177,7 @@ export default function BirthChartPage() {
 
     try {
       const { data: cached } = await supabase.from("birth_charts").select("data").eq("id", cacheKey).single();
-      if (cached?.data) {
+      if (cached?.data && hasRenderableChartData(cached.data)) {
         setChartData(cached.data);
         setLoading(false);
         return;
@@ -175,6 +230,12 @@ export default function BirthChartPage() {
       }
       
       if (result.success && result.data) {
+        if (!hasRenderableChartData(result.data)) {
+          setError("Birth chart data is currently unavailable. Please try again in a few minutes.");
+          setLoading(false);
+          return;
+        }
+
         const chartDataWithDetails = {
           ...result.data,
           userBirthDetails: { date: birthDate, time: birthTime, place: birthPlace || "Unknown", knowsTime: knowsBirthTime },
@@ -286,7 +347,7 @@ export default function BirthChartPage() {
                 <div className="bg-[#1A1F2E] rounded-2xl p-4 border border-white/10">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-white/60">Birth Date:</span>
-                    <span className="text-white">{birthMonth} {birthDay}, {birthYear}</span>
+                    <span className="text-white">{getDisplayMonth(birthMonth)} {birthDay}, {birthYear}</span>
                   </div>
                   <div className="flex items-center justify-between text-sm mt-2">
                     <span className="text-white/60">Birth Time:</span>
@@ -299,6 +360,17 @@ export default function BirthChartPage() {
                     </div>
                   )}
                 </div>
+
+                {!hasRenderableChartData(chartData) && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 text-center">
+                    <p className="text-amber-200 text-sm mb-3">
+                      Birth chart details are not available yet for these birth inputs.
+                    </p>
+                    <Button onClick={() => loadOrGenerateChart()} className="bg-gradient-to-r from-primary to-purple-600">
+                      <RefreshCw className="w-4 h-4 mr-2" /> Regenerate Chart
+                    </Button>
+                  </div>
+                )}
 
                 {/* Rashi Chart (from API) */}
                 {chartData.chart?.output && (

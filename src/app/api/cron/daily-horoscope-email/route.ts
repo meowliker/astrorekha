@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { sendTemplateEmail, BREVO_TEMPLATES } from "@/lib/brevo";
+import { extractStoredSignName } from "@/lib/zodiac-utils";
 
 export const dynamic = "force-dynamic";
 
@@ -134,13 +135,6 @@ const SIGN_SPECIFIC_TIPS: Record<string, string[]> = {
   ],
 };
 
-function extractSignName(sign: any): string | null {
-  if (!sign) return null;
-  if (typeof sign === "string") return sign;
-  if (sign.name) return sign.name;
-  return null;
-}
-
 function getRandomTip(sign: string): string {
   const element = SIGN_ELEMENTS[sign] || "Fire";
   const elementTips = TIPS_BY_ELEMENT[element] || TIPS_BY_ELEMENT["Fire"];
@@ -235,14 +229,14 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
-      let sunSign = extractSignName(userData.sun_sign);
+      let sunSign = extractStoredSignName(userData.sun_sign);
 
       // Fallback: check user_profiles
       if (!sunSign) {
         try {
           const { data: profile } = await supabase.from("user_profiles").select("sun_sign").eq("id", userData.id).single();
           if (profile) {
-            sunSign = extractSignName(profile.sun_sign);
+            sunSign = extractStoredSignName(profile.sun_sign);
           }
         } catch (_) {}
       }
