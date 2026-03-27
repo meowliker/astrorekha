@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
@@ -34,12 +34,14 @@ import {
   FileSpreadsheet,
   Facebook,
   TrendingDown,
+  GripVertical,
 } from "lucide-react";
 
 import React from "react";
+import { createPortal } from "react-dom";
 
 // Tab type
-type TabType = "dashboard" | "profit-sheet" | "meta-details";
+type TabType = "dashboard" | "profit-sheet" | "meta-details" | "analytics";
 
 // Profit Sheet row interface
 interface ProfitSheetRow {
@@ -108,6 +110,122 @@ interface MetaBreakdownData {
     ctr: number;
     costPerPurchase: number;
   };
+}
+
+interface AnalyticsPeakSalesMetric {
+  label: string;
+  count: number;
+  revenueInr: number;
+}
+
+interface AnalyticsPeakTrafficMetric {
+  label: string;
+  sessions: number;
+}
+
+interface AnalyticsTrafficTrendPoint {
+  label: string;
+  sessions: number;
+}
+
+interface AnalyticsSalesTrendPoint {
+  label: string;
+  count: number;
+  revenueInr: number;
+}
+
+interface AnalyticsHourlyProfitabilityPoint {
+  date: string;
+  weekday: string;
+  hour: number;
+  label: string;
+  orderCount: number;
+  revenueInr: number;
+  profitInr: number;
+  roas: number;
+}
+
+interface AnalyticsRouteMetric {
+  route: string;
+  viewers: number;
+  pageViews: number;
+  bounceRate: number;
+  avgSessionDurationSec: number;
+  checkouts: number;
+  bounces: number;
+  source: "ga" | "internal";
+}
+
+interface AnalyticsSourceStatus {
+  configured: boolean;
+  connected: boolean;
+  message: string;
+}
+
+interface AnalyticsData {
+  range: {
+    startDate: string;
+    endDate: string;
+    timezone: string;
+  };
+  kpis: {
+    paidOrders: number;
+    paidRevenueInr: number;
+    pendingPayments: number;
+    failedPayments: number;
+    checkoutStarts: number;
+    checkoutToPaidRate: number;
+  };
+  funnel: {
+    paywallVisitors: number;
+    paidOrders: number;
+    exitedWithoutPaying: number;
+    conversionRate: number;
+    dropOffRate: number;
+    paywallRoute: string | null;
+  };
+  peaks: {
+    sales: {
+      hour: AnalyticsPeakSalesMetric;
+      day: AnalyticsPeakSalesMetric;
+    };
+    traffic: {
+      hour: AnalyticsPeakTrafficMetric;
+      day: AnalyticsPeakTrafficMetric;
+    };
+  };
+  trends: {
+    sales: {
+      hourly: AnalyticsSalesTrendPoint[];
+      daily: AnalyticsSalesTrendPoint[];
+      weekday: AnalyticsSalesTrendPoint[];
+    };
+    traffic: {
+      hourly: AnalyticsTrafficTrendPoint[];
+      daily: AnalyticsTrafficTrendPoint[];
+    };
+  };
+  hourlyProfitability?: {
+    rows: AnalyticsHourlyProfitabilityPoint[];
+    exchangeRate: number;
+    adsSource: "meta" | "none";
+    dayMode?: "calendar_ist" | "business_1130_ist";
+  };
+  traffic: {
+    totalSessions: number;
+    totalPageViews: number;
+    overallBounceRate: number;
+    avgSessionDurationSec: number;
+  };
+  routes: AnalyticsRouteMetric[];
+  sources: {
+    sales: AnalyticsSourceStatus;
+    googleAnalytics: AnalyticsSourceStatus;
+    clarity: AnalyticsSourceStatus;
+    vercelAnalytics: AnalyticsSourceStatus;
+    internal: AnalyticsSourceStatus;
+  };
+  notes: string[];
 }
 
 interface RevenueData {
@@ -255,6 +373,14 @@ export default function AdminRevenuePage() {
 
   // Tabs
   const [activeTab, setActiveTab] = useState<TabType>("dashboard");
+
+  // Analytics tab
+  const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsStartDate, setAnalyticsStartDate] = useState<string>("2026-03-13");
+  const [analyticsEndDate, setAnalyticsEndDate] = useState<string>(
+    new Date().toISOString().split("T")[0]
+  );
   
   // Profit Sheet state
   const [profitSheetData, setProfitSheetData] = useState<ProfitSheetRow[]>([]);
@@ -471,6 +597,30 @@ export default function AdminRevenuePage() {
     }
   };
 
+  const fetchAnalytics = async () => {
+    try {
+      setAnalyticsLoading(true);
+      const token = localStorage.getItem("admin_session_token");
+      if (!token) return;
+
+      const url = `/api/admin/analytics?token=${encodeURIComponent(token)}&startDate=${encodeURIComponent(
+        analyticsStartDate
+      )}&endDate=${encodeURIComponent(analyticsEndDate)}`;
+
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed to fetch analytics" }));
+        throw new Error(err.error || "Failed to fetch analytics");
+      }
+      const result = await res.json();
+      setAnalyticsData(result);
+    } catch (err) {
+      console.error("Analytics fetch error:", err);
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  };
+
   // Toggle campaign expansion
   const toggleCampaign = (campaignId: string) => {
     setExpandedCampaigns(prev => {
@@ -519,6 +669,12 @@ export default function AdminRevenuePage() {
       fetchMetaBreakdown();
     }
   }, [activeTab, metaBreakdownDatePreset]);
+
+  useEffect(() => {
+    if (activeTab === "analytics") {
+      fetchAnalytics();
+    }
+  }, [activeTab, analyticsStartDate, analyticsEndDate]);
 
   if (loading) {
     return (
@@ -691,12 +847,13 @@ export default function AdminRevenuePage() {
                 onClick={() => {
                   if (activeTab === "dashboard") fetchData();
                   else if (activeTab === "profit-sheet") fetchProfitSheet();
-                  else if (activeTab === "meta-details") fetchMetaAds();
+                  else if (activeTab === "meta-details") fetchMetaBreakdown();
+                  else if (activeTab === "analytics") fetchAnalytics();
                 }}
-                disabled={refreshing || profitSheetLoading || metaLoading}
+                disabled={refreshing || profitSheetLoading || metaLoading || metaBreakdownLoading || analyticsLoading}
                 className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
               >
-                <RefreshCw className={`w-5 h-5 text-white ${(refreshing || profitSheetLoading || metaLoading) ? "animate-spin" : ""}`} />
+                <RefreshCw className={`w-5 h-5 text-white ${(refreshing || profitSheetLoading || metaLoading || metaBreakdownLoading || analyticsLoading) ? "animate-spin" : ""}`} />
               </button>
             </div>
           </div>
@@ -735,6 +892,17 @@ export default function AdminRevenuePage() {
             >
               <Facebook className="w-4 h-4" />
               Meta Details
+            </button>
+            <button
+              onClick={() => setActiveTab("analytics")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                activeTab === "analytics"
+                  ? "bg-primary text-white shadow-lg"
+                  : "text-white/60 hover:text-white hover:bg-white/10"
+              }`}
+            >
+              <Activity className="w-4 h-4" />
+              Analytics
             </button>
           </div>
           
@@ -1461,6 +1629,18 @@ export default function AdminRevenuePage() {
             onCustomDateRefresh={(start, end) => fetchMetaBreakdown(undefined, start, end)}
           />
         )}
+
+        {activeTab === "analytics" && (
+          <AnalyticsTab
+            data={analyticsData}
+            loading={analyticsLoading}
+            startDate={analyticsStartDate}
+            endDate={analyticsEndDate}
+            setStartDate={setAnalyticsStartDate}
+            setEndDate={setAnalyticsEndDate}
+            onRefresh={fetchAnalytics}
+          />
+        )}
       </div>
     </div>
   );
@@ -2111,6 +2291,1715 @@ function MetaBreakdownTab({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function AnalyticsTab({
+  data,
+  loading,
+  startDate,
+  endDate,
+  setStartDate,
+  setEndDate,
+  onRefresh,
+}: {
+  data: AnalyticsData | null;
+  loading: boolean;
+  startDate: string;
+  endDate: string;
+  setStartDate: (value: string) => void;
+  setEndDate: (value: string) => void;
+  onRefresh: () => void;
+}) {
+  type AnalyticsChartKey = "traffic-hourly" | "sales-hourly" | "traffic-daily" | "sales-daily";
+  type ProfitMetric = "profit" | "roas";
+  type ProfitView = "table" | "graph";
+  type RouteViewMode = "performance" | "workflow" | "custom";
+  type ChartStyle = "bar" | "line" | "pie";
+  type MatrixDayMode = "calendar_ist" | "business_1130_ist";
+  type CustomRouteView = {
+    name: string;
+    order: string[];
+  };
+
+  const WORKFLOW_ROUTE_ORDER = [
+    "/",
+    "/welcome",
+    "/welcome-b",
+    "/onboarding",
+    "/onboarding/step-5",
+    "/onboarding/step-6",
+    "/onboarding/birthday",
+    "/onboarding/birth-time",
+    "/onboarding/birthplace",
+    "/onboarding/step-7",
+    "/onboarding/step-8",
+    "/onboarding/step-9",
+    "/onboarding/step-10",
+    "/onboarding/step-11",
+    "/onboarding/step-12",
+    "/onboarding/step-13",
+    "/onboarding/step-14",
+    "/onboarding/step-15",
+    "/onboarding/step-16",
+    "/onboarding/step-17",
+    "/onboarding/step-18",
+    "/onboarding/step-19",
+    "/onboarding/step-20",
+    "/onboarding/bundle-pricing",
+    "/onboarding/bundle-upsell",
+    "/paywall",
+    "/login",
+    "/scan",
+    "/dashboard",
+    "/reports",
+    "/profile",
+    "/profile/edit",
+  ];
+
+  const WEEKDAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+  const [expandedChart, setExpandedChart] = useState<AnalyticsChartKey | null>(null);
+  const [profitMetric, setProfitMetric] = useState<ProfitMetric>("profit");
+  const [profitView, setProfitView] = useState<ProfitView>("table");
+  const [profitPeriodDays, setProfitPeriodDays] = useState<7 | 14 | 28>(14);
+  const [matrixStartDate, setMatrixStartDate] = useState<string>(() => {
+    const end = new Date();
+    const start = new Date(end);
+    start.setDate(end.getDate() - 13);
+    const local = new Date(start.getTime() - start.getTimezoneOffset() * 60000);
+    return local.toISOString().split("T")[0];
+  });
+  const [matrixEndDate, setMatrixEndDate] = useState<string>(() => {
+    const end = new Date();
+    const local = new Date(end.getTime() - end.getTimezoneOffset() * 60000);
+    return local.toISOString().split("T")[0];
+  });
+  const [matrixLoading, setMatrixLoading] = useState(false);
+  const [matrixRows, setMatrixRows] = useState<AnalyticsHourlyProfitabilityPoint[]>(() => data?.hourlyProfitability?.rows || []);
+  const [matrixAdsSource, setMatrixAdsSource] = useState<"meta" | "none">(() => data?.hourlyProfitability?.adsSource || "none");
+  const [matrixDayMode, setMatrixDayMode] = useState<MatrixDayMode>(() => data?.hourlyProfitability?.dayMode || "calendar_ist");
+  const matrixFetchSeq = useRef(0);
+  const [chartStyleByKey, setChartStyleByKey] = useState<Record<string, ChartStyle>>({
+    "traffic-hourly": "bar",
+    "sales-hourly": "bar",
+    "traffic-daily": "bar",
+    "sales-daily": "bar",
+    "profit-hour": "bar",
+    "profit-day": "bar",
+  });
+  const [routeSearch, setRouteSearch] = useState("");
+  const [selectedRoutes, setSelectedRoutes] = useState<string[]>([]);
+  const [showRouteDropdown, setShowRouteDropdown] = useState(false);
+  const [routeViewMode, setRouteViewMode] = useState<RouteViewMode>("workflow");
+  const [showCustomRouteModal, setShowCustomRouteModal] = useState(false);
+  const [customRouteOrder, setCustomRouteOrder] = useState<string[]>([]);
+  const [customViews, setCustomViews] = useState<CustomRouteView[]>([]);
+  const [activeCustomViewName, setActiveCustomViewName] = useState("");
+  const [customViewNameInput, setCustomViewNameInput] = useState("My Custom View");
+  const [draggedRoute, setDraggedRoute] = useState<string | null>(null);
+  const [dragOverRoute, setDragOverRoute] = useState<string | null>(null);
+  const [routeSortBy, setRouteSortBy] = useState<"route" | "viewers" | "pageViews" | "bounceRate" | "avgSessionDurationSec" | "bounces">("viewers");
+  const [routeSortDir, setRouteSortDir] = useState<"asc" | "desc">("desc");
+
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      minimumFractionDigits: 2,
+    }).format(value);
+
+  const formatDuration = (seconds: number) => {
+    if (!seconds || seconds <= 0) return "-";
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.round(seconds % 60);
+    return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+  };
+
+  const formatDayLabel = (isoDate: string) => {
+    if (!isoDate) return "-";
+    const d = new Date(`${isoDate}T00:00:00`);
+    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+  };
+
+  const formatHourRangeLabel = (rangeLabel: string) => {
+    const match = rangeLabel.match(/^(\d{2}):00-(\d{2}):00/);
+    if (!match) return rangeLabel;
+
+    const start = Number(match[1]);
+    const end = Number(match[2]);
+    const to12 = (hour: number) => {
+      const suffix = hour >= 12 ? "pm" : "am";
+      const normalized = ((hour + 11) % 12) + 1;
+      return { normalized, suffix };
+    };
+
+    const s = to12(start);
+    const e = to12(end);
+    const suffix = s.suffix === e.suffix ? e.suffix : `${s.suffix}/${e.suffix}`;
+    return `${s.normalized}-${e.normalized}${suffix}`;
+  };
+
+  const splitGraphLabelLines = (label: string) => {
+    const compactHourMatch = label.match(/^(\d+)-(\d+)(am|pm|am\/pm)$/i);
+    if (compactHourMatch) {
+      return [`${compactHourMatch[1]}-${compactHourMatch[2]}`, compactHourMatch[3].toLowerCase()];
+    }
+
+    const fullHourMatch = label.match(/^(\d{2}):00-(\d{2}):00/);
+    if (fullHourMatch) {
+      const start = Number(fullHourMatch[1]);
+      const end = Number(fullHourMatch[2]);
+      const to12 = (hour: number) => {
+        const suffix = hour >= 12 ? "pm" : "am";
+        const normalized = ((hour + 11) % 12) + 1;
+        return { normalized, suffix };
+      };
+      const s = to12(start);
+      const e = to12(end);
+      const suffix = s.suffix === e.suffix ? e.suffix : `${s.suffix}/${e.suffix}`;
+      return [`${s.normalized}-${e.normalized}`, suffix];
+    }
+
+    const dayMonth = label.match(/^(\d{1,2})\s+([A-Za-z]{3,})$/);
+    if (dayMonth) {
+      return [dayMonth[1], dayMonth[2]];
+    }
+
+    return [label, ""];
+  };
+
+  const formatHourSlot = (hour: number) => {
+    const normalized = ((hour + 11) % 12) + 1;
+    const nextNormalized = (((hour + 1) % 24 + 11) % 12) + 1;
+    const suffix = hour >= 12 ? "pm" : "am";
+    return `${normalized}-${nextNormalized}${suffix}`;
+  };
+
+  const getWorkflowRank = (route: string) => {
+    const normalized = route.trim().toLowerCase();
+    const exactIdx = WORKFLOW_ROUTE_ORDER.findIndex((item) => normalized === item || normalized.startsWith(`${item}/`));
+    if (exactIdx >= 0) return exactIdx;
+
+    if (normalized.includes("welcome")) return 1;
+    if (normalized.includes("gender")) return 4;
+    if (normalized.includes("birthday") || normalized.includes("birthdate")) return 6;
+    if (normalized.includes("birth-time")) return 7;
+    if (normalized.includes("birthplace")) return 8;
+    if (normalized.includes("bundle") || normalized.includes("paywall")) return 24;
+    if (normalized.includes("dashboard")) return 30;
+    return 1000;
+  };
+
+  const renderTrendBars = (
+    rows: Array<{ label: string; value: number; meta?: string }>,
+    colorClass: string,
+    emptyText: string,
+    minWidth: number = 640,
+    showBarValues: boolean = false
+  ) => {
+    if (!rows.length) {
+      return <p className="text-white/40 text-xs">{emptyText}</p>;
+    }
+
+    const max = Math.max(...rows.map((r) => r.value), 1);
+    const width = Math.max(rows.length * 28, minWidth);
+
+    return (
+      <div className="overflow-x-auto">
+        <div style={{ width }} className="h-48 flex items-end gap-1.5 border-b border-white/10 pb-2">
+          {rows.map((row, idx) => (
+            <div key={`${row.label}-${idx}`} className="flex-1 min-w-[16px] group h-full flex flex-col relative">
+              <div className="h-4 flex items-end justify-center">
+                {showBarValues && (
+                  <p className="text-[10px] text-white/70 text-center leading-none">{row.value}</p>
+                )}
+              </div>
+              <div className="flex-1 flex items-end">
+                <div
+                  className={`w-full rounded-t ${colorClass} hover:opacity-80 transition-opacity`}
+                  style={{ height: `${Math.max((row.value / max) * 120, 6)}px` }}
+                  title={`${row.label}: ${row.value}${row.meta ? ` (${row.meta})` : ""}`}
+                />
+              </div>
+              <div className="absolute -top-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                <div className="px-2 py-0.5 rounded bg-[#0A0E1A] border border-white/20 text-[10px] text-white/80 whitespace-nowrap">
+                  {row.meta || row.value}
+                </div>
+              </div>
+              {(() => {
+                const [line1, line2] = splitGraphLabelLines(row.label);
+                return (
+                  <div className="h-8 mt-1 flex flex-col items-center justify-start leading-tight">
+                    <span className="text-[10px] text-white/40 text-center whitespace-nowrap">{line1}</span>
+                    <span className="text-[10px] text-white/40 text-center h-3 whitespace-nowrap">{line2 || "\u00A0"}</span>
+                  </div>
+                );
+              })()}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderSignedTrendBars = (
+    rows: Array<{ label: string; value: number; meta?: string }>,
+    positiveColorClass: string,
+    negativeColorClass: string,
+    emptyText: string,
+    minWidth: number = 640
+  ) => {
+    if (!rows.length) {
+      return <p className="text-white/40 text-xs">{emptyText}</p>;
+    }
+
+    const maxAbs = Math.max(...rows.map((r) => Math.abs(r.value)), 1);
+    const width = Math.max(rows.length * 28, minWidth);
+
+    return (
+      <div className="overflow-x-auto">
+        <div style={{ width }} className="h-56 border-b border-white/10 pb-2">
+          <div className="h-44 relative">
+            <div className="absolute left-0 right-0 top-1/2 border-t border-dashed border-white/20" />
+            <div className="h-full flex items-stretch gap-1.5">
+              {rows.map((row, idx) => {
+                const barHeight = row.value === 0 ? 2 : Math.max((Math.abs(row.value) / maxAbs) * 68, 6);
+                const isPositive = row.value >= 0;
+                return (
+                  <div key={`${row.label}-${idx}`} className="flex-1 min-w-[16px] h-full relative group">
+                    <div
+                      className={`absolute left-0 right-0 rounded ${isPositive ? positiveColorClass : negativeColorClass}`}
+                      style={
+                        isPositive
+                          ? { height: `${barHeight}px`, bottom: "50%" }
+                          : { height: `${barHeight}px`, top: "50%" }
+                      }
+                      title={`${row.label}: ${row.value.toFixed(2)}${row.meta ? ` (${row.meta})` : ""}`}
+                    />
+                    <div className="absolute -top-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                      <div className="px-2 py-0.5 rounded bg-[#0A0E1A] border border-white/20 text-[10px] text-white/80 whitespace-nowrap">
+                        {row.meta || row.value.toFixed(2)}
+                      </div>
+                    </div>
+                </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="h-8 mt-1 flex gap-1.5">
+            {rows.map((row, idx) => (
+              <div key={`${row.label}-axis-${idx}`} className="flex-1 min-w-[16px] flex flex-col items-center justify-start leading-tight">
+                {(() => {
+                  const [line1, line2] = splitGraphLabelLines(row.label);
+                  return (
+                    <>
+                      <span className="text-[10px] text-white/40 text-center whitespace-nowrap">{line1}</span>
+                      <span className="text-[10px] text-white/40 text-center h-3 whitespace-nowrap">{line2 || "\u00A0"}</span>
+                    </>
+                  );
+                })()}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderLineTrend = (
+    rows: Array<{ label: string; value: number; meta?: string }>,
+    lineColorHex: string,
+    emptyText: string,
+    minWidth: number = 640
+  ) => {
+    if (!rows.length) {
+      return <p className="text-white/40 text-xs">{emptyText}</p>;
+    }
+
+    const width = Math.max(rows.length * 36, minWidth);
+    const chartHeight = 180;
+    const topPad = 10;
+    const bottomPad = 14;
+    const leftPad = 12;
+    const rightPad = 12;
+    const plotHeight = chartHeight - topPad - bottomPad;
+    const plotWidth = width - leftPad - rightPad;
+    const minVal = Math.min(...rows.map((r) => r.value), 0);
+    const maxVal = Math.max(...rows.map((r) => r.value), 0);
+    const range = Math.max(maxVal - minVal, 1);
+
+    const getX = (idx: number) => leftPad + ((plotWidth * idx) / Math.max(rows.length - 1, 1));
+    const getY = (value: number) => topPad + ((maxVal - value) / range) * plotHeight;
+    const points = rows.map((row, idx) => `${getX(idx)},${getY(row.value)}`).join(" ");
+    const zeroY = getY(0);
+
+    return (
+      <div className="overflow-x-auto">
+        <div style={{ width }}>
+          <svg width={width} height={chartHeight} className="block">
+            <line x1={leftPad} y1={zeroY} x2={width - rightPad} y2={zeroY} stroke="rgba(255,255,255,0.22)" strokeDasharray="4 4" />
+            <polyline
+              fill="none"
+              stroke={lineColorHex}
+              strokeWidth="2.5"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              points={points}
+            />
+            {rows.map((row, idx) => (
+              <g key={`${row.label}-${idx}`}>
+                <circle
+                  cx={getX(idx)}
+                  cy={getY(row.value)}
+                  r="3"
+                  fill={lineColorHex}
+                >
+                  <title>{`${row.label}: ${row.value}${row.meta ? ` (${row.meta})` : ""}`}</title>
+                </circle>
+              </g>
+            ))}
+          </svg>
+          <div className="h-8 mt-1 flex gap-1.5">
+            {rows.map((row, idx) => {
+              const [line1, line2] = splitGraphLabelLines(row.label);
+              return (
+                <div key={`${row.label}-axis-${idx}`} className="flex-1 min-w-[16px] flex flex-col items-center leading-tight">
+                  <span className="text-[10px] text-white/40 whitespace-nowrap">{line1}</span>
+                  <span className="text-[10px] text-white/40 h-3 whitespace-nowrap">{line2 || "\u00A0"}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderPieTrend = (
+    rows: Array<{ label: string; value: number; meta?: string }>,
+    emptyText: string
+  ) => {
+    const nonZero = rows
+      .map((row) => ({ ...row, abs: Math.abs(row.value) }))
+      .filter((row) => row.abs > 0);
+    if (!nonZero.length) {
+      return <p className="text-white/40 text-xs">{emptyText}</p>;
+    }
+
+    const sorted = [...nonZero].sort((a, b) => b.abs - a.abs);
+    const top = sorted.slice(0, 8);
+    const others = sorted.slice(8);
+    const otherSum = others.reduce((acc, row) => acc + row.abs, 0);
+    const slices = otherSum > 0 ? [...top, { label: "Others", value: otherSum, abs: otherSum }] : top;
+
+    const total = slices.reduce((acc, row) => acc + row.abs, 0);
+    const colors = ["#14b8a6", "#3b82f6", "#84cc16", "#f59e0b", "#ec4899", "#8b5cf6", "#22d3ee", "#f97316", "#6b7280"];
+
+    let cursor = 0;
+    const gradientStops = slices.map((slice, idx) => {
+      const start = (cursor / total) * 100;
+      cursor += slice.abs;
+      const end = (cursor / total) * 100;
+      return `${colors[idx % colors.length]} ${start}% ${end}%`;
+    });
+
+    return (
+      <div className="flex flex-col md:flex-row gap-4 items-start">
+        <div
+          className="w-40 h-40 rounded-full border border-white/10 shrink-0"
+          style={{
+            background: `conic-gradient(${gradientStops.join(", ")})`,
+          }}
+        >
+          <div className="w-20 h-20 rounded-full bg-[#141C2F] border border-white/10 relative top-10 left-10" />
+        </div>
+        <div className="space-y-1 text-xs w-full">
+          {slices.map((slice, idx) => {
+            const pct = total > 0 ? (slice.abs / total) * 100 : 0;
+            return (
+              <div key={`${slice.label}-${idx}`} className="flex items-center justify-between gap-3 text-white/70">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: colors[idx % colors.length] }} />
+                  <span className="truncate">{slice.label}</span>
+                </div>
+                <span className="text-white/60 whitespace-nowrap">{pct.toFixed(1)}%</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const renderChartByStyle = (
+    chartKey: string,
+    rows: Array<{ label: string; value: number; meta?: string }>,
+    colorClass: string,
+    emptyText: string,
+    minWidth: number = 640,
+    showBarValues: boolean = false
+  ) => {
+    const style = chartStyleByKey[chartKey] || "bar";
+    if (style === "line") {
+      const hex =
+        colorClass.includes("emerald") ? "#10b981" :
+        colorClass.includes("lime") ? "#84cc16" :
+        colorClass.includes("sky") ? "#38bdf8" :
+        "#06b6d4";
+      return renderLineTrend(rows, hex, emptyText, minWidth);
+    }
+    if (style === "pie") {
+      return renderPieTrend(rows, emptyText);
+    }
+    return renderTrendBars(rows, colorClass, emptyText, minWidth, showBarValues);
+  };
+
+  const setChartStyle = (chartKey: string, style: ChartStyle) => {
+    setChartStyleByKey((prev) => ({ ...prev, [chartKey]: style }));
+  };
+
+  const sourceCards = data
+    ? [
+        { key: "sales", label: "Sales Source", value: data.sources.sales },
+        { key: "ga", label: "Google Analytics", value: data.sources.googleAnalytics },
+        { key: "clarity", label: "Microsoft Clarity", value: data.sources.clarity },
+        { key: "vercel", label: "Vercel Analytics", value: data.sources.vercelAnalytics },
+        { key: "internal", label: "Internal Signals", value: data.sources.internal },
+      ]
+    : [];
+
+  const trafficSourceBadge = data?.sources.googleAnalytics.connected ? "GA4" : "Internal";
+  const salesSourceBadge = data?.sources.sales.connected ? "PayU" : "Supabase";
+
+  const chartConfigs = data
+    ? {
+        "traffic-hourly": {
+          title: "Traffic by Hour (IST)",
+          subtitle: "Hourly sessions distribution",
+          sourceBadge: trafficSourceBadge,
+          colorClass: "bg-cyan-500/70",
+          emptyText: "No traffic hourly data",
+          rows: data.trends.traffic.hourly.map((item) => ({
+            label: formatHourRangeLabel(item.label),
+            value: item.sessions,
+          })),
+        },
+        "sales-hourly": {
+          title: "Sales by Hour (IST)",
+          subtitle: "Hourly paid orders distribution",
+          sourceBadge: salesSourceBadge,
+          colorClass: "bg-emerald-500/70",
+          emptyText: "No sales hourly data",
+          rows: data.trends.sales.hourly.map((item) => ({
+            label: formatHourRangeLabel(item.label),
+            value: item.count,
+            meta: formatCurrency(item.revenueInr),
+          })),
+        },
+        "traffic-daily": {
+          title: "Traffic by Day",
+          subtitle: "Daily sessions distribution",
+          sourceBadge: trafficSourceBadge,
+          colorClass: "bg-sky-500/70",
+          emptyText: "No daily traffic data",
+          rows: data.trends.traffic.daily.map((item) => ({
+            label: formatDayLabel(item.label),
+            value: item.sessions,
+          })),
+        },
+        "sales-daily": {
+          title: "Sales by Day (Weekday)",
+          subtitle: "Total paid orders grouped by weekday",
+          sourceBadge: salesSourceBadge,
+          colorClass: "bg-lime-500/70",
+          emptyText: "No daily sales data",
+          rows: data.trends.sales.weekday.map((item) => ({
+            label: item.label.slice(0, 3),
+            value: item.count,
+            meta: formatCurrency(item.revenueInr),
+          })),
+        },
+      }
+    : null;
+
+  const paywallVisitors = data?.funnel?.paywallVisitors ?? data?.kpis?.checkoutStarts ?? 0;
+  const paywallPaid = data?.funnel?.paidOrders ?? data?.kpis?.paidOrders ?? 0;
+  const paywallDropOff = data?.funnel?.exitedWithoutPaying ?? Math.max(paywallVisitors - paywallPaid, 0);
+  const paywallConversionRate = data?.funnel?.conversionRate ?? (paywallVisitors > 0 ? (paywallPaid / paywallVisitors) * 100 : 0);
+  const paywallDropOffRate = data?.funnel?.dropOffRate ?? (paywallVisitors > 0 ? (paywallDropOff / paywallVisitors) * 100 : 0);
+
+  const profitabilityRows = matrixRows;
+  const profitabilitySourceBadge = matrixAdsSource === "meta" ? "Meta + PayU" : "PayU";
+
+  const profitabilityMatrix = useMemo(() => {
+    if (!profitabilityRows.length) return null;
+
+    const getMetricValue = (row: AnalyticsHourlyProfitabilityPoint) =>
+      profitMetric === "profit" ? row.profitInr : row.roas;
+
+    const dates = Array.from(new Set(profitabilityRows.map((row) => row.date))).sort();
+    const isSingleDay = matrixStartDate === matrixEndDate || dates.length === 1;
+
+    if (isSingleDay) {
+      const selectedDate = matrixStartDate === matrixEndDate ? matrixStartDate : dates[0];
+      const selectedRows = profitabilityRows.filter((row) => row.date === selectedDate);
+      const byHour = new Map<number, AnalyticsHourlyProfitabilityPoint>();
+      selectedRows.forEach((row) => byHour.set(row.hour, row));
+
+      const rowSeries = Array.from({ length: 24 }, (_, hour) => {
+        const point = byHour.get(hour);
+        return {
+          hour,
+          label: formatHourSlot(hour),
+          cells: [point ? getMetricValue(point) : 0],
+        };
+      });
+
+      const weekday = selectedRows[0]?.weekday || new Date(`${selectedDate}T00:00:00`).toLocaleDateString("en-US", { weekday: "long" });
+      const total = rowSeries.reduce((sum, row) => sum + row.cells[0], 0);
+      const normalizedTotal = profitMetric === "profit" ? total : rowSeries.length > 0 ? total / rowSeries.length : 0;
+
+      return {
+        isSingleDay: true,
+        columns: [{ key: selectedDate, label: `${weekday.slice(0, 3)} ${formatDayLabel(selectedDate)}` }],
+        rows: rowSeries,
+        columnTotals: [normalizedTotal],
+        graphByHour: rowSeries.map((row) => ({ label: row.label, value: row.cells[0] })),
+        graphByColumn: [{ label: weekday.slice(0, 3), value: normalizedTotal }],
+      };
+    }
+
+    const activeWeekdays = WEEKDAY_ORDER.filter((day) => profitabilityRows.some((row) => row.weekday === day));
+    const grouped = new Map<string, { sum: number; count: number }>();
+
+    for (const row of profitabilityRows) {
+      const key = `${row.weekday}|${row.hour}`;
+      const entry = grouped.get(key) || { sum: 0, count: 0 };
+      entry.sum += getMetricValue(row);
+      entry.count += 1;
+      grouped.set(key, entry);
+    }
+
+    const rowSeries = Array.from({ length: 24 }, (_, hour) => {
+      const cells = activeWeekdays.map((day) => {
+        const entry = grouped.get(`${day}|${hour}`);
+        return entry && entry.count > 0 ? entry.sum / entry.count : 0;
+      });
+      return {
+        hour,
+        label: formatHourSlot(hour),
+        cells,
+      };
+    });
+
+    const columnTotals = activeWeekdays.map((_, idx) => {
+      const sum = rowSeries.reduce((acc, row) => acc + row.cells[idx], 0);
+      return profitMetric === "profit" ? sum : rowSeries.length > 0 ? sum / rowSeries.length : 0;
+    });
+
+    const graphByHour = rowSeries.map((row) => {
+      const sum = row.cells.reduce((acc, val) => acc + val, 0);
+      const avg = row.cells.length > 0 ? sum / row.cells.length : 0;
+      return { label: row.label, value: avg };
+    });
+
+    const graphByColumn = activeWeekdays.map((day, idx) => ({
+      label: day.slice(0, 3),
+      value: columnTotals[idx] || 0,
+    }));
+
+    return {
+      isSingleDay: false,
+      columns: activeWeekdays.map((day) => ({ key: day, label: day.slice(0, 3) })),
+      rows: rowSeries,
+      columnTotals,
+      graphByHour,
+      graphByColumn,
+    };
+  }, [profitMetric, profitabilityRows, matrixStartDate, matrixEndDate]);
+
+  const routeOptions = data
+    ? Array.from(new Set(data.routes.map((row) => row.route))).sort((a, b) => a.localeCompare(b))
+    : [];
+
+  useEffect(() => {
+    if (!routeOptions.length) {
+      setSelectedRoutes([]);
+      return;
+    }
+
+    setSelectedRoutes((prev) => prev.filter((route) => routeOptions.includes(route)));
+  }, [data?.routes]);
+
+  useEffect(() => {
+    if (!routeOptions.length) {
+      setCustomRouteOrder([]);
+      return;
+    }
+
+    setCustomRouteOrder((prev) => {
+      const sanitized = prev.filter((route) => routeOptions.includes(route));
+      const missing = routeOptions.filter((route) => !sanitized.includes(route));
+      if (sanitized.length === 0) {
+        return [...routeOptions].sort((a, b) => {
+          const rankDiff = getWorkflowRank(a) - getWorkflowRank(b);
+          return rankDiff !== 0 ? rankDiff : a.localeCompare(b);
+        });
+      }
+      return [...sanitized, ...missing];
+    });
+  }, [routeOptions.join("|")]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const savedViews = window.localStorage.getItem("analytics_route_custom_views_v1");
+    const savedActiveView = window.localStorage.getItem("analytics_route_custom_active_view_v1");
+    const saved = window.localStorage.getItem("analytics_route_custom_order_v1");
+
+    if (savedViews) {
+      try {
+        const parsed = JSON.parse(savedViews);
+        if (Array.isArray(parsed)) {
+          const sanitized = parsed
+            .filter(
+              (item): item is { name: string; order: string[] } =>
+                item &&
+                typeof item.name === "string" &&
+                Array.isArray(item.order)
+            )
+            .map((item) => ({
+              name: item.name,
+              order: item.order.filter((route): route is string => typeof route === "string"),
+            }))
+            .filter((item) => item.name.trim() && item.order.length > 0);
+          if (sanitized.length) {
+            setCustomViews(sanitized);
+            if (savedActiveView && sanitized.some((item) => item.name === savedActiveView)) {
+              setActiveCustomViewName(savedActiveView);
+              setCustomViewNameInput(savedActiveView);
+              const activeView = sanitized.find((item) => item.name === savedActiveView);
+              if (activeView) setCustomRouteOrder(activeView.order);
+            } else {
+              setActiveCustomViewName(sanitized[0].name);
+              setCustomViewNameInput(sanitized[0].name);
+              setCustomRouteOrder(sanitized[0].order);
+            }
+          }
+        }
+      } catch {
+        // ignore corrupt storage
+      }
+    }
+
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        const order = parsed.filter((item): item is string => typeof item === "string");
+        setCustomRouteOrder(order);
+        setCustomViews((prev) => {
+          if (prev.length > 0) return prev;
+          return [{ name: "Default View", order }];
+        });
+        setActiveCustomViewName((prev) => prev || "Default View");
+        setCustomViewNameInput((prev) => prev || "Default View");
+      }
+    } catch {
+      // ignore corrupt local storage
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!customRouteOrder.length) return;
+    window.localStorage.setItem("analytics_route_custom_order_v1", JSON.stringify(customRouteOrder));
+  }, [customRouteOrder]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("analytics_route_custom_views_v1", JSON.stringify(customViews));
+  }, [customViews]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!activeCustomViewName) return;
+    window.localStorage.setItem("analytics_route_custom_active_view_v1", activeCustomViewName);
+  }, [activeCustomViewName]);
+
+  useEffect(() => {
+    if (!routeOptions.length || !customViews.length) return;
+    setCustomViews((prev) =>
+      prev.map((view) => {
+        const sanitized = view.order.filter((route) => routeOptions.includes(route));
+        const missing = routeOptions.filter((route) => !sanitized.includes(route));
+        return { ...view, order: [...sanitized, ...missing] };
+      })
+    );
+  }, [routeOptions.join("|"), customViews.length]);
+
+  useEffect(() => {
+    const start = new Date(`${matrixStartDate}T00:00:00`);
+    const end = new Date(`${matrixEndDate}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return;
+    const diffDays = Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+    if (diffDays === 7 || diffDays === 14 || diffDays === 28) {
+      setProfitPeriodDays(diffDays as 7 | 14 | 28);
+    }
+  }, [matrixStartDate, matrixEndDate]);
+
+  const filteredRoutes = data
+    ? data.routes.filter((row) => {
+        const matchesSearch = row.route.toLowerCase().includes(routeSearch.toLowerCase());
+        const matchesSelection = selectedRoutes.length === 0 || selectedRoutes.includes(row.route);
+        return matchesSearch && matchesSelection;
+      })
+    : [];
+
+  const customOrderMap = useMemo(() => {
+    const map = new Map<string, number>();
+    customRouteOrder.forEach((route, idx) => map.set(route, idx));
+    return map;
+  }, [customRouteOrder]);
+
+  const sortedRoutes = [...filteredRoutes].sort((a, b) => {
+    if (routeViewMode === "workflow") {
+      const rankDiff = getWorkflowRank(a.route) - getWorkflowRank(b.route);
+      if (rankDiff !== 0) return rankDiff;
+      return a.route.localeCompare(b.route);
+    }
+
+    if (routeViewMode === "custom") {
+      const aIdx = customOrderMap.get(a.route) ?? Number.MAX_SAFE_INTEGER;
+      const bIdx = customOrderMap.get(b.route) ?? Number.MAX_SAFE_INTEGER;
+      if (aIdx !== bIdx) return aIdx - bIdx;
+      return a.route.localeCompare(b.route);
+    }
+
+    const aVal = a[routeSortBy];
+    const bVal = b[routeSortBy];
+    if (typeof aVal === "string" || typeof bVal === "string") {
+      const aStr = String(aVal).toLowerCase();
+      const bStr = String(bVal).toLowerCase();
+      return routeSortDir === "asc" ? aStr.localeCompare(bStr) : bStr.localeCompare(aStr);
+    }
+    const aNum = Number(aVal);
+    const bNum = Number(bVal);
+    return routeSortDir === "asc" ? aNum - bNum : bNum - aNum;
+  });
+
+  const getMetricLabel = () => (profitMetric === "profit" ? "Profit / Loss (INR)" : "ROAS");
+
+  const getMetricFormattedValue = (value: number) => {
+    if (profitMetric === "profit") return formatCurrency(value);
+    return `${value.toFixed(2)}x`;
+  };
+
+  const getHeatCellStyle = (value: number) => {
+    if (profitMetric === "roas") {
+      const normalized = Math.min(Math.abs(value) / 3, 1);
+      const alpha = 0.08 + normalized * 0.28;
+      return { backgroundColor: `rgba(56, 189, 248, ${alpha.toFixed(3)})` };
+    }
+
+    const normalized = Math.min(Math.abs(value) / 2000, 1);
+    const alpha = 0.08 + normalized * 0.32;
+    if (value < 0) {
+      return { backgroundColor: `rgba(248, 113, 113, ${alpha.toFixed(3)})` };
+    }
+    return { backgroundColor: `rgba(74, 222, 128, ${alpha.toFixed(3)})` };
+  };
+
+  const toInputDate = (date: Date) => {
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return local.toISOString().split("T")[0];
+  };
+
+  const fetchProfitabilityMatrix = async (
+    customStartDate?: string,
+    customEndDate?: string,
+    customDayMode?: MatrixDayMode
+  ) => {
+    try {
+      const token = window.localStorage.getItem("adminSession");
+      if (!token) return;
+
+      const useStart = customStartDate || matrixStartDate;
+      const useEnd = customEndDate || matrixEndDate;
+      const useDayMode = customDayMode || matrixDayMode;
+      const requestSeq = ++matrixFetchSeq.current;
+
+      setMatrixLoading(true);
+      const url = `/api/admin/analytics?token=${encodeURIComponent(token)}&startDate=${encodeURIComponent(
+        useStart
+      )}&endDate=${encodeURIComponent(useEnd)}&matrixDayMode=${encodeURIComponent(useDayMode)}&_matrixTs=${Date.now()}`;
+      const res = await fetch(url, { cache: "no-store" });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result?.error || "Failed to fetch matrix data");
+      if (requestSeq !== matrixFetchSeq.current) return;
+
+      setMatrixRows(result?.hourlyProfitability?.rows || []);
+      setMatrixAdsSource(result?.hourlyProfitability?.adsSource === "meta" ? "meta" : "none");
+      setMatrixDayMode(result?.hourlyProfitability?.dayMode === "business_1130_ist" ? "business_1130_ist" : "calendar_ist");
+    } catch (err) {
+      console.error("Hourly profitability fetch error:", err);
+    } finally {
+      setMatrixLoading(false);
+    }
+  };
+
+  const applyProfitPeriod = (days: 7 | 14 | 28) => {
+    setProfitPeriodDays(days);
+    const end = new Date();
+    const start = new Date(end);
+    start.setDate(end.getDate() - (days - 1));
+    const nextStart = toInputDate(start);
+    const nextEnd = toInputDate(end);
+    setMatrixStartDate(nextStart);
+    setMatrixEndDate(nextEnd);
+    fetchProfitabilityMatrix(nextStart, nextEnd, matrixDayMode);
+  };
+
+  const handleMatrixStartDateChange = (nextStart: string) => {
+    if (!nextStart) return;
+    const adjustedEnd = nextStart > matrixEndDate ? nextStart : matrixEndDate;
+    setMatrixStartDate(nextStart);
+    if (adjustedEnd !== matrixEndDate) setMatrixEndDate(adjustedEnd);
+    fetchProfitabilityMatrix(nextStart, adjustedEnd, matrixDayMode);
+  };
+
+  const handleMatrixEndDateChange = (nextEnd: string) => {
+    if (!nextEnd) return;
+    const adjustedStart = nextEnd < matrixStartDate ? nextEnd : matrixStartDate;
+    setMatrixEndDate(nextEnd);
+    if (adjustedStart !== matrixStartDate) setMatrixStartDate(adjustedStart);
+    fetchProfitabilityMatrix(adjustedStart, nextEnd, matrixDayMode);
+  };
+
+  const handleMatrixDayModeChange = (mode: MatrixDayMode) => {
+    setMatrixDayMode(mode);
+    fetchProfitabilityMatrix(matrixStartDate, matrixEndDate, mode);
+  };
+
+  useEffect(() => {
+    if (data?.hourlyProfitability?.rows?.length && matrixRows.length === 0) {
+      setMatrixRows(data.hourlyProfitability.rows);
+      setMatrixAdsSource(data.hourlyProfitability.adsSource === "meta" ? "meta" : "none");
+      setMatrixDayMode(data.hourlyProfitability.dayMode === "business_1130_ist" ? "business_1130_ist" : "calendar_ist");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.hourlyProfitability?.rows?.length]);
+
+  const moveCustomRoute = (route: string, direction: "up" | "down") => {
+    setCustomRouteOrder((prev) => {
+      const idx = prev.indexOf(route);
+      if (idx < 0) return prev;
+      const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+      if (targetIdx < 0 || targetIdx >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx], next[targetIdx]] = [next[targetIdx], next[idx]];
+      return next;
+    });
+  };
+
+  const saveNamedCustomView = () => {
+    const normalizedName = customViewNameInput.trim();
+    if (!normalizedName) return;
+    setCustomViews((prev) => {
+      const existingIdx = prev.findIndex((item) => item.name.toLowerCase() === normalizedName.toLowerCase());
+      if (existingIdx >= 0) {
+        const next = [...prev];
+        next[existingIdx] = { name: prev[existingIdx].name, order: customRouteOrder };
+        return next;
+      }
+      return [...prev, { name: normalizedName, order: customRouteOrder }];
+    });
+    setActiveCustomViewName(normalizedName);
+    setRouteViewMode("custom");
+    setShowCustomRouteModal(false);
+  };
+
+  const selectCustomView = (name: string) => {
+    setActiveCustomViewName(name);
+    setCustomViewNameInput(name);
+    const selected = customViews.find((item) => item.name === name);
+    if (selected) {
+      setCustomRouteOrder(selected.order);
+      setRouteViewMode("custom");
+    }
+  };
+
+  const handleDragStartRoute = (route: string) => {
+    setDraggedRoute(route);
+  };
+
+  const handleDropRoute = (targetRoute: string) => {
+    if (!draggedRoute || draggedRoute === targetRoute) {
+      setDraggedRoute(null);
+      setDragOverRoute(null);
+      return;
+    }
+
+    setCustomRouteOrder((prev) => {
+      const fromIndex = prev.indexOf(draggedRoute);
+      const toIndex = prev.indexOf(targetRoute);
+      if (fromIndex < 0 || toIndex < 0) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+
+    setDraggedRoute(null);
+    setDragOverRoute(null);
+  };
+
+  const resetCustomViewToWorkflow = () => {
+    const ordered = [...routeOptions].sort((a, b) => {
+      const rankDiff = getWorkflowRank(a) - getWorkflowRank(b);
+      return rankDiff !== 0 ? rankDiff : a.localeCompare(b);
+    });
+    setCustomRouteOrder(ordered);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <label className="text-white/50 text-xs mb-1 block">Start Date</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50 [color-scheme:dark]"
+            />
+          </div>
+          <div>
+            <label className="text-white/50 text-xs mb-1 block">End Date</label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50 [color-scheme:dark]"
+            />
+          </div>
+          <button
+            onClick={onRefresh}
+            disabled={loading}
+            className="px-4 py-2 bg-primary hover:bg-primary/80 text-white text-sm rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+        </div>
+        {data?.range && (
+          <p className="text-white/30 text-xs mt-3">
+            Timezone: {data.range.timezone} | Range: {data.range.startDate} to {data.range.endDate}
+          </p>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="bg-[#1A2235] rounded-xl p-10 border border-white/10 flex items-center justify-center gap-2">
+          <Loader2 className="w-5 h-5 text-primary animate-spin" />
+          <span className="text-white/60 text-sm">Loading analytics...</span>
+        </div>
+      ) : !data ? (
+        <div className="bg-[#1A2235] rounded-xl p-10 border border-white/10 text-center text-white/50 text-sm">
+          No analytics data available yet.
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+            <KPICard
+              title="Paid Revenue"
+              value={formatCurrency(data.kpis.paidRevenueInr)}
+              subtitle="From paid/success/captured"
+              color="text-green-400"
+              icon={<IndianRupee className="w-4 h-4" />}
+            />
+            <KPICard
+              title="Paid Orders"
+              value={String(data.kpis.paidOrders)}
+              color="text-blue-400"
+              icon={<CheckCircle className="w-4 h-4" />}
+            />
+            <KPICard
+              title="Paywall Visitors"
+              value={String(paywallVisitors)}
+              color="text-white"
+              icon={<MousePointerClick className="w-4 h-4" />}
+            />
+            <KPICard
+              title="Paywall → Paid"
+              value={`${paywallConversionRate.toFixed(2)}%`}
+              color="text-amber-400"
+              icon={<Target className="w-4 h-4" />}
+            />
+            <KPICard
+              title="Total Sessions"
+              value={String(data.traffic.totalSessions)}
+              color="text-cyan-400"
+              icon={<Users className="w-4 h-4" />}
+            />
+            <KPICard
+              title="Overall Bounce"
+              value={`${data.traffic.overallBounceRate.toFixed(2)}%`}
+              color="text-red-400"
+              icon={<TrendingDown className="w-4 h-4" />}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <MetricCard
+              title="Peak Traffic Hour"
+              value={`${formatHourRangeLabel(data.peaks.traffic.hour.label)} IST (${data.peaks.traffic.hour.sessions} sessions)`}
+              color="text-white"
+            />
+            <MetricCard
+              title="Peak Sales Hour"
+              value={`${formatHourRangeLabel(data.peaks.sales.hour.label)} IST (${data.peaks.sales.hour.count} sales)`}
+              subtitle={formatCurrency(data.peaks.sales.hour.revenueInr)}
+              color="text-white"
+            />
+            <MetricCard
+              title="Peak Traffic Day"
+              value={`${data.peaks.traffic.day.label} (${data.peaks.traffic.day.sessions} sessions)`}
+              color="text-white"
+            />
+            <MetricCard
+              title="Peak Sales Day"
+              value={`${data.peaks.sales.day.label} (${data.peaks.sales.day.count} sales)`}
+              subtitle={formatCurrency(data.peaks.sales.day.revenueInr)}
+              color="text-white"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {chartConfigs && (
+              <>
+                {(Object.keys(chartConfigs) as AnalyticsChartKey[]).map((key) => {
+                  const chart = chartConfigs[key];
+                  return (
+                    <div key={key} className="bg-[#1A2235] rounded-xl border border-white/10 p-4">
+                      <div className="flex items-center justify-between mb-1">
+                        <h3 className="text-white/70 text-sm font-medium">{chart.title}</h3>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={chartStyleByKey[key] || "bar"}
+                            onChange={(e) => setChartStyle(key, e.target.value as ChartStyle)}
+                            className="bg-white/5 border border-white/10 rounded px-2 py-1 text-[11px] text-white/70 focus:outline-none"
+                          >
+                            <option value="bar">Bar</option>
+                            <option value="line">Line</option>
+                            <option value="pie">Pie</option>
+                          </select>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/60">
+                            {chart.sourceBadge}
+                          </span>
+                          <button
+                            onClick={() => setExpandedChart(key)}
+                            className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            Expand
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-white/40 text-xs mb-3">{chart.subtitle}</p>
+                      {renderChartByStyle(key, chart.rows, chart.colorClass, chart.emptyText, 640, key.startsWith("sales"))}
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </div>
+
+          {expandedChart && chartConfigs && (
+            <div className="fixed inset-0 z-50 bg-black/70 p-4 flex items-center justify-center">
+              <div className="w-full max-w-6xl max-h-[90vh] overflow-y-auto bg-[#10192C] rounded-xl border border-white/15 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-white text-lg font-semibold">{chartConfigs[expandedChart].title}</h3>
+                    <select
+                      value={chartStyleByKey[expandedChart] || "bar"}
+                      onChange={(e) => setChartStyle(expandedChart, e.target.value as ChartStyle)}
+                      className="bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white/70 focus:outline-none"
+                    >
+                      <option value="bar">Bar</option>
+                      <option value="line">Line</option>
+                      <option value="pie">Pie</option>
+                    </select>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-white/60">
+                      {chartConfigs[expandedChart].sourceBadge}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setExpandedChart(null)}
+                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 text-sm"
+                  >
+                    Close
+                  </button>
+                </div>
+                <p className="text-white/50 text-sm mb-4">{chartConfigs[expandedChart].subtitle}</p>
+                {renderChartByStyle(
+                  expandedChart,
+                  chartConfigs[expandedChart].rows,
+                  chartConfigs[expandedChart].colorClass,
+                  chartConfigs[expandedChart].emptyText,
+                  1800,
+                  expandedChart.startsWith("sales")
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-[#1A2235] rounded-xl border border-white/10 overflow-hidden">
+            <div className="px-4 py-3 border-b border-white/10 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-white/70 text-sm font-medium">Hourly Profitability Matrix</h3>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/60">{profitabilitySourceBadge}</span>
+                </div>
+                <p className="text-white/40 text-xs mt-1">
+                  Single date shows that day. Multi-date range shows weekday averages. Active mode: {matrixDayMode === "business_1130_ist" ? "11:30 IST business day" : "Calendar IST day"}.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="date"
+                  value={matrixStartDate}
+                  onChange={(e) => handleMatrixStartDateChange(e.target.value)}
+                  className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-primary/50 [color-scheme:dark]"
+                />
+                <input
+                  type="date"
+                  value={matrixEndDate}
+                  onChange={(e) => handleMatrixEndDateChange(e.target.value)}
+                  className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-primary/50 [color-scheme:dark]"
+                />
+                <button
+                  type="button"
+                  onClick={() => fetchProfitabilityMatrix(matrixStartDate, matrixEndDate, matrixDayMode)}
+                  disabled={matrixLoading}
+                  className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 text-xs disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${matrixLoading ? "animate-spin" : ""}`} />
+                  Refresh
+                </button>
+                <select
+                  value={matrixDayMode}
+                  onChange={(e) => handleMatrixDayModeChange(e.target.value as MatrixDayMode)}
+                  className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-primary/50"
+                >
+                  <option value="calendar_ist">Day Mode: IST (00:00-23:59)</option>
+                  <option value="business_1130_ist">Day Mode: 11:30 IST → next 11:29</option>
+                </select>
+                <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-lg p-1">
+                  {[7, 14, 28].map((days) => (
+                    <button
+                      type="button"
+                      key={days}
+                      onClick={() => applyProfitPeriod(days as 7 | 14 | 28)}
+                      className={`px-2 py-1 text-xs rounded transition-colors ${
+                        profitPeriodDays === days ? "bg-primary text-white" : "text-white/70 hover:bg-white/10"
+                      }`}
+                    >
+                      Last {days}d
+                    </button>
+                  ))}
+                </div>
+                <select
+                  value={profitMetric}
+                  onChange={(e) => setProfitMetric(e.target.value as ProfitMetric)}
+                  className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-primary/50"
+                >
+                  <option value="profit">Metric: Profit / Loss</option>
+                  <option value="roas">Metric: ROAS</option>
+                </select>
+                <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-lg p-1">
+                  <button
+                    type="button"
+                    onClick={() => setProfitView("table")}
+                    className={`px-2 py-1 text-xs rounded ${profitView === "table" ? "bg-primary text-white" : "text-white/70 hover:bg-white/10"}`}
+                  >
+                    Table
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProfitView("graph")}
+                    className={`px-2 py-1 text-xs rounded ${profitView === "graph" ? "bg-primary text-white" : "text-white/70 hover:bg-white/10"}`}
+                  >
+                    Graph
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4">
+              {!profitabilityMatrix ? (
+                <p className="text-white/40 text-sm">No profitability data available for this range.</p>
+              ) : profitView === "table" ? (
+                <div className="overflow-auto max-h-[560px] border border-white/10 rounded-lg">
+                  <table className="w-full min-w-[760px]">
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-[#202A40] border-b border-white/10">
+                        <th className="text-left text-white/60 text-xs font-medium px-3 py-2">Hour (IST)</th>
+                        {profitabilityMatrix.columns.map((col) => (
+                          <th key={col.key} className="text-right text-white/60 text-xs font-medium px-3 py-2">
+                            {col.label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {profitabilityMatrix.rows.map((row) => (
+                        <tr key={row.hour} className="border-b border-white/5">
+                          <td className="text-white/70 text-xs px-3 py-2 bg-white/5 whitespace-nowrap">{row.label}</td>
+                          {row.cells.map((value, idx) => (
+                            <td
+                              key={`${row.hour}-${idx}`}
+                              style={getHeatCellStyle(value)}
+                              className={`text-right text-xs px-3 py-2 ${
+                                profitMetric === "profit"
+                                  ? value >= 0
+                                    ? "text-green-300"
+                                    : "text-red-300"
+                                  : "text-cyan-200"
+                              }`}
+                            >
+                              {profitMetric === "profit" ? value.toFixed(2) : `${value.toFixed(2)}x`}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                      <tr className="bg-white/5 border-t border-white/10">
+                        <td className="text-white font-semibold text-xs px-3 py-2">TOTAL / AVG</td>
+                        {profitabilityMatrix.columnTotals.map((value, idx) => (
+                          <td
+                            key={`total-${idx}`}
+                            className={`text-right text-xs font-semibold px-3 py-2 ${
+                              profitMetric === "profit"
+                                ? value >= 0
+                                  ? "text-green-300"
+                                  : "text-red-300"
+                                : "text-cyan-200"
+                            }`}
+                          >
+                            {profitMetric === "profit" ? value.toFixed(2) : `${value.toFixed(2)}x`}
+                          </td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-[#141C2F] rounded-lg border border-white/10 p-3">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <h4 className="text-white/70 text-xs font-medium">{getMetricLabel()} by Hour (avg)</h4>
+                      <select
+                        value={chartStyleByKey["profit-hour"] || "bar"}
+                        onChange={(e) => setChartStyle("profit-hour", e.target.value as ChartStyle)}
+                        className="bg-white/5 border border-white/10 rounded px-2 py-1 text-[11px] text-white/70 focus:outline-none"
+                      >
+                        <option value="bar">Bar</option>
+                        <option value="line">Line</option>
+                        <option value="pie">Pie</option>
+                      </select>
+                    </div>
+                    <p className="text-white/40 text-[11px] mb-2">Average across selected dates.</p>
+                    {(() => {
+                      const rows = profitabilityMatrix.graphByHour.map((item) => ({
+                        label: item.label,
+                        value: Number(item.value.toFixed(2)),
+                        meta: getMetricFormattedValue(item.value),
+                      }));
+                      const style = chartStyleByKey["profit-hour"] || "bar";
+                      if (profitMetric === "profit") {
+                        if (style === "line") return renderLineTrend(rows, "#34d399", "No hourly profitability data", 720);
+                        if (style === "pie") return renderPieTrend(rows, "No hourly profitability data");
+                        return renderSignedTrendBars(rows, "bg-emerald-500/80", "bg-rose-500/80", "No hourly profitability data", 720);
+                      }
+                      return renderChartByStyle("profit-hour", rows, "bg-cyan-500/70", "No hourly profitability data", 720, false);
+                    })()}
+                  </div>
+                  <div className="bg-[#141C2F] rounded-lg border border-white/10 p-3">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <h4 className="text-white/70 text-xs font-medium">{getMetricLabel()} by Day</h4>
+                      <select
+                        value={chartStyleByKey["profit-day"] || "bar"}
+                        onChange={(e) => setChartStyle("profit-day", e.target.value as ChartStyle)}
+                        className="bg-white/5 border border-white/10 rounded px-2 py-1 text-[11px] text-white/70 focus:outline-none"
+                      >
+                        <option value="bar">Bar</option>
+                        <option value="line">Line</option>
+                        <option value="pie">Pie</option>
+                      </select>
+                    </div>
+                    <p className="text-white/40 text-[11px] mb-2">
+                      {profitabilityMatrix.isSingleDay ? "Selected day total" : "Weekday averages for selected period"}
+                    </p>
+                    {(() => {
+                      const rows = profitabilityMatrix.graphByColumn.map((item) => ({
+                        label: item.label,
+                        value: Number(item.value.toFixed(2)),
+                        meta: getMetricFormattedValue(item.value),
+                      }));
+                      const style = chartStyleByKey["profit-day"] || "bar";
+                      if (profitMetric === "profit") {
+                        if (style === "line") return renderLineTrend(rows, "#84cc16", "No day-level profitability data", 360);
+                        if (style === "pie") return renderPieTrend(rows, "No day-level profitability data");
+                        return renderSignedTrendBars(rows, "bg-lime-500/80", "bg-red-500/80", "No day-level profitability data", 360);
+                      }
+                      return renderChartByStyle("profit-day", rows, "bg-sky-500/70", "No day-level profitability data", 360, false);
+                    })()}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+            {sourceCards.map((item) => (
+              <div key={item.key} className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-white/60 text-xs">{item.label}</p>
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full ${
+                      item.value.connected
+                        ? "bg-green-500/20 text-green-400"
+                        : item.value.configured
+                        ? "bg-amber-500/20 text-amber-400"
+                        : "bg-red-500/20 text-red-400"
+                    }`}
+                  >
+                    {item.value.connected ? "Live" : item.value.configured ? "Configured" : "Missing"}
+                  </span>
+                </div>
+                <p className="text-white/40 text-xs leading-relaxed">{item.value.message}</p>
+              </div>
+            ))}
+          </div>
+
+          {data.notes?.length > 0 && (
+            <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 space-y-1">
+              {data.notes.map((note, idx) => (
+                <p key={idx} className="text-white/50 text-xs">
+                  - {note}
+                </p>
+              ))}
+            </div>
+          )}
+
+          <div className="bg-[#1A2235] rounded-xl border border-white/10 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-white/70 text-sm font-medium">Checkout Funnel</h3>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/60">Paywall</span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <MetricCard title="Paywall Visitors" value={String(paywallVisitors)} color="text-white" />
+              <MetricCard title="Subscribed/Paid" value={String(paywallPaid)} color="text-green-400" />
+              <MetricCard title="Exited Without Paying" value={String(paywallDropOff)} color="text-red-400" />
+              <MetricCard title="Conversion Rate" value={`${paywallConversionRate.toFixed(2)}%`} color="text-amber-400" />
+              <MetricCard title="Drop-off Rate" value={`${paywallDropOffRate.toFixed(2)}%`} color="text-rose-300" />
+            </div>
+            {data.funnel?.paywallRoute && (
+              <p className="text-white/35 text-xs mt-3">
+                Paywall route used: {data.funnel.paywallRoute}
+              </p>
+            )}
+          </div>
+
+          <div className="bg-[#1A2235] rounded-xl border border-white/10 overflow-hidden">
+            <div className="px-4 py-3 border-b border-white/10">
+              <div className="flex flex-wrap items-end gap-3 justify-between">
+                <div>
+                  <h3 className="text-white/70 text-sm font-medium">Route-Level Analytics</h3>
+                  <p className="text-white/40 text-xs mt-1">
+                    Visitors, bounce rate and engagement by route.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                  <select
+                    value={routeViewMode}
+                    onChange={(e) => setRouteViewMode(e.target.value as RouteViewMode)}
+                    className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-primary/50"
+                  >
+                    <option value="workflow">View: Workflow</option>
+                    <option value="performance">View: Performance</option>
+                    <option value="custom">View: Custom</option>
+                  </select>
+                  {routeViewMode === "custom" && customViews.length > 0 && (
+                    <select
+                      value={activeCustomViewName}
+                      onChange={(e) => selectCustomView(e.target.value)}
+                      className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-primary/50"
+                    >
+                      {customViews.map((view) => (
+                        <option key={view.name} value={view.name}>
+                          {view.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeCustomViewName) setCustomViewNameInput(activeCustomViewName);
+                      setShowCustomRouteModal(true);
+                    }}
+                    className="px-2 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 text-xs"
+                  >
+                    Edit Custom View
+                  </button>
+                  <input
+                    type="text"
+                    value={routeSearch}
+                    onChange={(e) => setRouteSearch(e.target.value)}
+                    placeholder="Filter route..."
+                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-primary/50"
+                  />
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowRouteDropdown((prev) => !prev)}
+                      className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white text-xs hover:bg-white/10 flex items-center gap-1"
+                    >
+                      Routes: {selectedRoutes.length === 0 ? "All" : selectedRoutes.length}
+                      <ChevronDown className={`w-3 h-3 transition-transform ${showRouteDropdown ? "rotate-180" : ""}`} />
+                    </button>
+                    {showRouteDropdown && (
+                      <div className="absolute right-0 mt-2 w-80 max-w-[90vw] bg-[#10192C] border border-white/15 rounded-lg shadow-2xl z-30">
+                        <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between">
+                          <p className="text-white/60 text-xs">Select multiple routes</p>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedRoutes(routeOptions)}
+                              className="text-[11px] text-primary hover:text-primary/80"
+                            >
+                              Select all
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedRoutes([])}
+                              className="text-[11px] text-white/60 hover:text-white/80"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+                        <div className="max-h-64 overflow-y-auto p-2 space-y-1">
+                          {routeOptions.length === 0 ? (
+                            <p className="text-white/40 text-xs px-2 py-2">No routes available</p>
+                          ) : (
+                            routeOptions.map((route) => {
+                              const checked = selectedRoutes.includes(route);
+                              return (
+                                <button
+                                  type="button"
+                                  key={route}
+                                  onClick={() =>
+                                    setSelectedRoutes((prev) =>
+                                      checked ? prev.filter((r) => r !== route) : [...prev, route]
+                                    )
+                                  }
+                                  className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
+                                    checked ? "bg-primary/20 text-primary" : "text-white/75 hover:bg-white/5"
+                                  }`}
+                                >
+                                  <input type="checkbox" readOnly checked={checked} className="accent-primary" />
+                                  <span className="truncate">{route}</span>
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {routeViewMode === "performance" && (
+                    <>
+                      <select
+                        value={routeSortBy}
+                        onChange={(e) => setRouteSortBy(e.target.value as typeof routeSortBy)}
+                        className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-primary/50"
+                      >
+                        <option value="viewers">Sort: Viewers</option>
+                        <option value="pageViews">Sort: Page Views</option>
+                        <option value="bounceRate">Sort: Bounce Rate</option>
+                        <option value="avgSessionDurationSec">Sort: Avg Duration</option>
+                        <option value="bounces">Sort: Bounces</option>
+                        <option value="route">Sort: Route</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setRouteSortDir((prev) => (prev === "asc" ? "desc" : "asc"))}
+                        className="px-2 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 text-xs"
+                      >
+                        {routeSortDir === "asc" ? "Asc" : "Desc"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+              {selectedRoutes.length > 0 && (
+                <p className="text-white/35 text-xs mt-2">
+                  Showing {selectedRoutes.length} selected route{selectedRoutes.length > 1 ? "s" : ""}.
+                </p>
+              )}
+              {routeViewMode !== "performance" && (
+                <p className="text-white/35 text-xs mt-1">
+                  Sort mode: {routeViewMode === "workflow" ? "App workflow order" : `Custom route order${activeCustomViewName ? ` (${activeCustomViewName})` : ""}`}.
+                </p>
+              )}
+            </div>
+            <div className="overflow-x-auto overflow-y-auto h-[420px] md:h-[520px]">
+              <table className="w-full">
+                <thead className="sticky top-0 z-10">
+                  <tr className="border-b border-white/10 bg-[#202A40]">
+                    <th className="text-left text-white/60 text-xs font-medium px-4 py-3">Route</th>
+                    <th className="text-right text-white/60 text-xs font-medium px-4 py-3">Viewers</th>
+                    <th className="text-right text-white/60 text-xs font-medium px-4 py-3">Page Views</th>
+                    <th className="text-right text-white/60 text-xs font-medium px-4 py-3">Bounce Rate</th>
+                    <th className="text-right text-white/60 text-xs font-medium px-4 py-3">Avg Duration</th>
+                    <th className="text-right text-white/60 text-xs font-medium px-4 py-3">Bounces</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedRoutes.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="text-center text-white/40 py-8 text-sm">
+                        No routes match this filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    sortedRoutes.map((row) => (
+                      <tr key={row.route} className="border-b border-white/5 hover:bg-white/5">
+                        <td className="text-white/80 text-sm px-4 py-3">{row.route}</td>
+                        <td className="text-white text-sm px-4 py-3 text-right">{row.viewers}</td>
+                        <td className="text-white/80 text-sm px-4 py-3 text-right">{row.pageViews}</td>
+                        <td className="text-red-400 text-sm px-4 py-3 text-right">{row.bounceRate.toFixed(2)}%</td>
+                        <td className="text-blue-400 text-sm px-4 py-3 text-right">{formatDuration(row.avgSessionDurationSec)}</td>
+                        <td className="text-rose-300 text-sm px-4 py-3 text-right">{row.bounces}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {showCustomRouteModal && typeof window !== "undefined" &&
+            createPortal(
+              <div className="fixed inset-0 z-[120] bg-black/70 p-4 flex items-center justify-center">
+                <div className="w-full max-w-2xl max-h-[88vh] overflow-y-auto bg-[#10192C] rounded-xl border border-white/15 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-white text-lg font-semibold">Custom Route View</h3>
+                    <p className="text-white/45 text-xs mt-1">Drag routes to control table order, then save as a named view.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomRouteModal(false)}
+                    className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="mb-3">
+                  <label className="text-white/55 text-xs mb-1 block">Custom View Name</label>
+                  <input
+                    type="text"
+                    value={customViewNameInput}
+                    onChange={(e) => setCustomViewNameInput(e.target.value)}
+                    placeholder="e.g. Onboarding Flow"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={resetCustomViewToWorkflow}
+                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 text-xs"
+                  >
+                    Reset to Workflow
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCustomRouteOrder(routeOptions)}
+                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 text-xs"
+                  >
+                    Reset Alphabetical
+                  </button>
+                </div>
+
+                <div className="space-y-1 max-h-[58vh] overflow-y-auto pr-1">
+                  {customRouteOrder.map((route, idx) => (
+                    <div
+                      key={route}
+                      draggable
+                      onDragStart={() => handleDragStartRoute(route)}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        if (dragOverRoute !== route) setDragOverRoute(route);
+                      }}
+                      onDrop={() => handleDropRoute(route)}
+                      onDragEnd={() => {
+                        setDraggedRoute(null);
+                        setDragOverRoute(null);
+                      }}
+                      className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-white/5 border transition-colors ${
+                        dragOverRoute === route && draggedRoute !== route ? "border-primary/70 bg-primary/10" : "border-white/10"
+                      } ${draggedRoute === route ? "opacity-60" : ""}`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <GripVertical className="w-4 h-4 text-white/35 shrink-0 cursor-grab" />
+                        <span className="text-white/35 text-xs w-6 shrink-0">{idx + 1}</span>
+                        <span className="text-white/80 text-sm truncate">{route}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => moveCustomRoute(route, "up")}
+                          disabled={idx === 0}
+                          className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white/70 text-xs disabled:opacity-40"
+                        >
+                          Up
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveCustomRoute(route, "down")}
+                          disabled={idx === customRouteOrder.length - 1}
+                          className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white/70 text-xs disabled:opacity-40"
+                        >
+                          Down
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={saveNamedCustomView}
+                    className="px-3 py-2 rounded-lg bg-primary hover:bg-primary/80 text-white text-sm"
+                  >
+                    Save Custom View
+                  </button>
+                </div>
+                </div>
+              </div>,
+              document.body
+            )}
+        </>
+      )}
     </div>
   );
 }
