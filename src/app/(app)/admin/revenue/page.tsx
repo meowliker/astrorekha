@@ -52,6 +52,7 @@ interface ProfitSheetRow {
   adsCostUSD: number;     // Meta Ads spend in USD
   adsCostINR: number;     // Meta Ads spend converted to INR
   netRevenue: number;     // Revenue - GST - Ads Cost (INR)
+  profitPercent?: number; // Net Revenue / Revenue * 100
   roas: number;           // Revenue / Ads Cost INR (if ads cost > 0)
   transactionCount: number;
 }
@@ -167,6 +168,7 @@ interface AnalyticsData {
     startDate: string;
     endDate: string;
     timezone: string;
+    dayMode?: "calendar_ist" | "business_1130_ist";
   };
   kpis: {
     paidOrders: number;
@@ -177,6 +179,7 @@ interface AnalyticsData {
     checkoutToPaidRate: number;
   };
   funnel: {
+    totalVisitors?: number;
     paywallVisitors: number;
     paidOrders: number;
     exitedWithoutPaying: number;
@@ -381,6 +384,7 @@ export default function AdminRevenuePage() {
   const [analyticsEndDate, setAnalyticsEndDate] = useState<string>(
     new Date().toISOString().split("T")[0]
   );
+  const [analyticsDayMode, setAnalyticsDayMode] = useState<"calendar_ist" | "business_1130_ist">("calendar_ist");
   
   // Profit Sheet state
   const [profitSheetData, setProfitSheetData] = useState<ProfitSheetRow[]>([]);
@@ -605,7 +609,7 @@ export default function AdminRevenuePage() {
 
       const url = `/api/admin/analytics?token=${encodeURIComponent(token)}&startDate=${encodeURIComponent(
         analyticsStartDate
-      )}&endDate=${encodeURIComponent(analyticsEndDate)}`;
+      )}&endDate=${encodeURIComponent(analyticsEndDate)}&dayMode=${encodeURIComponent(analyticsDayMode)}`;
 
       const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) {
@@ -674,7 +678,7 @@ export default function AdminRevenuePage() {
     if (activeTab === "analytics") {
       fetchAnalytics();
     }
-  }, [activeTab, analyticsStartDate, analyticsEndDate]);
+  }, [activeTab, analyticsStartDate, analyticsEndDate, analyticsDayMode]);
 
   if (loading) {
     return (
@@ -1638,6 +1642,8 @@ export default function AdminRevenuePage() {
             endDate={analyticsEndDate}
             setStartDate={setAnalyticsStartDate}
             setEndDate={setAnalyticsEndDate}
+            dayMode={analyticsDayMode}
+            setDayMode={setAnalyticsDayMode}
             onRefresh={fetchAnalytics}
           />
         )}
@@ -1735,6 +1741,7 @@ function ProfitSheetTab({
     { revenue: 0, gst: 0, adsCostUSD: 0, adsCostINR: 0, netRevenue: 0, transactionCount: 0 }
   );
   const overallRoas = totals.adsCostINR > 0 ? totals.revenue / totals.adsCostINR : 0;
+  const overallProfitPercent = totals.revenue > 0 ? (totals.netRevenue / totals.revenue) * 100 : 0;
 
   return (
     <div className="space-y-4">
@@ -1823,7 +1830,7 @@ function ProfitSheetTab({
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
           <p className="text-white/50 text-xs mb-1">Total Revenue</p>
           <p className="text-green-400 text-xl font-bold">{formatCurrency(totals.revenue)}</p>
@@ -1844,6 +1851,12 @@ function ProfitSheetTab({
           <p className="text-white/50 text-xs mb-1">Net Revenue</p>
           <p className={`text-xl font-bold ${totals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>
             {formatCurrency(totals.netRevenue)}
+          </p>
+        </div>
+        <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
+          <p className="text-white/50 text-xs mb-1">Overall Profit %</p>
+          <p className={`text-xl font-bold ${overallProfitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>
+            {overallProfitPercent.toFixed(2)}%
           </p>
         </div>
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
@@ -1873,6 +1886,7 @@ function ProfitSheetTab({
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Ads (USD)</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Ads (INR)</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Net Revenue</th>
+                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Profit %</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">ROAS</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Orders</th>
                 </tr>
@@ -1880,7 +1894,7 @@ function ProfitSheetTab({
               <tbody>
                 {filteredData.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="text-center text-white/40 py-8">
+                    <td colSpan={10} className="text-center text-white/40 py-8">
                       No data available for the selected filters
                     </td>
                   </tr>
@@ -1896,6 +1910,9 @@ function ProfitSheetTab({
                         <td className="text-red-400/70 text-sm px-4 py-3 text-right">{formatCurrency(row.adsCostINR)}</td>
                         <td className={`text-sm px-4 py-3 text-right font-medium ${row.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>
                           {formatCurrency(row.netRevenue)}
+                        </td>
+                        <td className={`text-sm px-4 py-3 text-right font-medium ${(row.profitPercent || 0) >= 0 ? "text-green-400" : "text-red-400"}`}>
+                          {(row.profitPercent || 0).toFixed(2)}%
                         </td>
                         <td className={`text-sm px-4 py-3 text-right font-medium ${
                           row.roas >= 1 ? "text-green-400" : row.roas > 0 ? "text-amber-400" : "text-white/30"
@@ -1914,6 +1931,9 @@ function ProfitSheetTab({
                       <td className="text-red-400 text-sm px-4 py-3 text-right">{formatCurrency(totals.adsCostINR)}</td>
                       <td className={`text-sm px-4 py-3 text-right ${totals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>
                         {formatCurrency(totals.netRevenue)}
+                      </td>
+                      <td className={`text-sm px-4 py-3 text-right ${overallProfitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>
+                        {overallProfitPercent.toFixed(2)}%
                       </td>
                       <td className={`text-sm px-4 py-3 text-right ${overallRoas >= 1 ? "text-green-400" : "text-amber-400"}`}>
                         {overallRoas > 0 ? overallRoas.toFixed(2) : "-"}
@@ -2302,6 +2322,8 @@ function AnalyticsTab({
   endDate,
   setStartDate,
   setEndDate,
+  dayMode,
+  setDayMode,
   onRefresh,
 }: {
   data: AnalyticsData | null;
@@ -2310,6 +2332,8 @@ function AnalyticsTab({
   endDate: string;
   setStartDate: (value: string) => void;
   setEndDate: (value: string) => void;
+  dayMode: "calendar_ist" | "business_1130_ist";
+  setDayMode: (value: "calendar_ist" | "business_1130_ist") => void;
   onRefresh: () => void;
 }) {
   type AnalyticsChartKey = "traffic-hourly" | "sales-hourly" | "traffic-daily" | "sales-daily";
@@ -2379,7 +2403,6 @@ function AnalyticsTab({
   const [matrixLoading, setMatrixLoading] = useState(false);
   const [matrixRows, setMatrixRows] = useState<AnalyticsHourlyProfitabilityPoint[]>(() => data?.hourlyProfitability?.rows || []);
   const [matrixAdsSource, setMatrixAdsSource] = useState<"meta" | "none">(() => data?.hourlyProfitability?.adsSource || "none");
-  const [matrixDayMode, setMatrixDayMode] = useState<MatrixDayMode>(() => data?.hourlyProfitability?.dayMode || "calendar_ist");
   const matrixFetchSeq = useRef(0);
   const [chartStyleByKey, setChartStyleByKey] = useState<Record<string, ChartStyle>>({
     "traffic-hourly": "bar",
@@ -2389,6 +2412,14 @@ function AnalyticsTab({
     "profit-hour": "bar",
     "profit-day": "bar",
   });
+  const [chartHoverTooltip, setChartHoverTooltip] = useState<{
+    chartId: string;
+    x: number;
+    y: number;
+    label: string;
+    value: string;
+    placement?: "top" | "bottom";
+  } | null>(null);
   const [routeSearch, setRouteSearch] = useState("");
   const [selectedRoutes, setSelectedRoutes] = useState<string[]>([]);
   const [showRouteDropdown, setShowRouteDropdown] = useState(false);
@@ -2492,6 +2523,14 @@ function AnalyticsTab({
     return 1000;
   };
 
+  const formatAxisNumber = (value: number) => {
+    const abs = Math.abs(value);
+    if (abs >= 100000) return `${(value / 1000).toFixed(0)}k`;
+    if (abs >= 1000) return `${(value / 1000).toFixed(1)}k`;
+    if (abs >= 100) return value.toFixed(0);
+    return value.toFixed(2);
+  };
+
   const renderTrendBars = (
     rows: Array<{ label: string; value: number; meta?: string }>,
     colorClass: string,
@@ -2507,38 +2546,45 @@ function AnalyticsTab({
     const width = Math.max(rows.length * 28, minWidth);
 
     return (
-      <div className="overflow-x-auto">
-        <div style={{ width }} className="h-48 flex items-end gap-1.5 border-b border-white/10 pb-2">
-          {rows.map((row, idx) => (
-            <div key={`${row.label}-${idx}`} className="flex-1 min-w-[16px] group h-full flex flex-col relative">
-              <div className="h-4 flex items-end justify-center">
-                {showBarValues && (
-                  <p className="text-[10px] text-white/70 text-center leading-none">{row.value}</p>
-                )}
-              </div>
-              <div className="flex-1 flex items-end">
-                <div
-                  className={`w-full rounded-t ${colorClass} hover:opacity-80 transition-opacity`}
-                  style={{ height: `${Math.max((row.value / max) * 120, 6)}px` }}
-                  title={`${row.label}: ${row.value}${row.meta ? ` (${row.meta})` : ""}`}
-                />
-              </div>
-              <div className="absolute -top-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                <div className="px-2 py-0.5 rounded bg-[#0A0E1A] border border-white/20 text-[10px] text-white/80 whitespace-nowrap">
-                  {row.meta || row.value}
+      <div className="flex gap-2">
+        <div className="w-10 shrink-0 h-48 flex flex-col justify-between pt-3 pb-10 text-[10px] text-white/35 text-right">
+          <span>{formatAxisNumber(max)}</span>
+          <span>{formatAxisNumber(max / 2)}</span>
+          <span>0</span>
+        </div>
+        <div className="overflow-x-auto flex-1">
+          <div style={{ width }} className="h-48 flex items-end gap-1.5 border-b border-white/10 pb-2">
+            {rows.map((row, idx) => (
+              <div key={`${row.label}-${idx}`} className="flex-1 min-w-[16px] group h-full flex flex-col relative">
+                <div className="h-4 flex items-end justify-center">
+                  {showBarValues && (
+                    <p className="text-[10px] text-white/70 text-center leading-none">{row.value}</p>
+                  )}
                 </div>
-              </div>
-              {(() => {
-                const [line1, line2] = splitGraphLabelLines(row.label);
-                return (
-                  <div className="h-8 mt-1 flex flex-col items-center justify-start leading-tight">
-                    <span className="text-[10px] text-white/40 text-center whitespace-nowrap">{line1}</span>
-                    <span className="text-[10px] text-white/40 text-center h-3 whitespace-nowrap">{line2 || "\u00A0"}</span>
+                <div className="flex-1 flex items-end">
+                  <div
+                    className={`w-full rounded-t ${colorClass} hover:opacity-80 transition-opacity`}
+                    style={{ height: `${Math.max((row.value / max) * 120, 6)}px` }}
+                    title={`${row.label}: ${row.value}${row.meta ? ` (${row.meta})` : ""}`}
+                  />
+                </div>
+                <div className="absolute top-1 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
+                  <div className="px-2 py-0.5 rounded bg-[#0A0E1A] border border-white/20 text-[10px] text-white/90 whitespace-nowrap shadow">
+                    {row.meta || row.value}
                   </div>
-                );
-              })()}
-            </div>
-          ))}
+                </div>
+                {(() => {
+                  const [line1, line2] = splitGraphLabelLines(row.label);
+                  return (
+                    <div className="h-8 mt-1 flex flex-col items-center justify-start leading-tight">
+                      <span className="text-[10px] text-white/40 text-center whitespace-nowrap">{line1}</span>
+                      <span className="text-[10px] text-white/40 text-center h-3 whitespace-nowrap">{line2 || "\u00A0"}</span>
+                    </div>
+                  );
+                })()}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -2559,56 +2605,68 @@ function AnalyticsTab({
     const width = Math.max(rows.length * 28, minWidth);
 
     return (
-      <div className="overflow-x-auto">
-        <div style={{ width }} className="h-56 border-b border-white/10 pb-2">
-          <div className="h-44 relative">
-            <div className="absolute left-0 right-0 top-1/2 border-t border-dashed border-white/20" />
-            <div className="h-full flex items-stretch gap-1.5">
-              {rows.map((row, idx) => {
-                const barHeight = row.value === 0 ? 2 : Math.max((Math.abs(row.value) / maxAbs) * 68, 6);
-                const isPositive = row.value >= 0;
-                return (
-                  <div key={`${row.label}-${idx}`} className="flex-1 min-w-[16px] h-full relative group">
-                    <div
-                      className={`absolute left-0 right-0 rounded ${isPositive ? positiveColorClass : negativeColorClass}`}
-                      style={
-                        isPositive
-                          ? { height: `${barHeight}px`, bottom: "50%" }
-                          : { height: `${barHeight}px`, top: "50%" }
-                      }
-                      title={`${row.label}: ${row.value.toFixed(2)}${row.meta ? ` (${row.meta})` : ""}`}
-                    />
-                    <div className="absolute -top-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                      <div className="px-2 py-0.5 rounded bg-[#0A0E1A] border border-white/20 text-[10px] text-white/80 whitespace-nowrap">
-                        {row.meta || row.value.toFixed(2)}
-                      </div>
-                    </div>
-                </div>
-                );
-              })}
-            </div>
-          </div>
-          <div className="h-8 mt-1 flex gap-1.5">
-            {rows.map((row, idx) => (
-              <div key={`${row.label}-axis-${idx}`} className="flex-1 min-w-[16px] flex flex-col items-center justify-start leading-tight">
-                {(() => {
-                  const [line1, line2] = splitGraphLabelLines(row.label);
+      <div className="flex gap-2">
+        <div className="w-10 shrink-0 h-56 flex flex-col justify-between pt-2 pb-10 text-[10px] text-white/35 text-right">
+          <span>{formatAxisNumber(maxAbs)}</span>
+          <span>0</span>
+          <span>-{formatAxisNumber(maxAbs)}</span>
+        </div>
+        <div className="overflow-x-auto flex-1">
+          <div style={{ width }} className="h-56 border-b border-white/10 pb-2">
+            <div className="h-44 relative">
+              <div className="absolute left-0 right-0 top-1/2 border-t border-dashed border-white/20" />
+              <div className="h-full flex items-stretch gap-1.5">
+                {rows.map((row, idx) => {
+                  const barHeight = row.value === 0 ? 2 : Math.max((Math.abs(row.value) / maxAbs) * 68, 6);
+                  const isPositive = row.value >= 0;
                   return (
-                    <>
-                      <span className="text-[10px] text-white/40 text-center whitespace-nowrap">{line1}</span>
-                      <span className="text-[10px] text-white/40 text-center h-3 whitespace-nowrap">{line2 || "\u00A0"}</span>
-                    </>
+                    <div key={`${row.label}-${idx}`} className="flex-1 min-w-[16px] h-full relative group">
+                      <div
+                        className={`absolute left-0 right-0 rounded ${isPositive ? positiveColorClass : negativeColorClass}`}
+                        style={
+                          isPositive
+                            ? { height: `${barHeight}px`, bottom: "50%" }
+                            : { height: `${barHeight}px`, top: "50%" }
+                        }
+                        title={`${row.label}: ${row.value.toFixed(2)}${row.meta ? ` (${row.meta})` : ""}`}
+                      />
+                      <div className="absolute top-1 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                        <div className="px-2 py-0.5 rounded bg-[#0A0E1A] border border-white/20 text-[10px] text-white/90 whitespace-nowrap shadow">
+                          {row.meta || row.value.toFixed(2)}
+                        </div>
+                      </div>
+                  </div>
                   );
-                })()}
+                })}
               </div>
-            ))}
+            </div>
+            <div className="h-8 mt-1 flex gap-1.5">
+              {rows.map((row, idx) => (
+                <div key={`${row.label}-axis-${idx}`} className="flex-1 min-w-[16px] flex flex-col items-center justify-start leading-tight">
+                  {(() => {
+                    const [line1, line2] = splitGraphLabelLines(row.label);
+                    return (
+                      <>
+                        <span className="text-[10px] text-white/40 text-center whitespace-nowrap">{line1}</span>
+                        <span className="text-[10px] text-white/40 text-center h-3 whitespace-nowrap">{line2 || "\u00A0"}</span>
+                      </>
+                    );
+                  })()}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
     );
   };
 
+  const hideChartHoverTooltip = (chartId: string) => {
+    setChartHoverTooltip((prev) => (prev?.chartId === chartId ? null : prev));
+  };
+
   const renderLineTrend = (
+    chartId: string,
     rows: Array<{ label: string; value: number; meta?: string }>,
     lineColorHex: string,
     emptyText: string,
@@ -2622,23 +2680,64 @@ function AnalyticsTab({
     const chartHeight = 180;
     const topPad = 10;
     const bottomPad = 14;
-    const leftPad = 12;
+    const leftPad = 44;
     const rightPad = 12;
     const plotHeight = chartHeight - topPad - bottomPad;
     const plotWidth = width - leftPad - rightPad;
     const minVal = Math.min(...rows.map((r) => r.value), 0);
     const maxVal = Math.max(...rows.map((r) => r.value), 0);
     const range = Math.max(maxVal - minVal, 1);
+    const yTickCount = 5;
+    const yTicks = Array.from({ length: yTickCount }, (_, idx) => {
+      const value = maxVal - (range * idx) / Math.max(yTickCount - 1, 1);
+      return { value, y: topPad + ((maxVal - value) / range) * plotHeight };
+    });
 
     const getX = (idx: number) => leftPad + ((plotWidth * idx) / Math.max(rows.length - 1, 1));
     const getY = (value: number) => topPad + ((maxVal - value) / range) * plotHeight;
     const points = rows.map((row, idx) => `${getX(idx)},${getY(row.value)}`).join(" ");
     const zeroY = getY(0);
+    const showLinePointTooltip = (idx: number) => {
+      const row = rows[idx];
+      if (!row) return;
+      const x = getX(idx);
+      const y = getY(row.value);
+      const placement: "top" | "bottom" = y < 30 ? "bottom" : "top";
+      setChartHoverTooltip({
+        chartId,
+        x,
+        y: placement === "bottom" ? y + 10 : y - 10,
+        label: "",
+        value: row.meta || String(row.value),
+        placement,
+      });
+    };
 
     return (
-      <div className="overflow-x-auto">
-        <div style={{ width }}>
+      <div className="overflow-x-auto overflow-y-visible" onMouseLeave={() => hideChartHoverTooltip(chartId)}>
+        <div style={{ width }} className="relative">
           <svg width={width} height={chartHeight} className="block">
+            {yTicks.map((tick, idx) => (
+              <g key={`y-tick-${idx}`}>
+                <line
+                  x1={leftPad}
+                  y1={tick.y}
+                  x2={width - rightPad}
+                  y2={tick.y}
+                  stroke="rgba(255,255,255,0.08)"
+                />
+                <text
+                  x={leftPad - 6}
+                  y={tick.y + 3}
+                  textAnchor="end"
+                  fill="rgba(255,255,255,0.42)"
+                  fontSize="10"
+                >
+                  {formatAxisNumber(tick.value)}
+                </text>
+              </g>
+            ))}
+            <line x1={leftPad} y1={topPad} x2={leftPad} y2={chartHeight - bottomPad} stroke="rgba(255,255,255,0.16)" />
             <line x1={leftPad} y1={zeroY} x2={width - rightPad} y2={zeroY} stroke="rgba(255,255,255,0.22)" strokeDasharray="4 4" />
             <polyline
               fill="none"
@@ -2648,19 +2747,61 @@ function AnalyticsTab({
               strokeLinecap="round"
               points={points}
             />
-            {rows.map((row, idx) => (
-              <g key={`${row.label}-${idx}`}>
-                <circle
-                  cx={getX(idx)}
-                  cy={getY(row.value)}
-                  r="3"
-                  fill={lineColorHex}
+            {rows.length > 1 &&
+              rows.slice(0, -1).map((_, idx) => (
+                <line
+                  key={`hover-segment-${idx}`}
+                  x1={getX(idx)}
+                  y1={getY(rows[idx].value)}
+                  x2={getX(idx + 1)}
+                  y2={getY(rows[idx + 1].value)}
+                  stroke="transparent"
+                  strokeWidth="14"
+                  className="cursor-pointer"
+                  onMouseMove={(e) => {
+                    const svgRect = e.currentTarget.ownerSVGElement?.getBoundingClientRect();
+                    if (!svgRect) return;
+                    const localX = ((e.clientX - svgRect.left) * width) / svgRect.width;
+                    const nearestIdx =
+                      Math.abs(localX - getX(idx)) <= Math.abs(localX - getX(idx + 1)) ? idx : idx + 1;
+                    showLinePointTooltip(nearestIdx);
+                  }}
+                  onMouseLeave={() => hideChartHoverTooltip(chartId)}
+                />
+              ))}
+            {rows.map((row, idx) => {
+              const x = getX(idx);
+              const y = getY(row.value);
+              return (
+                <g
+                  key={`${row.label}-${idx}`}
+                  onMouseEnter={() => showLinePointTooltip(idx)}
+                  onMouseLeave={() => hideChartHoverTooltip(chartId)}
                 >
-                  <title>{`${row.label}: ${row.value}${row.meta ? ` (${row.meta})` : ""}`}</title>
-                </circle>
-              </g>
-            ))}
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r="3"
+                    fill={lineColorHex}
+                  />
+                  <circle cx={x} cy={y} r="10" fill="transparent" className="cursor-pointer" />
+                </g>
+              );
+            })}
           </svg>
+          {chartHoverTooltip?.chartId === chartId && (
+            <div
+              className={`absolute z-20 pointer-events-none -translate-x-1/2 ${
+                chartHoverTooltip.placement === "bottom" ? "translate-y-1" : "-translate-y-full"
+              }`}
+              style={{ left: chartHoverTooltip.x, top: chartHoverTooltip.y }}
+            >
+              <div className="px-2 py-1 rounded bg-[#0A0E1A] border border-white/20 text-[10px] text-white/90 whitespace-nowrap shadow">
+                {chartHoverTooltip.label ? <div className="text-white/60">{chartHoverTooltip.label}</div> : null}
+                <div>{chartHoverTooltip.value}</div>
+              </div>
+            </div>
+          )}
           <div className="h-8 mt-1 flex gap-1.5">
             {rows.map((row, idx) => {
               const [line1, line2] = splitGraphLabelLines(row.label);
@@ -2678,6 +2819,7 @@ function AnalyticsTab({
   };
 
   const renderPieTrend = (
+    chartId: string,
     rows: Array<{ label: string; value: number; meta?: string }>,
     emptyText: string
   ) => {
@@ -2697,23 +2839,85 @@ function AnalyticsTab({
     const total = slices.reduce((acc, row) => acc + row.abs, 0);
     const colors = ["#14b8a6", "#3b82f6", "#84cc16", "#f59e0b", "#ec4899", "#8b5cf6", "#22d3ee", "#f97316", "#6b7280"];
 
-    let cursor = 0;
-    const gradientStops = slices.map((slice, idx) => {
-      const start = (cursor / total) * 100;
-      cursor += slice.abs;
-      const end = (cursor / total) * 100;
-      return `${colors[idx % colors.length]} ${start}% ${end}%`;
-    });
+    const size = 160;
+    const center = size / 2;
+    const outerRadius = 70;
+    const innerRadius = 34;
+
+    const polarToCartesian = (angleDeg: number, radius: number) => {
+      const angleRad = ((angleDeg - 90) * Math.PI) / 180;
+      return {
+        x: center + radius * Math.cos(angleRad),
+        y: center + radius * Math.sin(angleRad),
+      };
+    };
+
+    const createDonutArc = (startAngle: number, endAngle: number) => {
+      const largeArc = endAngle - startAngle > 180 ? 1 : 0;
+      const outerStart = polarToCartesian(startAngle, outerRadius);
+      const outerEnd = polarToCartesian(endAngle, outerRadius);
+      const innerStart = polarToCartesian(startAngle, innerRadius);
+      const innerEnd = polarToCartesian(endAngle, innerRadius);
+
+      return [
+        `M ${outerStart.x} ${outerStart.y}`,
+        `A ${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${outerEnd.x} ${outerEnd.y}`,
+        `L ${innerEnd.x} ${innerEnd.y}`,
+        `A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${innerStart.x} ${innerStart.y}`,
+        "Z",
+      ].join(" ");
+    };
+
+    let angleCursor = 0;
 
     return (
-      <div className="flex flex-col md:flex-row gap-4 items-start">
-        <div
-          className="w-40 h-40 rounded-full border border-white/10 shrink-0"
-          style={{
-            background: `conic-gradient(${gradientStops.join(", ")})`,
-          }}
-        >
-          <div className="w-20 h-20 rounded-full bg-[#141C2F] border border-white/10 relative top-10 left-10" />
+      <div className="flex flex-col md:flex-row gap-4 items-start" onMouseLeave={() => hideChartHoverTooltip(chartId)}>
+        <div className="relative w-40 h-40 shrink-0">
+          <svg viewBox={`0 0 ${size} ${size}`} className="w-40 h-40 border border-white/10 rounded-full">
+            {slices.map((slice, idx) => {
+              const pct = total > 0 ? slice.abs / total : 0;
+              const startAngle = angleCursor;
+              const endAngle = angleCursor + pct * 360;
+              angleCursor = endAngle;
+              const midAngle = (startAngle + endAngle) / 2;
+              const anchor = polarToCartesian(midAngle, (outerRadius + innerRadius) / 2);
+              const valueText = slice.meta || (slice.label === "Others" ? formatCurrency(slice.value) : String(slice.value));
+
+              const placement: "top" | "bottom" = anchor.y < 44 ? "bottom" : "top";
+              return (
+                <path
+                  key={`${slice.label}-${idx}`}
+                  d={createDonutArc(startAngle, endAngle)}
+                  fill={colors[idx % colors.length]}
+                  className="cursor-pointer"
+                  onMouseEnter={() =>
+                    setChartHoverTooltip({
+                      chartId,
+                      x: anchor.x,
+                      y: placement === "bottom" ? anchor.y + 8 : anchor.y - 8,
+                      label: slice.label,
+                      value: `${valueText} (${(pct * 100).toFixed(1)}%)`,
+                      placement,
+                    })
+                  }
+                  onMouseLeave={() => hideChartHoverTooltip(chartId)}
+                />
+              );
+            })}
+          </svg>
+          {chartHoverTooltip?.chartId === chartId && (
+            <div
+              className={`absolute z-20 pointer-events-none -translate-x-1/2 ${
+                chartHoverTooltip.placement === "bottom" ? "translate-y-1" : "-translate-y-full"
+              }`}
+              style={{ left: chartHoverTooltip.x, top: chartHoverTooltip.y }}
+            >
+              <div className="px-2 py-1 rounded bg-[#0A0E1A] border border-white/20 text-[10px] text-white/90 whitespace-nowrap shadow">
+                <div className="text-white/60">{chartHoverTooltip.label}</div>
+                <div>{chartHoverTooltip.value}</div>
+              </div>
+            </div>
+          )}
         </div>
         <div className="space-y-1 text-xs w-full">
           {slices.map((slice, idx) => {
@@ -2748,10 +2952,10 @@ function AnalyticsTab({
         colorClass.includes("lime") ? "#84cc16" :
         colorClass.includes("sky") ? "#38bdf8" :
         "#06b6d4";
-      return renderLineTrend(rows, hex, emptyText, minWidth);
+      return renderLineTrend(chartKey, rows, hex, emptyText, minWidth);
     }
     if (style === "pie") {
-      return renderPieTrend(rows, emptyText);
+      return renderPieTrend(chartKey, rows, emptyText);
     }
     return renderTrendBars(rows, colorClass, emptyText, minWidth, showBarValues);
   };
@@ -2824,11 +3028,11 @@ function AnalyticsTab({
       }
     : null;
 
-  const paywallVisitors = data?.funnel?.paywallVisitors ?? data?.kpis?.checkoutStarts ?? 0;
-  const paywallPaid = data?.funnel?.paidOrders ?? data?.kpis?.paidOrders ?? 0;
-  const paywallDropOff = data?.funnel?.exitedWithoutPaying ?? Math.max(paywallVisitors - paywallPaid, 0);
-  const paywallConversionRate = data?.funnel?.conversionRate ?? (paywallVisitors > 0 ? (paywallPaid / paywallVisitors) * 100 : 0);
-  const paywallDropOffRate = data?.funnel?.dropOffRate ?? (paywallVisitors > 0 ? (paywallDropOff / paywallVisitors) * 100 : 0);
+  const totalVisitors = data?.funnel?.totalVisitors ?? data?.traffic?.totalSessions ?? data?.kpis?.checkoutStarts ?? 0;
+  const totalPaid = data?.funnel?.paidOrders ?? data?.kpis?.paidOrders ?? 0;
+  const totalDropOff = data?.funnel?.exitedWithoutPaying ?? Math.max(totalVisitors - totalPaid, 0);
+  const totalConversionRate = data?.funnel?.conversionRate ?? (totalVisitors > 0 ? (totalPaid / totalVisitors) * 100 : 0);
+  const totalDropOffRate = data?.funnel?.dropOffRate ?? (totalVisitors > 0 ? (totalDropOff / totalVisitors) * 100 : 0);
 
   const profitabilityRows = matrixRows;
   const profitabilitySourceBadge = matrixAdsSource === "meta" ? "Meta + PayU" : "PayU";
@@ -2839,35 +3043,60 @@ function AnalyticsTab({
     const getMetricValue = (row: AnalyticsHourlyProfitabilityPoint) =>
       profitMetric === "profit" ? row.profitInr : row.roas;
 
-    const dates = Array.from(new Set(profitabilityRows.map((row) => row.date))).sort();
-    const isSingleDay = matrixStartDate === matrixEndDate || dates.length === 1;
+    const rangeStart = new Date(`${matrixStartDate}T00:00:00`);
+    const rangeEnd = new Date(`${matrixEndDate}T00:00:00`);
+    const rangeDays =
+      Number.isNaN(rangeStart.getTime()) || Number.isNaN(rangeEnd.getTime())
+        ? 1
+        : Math.max(1, Math.floor((rangeEnd.getTime() - rangeStart.getTime()) / (24 * 60 * 60 * 1000)) + 1);
 
-    if (isSingleDay) {
-      const selectedDate = matrixStartDate === matrixEndDate ? matrixStartDate : dates[0];
-      const selectedRows = profitabilityRows.filter((row) => row.date === selectedDate);
-      const byHour = new Map<number, AnalyticsHourlyProfitabilityPoint>();
-      selectedRows.forEach((row) => byHour.set(row.hour, row));
+    // <7 days => show each selected date/day as separate columns
+    if (rangeDays < 7) {
+      const dateColumns: string[] = [];
+      const cursor = new Date(rangeStart);
+      while (cursor <= rangeEnd) {
+        dateColumns.push(cursor.toISOString().split("T")[0]);
+        cursor.setDate(cursor.getDate() + 1);
+      }
 
-      const rowSeries = Array.from({ length: 24 }, (_, hour) => {
-        const point = byHour.get(hour);
-        return {
-          hour,
-          label: formatHourSlot(hour),
-          cells: [point ? getMetricValue(point) : 0],
-        };
+      const groupedByDateHour = new Map<string, number>();
+      for (const row of profitabilityRows) {
+        groupedByDateHour.set(`${row.date}|${row.hour}`, getMetricValue(row));
+      }
+
+      const rowSeries = Array.from({ length: 24 }, (_, hour) => ({
+        hour,
+        label: formatHourSlot(hour),
+        cells: dateColumns.map((dateKey) => groupedByDateHour.get(`${dateKey}|${hour}`) || 0),
+      }));
+
+      const columnTotals = dateColumns.map((_, idx) => {
+        const sum = rowSeries.reduce((acc, row) => acc + row.cells[idx], 0);
+        return profitMetric === "profit" ? sum : rowSeries.length > 0 ? sum / rowSeries.length : 0;
       });
 
-      const weekday = selectedRows[0]?.weekday || new Date(`${selectedDate}T00:00:00`).toLocaleDateString("en-US", { weekday: "long" });
-      const total = rowSeries.reduce((sum, row) => sum + row.cells[0], 0);
-      const normalizedTotal = profitMetric === "profit" ? total : rowSeries.length > 0 ? total / rowSeries.length : 0;
+      const graphByHour = rowSeries.map((row) => {
+        const sum = row.cells.reduce((acc, val) => acc + val, 0);
+        const avg = row.cells.length > 0 ? sum / row.cells.length : 0;
+        return { label: row.label, value: avg };
+      });
+
+      const graphByColumn = dateColumns.map((dateKey, idx) => {
+        const weekday = new Date(`${dateKey}T00:00:00`).toLocaleDateString("en-US", { weekday: "short" });
+        return { label: `${weekday} ${formatDayLabel(dateKey)}`, value: columnTotals[idx] || 0 };
+      });
 
       return {
-        isSingleDay: true,
-        columns: [{ key: selectedDate, label: `${weekday.slice(0, 3)} ${formatDayLabel(selectedDate)}` }],
+        isSingleDay: rangeDays === 1,
+        aggregationMode: rangeDays === 1 ? "single" : "daily",
+        columns: dateColumns.map((dateKey) => {
+          const weekday = new Date(`${dateKey}T00:00:00`).toLocaleDateString("en-US", { weekday: "short" });
+          return { key: dateKey, label: `${weekday} ${formatDayLabel(dateKey)}` };
+        }),
         rows: rowSeries,
-        columnTotals: [normalizedTotal],
-        graphByHour: rowSeries.map((row) => ({ label: row.label, value: row.cells[0] })),
-        graphByColumn: [{ label: weekday.slice(0, 3), value: normalizedTotal }],
+        columnTotals,
+        graphByHour,
+        graphByColumn,
       };
     }
 
@@ -2912,6 +3141,7 @@ function AnalyticsTab({
 
     return {
       isSingleDay: false,
+      aggregationMode: "weekday-average",
       columns: activeWeekdays.map((day) => ({ key: day, label: day.slice(0, 3) })),
       rows: rowSeries,
       columnTotals,
@@ -3122,12 +3352,12 @@ function AnalyticsTab({
     customDayMode?: MatrixDayMode
   ) => {
     try {
-      const token = window.localStorage.getItem("adminSession");
+      const token = window.localStorage.getItem("admin_session_token") || window.localStorage.getItem("adminSession");
       if (!token) return;
 
       const useStart = customStartDate || matrixStartDate;
       const useEnd = customEndDate || matrixEndDate;
-      const useDayMode = customDayMode || matrixDayMode;
+      const useDayMode = customDayMode || dayMode;
       const requestSeq = ++matrixFetchSeq.current;
 
       setMatrixLoading(true);
@@ -3141,7 +3371,6 @@ function AnalyticsTab({
 
       setMatrixRows(result?.hourlyProfitability?.rows || []);
       setMatrixAdsSource(result?.hourlyProfitability?.adsSource === "meta" ? "meta" : "none");
-      setMatrixDayMode(result?.hourlyProfitability?.dayMode === "business_1130_ist" ? "business_1130_ist" : "calendar_ist");
     } catch (err) {
       console.error("Hourly profitability fetch error:", err);
     } finally {
@@ -3158,7 +3387,7 @@ function AnalyticsTab({
     const nextEnd = toInputDate(end);
     setMatrixStartDate(nextStart);
     setMatrixEndDate(nextEnd);
-    fetchProfitabilityMatrix(nextStart, nextEnd, matrixDayMode);
+    fetchProfitabilityMatrix(nextStart, nextEnd, dayMode);
   };
 
   const handleMatrixStartDateChange = (nextStart: string) => {
@@ -3166,7 +3395,7 @@ function AnalyticsTab({
     const adjustedEnd = nextStart > matrixEndDate ? nextStart : matrixEndDate;
     setMatrixStartDate(nextStart);
     if (adjustedEnd !== matrixEndDate) setMatrixEndDate(adjustedEnd);
-    fetchProfitabilityMatrix(nextStart, adjustedEnd, matrixDayMode);
+    fetchProfitabilityMatrix(nextStart, adjustedEnd, dayMode);
   };
 
   const handleMatrixEndDateChange = (nextEnd: string) => {
@@ -3174,11 +3403,11 @@ function AnalyticsTab({
     const adjustedStart = nextEnd < matrixStartDate ? nextEnd : matrixStartDate;
     setMatrixEndDate(nextEnd);
     if (adjustedStart !== matrixStartDate) setMatrixStartDate(adjustedStart);
-    fetchProfitabilityMatrix(adjustedStart, nextEnd, matrixDayMode);
+    fetchProfitabilityMatrix(adjustedStart, nextEnd, dayMode);
   };
 
   const handleMatrixDayModeChange = (mode: MatrixDayMode) => {
-    setMatrixDayMode(mode);
+    setDayMode(mode);
     fetchProfitabilityMatrix(matrixStartDate, matrixEndDate, mode);
   };
 
@@ -3186,7 +3415,6 @@ function AnalyticsTab({
     if (data?.hourlyProfitability?.rows?.length && matrixRows.length === 0) {
       setMatrixRows(data.hourlyProfitability.rows);
       setMatrixAdsSource(data.hourlyProfitability.adsSource === "meta" ? "meta" : "none");
-      setMatrixDayMode(data.hourlyProfitability.dayMode === "business_1130_ist" ? "business_1130_ist" : "calendar_ist");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.hourlyProfitability?.rows?.length]);
@@ -3228,6 +3456,38 @@ function AnalyticsTab({
       setCustomRouteOrder(selected.order);
       setRouteViewMode("custom");
     }
+  };
+
+  const renameActiveCustomView = () => {
+    const newName = customViewNameInput.trim();
+    if (!activeCustomViewName || !newName) return;
+    setCustomViews((prev) => {
+      if (prev.some((view) => view.name.toLowerCase() === newName.toLowerCase() && view.name !== activeCustomViewName)) {
+        return prev;
+      }
+      return prev.map((view) => (view.name === activeCustomViewName ? { ...view, name: newName } : view));
+    });
+    setActiveCustomViewName(newName);
+  };
+
+  const deleteCustomView = (nameToDelete: string) => {
+    if (!nameToDelete) return;
+    setCustomViews((prev) => {
+      const next = prev.filter((view) => view.name !== nameToDelete);
+      if (activeCustomViewName === nameToDelete) {
+        if (next.length > 0) {
+          setActiveCustomViewName(next[0].name);
+          setCustomViewNameInput(next[0].name);
+          setCustomRouteOrder(next[0].order);
+          setRouteViewMode("custom");
+        } else {
+          setActiveCustomViewName("");
+          setCustomViewNameInput("My Custom View");
+          setRouteViewMode("workflow");
+        }
+      }
+      return next;
+    });
   };
 
   const handleDragStartRoute = (route: string) => {
@@ -3285,6 +3545,21 @@ function AnalyticsTab({
               className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50 [color-scheme:dark]"
             />
           </div>
+          <div>
+            <label className="text-white/50 text-xs mb-1 block">Day Mode</label>
+            <select
+              value={dayMode}
+              onChange={(e) => {
+                const mode = e.target.value as MatrixDayMode;
+                setDayMode(mode);
+                fetchProfitabilityMatrix(matrixStartDate, matrixEndDate, mode);
+              }}
+              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50"
+            >
+              <option value="calendar_ist">IST (00:00 - 23:59)</option>
+              <option value="business_1130_ist">11:30 IST - next 11:29</option>
+            </select>
+          </div>
           <button
             onClick={onRefresh}
             disabled={loading}
@@ -3296,7 +3571,7 @@ function AnalyticsTab({
         </div>
         {data?.range && (
           <p className="text-white/30 text-xs mt-3">
-            Timezone: {data.range.timezone} | Range: {data.range.startDate} to {data.range.endDate}
+            Timezone: {data.range.timezone} | Day Mode: {dayMode === "business_1130_ist" ? "11:30 IST → next 11:29" : "Calendar IST"} | Range: {data.range.startDate} to {data.range.endDate}
           </p>
         )}
       </div>
@@ -3327,14 +3602,14 @@ function AnalyticsTab({
               icon={<CheckCircle className="w-4 h-4" />}
             />
             <KPICard
-              title="Paywall Visitors"
-              value={String(paywallVisitors)}
+              title="Total Visitors"
+              value={String(totalVisitors)}
               color="text-white"
               icon={<MousePointerClick className="w-4 h-4" />}
             />
             <KPICard
-              title="Paywall → Paid"
-              value={`${paywallConversionRate.toFixed(2)}%`}
+              title="Visitors → Paid"
+              value={`${totalConversionRate.toFixed(2)}%`}
               color="text-amber-400"
               icon={<Target className="w-4 h-4" />}
             />
@@ -3464,7 +3739,7 @@ function AnalyticsTab({
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/60">{profitabilitySourceBadge}</span>
                 </div>
                 <p className="text-white/40 text-xs mt-1">
-                  Single date shows that day. Multi-date range shows weekday averages. Active mode: {matrixDayMode === "business_1130_ist" ? "11:30 IST business day" : "Calendar IST day"}.
+                  Single date shows that day. Multi-date range shows weekday averages. Active mode: {dayMode === "business_1130_ist" ? "11:30 IST business day" : "Calendar IST day"}.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -3482,7 +3757,7 @@ function AnalyticsTab({
                 />
                 <button
                   type="button"
-                  onClick={() => fetchProfitabilityMatrix(matrixStartDate, matrixEndDate, matrixDayMode)}
+                  onClick={() => fetchProfitabilityMatrix(matrixStartDate, matrixEndDate, dayMode)}
                   disabled={matrixLoading}
                   className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 text-xs disabled:opacity-50 flex items-center gap-1.5"
                 >
@@ -3490,7 +3765,7 @@ function AnalyticsTab({
                   Refresh
                 </button>
                 <select
-                  value={matrixDayMode}
+                  value={dayMode}
                   onChange={(e) => handleMatrixDayModeChange(e.target.value as MatrixDayMode)}
                   className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-primary/50"
                 >
@@ -3619,8 +3894,8 @@ function AnalyticsTab({
                       }));
                       const style = chartStyleByKey["profit-hour"] || "bar";
                       if (profitMetric === "profit") {
-                        if (style === "line") return renderLineTrend(rows, "#34d399", "No hourly profitability data", 720);
-                        if (style === "pie") return renderPieTrend(rows, "No hourly profitability data");
+                        if (style === "line") return renderLineTrend("profit-hour", rows, "#34d399", "No hourly profitability data", 720);
+                        if (style === "pie") return renderPieTrend("profit-hour", rows, "No hourly profitability data");
                         return renderSignedTrendBars(rows, "bg-emerald-500/80", "bg-rose-500/80", "No hourly profitability data", 720);
                       }
                       return renderChartByStyle("profit-hour", rows, "bg-cyan-500/70", "No hourly profitability data", 720, false);
@@ -3640,7 +3915,11 @@ function AnalyticsTab({
                       </select>
                     </div>
                     <p className="text-white/40 text-[11px] mb-2">
-                      {profitabilityMatrix.isSingleDay ? "Selected day total" : "Weekday averages for selected period"}
+                      {profitabilityMatrix.aggregationMode === "single"
+                        ? "Selected day total"
+                        : profitabilityMatrix.aggregationMode === "daily"
+                        ? "Per-day breakdown for selected range"
+                        : "Weekday averages for selected period"}
                     </p>
                     {(() => {
                       const rows = profitabilityMatrix.graphByColumn.map((item) => ({
@@ -3650,8 +3929,8 @@ function AnalyticsTab({
                       }));
                       const style = chartStyleByKey["profit-day"] || "bar";
                       if (profitMetric === "profit") {
-                        if (style === "line") return renderLineTrend(rows, "#84cc16", "No day-level profitability data", 360);
-                        if (style === "pie") return renderPieTrend(rows, "No day-level profitability data");
+                        if (style === "line") return renderLineTrend("profit-day", rows, "#84cc16", "No day-level profitability data", 360);
+                        if (style === "pie") return renderPieTrend("profit-day", rows, "No day-level profitability data");
                         return renderSignedTrendBars(rows, "bg-lime-500/80", "bg-red-500/80", "No day-level profitability data", 360);
                       }
                       return renderChartByStyle("profit-day", rows, "bg-sky-500/70", "No day-level profitability data", 360, false);
@@ -3697,14 +3976,14 @@ function AnalyticsTab({
           <div className="bg-[#1A2235] rounded-xl border border-white/10 p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-white/70 text-sm font-medium">Checkout Funnel</h3>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/60">Paywall</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/60">Visitors</span>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              <MetricCard title="Paywall Visitors" value={String(paywallVisitors)} color="text-white" />
-              <MetricCard title="Subscribed/Paid" value={String(paywallPaid)} color="text-green-400" />
-              <MetricCard title="Exited Without Paying" value={String(paywallDropOff)} color="text-red-400" />
-              <MetricCard title="Conversion Rate" value={`${paywallConversionRate.toFixed(2)}%`} color="text-amber-400" />
-              <MetricCard title="Drop-off Rate" value={`${paywallDropOffRate.toFixed(2)}%`} color="text-rose-300" />
+              <MetricCard title="Total Visitors" value={String(totalVisitors)} color="text-white" />
+              <MetricCard title="Subscribed/Paid" value={String(totalPaid)} color="text-green-400" />
+              <MetricCard title="Left Without Paying" value={String(totalDropOff)} color="text-red-400" />
+              <MetricCard title="Conversion Rate" value={`${totalConversionRate.toFixed(2)}%`} color="text-amber-400" />
+              <MetricCard title="Drop-off Rate" value={`${totalDropOffRate.toFixed(2)}%`} color="text-rose-300" />
             </div>
             {data.funnel?.paywallRoute && (
               <p className="text-white/35 text-xs mt-3">
@@ -3920,6 +4199,25 @@ function AnalyticsTab({
                     placeholder="e.g. Onboarding Flow"
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50"
                   />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={renameActiveCustomView}
+                    disabled={!activeCustomViewName || !customViewNameInput.trim()}
+                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 text-xs disabled:opacity-40"
+                  >
+                    Edit/Rename View
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteCustomView(activeCustomViewName || customViewNameInput.trim())}
+                    disabled={!activeCustomViewName && !customViewNameInput.trim()}
+                    className="px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs disabled:opacity-40"
+                  >
+                    Delete View
+                  </button>
                 </div>
 
                 <div className="flex items-center gap-2 mb-3">

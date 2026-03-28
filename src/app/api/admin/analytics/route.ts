@@ -618,7 +618,10 @@ async function fetchGoogleAnalyticsData(startDate: string, endDate: string): Pro
 
 async function fetchInternalRouteAnalytics(
   startIso: string,
-  endIso: string
+  endIso: string,
+  dayMode: MatrixDayMode,
+  startDate: string,
+  endDate: string
 ): Promise<{
   routeMetrics: RouteMetric[];
   peakTrafficHour: PeakTrafficMetric;
@@ -672,8 +675,9 @@ async function fetchInternalRouteAnalytics(
       item.pageViews += 1;
 
       if (evt?.created_at) {
-        const { dayKey, hour } = getIstDateParts(new Date(evt.created_at));
-        const weekday = getIstWeekday(new Date(evt.created_at));
+        const grouped = getMatrixDateGroup(new Date(evt.created_at), dayMode);
+        const { dayKey, hour, weekday } = grouped;
+        if (dayKey < startDate || dayKey > endDate) continue;
         const hourLabel = formatIstHourLabel(hour);
         hourlyMap.set(hourLabel, (hourlyMap.get(hourLabel) || 0) + 1);
         dailyMap.set(dayKey, (dailyMap.get(dayKey) || 0) + 1);
@@ -702,7 +706,7 @@ async function fetchInternalRouteAnalytics(
     peakTrafficHour: pickTopTrafficMetric(hourlyMap, "N/A"),
     peakTrafficDay: pickTopTrafficMetric(weekdayMap, "N/A"),
     hourlySeries: buildHourlyTrafficSeries(hourlyMap),
-    dailySeries: buildDailyTrafficSeries(dailyMap, startIso.slice(0, 10), endIso.slice(0, 10)),
+    dailySeries: buildDailyTrafficSeries(dailyMap, startDate, endDate),
     totalSessions,
     totalPageViews: totalSessions,
     overallBounceRate: totalSessions > 0 ? (totalBounces / totalSessions) * 100 : 0,
@@ -723,10 +727,12 @@ export async function GET(request: NextRequest) {
 
     const startDate = searchParams.get("startDate") || defaultStart.toISOString().split("T")[0];
     const endDate = searchParams.get("endDate") || today.toISOString().split("T")[0];
+    const dayModeParam = searchParams.get("dayMode");
     const matrixDayModeParam = searchParams.get("matrixDayMode");
+    const dayMode: MatrixDayMode = dayModeParam === "business_1130_ist" ? "business_1130_ist" : "calendar_ist";
     const matrixDayMode: MatrixDayMode = matrixDayModeParam === "business_1130_ist"
       ? "business_1130_ist"
-      : "calendar_ist";
+      : dayMode;
 
     if (!token) {
       return NextResponse.json({ error: "Unauthorized - No token provided" }, { status: 401 });
@@ -748,7 +754,8 @@ export async function GET(request: NextRequest) {
     }
 
     const startIso = `${startDate}T00:00:00.000Z`;
-    const endIso = `${endDate}T23:59:59.999Z`;
+    const endDateForMode = dayMode === "business_1130_ist" ? shiftIsoDate(endDate, 1) : endDate;
+    const endIso = `${endDateForMode}T23:59:59.999Z`;
 
     const { data: paymentRows } = await supabase
       .from("payments")
@@ -765,12 +772,15 @@ export async function GET(request: NextRequest) {
     });
     const failedRows = (paymentRows || []).filter((row) => normalizeStatus(row.payment_status) === "failed");
 
-    const payuTransactions = await fetchPayUTransactions(startDate, endDate);
+    const payuFetchEndDate = dayMode === "business_1130_ist" ? shiftIsoDate(endDate, 1) : endDate;
+    const payuTransactions = await fetchPayUTransactions(startDate, payuFetchEndDate);
     const hasPayUSalesData = payuTransactions.length > 0;
     const salesHourlyMap = new Map<string, { count: number; revenueInr: number }>();
     const salesDailyMap = new Map<string, { count: number; revenueInr: number }>();
     const salesWeekdayMap = new Map<string, { count: number; revenueInr: number }>();
     const salesDayHourMap = new Map<string, { count: number; revenueInr: number }>();
+    let totalRevenueInr = 0;
+    let paidOrders = 0;
 
     if (hasPayUSalesData) {
       for (const txn of payuTransactions) {
@@ -778,10 +788,13 @@ export async function GET(request: NextRequest) {
         const created = new Date(txn.addedon.replace(" ", "T") + "+05:30");
         if (Number.isNaN(created.getTime())) continue;
 
-        const { dayKey, hour } = getIstDateParts(created);
+        const grouped = getMatrixDateGroup(created, dayMode);
+        const { dayKey, hour, weekday } = grouped;
+        if (dayKey < startDate || dayKey > endDate) continue;
         const hourLabel = formatIstHourLabel(hour);
         const amount = toNumber(txn.amount);
-        const weekday = getIstWeekday(created);
+        totalRevenueInr += amount;
+        paidOrders += 1;
 
         const hourEntry = salesHourlyMap.get(hourLabel) || { count: 0, revenueInr: 0 };
         hourEntry.count += 1;
@@ -808,10 +821,13 @@ export async function GET(request: NextRequest) {
       for (const row of paidRows) {
         if (!row.created_at) continue;
         const created = new Date(row.created_at);
-        const { dayKey, hour } = getIstDateParts(created);
-        const weekday = getIstWeekday(created);
+        const grouped = getMatrixDateGroup(created, dayMode);
+        const { dayKey, hour, weekday } = grouped;
+        if (dayKey < startDate || dayKey > endDate) continue;
         const hourLabel = formatIstHourLabel(hour);
         const amount = amountInInr(row.amount);
+        totalRevenueInr += amount;
+        paidOrders += 1;
 
         const hourEntry = salesHourlyMap.get(hourLabel) || { count: 0, revenueInr: 0 };
         hourEntry.count += 1;
@@ -835,10 +851,6 @@ export async function GET(request: NextRequest) {
         salesWeekdayMap.set(weekday, weekdayEntry);
       }
     }
-
-    const totalRevenueInr = hasPayUSalesData
-      ? payuTransactions.reduce((sum, txn) => sum + toNumber(txn.amount), 0)
-      : paidRows.reduce((sum, row) => sum + amountInInr(row.amount), 0);
 
     const peakSalesHour = pickTopSalesMetric(salesHourlyMap, "N/A");
     const peakSalesDay = pickTopSalesMetric(salesWeekdayMap, "N/A");
@@ -954,7 +966,7 @@ export async function GET(request: NextRequest) {
     }
 
     const gaData = await fetchGoogleAnalyticsData(startDate, endDate);
-    const internalRouteData = await fetchInternalRouteAnalytics(startIso, endIso);
+    const internalRouteData = await fetchInternalRouteAnalytics(startIso, endIso, dayMode, startDate, endDate);
 
     const useGaRouteData = gaData.sourceStatus.connected && gaData.routeMetrics.length > 0;
 
@@ -967,30 +979,32 @@ export async function GET(request: NextRequest) {
       } as SourceStatus,
     };
 
-    const paidOrders = hasPayUSalesData ? payuTransactions.length : paidRows.length;
     const paymentStarts = paymentRows?.length || 0;
     const paywallSignal = inferPaywallVisitors(selectedRouteData.routeMetrics);
+    const totalVisitors = selectedRouteData.totalSessions > 0 ? selectedRouteData.totalSessions : paymentStarts;
     const paywallVisitors = paywallSignal.visitors > 0 ? paywallSignal.visitors : paymentStarts;
-    const exitedWithoutPaying = Math.max(paywallVisitors - paidOrders, 0);
-    const conversionRateRaw = paywallVisitors > 0 ? (paidOrders / paywallVisitors) * 100 : 0;
+    const exitedWithoutPaying = Math.max(totalVisitors - paidOrders, 0);
+    const conversionRateRaw = totalVisitors > 0 ? (paidOrders / totalVisitors) * 100 : 0;
     const conversionRate = Math.min(conversionRateRaw, 100);
-    const dropOffRate = paywallVisitors > 0 ? (exitedWithoutPaying / paywallVisitors) * 100 : 0;
+    const dropOffRate = totalVisitors > 0 ? (exitedWithoutPaying / totalVisitors) * 100 : 0;
 
     return NextResponse.json({
       range: {
         startDate,
         endDate,
         timezone: "Asia/Kolkata",
+        dayMode,
       },
       kpis: {
         paidOrders,
         paidRevenueInr: Number(totalRevenueInr.toFixed(2)),
         pendingPayments: pendingRows.length,
         failedPayments: failedRows.length,
-        checkoutStarts: paywallVisitors,
+        checkoutStarts: totalVisitors,
         checkoutToPaidRate: Number(conversionRate.toFixed(2)),
       },
       funnel: {
+        totalVisitors,
         paywallVisitors,
         paidOrders,
         exitedWithoutPaying,
@@ -1066,6 +1080,7 @@ export async function GET(request: NextRequest) {
         paywallSignal.matchedRoute
           ? `Paywall audience inferred from route: ${paywallSignal.matchedRoute}.`
           : "Paywall audience inferred from payment starts because paywall route traffic was unavailable.",
+        "Checkout funnel conversion is calculated using total visitors (not only paywall visitors).",
         hasPayUSalesData
           ? "Sales metrics are sourced from PayU transaction API to match Profit Sheet totals."
           : "Sales metrics are sourced from payments table (paid/success/captured).",
@@ -1075,6 +1090,9 @@ export async function GET(request: NextRequest) {
         matrixDayMode === "business_1130_ist"
           ? "Matrix day boundary mode: 11:30 AM IST to next day 11:29 AM IST."
           : "Matrix day boundary mode: calendar day (00:00 to 23:59 IST).",
+        dayMode === "business_1130_ist"
+          ? "Global day mode: 11:30 AM IST to next day 11:29 AM IST."
+          : "Global day mode: calendar day (00:00 to 23:59 IST).",
       ],
     }, {
       headers: {

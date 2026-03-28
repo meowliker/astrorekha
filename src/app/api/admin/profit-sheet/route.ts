@@ -33,6 +33,7 @@ interface ProfitSheetRow {
   adsCostUSD: number;
   adsCostINR: number;
   netRevenue: number;
+  profitPercent: number;
   roas: number;
   transactionCount: number;
 }
@@ -288,6 +289,7 @@ export async function GET(request: NextRequest) {
       const adsCostUSD = metaSpendMap.get(costaRicaDate) || 0;
       const adsCostINR = adsCostUSD * exchangeRate; // Convert USD to INR
       const netRevenue = revenue - gst - adsCostINR;
+      const profitPercent = revenue > 0 ? (netRevenue / revenue) * 100 : 0;
       const roas = adsCostINR > 0 ? revenue / adsCostINR : 0;
 
       return {
@@ -298,6 +300,7 @@ export async function GET(request: NextRequest) {
         adsCostUSD,
         adsCostINR,
         netRevenue,
+        profitPercent,
         roas,
         transactionCount: dayTransactions.length,
       };
@@ -317,12 +320,14 @@ export async function GET(request: NextRequest) {
     );
 
     const overallRoas = totals.adsCostINR > 0 ? totals.revenue / totals.adsCostINR : 0;
+    const overallProfitPercent = totals.revenue > 0 ? (totals.netRevenue / totals.revenue) * 100 : 0;
 
     return NextResponse.json({
       rows: profitSheet,
       totals: {
         ...totals,
         roas: overallRoas,
+        profitPercent: overallProfitPercent,
       },
       exchangeRate,
       dateRange: { start: startDate, end: endDate },
