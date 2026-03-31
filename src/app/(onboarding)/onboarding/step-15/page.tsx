@@ -267,7 +267,7 @@ export default function Step15Page() {
         </motion.div>
       </div>
 
-      <div className="px-6 py-6 bg-background">
+      <div className="onboarding-cta bg-background">
         <Button
           onClick={handleContinue}
           className="w-full h-14 text-lg font-semibold"

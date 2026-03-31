@@ -125,3 +125,19 @@
 .animate-scroll {
   animation: scroll 15s linear infinite;
 }
+
+/* Keep onboarding CTAs comfortably above mobile browser bars */
+.onboarding-shell .min-h-screen {
+  min-height: 100%;
+}
+
+.onboarding-shell .pb-24 {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 5.25rem);
+}
+
+.onboarding-shell .onboarding-cta {
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+  padding-top: 1rem;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 5.25rem);
+}
