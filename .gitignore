@@ -42,3 +42,4 @@ next-env.d.ts
 
 DEPLOYMENT_CHECKLIST.md
 *.md
+*.txt

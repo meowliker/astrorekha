@@ -71,7 +71,7 @@ export default function BirthTimePage() {
         </div>
       </div>
 
-      <div className="px-6 pb-24 space-y-3">
+      <div className="onboarding-cta space-y-3">
         <button
           onClick={handleDontRemember}
           className="w-full text-primary hover:text-primary/80 text-sm font-medium transition-colors"

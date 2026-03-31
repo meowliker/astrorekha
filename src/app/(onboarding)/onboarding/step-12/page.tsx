@@ -83,7 +83,7 @@ export default function Step12Page() {
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: "easeOut" }}
-          className="px-6 pb-24"
+          className="onboarding-cta"
         >
           <Button
             onClick={handleContinue}

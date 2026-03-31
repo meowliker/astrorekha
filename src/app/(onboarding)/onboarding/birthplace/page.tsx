@@ -47,7 +47,7 @@ export default function BirthplacePage() {
         </div>
       </div>
 
-      <div className="px-6 pb-24">
+      <div className="onboarding-cta">
         <Button
           onClick={handleContinue}
           className="w-full h-14 text-lg font-semibold"
