@@ -9,6 +9,7 @@ import { PalmAnalysis } from "@/components/onboarding/PalmAnalysis";
 import { detectPalmFeatures as detectPalmFeaturesFromImage } from "@/lib/palm-detection";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { Flashlight, FlashlightOff } from "lucide-react";
 
 type PageState = "intro" | "camera" | "preview" | "analysis";
 
@@ -211,13 +212,14 @@ export default function Step13Page() {
   const toggleTorch = async () => {
     const stream = videoRef.current?.srcObject as MediaStream | null;
     const [track] = stream?.getVideoTracks?.() || [];
-    if (!track || !torchSupported) return;
+    if (!track) return;
 
     try {
       await track.applyConstraints({
         advanced: [{ torch: !torchEnabled } as MediaTrackConstraintSet],
       });
       setTorchEnabled((prev) => !prev);
+      setScanError(null);
     } catch (err) {
       console.error("Torch toggle failed:", err);
       setScanError("Flashlight is not supported on this device/browser.");
@@ -317,7 +319,7 @@ export default function Step13Page() {
             </div>
           </div>
 
-          <div className="p-6 space-y-3">
+          <div className="onboarding-cta space-y-3">
             <Button
               onClick={handleTakePhoto}
               className="w-full h-14 text-lg font-semibold"
@@ -383,19 +385,21 @@ export default function Step13Page() {
               </svg>
             </button>
 
-            {torchSupported && (
+            {hasCamera && !cameraError && (
               <button
                 onClick={toggleTorch}
-                className="absolute top-4 right-4 px-3 h-10 rounded-full bg-black/40 text-white text-xs font-semibold border border-white/20"
+                aria-label={torchEnabled ? "Turn torch off" : "Turn torch on"}
+                title={torchEnabled ? "Torch off" : "Torch on"}
+                className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/45 text-white border border-white/20 flex items-center justify-center"
               >
-                {torchEnabled ? "Torch Off" : "Torch On"}
+                {torchEnabled ? <FlashlightOff className="w-4 h-4" /> : <Flashlight className="w-4 h-4" />}
               </button>
             )}
 
             <canvas ref={canvasRef} className="hidden" />
           </div>
 
-          <div className="bg-background px-6 pt-4 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] flex flex-col items-center gap-4">
+          <div className="bg-background px-6 pt-4 pb-[calc(env(safe-area-inset-bottom)+5.25rem)] flex flex-col items-center gap-4">
             <p className="text-muted-foreground text-center text-sm">
               Place left palm inside outline and take a photo
             </p>
@@ -458,7 +462,7 @@ export default function Step13Page() {
             </motion.p>
           </div>
 
-          <div className="p-6 space-y-3">
+          <div className="onboarding-cta space-y-3">
             <Button
               onClick={handleProceed}
               disabled={isValidatingPalm || isPalmValid === false}

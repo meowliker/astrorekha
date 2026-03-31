@@ -68,7 +68,7 @@ export default function Step14Page() {
         </motion.div>
       </div>
 
-      <div className="p-6">
+      <div className="onboarding-cta">
         <Link href="/onboarding/step-15">
           <Button className="w-full h-14 text-lg font-semibold" size="lg">
             Get the Results!

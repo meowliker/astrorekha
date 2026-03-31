@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Share2, Trash2, ChevronDown, ChevronUp, Camera, RefreshCw } from "lucide-react";
+import { ArrowLeft, Loader2, Share2, Trash2, ChevronDown, ChevronUp, Camera, RefreshCw, Flashlight, FlashlightOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { supabase } from "@/lib/supabase";
@@ -219,13 +219,14 @@ export default function PalmReadingPage() {
 
   const toggleTorch = async () => {
     const [track] = streamRef.current?.getVideoTracks?.() || [];
-    if (!track || !torchSupported) return;
+    if (!track) return;
 
     try {
       await track.applyConstraints({
         advanced: [{ torch: !torchEnabled } as MediaTrackConstraintSet],
       });
       setTorchEnabled((prev) => !prev);
+      setError(null);
     } catch (err) {
       console.error("Torch toggle failed:", err);
       setError("Flashlight is not supported on this device/browser.");
@@ -521,19 +522,21 @@ export default function PalmReadingPage() {
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
 
-            {torchSupported && (
+            {showCamera && (torchSupported || !!streamRef.current) && (
               <button
                 onClick={toggleTorch}
-                className="absolute top-4 right-4 px-3 h-10 rounded-full bg-black/40 text-white text-xs font-semibold border border-white/20"
+                aria-label={torchEnabled ? "Turn torch off" : "Turn torch on"}
+                title={torchEnabled ? "Torch off" : "Torch on"}
+                className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/45 text-white border border-white/20 flex items-center justify-center"
               >
-                {torchEnabled ? "Torch Off" : "Torch On"}
+                {torchEnabled ? <FlashlightOff className="w-4 h-4" /> : <Flashlight className="w-4 h-4" />}
               </button>
             )}
 
             <canvas ref={canvasRef} className="hidden" />
           </div>
 
-          <div className="bg-background px-6 pt-4 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] flex flex-col items-center gap-4">
+          <div className="bg-background px-6 pt-4 pb-[calc(env(safe-area-inset-bottom)+5.25rem)] flex flex-col items-center gap-4">
             <p className="text-muted-foreground text-center text-sm">
               Place left palm inside outline and take a photo
             </p>

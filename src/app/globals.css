@@ -132,5 +132,12 @@
 }
 
 .onboarding-shell .pb-24 {
-  padding-bottom: calc(env(safe-area-inset-bottom) + 3.5rem);
+  padding-bottom: calc(env(safe-area-inset-bottom) + 5.25rem);
+}
+
+.onboarding-shell .onboarding-cta {
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+  padding-top: 1rem;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 5.25rem);
 }
