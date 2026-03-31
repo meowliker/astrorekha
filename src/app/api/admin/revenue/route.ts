@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  classifyStoredPaymentEvent,
+  normalizeFinanceStatus,
+} from "@/lib/finance-events";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -82,43 +86,51 @@ export async function GET(request: NextRequest) {
       console.log("Sample payment:", JSON.stringify(payments[0]).slice(0, 500));
     }
 
-    // Helper: amount is stored in paise, convert to INR
-    const getAmountINR = (p: any) => (p.amount || 0) / 100;
+    const ledgerEntries = payments.map((p) => {
+      const financial = classifyStoredPaymentEvent(p.payment_status, p.amount);
+      return {
+        ...p,
+        normalizedStatus: normalizeFinanceStatus(p.payment_status),
+        financialKind: financial.kind,
+        amountInrAbs: financial.amount,
+        signedAmountInr: financial.signedAmount,
+      };
+    });
 
-    // Count all successful payments (paid, success, captured)
-    const paidPayments = payments.filter(p => 
-      p.payment_status === "paid" || 
-      p.payment_status === "success" || 
-      p.payment_status === "captured"
-    );
-    
-    console.log("Paid payments count:", paidPayments.length);
+    const sales = ledgerEntries.filter((p) => p.financialKind === "sale");
+    const refunds = ledgerEntries.filter((p) => p.financialKind === "refund");
+    const financialEvents = ledgerEntries.filter((p) => p.financialKind !== "ignore");
 
-    // Revenue metrics
-    const totalRevenue = paidPayments.reduce((sum, p) => sum + getAmountINR(p), 0);
+    const grossRevenue = sales.reduce((sum, p) => sum + p.amountInrAbs, 0);
+    const refundAmount = refunds.reduce((sum, p) => sum + p.amountInrAbs, 0);
 
-    const revenueToday = paidPayments
-      .filter(p => new Date(p.createdAt) >= startOfToday)
-      .reduce((sum, p) => sum + getAmountINR(p), 0);
+    console.log("Sales count:", sales.length, "Refund count:", refunds.length);
 
-    const revenueThisWeek = paidPayments
-      .filter(p => new Date(p.createdAt) >= startOfWeek)
-      .reduce((sum, p) => sum + getAmountINR(p), 0);
+    // Net revenue = sales - refunds
+    const totalRevenue = financialEvents.reduce((sum, p) => sum + p.signedAmountInr, 0);
 
-    const revenueThisMonth = paidPayments
-      .filter(p => new Date(p.createdAt) >= startOfMonth)
-      .reduce((sum, p) => sum + getAmountINR(p), 0);
+    const revenueToday = financialEvents
+      .filter((p) => new Date(p.createdAt) >= startOfToday)
+      .reduce((sum, p) => sum + p.signedAmountInr, 0);
 
-    const revenueThisYear = paidPayments
-      .filter(p => new Date(p.createdAt) >= startOfYear)
-      .reduce((sum, p) => sum + getAmountINR(p), 0);
+    const revenueThisWeek = financialEvents
+      .filter((p) => new Date(p.createdAt) >= startOfWeek)
+      .reduce((sum, p) => sum + p.signedAmountInr, 0);
 
-    const revenueLastMonth = paidPayments
-      .filter(p => {
+    const revenueThisMonth = financialEvents
+      .filter((p) => new Date(p.createdAt) >= startOfMonth)
+      .reduce((sum, p) => sum + p.signedAmountInr, 0);
+
+    const revenueThisYear = financialEvents
+      .filter((p) => new Date(p.createdAt) >= startOfYear)
+      .reduce((sum, p) => sum + p.signedAmountInr, 0);
+
+    const revenueLastMonth = financialEvents
+      .filter((p) => {
         const date = new Date(p.createdAt);
         return date >= startOfLastMonth && date <= endOfLastMonth;
       })
-      .reduce((sum, p) => sum + getAmountINR(p), 0);
+      .reduce((sum, p) => sum + p.signedAmountInr, 0);
 
     const momGrowth = revenueLastMonth > 0
       ? ((revenueThisMonth - revenueLastMonth) / revenueLastMonth * 100).toFixed(1)
@@ -126,25 +138,45 @@ export async function GET(request: NextRequest) {
 
     // Revenue by type (handle both "bundle" and "bundle_payment" types)
     const revenueByType = {
-      bundle: paidPayments.filter(p => p.type === "bundle" || p.type === "bundle_payment").reduce((sum, p) => sum + getAmountINR(p), 0),
-      upsell: paidPayments.filter(p => p.type === "upsell").reduce((sum, p) => sum + getAmountINR(p), 0),
-      coins: paidPayments.filter(p => p.type === "coins").reduce((sum, p) => sum + getAmountINR(p), 0),
-      report: paidPayments.filter(p => p.type === "report").reduce((sum, p) => sum + getAmountINR(p), 0),
+      bundle: financialEvents
+        .filter((p) => p.type === "bundle" || p.type === "bundle_payment")
+        .reduce((sum, p) => sum + p.signedAmountInr, 0),
+      upsell: financialEvents
+        .filter((p) => p.type === "upsell")
+        .reduce((sum, p) => sum + p.signedAmountInr, 0),
+      coins: financialEvents
+        .filter((p) => p.type === "coins")
+        .reduce((sum, p) => sum + p.signedAmountInr, 0),
+      report: financialEvents
+        .filter((p) => p.type === "report")
+        .reduce((sum, p) => sum + p.signedAmountInr, 0),
     };
 
     // Bundle breakdown
     const bundleBreakdown = {
       "palm-reading": {
-        count: paidPayments.filter(p => p.bundle_id === "palm-reading").length,
-        revenue: paidPayments.filter(p => p.bundle_id === "palm-reading").reduce((sum, p) => sum + getAmountINR(p), 0),
+        count: financialEvents
+          .filter((p) => p.bundle_id === "palm-reading")
+          .reduce((sum, p) => sum + (p.financialKind === "refund" ? -1 : 1), 0),
+        revenue: financialEvents
+          .filter((p) => p.bundle_id === "palm-reading")
+          .reduce((sum, p) => sum + p.signedAmountInr, 0),
       },
       "palm-birth": {
-        count: paidPayments.filter(p => p.bundle_id === "palm-birth").length,
-        revenue: paidPayments.filter(p => p.bundle_id === "palm-birth").reduce((sum, p) => sum + getAmountINR(p), 0),
+        count: financialEvents
+          .filter((p) => p.bundle_id === "palm-birth")
+          .reduce((sum, p) => sum + (p.financialKind === "refund" ? -1 : 1), 0),
+        revenue: financialEvents
+          .filter((p) => p.bundle_id === "palm-birth")
+          .reduce((sum, p) => sum + p.signedAmountInr, 0),
       },
       "palm-birth-compat": {
-        count: paidPayments.filter(p => p.bundle_id === "palm-birth-compat").length,
-        revenue: paidPayments.filter(p => p.bundle_id === "palm-birth-compat").reduce((sum, p) => sum + getAmountINR(p), 0),
+        count: financialEvents
+          .filter((p) => p.bundle_id === "palm-birth-compat")
+          .reduce((sum, p) => sum + (p.financialKind === "refund" ? -1 : 1), 0),
+        revenue: financialEvents
+          .filter((p) => p.bundle_id === "palm-birth-compat")
+          .reduce((sum, p) => sum + p.signedAmountInr, 0),
       },
     };
 
@@ -156,13 +188,16 @@ export async function GET(request: NextRequest) {
     // Count all users with payment_status = paid as paying users
     const paidUsers = users.filter(u => u.payment_status === "paid");
 
-    const uniquePayingUsers = new Set(paidPayments.map(p => p.userId).filter(Boolean)).size;
+    const uniquePayingUsers = new Set(sales.map(p => p.userId).filter(Boolean)).size;
     const arpu = uniquePayingUsers > 0 ? (totalRevenue / uniquePayingUsers).toFixed(2) : "0";
 
     // Payment status breakdown
-    const successfulPayments = paidPayments.length;
-    const failedPayments = payments.filter(p => p.payment_status === "failed").length;
-    const pendingPayments = payments.filter(p => p.payment_status === "created").length;
+    const successfulPayments = sales.length;
+    const refundedPayments = refunds.length;
+    const failedPayments = ledgerEntries.filter((p) => p.normalizedStatus === "failed").length;
+    const pendingPayments = ledgerEntries.filter(
+      (p) => p.normalizedStatus === "created" || p.normalizedStatus === "pending"
+    ).length;
 
     // Revenue over time (last 30 days)
     const revenueOverTime: { date: string; revenue: number }[] = [];
@@ -174,13 +209,13 @@ export async function GET(request: NextRequest) {
       const dayEnd = new Date(date);
       dayEnd.setHours(23, 59, 59, 999);
       const dateStr = dayStart.toISOString().split("T")[0];
-      const dayRevenue = paidPayments
-        .filter(p => {
+      const dayRevenue = financialEvents
+        .filter((p) => {
           if (!p.createdAt) return false;
           const pd = new Date(p.createdAt);
           return pd >= dayStart && pd <= dayEnd;
         })
-        .reduce((sum, p) => sum + getAmountINR(p), 0);
+        .reduce((sum, p) => sum + p.signedAmountInr, 0);
       revenueOverTime.push({ date: dateStr, revenue: dayRevenue });
     }
 
@@ -189,7 +224,9 @@ export async function GET(request: NextRequest) {
     users.forEach(u => userMap.set(u.id, { email: u.email, name: u.name }));
 
     // Recent transactions
-    const recentTransactions = paidPayments.slice(0, 100).map(p => {
+    const recentTransactions = financialEvents
+      .slice(0, 100)
+      .map((p) => {
       const ud = userMap.get(p.userId) || {};
       return {
         id: p.id,
@@ -197,10 +234,10 @@ export async function GET(request: NextRequest) {
         userId: p.userId,
         userEmail: ud.email || p.customerEmail || "Unknown",
         userName: ud.name || "Unknown",
-        amount: getAmountINR(p),
+        amount: p.signedAmountInr,
         bundleId: p.bundle_id,
         type: p.type,
-        status: p.payment_status,
+        status: p.financialKind === "refund" ? "refunded" : p.payment_status,
       };
     });
 
@@ -216,15 +253,15 @@ export async function GET(request: NextRequest) {
         ? new Date(`${endDateParam}T${endTimeParam}:59.999`)
         : new Date(`${startDateParam}T${endTimeParam}:59.999`);
 
-      const customPayments = paidPayments.filter(p => {
+      const customPayments = financialEvents.filter((p) => {
         if (!p.createdAt) return false;
         const d = new Date(p.createdAt);
         return d >= customStart && d <= customEnd;
       });
 
-      customDateRevenue = customPayments.reduce((sum, p) => sum + getAmountINR(p), 0);
-      customDatePaymentCount = customPayments.length;
-      customDateTransactions = customPayments.map(p => {
+      customDateRevenue = customPayments.reduce((sum, p) => sum + p.signedAmountInr, 0);
+      customDatePaymentCount = customPayments.filter((p) => p.financialKind === "sale").length;
+      customDateTransactions = customPayments.map((p) => {
         const ud = userMap.get(p.userId) || {};
         return {
           id: p.id,
@@ -232,10 +269,10 @@ export async function GET(request: NextRequest) {
           userId: p.userId,
           userEmail: (ud as any).email || p.customerEmail || "Unknown",
           userName: (ud as any).name || "Unknown",
-          amount: getAmountINR(p),
+          amount: p.signedAmountInr,
           bundleId: p.bundle_id,
           type: p.type,
-          status: p.payment_status,
+          status: p.financialKind === "refund" ? "refunded" : p.payment_status,
         };
       });
     }
@@ -244,6 +281,8 @@ export async function GET(request: NextRequest) {
       // Revenue KPIs (INR)
       currency: "INR",
       totalRevenue: totalRevenue.toFixed(2),
+      grossRevenue: grossRevenue.toFixed(2),
+      refundAmount: refundAmount.toFixed(2),
       revenueToday: revenueToday.toFixed(2),
       revenueThisWeek: revenueThisWeek.toFixed(2),
       revenueThisMonth: revenueThisMonth.toFixed(2),
@@ -259,6 +298,7 @@ export async function GET(request: NextRequest) {
       // Transaction activity
       totalPayments: payments.length,
       successfulPayments,
+      refundedPayments,
       failedPayments,
       pendingPayments,
 

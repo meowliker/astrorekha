@@ -74,7 +74,7 @@ export async function getPayUTransactions(
   const maxDaysPerChunk = 7;
   let currentStart = new Date(startDate);
 
-  while (currentStart <= endDate) {
+  while (currentStart.getTime() <= endDate.getTime()) {
     const currentEnd = new Date(currentStart);
     currentEnd.setUTCDate(currentEnd.getUTCDate() + (maxDaysPerChunk - 1));
     if (currentEnd > endDate) {
@@ -97,7 +97,18 @@ export async function getPayUTransactions(
       allTransactions.push(txn);
     }
 
-    currentStart.setUTCDate(currentEnd.getUTCDate() + 1);
+    // Advance from the actual chunk end date to avoid month-boundary regressions
+    // (e.g. Mar 30 -> Apr 1 should advance to Apr 2, not Mar 2).
+    const nextStart = new Date(currentEnd);
+    nextStart.setUTCDate(nextStart.getUTCDate() + 1);
+
+    if (nextStart.getTime() <= currentStart.getTime()) {
+      throw new Error(
+        `PayU chunk iteration did not advance (current=${toYMD(currentStart)}, next=${toYMD(nextStart)})`
+      );
+    }
+
+    currentStart = nextStart;
   }
 
   return allTransactions;

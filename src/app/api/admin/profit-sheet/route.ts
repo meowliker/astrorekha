@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
+import { classifyPayUEvent } from "@/lib/finance-events";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -23,12 +24,18 @@ interface PayUTransaction {
   status: string;
   addedon: string;
   email: string;
+  net_amount_debit?: string;
+  field9?: string;
+  error_Message?: string;
+  unmappedstatus?: string;
 }
 
 interface ProfitSheetRow {
   date: string;
   day: string;
   revenue: number;
+  grossRevenue?: number;
+  refundAmount?: number;
   gst: number;
   adsCostUSD: number;
   adsCostINR: number;
@@ -36,6 +43,8 @@ interface ProfitSheetRow {
   profitPercent: number;
   roas: number;
   transactionCount: number;
+  salesCount?: number;
+  refundCount?: number;
 }
 
 // Fetch exchange rate
@@ -95,9 +104,7 @@ async function fetchPayUTransactionsChunk(fromDate: string, toDate: string): Pro
     const allTxns = Array.isArray(data.Transaction_details) 
       ? data.Transaction_details 
       : Object.values(data.Transaction_details);
-    return allTxns.filter(
-      (txn: PayUTransaction) => txn.status === "success" || txn.status === "captured"
-    );
+    return allTxns as PayUTransaction[];
   }
 
   if (data.msg) {
@@ -284,25 +291,42 @@ export async function GET(request: NextRequest) {
         return txnDate >= istStart && txnDate <= istEnd;
       });
 
-      const revenue = dayTransactions.reduce((sum, txn) => sum + parseFloat(txn.amount || "0"), 0);
-      const gst = revenue * 0.05; // 5% GST
+      const classified = dayTransactions
+        .map((txn) => classifyPayUEvent(txn as unknown as Record<string, unknown>))
+        .filter((event) => event.kind !== "ignore");
+
+      const grossRevenue = classified
+        .filter((event) => event.kind === "sale")
+        .reduce((sum, event) => sum + event.amount, 0);
+      const refundAmount = classified
+        .filter((event) => event.kind === "refund")
+        .reduce((sum, event) => sum + event.amount, 0);
+      const revenue = grossRevenue - refundAmount;
+
+      const gst = revenue * 0.05; // 5% GST on net revenue
       const adsCostUSD = metaSpendMap.get(costaRicaDate) || 0;
       const adsCostINR = adsCostUSD * exchangeRate; // Convert USD to INR
       const netRevenue = revenue - gst - adsCostINR;
       const profitPercent = revenue > 0 ? (netRevenue / revenue) * 100 : 0;
       const roas = adsCostINR > 0 ? revenue / adsCostINR : 0;
+      const salesCount = classified.filter((event) => event.kind === "sale").length;
+      const refundCount = classified.filter((event) => event.kind === "refund").length;
 
       return {
         date: costaRicaDate,
         day: getDayOfWeek(costaRicaDate),
         revenue,
+        grossRevenue,
+        refundAmount,
         gst,
         adsCostUSD,
         adsCostINR,
         netRevenue,
         profitPercent,
         roas,
-        transactionCount: dayTransactions.length,
+        transactionCount: salesCount,
+        salesCount,
+        refundCount,
       };
     });
 
@@ -310,13 +334,28 @@ export async function GET(request: NextRequest) {
     const totals = profitSheet.reduce(
       (acc, row) => ({
         revenue: acc.revenue + row.revenue,
+        grossRevenue: acc.grossRevenue + (row.grossRevenue || 0),
+        refundAmount: acc.refundAmount + (row.refundAmount || 0),
         gst: acc.gst + row.gst,
         adsCostUSD: acc.adsCostUSD + row.adsCostUSD,
         adsCostINR: acc.adsCostINR + row.adsCostINR,
         netRevenue: acc.netRevenue + row.netRevenue,
         transactionCount: acc.transactionCount + row.transactionCount,
+        salesCount: acc.salesCount + (row.salesCount || row.transactionCount || 0),
+        refundCount: acc.refundCount + (row.refundCount || 0),
       }),
-      { revenue: 0, gst: 0, adsCostUSD: 0, adsCostINR: 0, netRevenue: 0, transactionCount: 0 }
+      {
+        revenue: 0,
+        grossRevenue: 0,
+        refundAmount: 0,
+        gst: 0,
+        adsCostUSD: 0,
+        adsCostINR: 0,
+        netRevenue: 0,
+        transactionCount: 0,
+        salesCount: 0,
+        refundCount: 0,
+      }
     );
 
     const overallRoas = totals.adsCostINR > 0 ? totals.revenue / totals.adsCostINR : 0;

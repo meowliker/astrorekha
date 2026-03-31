@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
+import { classifyPayUEvent } from "@/lib/finance-events";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -36,6 +37,7 @@ interface PayUTransaction {
   net_amount_debit: string;
   discount: string;
   field9: string;
+  unmappedstatus?: string;
 }
 
 function generateHash(params: string): string {
@@ -84,9 +86,7 @@ async function fetchPayUTransactionsChunk(fromDate: string, toDate: string): Pro
 
     if (data.status === 1 && data.Transaction_details) {
       const allTxns = Array.isArray(data.Transaction_details) ? data.Transaction_details : Object.values(data.Transaction_details);
-      return allTxns.filter(
-        (txn: PayUTransaction) => txn.status === "success" || txn.status === "captured"
-      );
+      return allTxns as PayUTransaction[];
     }
 
     if (data.msg) {
@@ -259,34 +259,47 @@ export async function GET(request: NextRequest) {
     
     console.log("After time filter:", transactions.length, "transactions");
 
-    // Process transactions
-    const processedTransactions = transactions.map(txn => ({
-      id: txn.mihpayid,
-      payuId: txn.mihpayid,
-      txnId: txn.txnid,
-      amount: parseFloat(txn.amount) || 0,
-      status: txn.status,
-      email: txn.email,
-      phone: txn.phone,
-      name: txn.firstname || "Customer",
-      productInfo: txn.productinfo,
-      date: txn.addedon,
-      dateIST: new Date(txn.addedon),
-      userId: txn.udf1 || "",
-      type: txn.udf2 || "bundle",
-      bundleId: txn.udf3 || "",
-      feature: txn.udf4 || "",
-      coins: parseInt(txn.udf5) || 0,
-      bankRef: txn.bank_ref_num,
-      paymentMode: txn.mode,
-      netAmount: parseFloat(txn.net_amount_debit) || parseFloat(txn.amount) || 0,
-    }));
+    const toPayUDate = (value: string) => new Date(value.replace(" ", "T") + "+05:30");
 
-    // Calculate metrics
-    const totalRevenue = processedTransactions.reduce((sum, txn) => sum + txn.amount, 0);
-    const totalNetRevenue = processedTransactions.reduce((sum, txn) => sum + txn.netAmount, 0);
-    const totalTransactions = processedTransactions.length;
-    const uniqueUsers = new Set(processedTransactions.map(txn => txn.email).filter(Boolean)).size;
+    // Keep only sale/refund financial events and attach signed amount.
+    const processedTransactions = transactions
+      .map((txn) => {
+        const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
+        return {
+          id: txn.mihpayid,
+          payuId: txn.mihpayid,
+          txnId: txn.txnid,
+          amountAbs: financial.amount,
+          signedAmount: financial.signedAmount,
+          financialKind: financial.kind,
+          status: txn.status,
+          email: txn.email,
+          phone: txn.phone,
+          name: txn.firstname || "Customer",
+          productInfo: txn.productinfo,
+          date: txn.addedon,
+          dateIST: toPayUDate(txn.addedon),
+          userId: txn.udf1 || "",
+          type: txn.udf2 || "bundle",
+          bundleId: txn.udf3 || "",
+          feature: txn.udf4 || "",
+          coins: parseInt(txn.udf5) || 0,
+          bankRef: txn.bank_ref_num,
+          paymentMode: txn.mode,
+          netAmount: parseFloat(txn.net_amount_debit) || parseFloat(txn.amount) || 0,
+        };
+      })
+      .filter((txn) => txn.financialKind !== "ignore");
+
+    const saleTransactions = processedTransactions.filter((txn) => txn.financialKind === "sale");
+    const refundTransactions = processedTransactions.filter((txn) => txn.financialKind === "refund");
+
+    // Net revenue (sales - refunds)
+    const grossRevenue = saleTransactions.reduce((sum, txn) => sum + txn.amountAbs, 0);
+    const refundAmount = refundTransactions.reduce((sum, txn) => sum + txn.amountAbs, 0);
+    const totalRevenue = processedTransactions.reduce((sum, txn) => sum + txn.signedAmount, 0);
+    const totalNetRevenue = totalRevenue;
+    const uniqueUsers = new Set(saleTransactions.map((txn) => txn.email).filter(Boolean)).size;
 
     // Revenue by bundle
     const bundleBreakdown = {
@@ -295,11 +308,11 @@ export async function GET(request: NextRequest) {
       "palm-birth-compat": { count: 0, revenue: 0 },
     };
 
-    processedTransactions.forEach(txn => {
+    processedTransactions.forEach((txn) => {
       const bundleId = txn.bundleId as keyof typeof bundleBreakdown;
       if (bundleBreakdown[bundleId]) {
-        bundleBreakdown[bundleId].count++;
-        bundleBreakdown[bundleId].revenue += txn.amount;
+        bundleBreakdown[bundleId].count += txn.financialKind === "refund" ? -1 : 1;
+        bundleBreakdown[bundleId].revenue += txn.signedAmount;
       }
     });
 
@@ -311,20 +324,20 @@ export async function GET(request: NextRequest) {
       report: 0,
     };
 
-    processedTransactions.forEach(txn => {
+    processedTransactions.forEach((txn) => {
       const type = txn.type as keyof typeof revenueByType;
       if (revenueByType[type] !== undefined) {
-        revenueByType[type] += txn.amount;
+        revenueByType[type] += txn.signedAmount;
       } else {
-        revenueByType.bundle += txn.amount;
+        revenueByType.bundle += txn.signedAmount;
       }
     });
 
     // Revenue by day (for chart)
     const revenueByDay: Record<string, number> = {};
-    processedTransactions.forEach(txn => {
+    processedTransactions.forEach((txn) => {
       const dateStr = txn.date.split(" ")[0]; // Get just the date part
-      revenueByDay[dateStr] = (revenueByDay[dateStr] || 0) + txn.amount;
+      revenueByDay[dateStr] = (revenueByDay[dateStr] || 0) + txn.signedAmount;
     });
 
     const revenueOverTime = Object.entries(revenueByDay)
@@ -339,34 +352,34 @@ export async function GET(request: NextRequest) {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
     const revenueToday = processedTransactions
-      .filter(txn => new Date(txn.date) >= startOfToday)
-      .reduce((sum, txn) => sum + txn.amount, 0);
+      .filter((txn) => txn.dateIST >= startOfToday)
+      .reduce((sum, txn) => sum + txn.signedAmount, 0);
 
     const revenueThisWeek = processedTransactions
-      .filter(txn => new Date(txn.date) >= startOfWeek)
-      .reduce((sum, txn) => sum + txn.amount, 0);
+      .filter((txn) => txn.dateIST >= startOfWeek)
+      .reduce((sum, txn) => sum + txn.signedAmount, 0);
 
     const revenueThisMonth = processedTransactions
-      .filter(txn => new Date(txn.date) >= startOfMonth)
-      .reduce((sum, txn) => sum + txn.amount, 0);
+      .filter((txn) => txn.dateIST >= startOfMonth)
+      .reduce((sum, txn) => sum + txn.signedAmount, 0);
 
     // ARPU
     const arpu = uniqueUsers > 0 ? (totalRevenue / uniqueUsers).toFixed(2) : "0";
 
     // Recent transactions (sorted by date desc)
     const recentTransactions = [...processedTransactions]
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .sort((a, b) => b.dateIST.getTime() - a.dateIST.getTime())
       .slice(0, 100)
-      .map(txn => ({
+      .map((txn) => ({
         id: txn.id,
         date: txn.date,
         userId: txn.userId,
         userEmail: txn.email,
         userName: txn.name,
-        amount: txn.amount,
+        amount: txn.signedAmount,
         bundleId: txn.bundleId,
         type: txn.type,
-        status: "paid",
+        status: txn.financialKind === "refund" ? "refunded" : "paid",
         paymentMode: txn.paymentMode,
         bankRef: txn.bankRef,
       }));
@@ -386,6 +399,8 @@ export async function GET(request: NextRequest) {
       
       // Revenue KPIs
       totalRevenue: totalRevenue.toFixed(2),
+      grossRevenue: grossRevenue.toFixed(2),
+      refundAmount: refundAmount.toFixed(2),
       totalNetRevenue: totalNetRevenue.toFixed(2),
       revenueToday: revenueToday.toFixed(2),
       revenueThisWeek: revenueThisWeek.toFixed(2),
@@ -400,8 +415,9 @@ export async function GET(request: NextRequest) {
       arpu,
       
       // Transactions
-      totalTransactions,
-      successfulPayments: totalTransactions,
+      totalTransactions: processedTransactions.length,
+      successfulPayments: saleTransactions.length,
+      refundedPayments: refundTransactions.length,
       failedPayments: 0,
       pendingPayments: 0,
       
@@ -413,7 +429,7 @@ export async function GET(request: NextRequest) {
       
       // Custom date range (for compatibility)
       customDateRevenue: totalRevenue.toFixed(2),
-      customDatePaymentCount: totalTransactions,
+      customDatePaymentCount: saleTransactions.length,
       customDateTransactions: recentTransactions,
     }, {
       headers: {

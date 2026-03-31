@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
 import crypto from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { classifyPayUEvent, classifyStoredPaymentEvent } from "@/lib/finance-events";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const PAID_STATUSES = new Set(["paid", "success", "captured"]);
 const PAYU_BASE_URL = process.env.PAYU_MODE === "live"
   ? "https://info.payu.in/merchant/postservice?form=2"
   : "https://test.payu.in/merchant/postservice?form=2";
@@ -66,6 +66,10 @@ interface PayUTransaction {
   amount: string;
   status: string;
   addedon: string;
+  net_amount_debit?: string;
+  field9?: string;
+  error_Message?: string;
+  unmappedstatus?: string;
 }
 
 function toNumber(value: unknown): number {
@@ -77,38 +81,19 @@ function normalizeStatus(status: unknown): string {
   return String(status || "").trim().toLowerCase();
 }
 
-function amountInInr(rawAmount: unknown): number {
-  return toNumber(rawAmount) / 100;
-}
-
 function normalizeBounceRate(rawValue: number): number {
   if (!Number.isFinite(rawValue) || rawValue < 0) return 0;
   return rawValue <= 1 ? rawValue * 100 : rawValue;
 }
 
-function formatIstHourLabel(hour: number): string {
-  const start = String(hour).padStart(2, "0");
-  const end = String((hour + 1) % 24).padStart(2, "0");
-  return `${start}:00-${end}:00 IST`;
+function getModeShortLabel(mode: MatrixDayMode): "IST" | "CST" {
+  return mode === "business_1130_ist" ? "CST" : "IST";
 }
 
-function getIstDateParts(date: Date): { dayKey: string; hour: number } {
-  const formatter = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Kolkata",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    hourCycle: "h23",
-  });
-
-  const parts = formatter.formatToParts(date);
-  const get = (type: string) => parts.find((p) => p.type === type)?.value || "00";
-
-  const dayKey = `${get("year")}-${get("month")}-${get("day")}`;
-  const hour = Number(get("hour"));
-
-  return { dayKey, hour: Number.isFinite(hour) ? hour : 0 };
+function formatHourLabel(hour: number, mode: MatrixDayMode): string {
+  const start = String(hour).padStart(2, "0");
+  const end = String((hour + 1) % 24).padStart(2, "0");
+  return `${start}:00-${end}:00 ${getModeShortLabel(mode)}`;
 }
 
 function getIstDateTimeParts(date: Date): { dayKey: string; hour: number; minute: number } {
@@ -142,26 +127,23 @@ function shiftIsoDate(isoDate: string, days: number): string {
 }
 
 function getMatrixDateGroup(date: Date, mode: MatrixDayMode): { dayKey: string; hour: number; weekday: string } {
+  const { dayKey: calendarDay, hour, minute } = getIstDateTimeParts(date);
+
   if (mode === "calendar_ist") {
-    const { dayKey, hour } = getIstDateParts(date);
-    return { dayKey, hour, weekday: getIstWeekday(date) };
+    return { dayKey: calendarDay, hour, weekday: getWeekdayFromIsoDate(calendarDay) };
   }
 
-  const { dayKey: calendarDay, hour, minute } = getIstDateTimeParts(date);
   const isBeforeBoundary = hour < 11 || (hour === 11 && minute < 30);
   const businessDay = isBeforeBoundary ? shiftIsoDate(calendarDay, -1) : calendarDay;
+  // CST mode starts at 11:30 IST, so 11:30 IST maps to 00:00 CST.
+  const totalMinutes = hour * 60 + minute;
+  const shiftedMinutes = (totalMinutes - (11 * 60 + 30) + 24 * 60) % (24 * 60);
+  const cstHour = Math.floor(shiftedMinutes / 60);
   return {
     dayKey: businessDay,
-    hour,
+    hour: Number.isFinite(cstHour) ? cstHour : 0,
     weekday: getWeekdayFromIsoDate(businessDay),
   };
-}
-
-function getIstWeekday(date: Date): string {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Kolkata",
-    weekday: "long",
-  }).format(date);
 }
 
 function getWeekdayFromIsoDate(isoDate: string): string {
@@ -230,7 +212,7 @@ async function fetchPayUTransactionsChunk(fromDate: string, toDate: string): Pro
     ? data.Transaction_details
     : Object.values(data.Transaction_details);
 
-  return (rows as PayUTransaction[]).filter((txn) => txn.status === "success" || txn.status === "captured");
+  return rows as PayUTransaction[];
 }
 
 async function fetchPayUTransactions(fromDate: string, toDate: string): Promise<PayUTransaction[]> {
@@ -378,9 +360,9 @@ function pickTopTrafficMetric(map: Map<string, number>, fallbackLabel: string): 
   };
 }
 
-function buildHourlyTrafficSeries(map: Map<string, number>): TrafficSeriesPoint[] {
+function buildHourlyTrafficSeriesByMode(map: Map<string, number>, mode: MatrixDayMode): TrafficSeriesPoint[] {
   return Array.from({ length: 24 }, (_, hour) => {
-    const label = formatIstHourLabel(hour);
+    const label = formatHourLabel(hour, mode);
     return {
       label,
       sessions: map.get(label) || 0,
@@ -388,11 +370,12 @@ function buildHourlyTrafficSeries(map: Map<string, number>): TrafficSeriesPoint[
   });
 }
 
-function buildHourlySalesSeries(
-  map: Map<string, { count: number; revenueInr: number }>
+function buildHourlySalesSeriesByMode(
+  map: Map<string, { count: number; revenueInr: number }>,
+  mode: MatrixDayMode
 ): SalesSeriesPoint[] {
   return Array.from({ length: 24 }, (_, hour) => {
-    const label = formatIstHourLabel(hour);
+    const label = formatHourLabel(hour, mode);
     const entry = map.get(label) || { count: 0, revenueInr: 0 };
     return {
       label,
@@ -400,6 +383,14 @@ function buildHourlySalesSeries(
       revenueInr: Number(entry.revenueInr.toFixed(2)),
     };
   });
+}
+
+function buildWeekdayTrafficSeries(map: Map<string, number>): TrafficSeriesPoint[] {
+  const weekOrder = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  return weekOrder.map((day) => ({
+    label: day,
+    sessions: map.get(day) || 0,
+  }));
 }
 
 function buildDailyTrafficSeries(
@@ -446,12 +437,17 @@ function buildDailySalesSeries(
   return rows;
 }
 
-async function fetchGoogleAnalyticsData(startDate: string, endDate: string): Promise<{
+async function fetchGoogleAnalyticsData(
+  startDate: string,
+  endDate: string,
+  dayMode: MatrixDayMode
+): Promise<{
   routeMetrics: RouteMetric[];
   peakTrafficHour: PeakTrafficMetric;
   peakTrafficDay: PeakTrafficMetric;
   hourlySeries: TrafficSeriesPoint[];
   dailySeries: TrafficSeriesPoint[];
+  weekdaySeries: TrafficSeriesPoint[];
   totalSessions: number;
   totalPageViews: number;
   overallBounceRate: number;
@@ -469,6 +465,7 @@ async function fetchGoogleAnalyticsData(startDate: string, endDate: string): Pro
       peakTrafficDay: { label: "N/A", sessions: 0 },
       hourlySeries: [],
       dailySeries: [],
+      weekdaySeries: [],
       totalSessions: 0,
       totalPageViews: 0,
       overallBounceRate: 0,
@@ -492,31 +489,24 @@ async function fetchGoogleAnalyticsData(startDate: string, endDate: string): Pro
 
     const analyticsData = google.analyticsdata({ version: "v1beta", auth });
 
-    const commonRange = [{ startDate, endDate }];
+    const trafficEndDate = dayMode === "business_1130_ist" ? shiftIsoDate(endDate, 1) : endDate;
+    const trafficRange = [{ startDate, endDate: trafficEndDate }];
+    const routeRange = [{ startDate, endDate }];
 
-    const [hourResp, dayResp, routeResp] = await Promise.all([
+    const [hourResp, routeResp] = await Promise.all([
       analyticsData.properties.runReport({
         property: `properties/${propertyId}`,
         requestBody: {
-          dateRanges: commonRange,
-          dimensions: [{ name: "hour" }],
+          dateRanges: trafficRange,
+          dimensions: [{ name: "dateHour" }],
           metrics: [{ name: "sessions" }],
-          limit: "24",
+          limit: "10000",
         },
       }),
       analyticsData.properties.runReport({
         property: `properties/${propertyId}`,
         requestBody: {
-          dateRanges: commonRange,
-          dimensions: [{ name: "date" }],
-          metrics: [{ name: "sessions" }],
-          limit: "400",
-        },
-      }),
-      analyticsData.properties.runReport({
-        property: `properties/${propertyId}`,
-        requestBody: {
-          dateRanges: commonRange,
+          dateRanges: routeRange,
           dimensions: [{ name: "pagePath" }],
           metrics: [
             { name: "sessions" },
@@ -532,22 +522,34 @@ async function fetchGoogleAnalyticsData(startDate: string, endDate: string): Pro
 
     const hourlyMap = new Map<string, number>();
     for (const row of hourResp.data.rows || []) {
-      const hourRaw = row.dimensionValues?.[0]?.value || "0";
-      const hour = Number(hourRaw);
-      const label = formatIstHourLabel(Number.isFinite(hour) ? hour : 0);
-      hourlyMap.set(label, toNumber(row.metricValues?.[0]?.value));
+      const dateHourRaw = row.dimensionValues?.[0]?.value || "";
+      // GA dateHour format: YYYYMMDDHH
+      if (!/^\d{10}$/.test(dateHourRaw)) continue;
+      const parsed = new Date(
+        `${dateHourRaw.slice(0, 4)}-${dateHourRaw.slice(4, 6)}-${dateHourRaw.slice(6, 8)}T${dateHourRaw.slice(8, 10)}:00:00+05:30`
+      );
+      if (Number.isNaN(parsed.getTime())) continue;
+      const grouped = getMatrixDateGroup(parsed, dayMode);
+      if (grouped.dayKey < startDate || grouped.dayKey > endDate) continue;
+      const sessions = toNumber(row.metricValues?.[0]?.value);
+      const label = formatHourLabel(grouped.hour, dayMode);
+      hourlyMap.set(label, (hourlyMap.get(label) || 0) + sessions);
     }
 
     const dailyMap = new Map<string, number>();
     const weekdayMap = new Map<string, number>();
-    for (const row of dayResp.data.rows || []) {
-      const dateRaw = row.dimensionValues?.[0]?.value || "";
-      const dayLabel = dateRaw.length === 8
-        ? `${dateRaw.slice(0, 4)}-${dateRaw.slice(4, 6)}-${dateRaw.slice(6, 8)}`
-        : dateRaw;
+    for (const row of hourResp.data.rows || []) {
+      const dateHourRaw = row.dimensionValues?.[0]?.value || "";
+      if (!/^\d{10}$/.test(dateHourRaw)) continue;
+      const parsed = new Date(
+        `${dateHourRaw.slice(0, 4)}-${dateHourRaw.slice(4, 6)}-${dateHourRaw.slice(6, 8)}T${dateHourRaw.slice(8, 10)}:00:00+05:30`
+      );
+      if (Number.isNaN(parsed.getTime())) continue;
+      const grouped = getMatrixDateGroup(parsed, dayMode);
+      if (grouped.dayKey < startDate || grouped.dayKey > endDate) continue;
       const sessions = toNumber(row.metricValues?.[0]?.value);
-      dailyMap.set(dayLabel, sessions);
-      const weekday = getWeekdayFromIsoDate(dayLabel);
+      dailyMap.set(grouped.dayKey, (dailyMap.get(grouped.dayKey) || 0) + sessions);
+      const weekday = grouped.weekday;
       weekdayMap.set(weekday, (weekdayMap.get(weekday) || 0) + sessions);
     }
 
@@ -575,7 +577,7 @@ async function fetchGoogleAnalyticsData(startDate: string, endDate: string): Pro
       .sort((a, b) => b.viewers - a.viewers)
       .slice(0, 50);
 
-    const totalSessions = routeMetrics.reduce((sum, row) => sum + row.viewers, 0);
+    const totalSessions = Array.from(dailyMap.values()).reduce((sum, val) => sum + val, 0);
     const totalPageViews = routeMetrics.reduce((sum, row) => sum + row.pageViews, 0);
     const totalWeightedBounce = routeMetrics.reduce((sum, row) => sum + row.bounceRate * row.viewers, 0);
     const totalWeightedDuration = routeMetrics.reduce((sum, row) => sum + row.avgSessionDurationSec * row.viewers, 0);
@@ -584,8 +586,9 @@ async function fetchGoogleAnalyticsData(startDate: string, endDate: string): Pro
       routeMetrics,
       peakTrafficHour: pickTopTrafficMetric(hourlyMap, "N/A"),
       peakTrafficDay: pickTopTrafficMetric(weekdayMap, "N/A"),
-      hourlySeries: buildHourlyTrafficSeries(hourlyMap),
+      hourlySeries: buildHourlyTrafficSeriesByMode(hourlyMap, dayMode),
       dailySeries: buildDailyTrafficSeries(dailyMap, startDate, endDate),
+      weekdaySeries: buildWeekdayTrafficSeries(weekdayMap),
       totalSessions,
       totalPageViews,
       overallBounceRate: totalSessions > 0 ? totalWeightedBounce / totalSessions : 0,
@@ -593,7 +596,9 @@ async function fetchGoogleAnalyticsData(startDate: string, endDate: string): Pro
       sourceStatus: {
         configured: true,
         connected: true,
-        message: "Connected to GA4 Data API.",
+        message: dayMode === "business_1130_ist"
+          ? "Connected to GA4 Data API (CST mode uses shifted hour/day aggregation)."
+          : "Connected to GA4 Data API.",
       },
     };
   } catch (error: any) {
@@ -603,6 +608,7 @@ async function fetchGoogleAnalyticsData(startDate: string, endDate: string): Pro
       peakTrafficDay: { label: "N/A", sessions: 0 },
       hourlySeries: [],
       dailySeries: [],
+      weekdaySeries: [],
       totalSessions: 0,
       totalPageViews: 0,
       overallBounceRate: 0,
@@ -628,6 +634,7 @@ async function fetchInternalRouteAnalytics(
   peakTrafficDay: PeakTrafficMetric;
   hourlySeries: TrafficSeriesPoint[];
   dailySeries: TrafficSeriesPoint[];
+  weekdaySeries: TrafficSeriesPoint[];
   totalSessions: number;
   totalPageViews: number;
   overallBounceRate: number;
@@ -678,7 +685,7 @@ async function fetchInternalRouteAnalytics(
         const grouped = getMatrixDateGroup(new Date(evt.created_at), dayMode);
         const { dayKey, hour, weekday } = grouped;
         if (dayKey < startDate || dayKey > endDate) continue;
-        const hourLabel = formatIstHourLabel(hour);
+        const hourLabel = formatHourLabel(hour, dayMode);
         hourlyMap.set(hourLabel, (hourlyMap.get(hourLabel) || 0) + 1);
         dailyMap.set(dayKey, (dailyMap.get(dayKey) || 0) + 1);
         weekdayMap.set(weekday, (weekdayMap.get(weekday) || 0) + 1);
@@ -705,8 +712,9 @@ async function fetchInternalRouteAnalytics(
     routeMetrics,
     peakTrafficHour: pickTopTrafficMetric(hourlyMap, "N/A"),
     peakTrafficDay: pickTopTrafficMetric(weekdayMap, "N/A"),
-    hourlySeries: buildHourlyTrafficSeries(hourlyMap),
+    hourlySeries: buildHourlyTrafficSeriesByMode(hourlyMap, dayMode),
     dailySeries: buildDailyTrafficSeries(dailyMap, startDate, endDate),
+    weekdaySeries: buildWeekdayTrafficSeries(weekdayMap),
     totalSessions,
     totalPageViews: totalSessions,
     overallBounceRate: totalSessions > 0 ? (totalBounces / totalSessions) * 100 : 0,
@@ -765,7 +773,13 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false })
       .limit(10000);
 
-    const paidRows = (paymentRows || []).filter((row) => PAID_STATUSES.has(normalizeStatus(row.payment_status)));
+    const financialRows = (paymentRows || [])
+      .map((row) => {
+        const event = classifyStoredPaymentEvent(row.payment_status, row.amount);
+        return { ...row, financialKind: event.kind, signedAmountInr: event.signedAmount };
+      })
+      .filter((row) => row.financialKind !== "ignore");
+    const refundRows = financialRows.filter((row) => row.financialKind === "refund");
     const pendingRows = (paymentRows || []).filter((row) => {
       const status = normalizeStatus(row.payment_status);
       return status === "created" || status === "pending";
@@ -774,16 +788,21 @@ export async function GET(request: NextRequest) {
 
     const payuFetchEndDate = dayMode === "business_1130_ist" ? shiftIsoDate(endDate, 1) : endDate;
     const payuTransactions = await fetchPayUTransactions(startDate, payuFetchEndDate);
-    const hasPayUSalesData = payuTransactions.length > 0;
+    const hasPayUSalesData = payuTransactions.some(
+      (txn) => classifyPayUEvent(txn as unknown as Record<string, unknown>).kind !== "ignore"
+    );
     const salesHourlyMap = new Map<string, { count: number; revenueInr: number }>();
     const salesDailyMap = new Map<string, { count: number; revenueInr: number }>();
     const salesWeekdayMap = new Map<string, { count: number; revenueInr: number }>();
     const salesDayHourMap = new Map<string, { count: number; revenueInr: number }>();
     let totalRevenueInr = 0;
     let paidOrders = 0;
+    let refundedOrders = 0;
 
     if (hasPayUSalesData) {
       for (const txn of payuTransactions) {
+        const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
+        if (financial.kind === "ignore") continue;
         if (!txn.addedon) continue;
         const created = new Date(txn.addedon.replace(" ", "T") + "+05:30");
         if (Number.isNaN(created.getTime())) continue;
@@ -791,62 +810,66 @@ export async function GET(request: NextRequest) {
         const grouped = getMatrixDateGroup(created, dayMode);
         const { dayKey, hour, weekday } = grouped;
         if (dayKey < startDate || dayKey > endDate) continue;
-        const hourLabel = formatIstHourLabel(hour);
-        const amount = toNumber(txn.amount);
+        const hourLabel = formatHourLabel(hour, dayMode);
+        const amount = financial.signedAmount;
+        const countDelta = financial.kind === "refund" ? -1 : 1;
         totalRevenueInr += amount;
-        paidOrders += 1;
+        if (financial.kind === "sale") paidOrders += 1;
+        if (financial.kind === "refund") refundedOrders += 1;
 
         const hourEntry = salesHourlyMap.get(hourLabel) || { count: 0, revenueInr: 0 };
-        hourEntry.count += 1;
+        hourEntry.count += countDelta;
         hourEntry.revenueInr += amount;
         salesHourlyMap.set(hourLabel, hourEntry);
 
         const dayEntry = salesDailyMap.get(dayKey) || { count: 0, revenueInr: 0 };
-        dayEntry.count += 1;
+        dayEntry.count += countDelta;
         dayEntry.revenueInr += amount;
         salesDailyMap.set(dayKey, dayEntry);
 
         const dayHourKey = `${dayKey}|${hour}`;
         const dayHourEntry = salesDayHourMap.get(dayHourKey) || { count: 0, revenueInr: 0 };
-        dayHourEntry.count += 1;
+        dayHourEntry.count += countDelta;
         dayHourEntry.revenueInr += amount;
         salesDayHourMap.set(dayHourKey, dayHourEntry);
 
         const weekdayEntry = salesWeekdayMap.get(weekday) || { count: 0, revenueInr: 0 };
-        weekdayEntry.count += 1;
+        weekdayEntry.count += countDelta;
         weekdayEntry.revenueInr += amount;
         salesWeekdayMap.set(weekday, weekdayEntry);
       }
     } else {
-      for (const row of paidRows) {
+      for (const row of financialRows) {
         if (!row.created_at) continue;
         const created = new Date(row.created_at);
         const grouped = getMatrixDateGroup(created, dayMode);
         const { dayKey, hour, weekday } = grouped;
         if (dayKey < startDate || dayKey > endDate) continue;
-        const hourLabel = formatIstHourLabel(hour);
-        const amount = amountInInr(row.amount);
+        const hourLabel = formatHourLabel(hour, dayMode);
+        const amount = row.signedAmountInr;
+        const countDelta = row.financialKind === "refund" ? -1 : 1;
         totalRevenueInr += amount;
-        paidOrders += 1;
+        if (row.financialKind === "sale") paidOrders += 1;
+        if (row.financialKind === "refund") refundedOrders += 1;
 
         const hourEntry = salesHourlyMap.get(hourLabel) || { count: 0, revenueInr: 0 };
-        hourEntry.count += 1;
+        hourEntry.count += countDelta;
         hourEntry.revenueInr += amount;
         salesHourlyMap.set(hourLabel, hourEntry);
 
         const dayEntry = salesDailyMap.get(dayKey) || { count: 0, revenueInr: 0 };
-        dayEntry.count += 1;
+        dayEntry.count += countDelta;
         dayEntry.revenueInr += amount;
         salesDailyMap.set(dayKey, dayEntry);
 
         const dayHourKey = `${dayKey}|${hour}`;
         const dayHourEntry = salesDayHourMap.get(dayHourKey) || { count: 0, revenueInr: 0 };
-        dayHourEntry.count += 1;
+        dayHourEntry.count += countDelta;
         dayHourEntry.revenueInr += amount;
         salesDayHourMap.set(dayHourKey, dayHourEntry);
 
         const weekdayEntry = salesWeekdayMap.get(weekday) || { count: 0, revenueInr: 0 };
-        weekdayEntry.count += 1;
+        weekdayEntry.count += countDelta;
         weekdayEntry.revenueInr += amount;
         salesWeekdayMap.set(weekday, weekdayEntry);
       }
@@ -854,7 +877,7 @@ export async function GET(request: NextRequest) {
 
     const peakSalesHour = pickTopSalesMetric(salesHourlyMap, "N/A");
     const peakSalesDay = pickTopSalesMetric(salesWeekdayMap, "N/A");
-    const salesHourlySeries = buildHourlySalesSeries(salesHourlyMap);
+    const salesHourlySeries = buildHourlySalesSeriesByMode(salesHourlyMap, dayMode);
     const salesDailySeries = buildDailySalesSeries(salesDailyMap, startDate, endDate);
     const salesWeekdaySeries = buildWeekdaySalesSeries(salesWeekdayMap);
 
@@ -881,26 +904,37 @@ export async function GET(request: NextRequest) {
         : payuTransactions;
 
       for (const txn of matrixTxns) {
+        const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
+        if (financial.kind === "ignore") continue;
         if (!txn.addedon) continue;
         const created = new Date(txn.addedon.replace(" ", "T") + "+05:30");
         if (Number.isNaN(created.getTime())) continue;
-        const amount = toNumber(txn.amount);
+        const amount = financial.signedAmount;
+        const countDelta = financial.kind === "refund" ? -1 : 1;
         const grouped = getMatrixDateGroup(created, matrixDayMode);
         if (grouped.dayKey < startDate || grouped.dayKey > endDate) continue;
 
         matrixDailyRevenueMap.set(grouped.dayKey, (matrixDailyRevenueMap.get(grouped.dayKey) || 0) + amount);
         const key = `${grouped.dayKey}|${grouped.hour}`;
         const prev = matrixDayHourMap.get(key) || { count: 0, revenueInr: 0 };
-        prev.count += 1;
+        prev.count += countDelta;
         prev.revenueInr += amount;
         matrixDayHourMap.set(key, prev);
       }
     } else {
-      type MatrixPaymentRow = { amount: unknown; payment_status: unknown; created_at: string | null };
-      let matrixPaidRows: MatrixPaymentRow[] = paidRows.map((row) => ({
+      type MatrixPaymentRow = {
+        amount: unknown;
+        payment_status: unknown;
+        created_at: string | null;
+        financialKind: "sale" | "refund" | "ignore";
+        signedAmountInr: number;
+      };
+      let matrixPaidRows: MatrixPaymentRow[] = financialRows.map((row) => ({
         amount: row.amount,
         payment_status: row.payment_status,
         created_at: row.created_at,
+        financialKind: row.financialKind,
+        signedAmountInr: row.signedAmountInr,
       }));
       if (matrixDayMode === "business_1130_ist") {
         const matrixEndIso = `${shiftIsoDate(endDate, 1)}T23:59:59.999Z`;
@@ -912,21 +946,31 @@ export async function GET(request: NextRequest) {
           .order("created_at", { ascending: false })
           .limit(10000);
 
-        matrixPaidRows = (extraRows || []).filter((row) => PAID_STATUSES.has(normalizeStatus(row.payment_status)));
+        matrixPaidRows = (extraRows || [])
+          .map((row) => {
+            const event = classifyStoredPaymentEvent(row.payment_status, row.amount);
+            return {
+              ...row,
+              financialKind: event.kind,
+              signedAmountInr: event.signedAmount,
+            };
+          })
+          .filter((row) => row.financialKind !== "ignore");
       }
 
       for (const row of matrixPaidRows) {
         if (!row.created_at) continue;
         const created = new Date(row.created_at);
         if (Number.isNaN(created.getTime())) continue;
-        const amount = amountInInr(row.amount);
+        const amount = row.signedAmountInr;
+        const countDelta = row.financialKind === "refund" ? -1 : 1;
         const grouped = getMatrixDateGroup(created, matrixDayMode);
         if (grouped.dayKey < startDate || grouped.dayKey > endDate) continue;
 
         matrixDailyRevenueMap.set(grouped.dayKey, (matrixDailyRevenueMap.get(grouped.dayKey) || 0) + amount);
         const key = `${grouped.dayKey}|${grouped.hour}`;
         const prev = matrixDayHourMap.get(key) || { count: 0, revenueInr: 0 };
-        prev.count += 1;
+        prev.count += countDelta;
         prev.revenueInr += amount;
         matrixDayHourMap.set(key, prev);
       }
@@ -938,7 +982,7 @@ export async function GET(request: NextRequest) {
       const weekday = getWeekdayFromIsoDate(dayKey);
 
       for (let hour = 0; hour < 24; hour++) {
-        const hourLabel = formatIstHourLabel(hour);
+        const hourLabel = formatHourLabel(hour, matrixDayMode);
         const dayHour = matrixDayHourMap.get(`${dayKey}|${hour}`) || { count: 0, revenueInr: 0 };
         const hourRevenue = dayHour.revenueInr;
         const hourCount = dayHour.count;
@@ -965,7 +1009,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const gaData = await fetchGoogleAnalyticsData(startDate, endDate);
+    const gaData = await fetchGoogleAnalyticsData(startDate, endDate, dayMode);
     const internalRouteData = await fetchInternalRouteAnalytics(startIso, endIso, dayMode, startDate, endDate);
 
     const useGaRouteData = gaData.sourceStatus.connected && gaData.routeMetrics.length > 0;
@@ -997,6 +1041,7 @@ export async function GET(request: NextRequest) {
       },
       kpis: {
         paidOrders,
+        refundedOrders,
         paidRevenueInr: Number(totalRevenueInr.toFixed(2)),
         pendingPayments: pendingRows.length,
         failedPayments: failedRows.length,
@@ -1031,6 +1076,7 @@ export async function GET(request: NextRequest) {
         traffic: {
           hourly: selectedRouteData.hourlySeries,
           daily: selectedRouteData.dailySeries,
+          weekday: selectedRouteData.weekdaySeries,
         },
       },
       hourlyProfitability: {
@@ -1083,16 +1129,19 @@ export async function GET(request: NextRequest) {
         "Checkout funnel conversion is calculated using total visitors (not only paywall visitors).",
         hasPayUSalesData
           ? "Sales metrics are sourced from PayU transaction API to match Profit Sheet totals."
-          : "Sales metrics are sourced from payments table (paid/success/captured).",
+          : "Sales metrics are sourced from payments table with refund events subtracted.",
+        refundRows.length > 0 || refundedOrders > 0
+          ? "Refund and chargeback events are subtracted from revenue metrics."
+          : "No refund events were detected in this range.",
         hasMetaSpend
           ? "Profitability matrix uses Meta Ads daily spend (USD→INR) with proportional hourly cost allocation."
           : "Profitability matrix has no ads spend for this range, so it reflects revenue after GST only.",
         matrixDayMode === "business_1130_ist"
-          ? "Matrix day boundary mode: 11:30 AM IST to next day 11:29 AM IST."
-          : "Matrix day boundary mode: calendar day (00:00 to 23:59 IST).",
+          ? "Matrix day mode: CST (11:30 AM IST to next day 11:29 AM IST, where 11:30 AM IST is treated as 12:00 AM CST)."
+          : "Matrix day mode: IST calendar day (00:00 to 23:59 IST).",
         dayMode === "business_1130_ist"
-          ? "Global day mode: 11:30 AM IST to next day 11:29 AM IST."
-          : "Global day mode: calendar day (00:00 to 23:59 IST).",
+          ? "Global day mode: CST (11:30 AM IST to next day 11:29 AM IST, where 11:30 AM IST is treated as 12:00 AM CST)."
+          : "Global day mode: IST calendar day (00:00 to 23:59 IST).",
       ],
     }, {
       headers: {

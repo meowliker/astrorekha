@@ -172,6 +172,7 @@ interface AnalyticsData {
   };
   kpis: {
     paidOrders: number;
+    refundedOrders?: number;
     paidRevenueInr: number;
     pendingPayments: number;
     failedPayments: number;
@@ -206,6 +207,7 @@ interface AnalyticsData {
     traffic: {
       hourly: AnalyticsTrafficTrendPoint[];
       daily: AnalyticsTrafficTrendPoint[];
+      weekday: AnalyticsTrafficTrendPoint[];
     };
   };
   hourlyProfitability?: {
@@ -234,6 +236,8 @@ interface AnalyticsData {
 interface RevenueData {
   currency: string;
   totalRevenue: string;
+  grossRevenue?: string;
+  refundAmount?: string;
   revenueToday: string;
   revenueThisWeek: string;
   revenueThisMonth: string;
@@ -249,6 +253,7 @@ interface RevenueData {
   arpu: string;
   totalPayments: number;
   successfulPayments: number;
+  refundedPayments?: number;
   failedPayments: number;
   pendingPayments: number;
   revenueOverTime: { date: string; revenue: number }[];
@@ -1003,6 +1008,7 @@ export default function AdminRevenuePage() {
                 >
                   <option value="all">All Status</option>
                   <option value="paid">Paid</option>
+                  <option value="refunded">Refunded</option>
                   <option value="failed">Failed</option>
                   <option value="created">Pending</option>
                 </select>
@@ -1419,13 +1425,20 @@ export default function AdminRevenuePage() {
           <h2 className="text-white/70 text-sm font-medium mb-3 flex items-center gap-2">
             <CreditCard className="w-4 h-4" /> Transaction Activity
           </h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <KPICard
               title="Successful"
               value={(data.successfulPayments || 0).toString()}
               icon={<CheckCircle className="w-4 h-4" />}
               color="text-green-400"
               tooltip="Total number of successful (paid) payment transactions."
+            />
+            <KPICard
+              title="Refunded"
+              value={(data.refundedPayments || 0).toString()}
+              icon={<ArrowDownRight className="w-4 h-4" />}
+              color="text-orange-400"
+              tooltip="Payments that were refunded/chargebacked."
             />
             <KPICard
               title="Failed"
@@ -2976,11 +2989,16 @@ function AnalyticsTab({
 
   const trafficSourceBadge = data?.sources.googleAnalytics.connected ? "GA4" : "Internal";
   const salesSourceBadge = data?.sources.sales.connected ? "PayU" : "Supabase";
+  const dayModeShortLabel = dayMode === "business_1130_ist" ? "CST" : "IST";
+  const dayModeDetailLabel =
+    dayMode === "business_1130_ist"
+      ? "CST (11:30 IST treated as 12:00 AM)"
+      : "IST calendar";
 
   const chartConfigs = data
     ? {
         "traffic-hourly": {
-          title: "Traffic by Hour (IST)",
+          title: `Traffic by Hour (${dayModeShortLabel})`,
           subtitle: "Hourly sessions distribution",
           sourceBadge: trafficSourceBadge,
           colorClass: "bg-cyan-500/70",
@@ -2991,7 +3009,7 @@ function AnalyticsTab({
           })),
         },
         "sales-hourly": {
-          title: "Sales by Hour (IST)",
+          title: `Sales by Hour (${dayModeShortLabel})`,
           subtitle: "Hourly paid orders distribution",
           sourceBadge: salesSourceBadge,
           colorClass: "bg-emerald-500/70",
@@ -3003,13 +3021,13 @@ function AnalyticsTab({
           })),
         },
         "traffic-daily": {
-          title: "Traffic by Day",
-          subtitle: "Daily sessions distribution",
+          title: "Traffic by Day (Weekday)",
+          subtitle: "Total sessions grouped by weekday",
           sourceBadge: trafficSourceBadge,
           colorClass: "bg-sky-500/70",
-          emptyText: "No daily traffic data",
-          rows: data.trends.traffic.daily.map((item) => ({
-            label: formatDayLabel(item.label),
+          emptyText: "No weekday traffic data",
+          rows: (data.trends.traffic.weekday || []).map((item) => ({
+            label: item.label.slice(0, 3),
             value: item.sessions,
           })),
         },
@@ -3557,7 +3575,7 @@ function AnalyticsTab({
               className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50"
             >
               <option value="calendar_ist">IST (00:00 - 23:59)</option>
-              <option value="business_1130_ist">11:30 IST - next 11:29</option>
+              <option value="business_1130_ist">CST (11:30 IST - next 11:29)</option>
             </select>
           </div>
           <button
@@ -3571,7 +3589,7 @@ function AnalyticsTab({
         </div>
         {data?.range && (
           <p className="text-white/30 text-xs mt-3">
-            Timezone: {data.range.timezone} | Day Mode: {dayMode === "business_1130_ist" ? "11:30 IST → next 11:29" : "Calendar IST"} | Range: {data.range.startDate} to {data.range.endDate}
+            Timezone: {data.range.timezone} | Day Mode: {dayModeDetailLabel} | Range: {data.range.startDate} to {data.range.endDate}
           </p>
         )}
       </div>
@@ -3630,12 +3648,12 @@ function AnalyticsTab({
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <MetricCard
               title="Peak Traffic Hour"
-              value={`${formatHourRangeLabel(data.peaks.traffic.hour.label)} IST (${data.peaks.traffic.hour.sessions} sessions)`}
+              value={`${formatHourRangeLabel(data.peaks.traffic.hour.label)} ${dayModeShortLabel} (${data.peaks.traffic.hour.sessions} sessions)`}
               color="text-white"
             />
             <MetricCard
               title="Peak Sales Hour"
-              value={`${formatHourRangeLabel(data.peaks.sales.hour.label)} IST (${data.peaks.sales.hour.count} sales)`}
+              value={`${formatHourRangeLabel(data.peaks.sales.hour.label)} ${dayModeShortLabel} (${data.peaks.sales.hour.count} sales)`}
               subtitle={formatCurrency(data.peaks.sales.hour.revenueInr)}
               color="text-white"
             />
@@ -3739,7 +3757,7 @@ function AnalyticsTab({
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/60">{profitabilitySourceBadge}</span>
                 </div>
                 <p className="text-white/40 text-xs mt-1">
-                  Single date shows that day. Multi-date range shows weekday averages. Active mode: {dayMode === "business_1130_ist" ? "11:30 IST business day" : "Calendar IST day"}.
+                  Single date shows that day. Multi-date range shows weekday averages. Active mode: {dayMode === "business_1130_ist" ? "CST (11:30 IST treated as 12:00 AM)" : "IST calendar day"}.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -3770,7 +3788,7 @@ function AnalyticsTab({
                   className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-primary/50"
                 >
                   <option value="calendar_ist">Day Mode: IST (00:00-23:59)</option>
-                  <option value="business_1130_ist">Day Mode: 11:30 IST → next 11:29</option>
+                  <option value="business_1130_ist">Day Mode: CST (11:30 IST → next 11:29)</option>
                 </select>
                 <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-lg p-1">
                   {[7, 14, 28].map((days) => (
@@ -3821,7 +3839,7 @@ function AnalyticsTab({
                   <table className="w-full min-w-[760px]">
                     <thead className="sticky top-0 z-10">
                       <tr className="bg-[#202A40] border-b border-white/10">
-                        <th className="text-left text-white/60 text-xs font-medium px-3 py-2">Hour (IST)</th>
+                        <th className="text-left text-white/60 text-xs font-medium px-3 py-2">Hour ({dayModeShortLabel})</th>
                         {profitabilityMatrix.columns.map((col) => (
                           <th key={col.key} className="text-right text-white/60 text-xs font-medium px-3 py-2">
                             {col.label}

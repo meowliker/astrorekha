@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import crypto from "crypto";
+import { classifyPayUEvent } from "@/lib/finance-events";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,10 @@ interface PayUTransaction {
   amount: string;
   status: string;
   addedon: string;
+  net_amount_debit?: string;
+  field9?: string;
+  error_Message?: string;
+  unmappedstatus?: string;
 }
 
 // Fetch PayU transactions for a date range
@@ -64,17 +69,17 @@ async function fetchPayUTransactions(fromDate: string, toDate: string): Promise<
         ? data.Transaction_details 
         : Object.values(data.Transaction_details);
       
-      // Filter for successful transactions
-      const successfulTxns = allTxns.filter(
-        (txn: any) => txn.status === "success" || txn.status === "captured"
-      );
-      
-      console.log(`PayU: ${allTxns.length} total, ${successfulTxns.length} successful`);
-      if (successfulTxns.length > 0) {
-        console.log(`First successful txn amount: ${successfulTxns[0].amount}`);
+      const financialTxns = allTxns.filter((txn: any) => {
+        const financial = classifyPayUEvent(txn as Record<string, unknown>);
+        return financial.kind !== "ignore";
+      });
+
+      console.log(`PayU: ${allTxns.length} total, ${financialTxns.length} financial`);
+      if (financialTxns.length > 0) {
+        console.log(`First financial txn amount: ${financialTxns[0].amount}`);
       }
-      
-      return successfulTxns;
+
+      return financialTxns;
     }
   } catch (err) {
     console.error("PayU fetch error:", err);
@@ -266,12 +271,22 @@ export async function GET(request: NextRequest) {
       console.log("Sample PayU transaction:", JSON.stringify(payuTransactions[0]));
     }
     
-    const totalRevenue = payuTransactions.reduce((sum, txn: any) => {
-      // Try different field names that PayU might use
-      const amt = parseFloat(txn.amount || txn.amt || txn.net_amount_debit || "0");
-      return sum + amt;
-    }, 0);
-    const totalSales = payuTransactions.length;
+    const classifiedPayu = payuTransactions
+      .map((txn: any) => ({
+        txn,
+        financial: classifyPayUEvent(txn as Record<string, unknown>),
+      }))
+      .filter((row) => row.financial.kind !== "ignore");
+
+    const grossRevenue = classifiedPayu
+      .filter((row) => row.financial.kind === "sale")
+      .reduce((sum, row) => sum + row.financial.amount, 0);
+    const refundAmount = classifiedPayu
+      .filter((row) => row.financial.kind === "refund")
+      .reduce((sum, row) => sum + row.financial.amount, 0);
+    const totalRevenue = grossRevenue - refundAmount;
+    const totalSales = classifiedPayu.filter((row) => row.financial.kind === "sale").length;
+    const totalRefunds = classifiedPayu.filter((row) => row.financial.kind === "refund").length;
     console.log(`PayU: ${totalSales} sales, ₹${totalRevenue.toFixed(2)} revenue`);
 
     // Build date range params for Meta
@@ -490,7 +505,10 @@ export async function GET(request: NextRequest) {
       // Revenue data from PayU
       revenue: {
         totalRevenue,
+        grossRevenue,
+        refundAmount,
         totalSales,
+        totalRefunds,
         gst,
         netRevenue,
         totalSpendINR,
