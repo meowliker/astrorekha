@@ -34,6 +34,8 @@ export default function Step13Page() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [hasCamera, setHasCamera] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [torchEnabled, setTorchEnabled] = useState(false);
 
   const validatePalmImage = async (imageData: string): Promise<boolean> => {
     const img = new window.Image();
@@ -69,6 +71,10 @@ export default function Step13Page() {
           if (videoRef.current) {
             videoRef.current.srcObject = stream;
             setHasCamera(true);
+            const [track] = stream.getVideoTracks();
+            const capabilities = (track?.getCapabilities?.() || {}) as { torch?: boolean };
+            setTorchSupported(!!capabilities.torch);
+            setTorchEnabled(false);
           }
         } catch (err) {
           console.error("Camera error:", err);
@@ -134,6 +140,8 @@ export default function Step13Page() {
       tracks.forEach((track) => track.stop());
       video.srcObject = null;
     }
+    setTorchEnabled(false);
+    setTorchSupported(false);
     
     setCapturedImage(imageData);
     // Save to localStorage for step-15
@@ -195,7 +203,25 @@ export default function Step13Page() {
       const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
       tracks.forEach((track) => track.stop());
     }
+    setTorchEnabled(false);
+    setTorchSupported(false);
     setPageState("intro");
+  };
+
+  const toggleTorch = async () => {
+    const stream = videoRef.current?.srcObject as MediaStream | null;
+    const [track] = stream?.getVideoTracks?.() || [];
+    if (!track || !torchSupported) return;
+
+    try {
+      await track.applyConstraints({
+        advanced: [{ torch: !torchEnabled } as MediaTrackConstraintSet],
+      });
+      setTorchEnabled((prev) => !prev);
+    } catch (err) {
+      console.error("Torch toggle failed:", err);
+      setScanError("Flashlight is not supported on this device/browser.");
+    }
   };
 
   const handleAnalysisComplete = () => {
@@ -207,7 +233,7 @@ export default function Step13Page() {
       initial="hidden"
       animate="visible"
       variants={fadeUp}
-      className="flex-1 flex flex-col min-h-screen bg-background"
+      className="flex-1 flex flex-col min-h-full bg-background"
     >
       {/* Intro State */}
       {pageState === "intro" && (
@@ -357,10 +383,19 @@ export default function Step13Page() {
               </svg>
             </button>
 
+            {torchSupported && (
+              <button
+                onClick={toggleTorch}
+                className="absolute top-4 right-4 px-3 h-10 rounded-full bg-black/40 text-white text-xs font-semibold border border-white/20"
+              >
+                {torchEnabled ? "Torch Off" : "Torch On"}
+              </button>
+            )}
+
             <canvas ref={canvasRef} className="hidden" />
           </div>
 
-          <div className="bg-background p-6 flex flex-col items-center gap-4">
+          <div className="bg-background px-6 pt-4 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] flex flex-col items-center gap-4">
             <p className="text-muted-foreground text-center text-sm">
               Place left palm inside outline and take a photo
             </p>

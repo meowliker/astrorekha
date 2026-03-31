@@ -22,6 +22,7 @@ export default function PalmReadingPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
   const [reading, setReading] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("ageTimeline");
@@ -29,6 +30,8 @@ export default function PalmReadingPage() {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
   const [isFlowB, setIsFlowB] = useState(false);
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [torchEnabled, setTorchEnabled] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -52,6 +55,25 @@ export default function PalmReadingPage() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!analyzing) {
+      setAnalysisProgress(0);
+      return;
+    }
+
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      setAnalysisProgress((prev) => {
+        const elapsedMs = Date.now() - startedAt;
+        const elapsedTarget = Math.min(100, Math.floor((elapsedMs / 16000) * 100));
+        const next = Math.max(prev + 1, elapsedTarget);
+        return Math.min(100, next);
+      });
+    }, 250);
+
+    return () => clearInterval(timer);
+  }, [analyzing]);
 
   const loadExistingReading = async () => {
     try {
@@ -101,6 +123,10 @@ export default function PalmReadingPage() {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
+      const [track] = stream.getVideoTracks();
+      const capabilities = (track?.getCapabilities?.() || {}) as { torch?: boolean };
+      setTorchSupported(!!capabilities.torch);
+      setTorchEnabled(false);
     } catch (err) {
       console.error("Camera error:", err);
       setError("Could not access camera. Please allow camera permissions.");
@@ -126,6 +152,8 @@ export default function PalmReadingPage() {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
+      setTorchEnabled(false);
+      setTorchSupported(false);
       setShowCamera(false);
       
       // Analyze the palm
@@ -135,6 +163,7 @@ export default function PalmReadingPage() {
 
   const analyzePalm = async (imageData: string) => {
     setAnalyzing(true);
+    setAnalysisProgress(2);
     setError(null);
 
     try {
@@ -166,6 +195,8 @@ export default function PalmReadingPage() {
       }
 
       setReading(palmReading);
+      setAnalysisProgress(100);
+      await new Promise((resolve) => setTimeout(resolve, 250));
 
       // Save to Firestore
       const userId = generateUserId();
@@ -183,6 +214,21 @@ export default function PalmReadingPage() {
       setError("Failed to analyze palm. Please try again.");
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const toggleTorch = async () => {
+    const [track] = streamRef.current?.getVideoTracks?.() || [];
+    if (!track || !torchSupported) return;
+
+    try {
+      await track.applyConstraints({
+        advanced: [{ torch: !torchEnabled } as MediaTrackConstraintSet],
+      });
+      setTorchEnabled((prev) => !prev);
+    } catch (err) {
+      console.error("Torch toggle failed:", err);
+      setError("Flashlight is not supported on this device/browser.");
     }
   };
 
@@ -466,6 +512,8 @@ export default function PalmReadingPage() {
                 if (streamRef.current) {
                   streamRef.current.getTracks().forEach(track => track.stop());
                 }
+                setTorchEnabled(false);
+                setTorchSupported(false);
                 setShowCamera(false);
               }}
               className="absolute top-4 left-4 w-10 h-10 rounded-full bg-black/30 flex items-center justify-center"
@@ -473,10 +521,19 @@ export default function PalmReadingPage() {
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
 
+            {torchSupported && (
+              <button
+                onClick={toggleTorch}
+                className="absolute top-4 right-4 px-3 h-10 rounded-full bg-black/40 text-white text-xs font-semibold border border-white/20"
+              >
+                {torchEnabled ? "Torch Off" : "Torch On"}
+              </button>
+            )}
+
             <canvas ref={canvasRef} className="hidden" />
           </div>
 
-          <div className="bg-background p-6 flex flex-col items-center gap-4">
+          <div className="bg-background px-6 pt-4 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] flex flex-col items-center gap-4">
             <p className="text-muted-foreground text-center text-sm">
               Place left palm inside outline and take a photo
             </p>
@@ -498,12 +555,22 @@ export default function PalmReadingPage() {
     return (
       <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
         <div className="w-full max-w-md h-screen bg-[#0A0E1A] flex items-center justify-center">
-          <div className="text-center px-8">
-            <Loader2 className="w-16 h-16 text-primary animate-spin mx-auto mb-6" />
+          <div className="text-center px-8 w-full max-w-sm">
+            <Loader2 className="w-10 h-10 text-primary animate-spin mx-auto mb-5" />
             <h2 className="text-white text-xl font-bold mb-2">Analyzing Your Palm...</h2>
-            <p className="text-white/60 text-sm">
+            <p className="text-white/60 text-sm mb-4">
               Our cosmic AI is reading the lines of your destiny
             </p>
+
+            <div className="w-full h-3 rounded-full bg-white/10 overflow-hidden border border-white/10">
+              <motion.div
+                className="h-full bg-gradient-to-r from-primary to-purple-600"
+                initial={{ width: 0 }}
+                animate={{ width: `${analysisProgress}%` }}
+                transition={{ ease: "linear", duration: 0.2 }}
+              />
+            </div>
+            <p className="text-white/70 text-sm mt-3">{analysisProgress}%</p>
           </div>
         </div>
       </div>

@@ -7,6 +7,7 @@ import { ArrowLeft, Loader2, ChevronDown, ChevronUp, Lightbulb } from "lucide-re
 import { Button } from "@/components/ui/button";
 import { getZodiacSign } from "@/lib/astrology-api";
 import { getInstantCompatibility, getCompatibilityResult, saveCompatibilityResult } from "@/lib/compatibility-data";
+import { supabase } from "@/lib/supabase";
 
 const ZODIAC_SIGNS = [
   { name: "Aries", symbol: "♈", dates: "21 Mar - 19 Apr", element: "Fire", elementIcon: "≋", birthDate: "1990-04-01" },
@@ -331,13 +332,93 @@ export default function CompatibilityPage() {
   const [loadingInsights, setLoadingInsights] = useState(false);
 
   useEffect(() => {
-    const storedBirthDate = localStorage.getItem("birthDate");
-    if (storedBirthDate) {
+    const resolveSignName = (value: any): string | null => {
+      if (!value) return null;
+
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (!trimmed) return null;
+        if (ZODIAC_SIGNS.some((s) => s.name === trimmed)) return trimmed;
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (parsed?.name && ZODIAC_SIGNS.some((s) => s.name === parsed.name)) {
+            return parsed.name;
+          }
+        } catch {
+          // Keep null fallback
+        }
+        return null;
+      }
+
+      if (typeof value === "object" && typeof value.name === "string") {
+        const name = value.name.trim();
+        if (ZODIAC_SIGNS.some((s) => s.name === name)) return name;
+      }
+
+      return null;
+    };
+
+    const fallbackFromLocalBirthDate = () => {
+      const storedBirthDate = localStorage.getItem("birthDate");
+      if (!storedBirthDate) return;
       const date = new Date(storedBirthDate);
       const sign = getZodiacSign(date.getMonth() + 1, date.getDate());
       setUserSign(sign);
       setUserSignFromBirthDate(sign);
-    }
+    };
+
+    const loadUserSunSign = async () => {
+      try {
+        const userId = localStorage.getItem("astrorekha_user_id");
+        if (!userId) {
+          fallbackFromLocalBirthDate();
+          return;
+        }
+
+        const { data: userData } = await supabase
+          .from("users")
+          .select("sun_sign, birth_month, birth_day")
+          .eq("id", userId)
+          .single();
+
+        let signName = resolveSignName(userData?.sun_sign);
+        if (!signName && userData?.birth_month && userData?.birth_day) {
+          signName = getZodiacSign(Number(userData.birth_month), Number(userData.birth_day));
+        }
+
+        if (!signName) {
+          const { data: profileData } = await supabase
+            .from("user_profiles")
+            .select("sun_sign, birth_month, birth_day")
+            .eq("id", userId)
+            .single();
+
+          signName = resolveSignName(profileData?.sun_sign);
+
+          if (!signName && profileData?.birth_month && profileData?.birth_day) {
+            const monthText = String(profileData.birth_month).trim();
+            const monthNumeric = Number(monthText);
+            const month = Number.isFinite(monthNumeric) && monthNumeric > 0
+              ? monthNumeric
+              : (new Date(`${monthText} 1, 2000`).getMonth() + 1 || 1);
+            signName = getZodiacSign(month, Number(profileData.birth_day));
+          }
+        }
+
+        if (signName) {
+          setUserSign(signName);
+          setUserSignFromBirthDate(signName);
+          return;
+        }
+
+        fallbackFromLocalBirthDate();
+      } catch (error) {
+        console.error("Failed to load user sun sign:", error);
+        fallbackFromLocalBirthDate();
+      }
+    };
+
+    loadUserSunSign();
   }, []);
 
   const handleCheckCompatibility = async () => {
@@ -552,6 +633,7 @@ export default function CompatibilityPage() {
   const handleSignSelect = (signName: string) => {
     if (selectingFor === "user") {
       setUserSign(signName);
+      setSelectingFor("partner");
     } else {
       setSelectedSign(signName);
     }
