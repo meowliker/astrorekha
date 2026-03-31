@@ -376,7 +376,7 @@ export default function BundlePricingPage() {
       className="flex flex-col bg-background"
     >
       {/* Section 1: Palm Reading Ready - Full Screen */}
-      <div className="min-h-screen flex flex-col items-center justify-center px-6 py-8">
+      <div className="min-h-[100vh] flex flex-col items-center justify-center px-6 py-8">
         {/* Header with Logo */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -471,7 +471,7 @@ export default function BundlePricingPage() {
       </div>
 
       {/* Section 2: Payment Section */}
-      <div ref={paymentSectionRef} className="min-h-screen flex flex-col items-center px-6 pt-4 pb-8">
+      <div ref={paymentSectionRef} className="min-h-[100vh] flex flex-col items-center px-6 pt-4 pb-8">
         {/* Complete Your Purchase heading */}
         <motion.h2
           initial={{ opacity: 0, y: 10 }}
@@ -1040,7 +1040,7 @@ export default function BundlePricingPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 1.8 }}
-          className="w-full max-w-sm pb-24"
+          className="w-full max-w-sm pb-[6rem]"
         >
           {/* Logo */}
           <div className="flex flex-col items-center mb-6">
