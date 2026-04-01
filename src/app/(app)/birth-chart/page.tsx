@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Sun, Moon, RefreshCw, Star, AlertTriangle, Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import ReportCTA from "@/components/ReportCTA";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { supabase } from "@/lib/supabase";
 
@@ -481,6 +482,8 @@ export default function BirthChartPage() {
                     </div>
                   </div>
                 )}
+
+                <ReportCTA />
               </motion.div>
             )}
           </div>
