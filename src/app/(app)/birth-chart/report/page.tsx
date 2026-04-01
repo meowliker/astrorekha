@@ -251,6 +251,7 @@ export default function BirthChartReportPage() {
                 id: report.id,
                 sections: report.sections,
                 generated_at: report.generated_at,
+                chart_details: report.chart_details,
               }}
               onRegenerate={handleRegenerate}
             />

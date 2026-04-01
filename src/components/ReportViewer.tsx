@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
+import { ChevronDown, ChevronUp } from "lucide-react";
 
 const SECTIONS = [
   { key: "ascendant_nature", title: "Your Ascendant & Core Nature", icon: "⬆" },
@@ -83,6 +84,9 @@ function removeTitleEcho(paragraphs: string[], sectionTitle: string): string[] {
 
 export default function ReportViewer({ report, onRegenerate }: ReportViewerProps) {
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(SECTIONS.map((section, idx) => [section.key, idx < 2]))
+  );
 
   const generatedAt = useMemo(() => formatDate(report.generated_at), [report.generated_at]);
 
@@ -96,11 +100,27 @@ export default function ReportViewer({ report, onRegenerate }: ReportViewerProps
     }
   };
 
+  const toggleSection = (key: string) => {
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
   return (
     <div className="space-y-4 pb-10">
       <div className="bg-gradient-to-br from-[#1A1F2E] to-[#171425] rounded-2xl border border-white/10 p-5">
         <h1 className="text-white text-xl font-semibold">Your Detailed Birth Chart Report</h1>
         <p className="text-white/60 text-sm mt-1">Generated on {generatedAt}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {SECTIONS.map((section) => (
+            <button
+              key={`pill-${section.key}`}
+              type="button"
+              onClick={() => setOpenSections((prev) => ({ ...prev, [section.key]: true }))}
+              className="text-xs px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-white/70 hover:text-amber-300"
+            >
+              {section.icon} {section.title.replace("Your ", "")}
+            </button>
+          ))}
+        </div>
       </div>
 
       {(report.chart_details?.lagna_chart_svg || report.chart_details?.navamsa_chart_svg) && (
@@ -211,6 +231,7 @@ export default function ReportViewer({ report, onRegenerate }: ReportViewerProps
       {SECTIONS.map((section, index) => {
         const rawText = report.sections?.[section.key] || "Section not available yet.";
         const paragraphs = removeTitleEcho(getReadableParagraphs(rawText), section.title);
+        const isOpen = !!openSections[section.key];
 
         return (
           <motion.section
@@ -220,22 +241,36 @@ export default function ReportViewer({ report, onRegenerate }: ReportViewerProps
             transition={{ delay: index * 0.04 }}
             className="bg-[#1A1F2E] rounded-2xl border border-white/10 p-5"
           >
-            <div className="flex items-center gap-2 text-amber-300 mb-3">
-              <span className="text-lg leading-none">{section.icon}</span>
-              <h2 className="text-base font-semibold">{section.title}</h2>
-            </div>
+            <button
+              type="button"
+              onClick={() => toggleSection(section.key)}
+              className="w-full flex items-center justify-between text-left"
+            >
+              <div className="flex items-center gap-2 text-amber-300">
+                <span className="text-lg leading-none">{section.icon}</span>
+                <h2 className="text-base font-semibold">{section.title}</h2>
+              </div>
+              {isOpen ? (
+                <ChevronUp className="w-4 h-4 text-white/50" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-white/50" />
+              )}
+            </button>
 
-            <div className="h-px w-full bg-white/10 mb-4" />
-
-            <div className="text-white/90 text-[15px] leading-8">
-              {paragraphs.length > 0
-                ? paragraphs.map((paragraph, paragraphIndex) => (
-                    <p key={paragraphIndex} className="mb-5 last:mb-0">
-                      {paragraph}
-                    </p>
-                  ))
-                : <p>{cleanupMarkdown(rawText)}</p>}
-            </div>
+            {isOpen && (
+              <>
+                <div className="h-px w-full bg-white/10 my-4" />
+                <div className="text-white/90 text-[15px] leading-8">
+                  {paragraphs.length > 0
+                    ? paragraphs.map((paragraph, paragraphIndex) => (
+                        <p key={paragraphIndex} className="mb-5 last:mb-0">
+                          {paragraph}
+                        </p>
+                      ))
+                    : <p>{cleanupMarkdown(rawText)}</p>}
+                </div>
+              </>
+            )}
           </motion.section>
         );
       })}
