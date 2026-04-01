@@ -4,7 +4,7 @@ const PAYU_BASE_URL = process.env.PAYU_MODE === "live"
   ? "https://info.payu.in/merchant/postservice.php?form=2"
   : "https://test.payu.in/merchant/postservice.php?form=2";
 
-interface PayUTransaction {
+export interface PayUTransaction {
   mihpayid: string;
   txnid: string;
   amount: string;
@@ -38,6 +38,34 @@ interface PayUTransactionResponse {
   Transaction_details: PayUTransaction[];
 }
 
+const PAYU_MAX_DAYS_PER_CHUNK = 7;
+const PAYU_MAX_RETRIES = 4;
+const PAYU_RETRY_BASE_DELAY_MS = 1200;
+const PAYU_MIN_REQUEST_INTERVAL_MS = 900;
+const PAYU_CHUNK_CACHE_TTL_MS = 5 * 60 * 1000;
+const PAYU_RANGE_CACHE_TTL_MS = 90 * 1000;
+
+type CacheEntry<T> = { ts: number; data: T };
+const payuChunkCache = new Map<string, CacheEntry<PayUTransaction[]>>();
+const payuRangeCache = new Map<string, CacheEntry<PayUTransaction[]>>();
+let payuRateLimitedUntil = 0;
+let lastPayURequestAt = 0;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRateLimitMessage(msg: unknown): boolean {
+  const text = String(msg || "").toLowerCase();
+  return text.includes("request") && text.includes("limit");
+}
+
+function getFreshCache<T>(entry: CacheEntry<T> | undefined, ttlMs: number): T | null {
+  if (!entry) return null;
+  if (Date.now() - entry.ts > ttlMs) return null;
+  return entry.data;
+}
+
 function generateHash(params: string): string {
   return crypto.createHash("sha512").update(params).digest("hex");
 }
@@ -48,6 +76,12 @@ export async function getPayUTransactions(
   fromTime?: string, // Format: HH:MM:SS (optional)
   toTime?: string    // Format: HH:MM:SS (optional)
 ): Promise<PayUTransaction[]> {
+  const rangeCacheKey = `${fromDate}|${toDate}|${fromTime || ""}|${toTime || ""}`;
+  const freshRange = getFreshCache(payuRangeCache.get(rangeCacheKey), PAYU_RANGE_CACHE_TTL_MS);
+  if (freshRange) {
+    return freshRange;
+  }
+
   const merchantKey = process.env.PAYU_MERCHANT_KEY;
   const merchantSalt = process.env.PAYU_MERCHANT_SALT;
 
@@ -59,7 +93,9 @@ export async function getPayUTransactions(
   if (fromTime || toTime) {
     const fromDateTime = fromTime ? `${fromDate} ${fromTime}` : `${fromDate} 00:00:00`;
     const toDateTime = toTime ? `${toDate} ${toTime}` : `${toDate} 23:59:59`;
-    return fetchPayUTransactionsChunk(merchantKey, merchantSalt, fromDateTime, toDateTime);
+    const single = await fetchPayUTransactionsChunk(merchantKey, merchantSalt, fromDateTime, toDateTime);
+    payuRangeCache.set(rangeCacheKey, { ts: Date.now(), data: single });
+    return single;
   }
 
   // PayU postservice is most reliable when queried in <= 7-day chunks.
@@ -71,12 +107,11 @@ export async function getPayUTransactions(
 
   const allTransactions: PayUTransaction[] = [];
   const seenTxnIds = new Set<string>();
-  const maxDaysPerChunk = 7;
   let currentStart = new Date(startDate);
 
   while (currentStart.getTime() <= endDate.getTime()) {
     const currentEnd = new Date(currentStart);
-    currentEnd.setUTCDate(currentEnd.getUTCDate() + (maxDaysPerChunk - 1));
+    currentEnd.setUTCDate(currentEnd.getUTCDate() + (PAYU_MAX_DAYS_PER_CHUNK - 1));
     if (currentEnd > endDate) {
       currentEnd.setTime(endDate.getTime());
     }
@@ -111,6 +146,7 @@ export async function getPayUTransactions(
     currentStart = nextStart;
   }
 
+  payuRangeCache.set(rangeCacheKey, { ts: Date.now(), data: allTransactions });
   return allTransactions;
 }
 
@@ -120,6 +156,12 @@ async function fetchPayUTransactionsChunk(
   var1: string,
   var2: string
 ): Promise<PayUTransaction[]> {
+  const chunkKey = `${var1}|${var2}`;
+  const freshChunk = getFreshCache(payuChunkCache.get(chunkKey), PAYU_CHUNK_CACHE_TTL_MS);
+  if (freshChunk) return freshChunk;
+
+  const staleChunk = payuChunkCache.get(chunkKey)?.data || null;
+
   const command = "get_Transaction_Details";
   const hashString = `${merchantKey}|${command}|${var1}|${merchantSalt}`;
   const hash = generateHash(hashString);
@@ -131,41 +173,71 @@ async function fetchPayUTransactionsChunk(
   formData.append("var2", var2);
   formData.append("hash", hash);
 
-  try {
-    const response = await fetch(PAYU_BASE_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "application/json",
-      },
-      body: formData.toString(),
-    });
-
-    const raw = await response.text();
-    let data: PayUTransactionResponse;
+  for (let attempt = 1; attempt <= PAYU_MAX_RETRIES; attempt += 1) {
     try {
-      data = JSON.parse(raw) as PayUTransactionResponse;
-    } catch {
-      throw new Error(`PayU returned non-JSON response: ${raw.slice(0, 200)}`);
-    }
+      const now = Date.now();
+      if (payuRateLimitedUntil > now) {
+        await sleep(payuRateLimitedUntil - now);
+      }
+      const sinceLastRequest = now - lastPayURequestAt;
+      if (sinceLastRequest < PAYU_MIN_REQUEST_INTERVAL_MS) {
+        await sleep(PAYU_MIN_REQUEST_INTERVAL_MS - sinceLastRequest);
+      }
 
-    if (data.status === 1 && data.Transaction_details) {
-      const details = Array.isArray(data.Transaction_details)
-        ? data.Transaction_details
-        : Object.values(data.Transaction_details as any);
-      return details.filter((txn: any) => {
-        const status = String(txn?.status || "").toLowerCase();
-        return status === "success" || status === "captured";
-      }) as PayUTransaction[];
-    }
+      lastPayURequestAt = Date.now();
+      const response = await fetch(PAYU_BASE_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: formData.toString(),
+      });
 
-    // Return empty array if no transactions or error
-    console.log("PayU API response:", data);
-    return [];
-  } catch (error) {
-    console.error("PayU API error:", error);
-    throw error;
+      const raw = await response.text();
+      let data: PayUTransactionResponse;
+      try {
+        data = JSON.parse(raw) as PayUTransactionResponse;
+      } catch {
+        throw new Error(`PayU returned non-JSON response: ${raw.slice(0, 200)}`);
+      }
+
+      if (data.status === 1 && data.Transaction_details) {
+        const details = Array.isArray(data.Transaction_details)
+          ? data.Transaction_details
+          : Object.values(data.Transaction_details as any);
+        const rows = details as PayUTransaction[];
+        payuChunkCache.set(chunkKey, { ts: Date.now(), data: rows });
+        return rows;
+      }
+
+      if (isRateLimitMessage(data.msg)) {
+        const delay = PAYU_RETRY_BASE_DELAY_MS * attempt;
+        payuRateLimitedUntil = Date.now() + delay;
+        if (attempt < PAYU_MAX_RETRIES) {
+          await sleep(delay);
+          continue;
+        }
+      }
+
+      const empty: PayUTransaction[] = [];
+      payuChunkCache.set(chunkKey, { ts: Date.now(), data: empty });
+      return empty;
+    } catch (error) {
+      const delay = PAYU_RETRY_BASE_DELAY_MS * attempt;
+      if (attempt < PAYU_MAX_RETRIES) {
+        await sleep(delay);
+        continue;
+      }
+      if (staleChunk) {
+        console.warn(`Using stale PayU cache for ${chunkKey} after retries`);
+        return staleChunk;
+      }
+      throw error;
+    }
   }
+
+  return staleChunk || [];
 }
 
 function toYMD(date: Date): string {

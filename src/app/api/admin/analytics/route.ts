@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
-import crypto from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { classifyPayUEvent, classifyStoredPaymentEvent } from "@/lib/finance-events";
+import { classifyPayUEvent } from "@/lib/finance-events";
+import { getPayUTransactions } from "@/lib/payu-api";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-const PAYU_BASE_URL = process.env.PAYU_MODE === "live"
-  ? "https://info.payu.in/merchant/postservice?form=2"
-  : "https://test.payu.in/merchant/postservice?form=2";
 
 interface PeakSalesMetric {
   label: string;
@@ -60,16 +56,6 @@ interface SourceStatus {
   configured: boolean;
   connected: boolean;
   message: string;
-}
-
-interface PayUTransaction {
-  amount: string;
-  status: string;
-  addedon: string;
-  net_amount_debit?: string;
-  field9?: string;
-  error_Message?: string;
-  unmappedstatus?: string;
 }
 
 function toNumber(value: unknown): number {
@@ -166,75 +152,6 @@ function buildWeekdaySalesSeries(
       revenueInr: Number(entry.revenueInr.toFixed(2)),
     };
   });
-}
-
-function generateHash(params: string): string {
-  return crypto.createHash("sha512").update(params).digest("hex");
-}
-
-async function fetchPayUTransactionsChunk(fromDate: string, toDate: string): Promise<PayUTransaction[]> {
-  const merchantKey = process.env.PAYU_MERCHANT_KEY;
-  const merchantSalt = process.env.PAYU_MERCHANT_SALT;
-
-  if (!merchantKey || !merchantSalt) return [];
-
-  const command = "get_Transaction_Details";
-  const hashString = `${merchantKey}|${command}|${fromDate}|${merchantSalt}`;
-  const hash = generateHash(hashString);
-
-  const formData = new URLSearchParams();
-  formData.append("key", merchantKey);
-  formData.append("command", command);
-  formData.append("var1", fromDate);
-  formData.append("var2", toDate);
-  formData.append("hash", hash);
-
-  const response = await fetch(PAYU_BASE_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
-    },
-    body: formData.toString(),
-  });
-
-  const rawText = await response.text();
-  let data: any;
-  try {
-    data = JSON.parse(rawText);
-  } catch {
-    return [];
-  }
-
-  if (data.status !== 1 || !data.Transaction_details) return [];
-
-  const rows = Array.isArray(data.Transaction_details)
-    ? data.Transaction_details
-    : Object.values(data.Transaction_details);
-
-  return rows as PayUTransaction[];
-}
-
-async function fetchPayUTransactions(fromDate: string, toDate: string): Promise<PayUTransaction[]> {
-  const all: PayUTransaction[] = [];
-  const start = new Date(`${fromDate}T00:00:00.000Z`);
-  const end = new Date(`${toDate}T00:00:00.000Z`);
-
-  let chunkStart = new Date(start);
-  while (chunkStart <= end) {
-    const chunkEnd = new Date(chunkStart);
-    chunkEnd.setUTCDate(chunkEnd.getUTCDate() + 6);
-    if (chunkEnd > end) chunkEnd.setTime(end.getTime());
-
-    const from = chunkStart.toISOString().split("T")[0];
-    const to = chunkEnd.toISOString().split("T")[0];
-    const rows = await fetchPayUTransactionsChunk(from, to);
-    all.push(...rows);
-
-    chunkStart.setUTCDate(chunkStart.getUTCDate() + 7);
-  }
-
-  return all;
 }
 
 async function fetchExchangeRate(): Promise<number> {
@@ -773,24 +690,66 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false })
       .limit(10000);
 
-    const financialRows = (paymentRows || [])
-      .map((row) => {
-        const event = classifyStoredPaymentEvent(row.payment_status, row.amount);
-        return { ...row, financialKind: event.kind, signedAmountInr: event.signedAmount };
-      })
-      .filter((row) => row.financialKind !== "ignore");
-    const refundRows = financialRows.filter((row) => row.financialKind === "refund");
     const pendingRows = (paymentRows || []).filter((row) => {
       const status = normalizeStatus(row.payment_status);
       return status === "created" || status === "pending";
     });
     const failedRows = (paymentRows || []).filter((row) => normalizeStatus(row.payment_status) === "failed");
 
-    const payuFetchEndDate = dayMode === "business_1130_ist" ? shiftIsoDate(endDate, 1) : endDate;
-    const payuTransactions = await fetchPayUTransactions(startDate, payuFetchEndDate);
-    const hasPayUSalesData = payuTransactions.some(
-      (txn) => classifyPayUEvent(txn as unknown as Record<string, unknown>).kind !== "ignore"
-    );
+    const inRange = (dayKey: string) => dayKey >= startDate && dayKey <= endDate;
+
+    type AggregatedSalesRow = {
+      dayKey: string;
+      hour: number;
+      weekday: string;
+      kind: "sale" | "refund";
+      signedAmount: number;
+    };
+
+    const payuFetchEndForDayMode = dayMode === "business_1130_ist" ? shiftIsoDate(endDate, 1) : endDate;
+    const payuFetchEndForMatrixMode = matrixDayMode === "business_1130_ist" ? shiftIsoDate(endDate, 1) : endDate;
+    const payuFetchEnd = payuFetchEndForDayMode > payuFetchEndForMatrixMode
+      ? payuFetchEndForDayMode
+      : payuFetchEndForMatrixMode;
+    const payuTxns = await getPayUTransactions(startDate, payuFetchEnd);
+
+    type PayUFinancialRow = {
+      created: Date;
+      kind: "sale" | "refund";
+      signedAmount: number;
+    };
+
+    const payuFinancialRows: PayUFinancialRow[] = payuTxns
+      .map((txn) => {
+        const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
+        if (financial.kind === "ignore" || !txn.addedon) return null;
+        const created = new Date(String(txn.addedon).replace(" ", "T") + "+05:30");
+        if (Number.isNaN(created.getTime())) return null;
+        return {
+          created,
+          kind: financial.kind,
+          signedAmount: financial.signedAmount,
+        } as PayUFinancialRow;
+      })
+      .filter((row): row is PayUFinancialRow => !!row);
+
+    const salesRows: AggregatedSalesRow[] = payuFinancialRows
+      .map((row) => {
+        const grouped = getMatrixDateGroup(row.created, dayMode);
+        if (!inRange(grouped.dayKey)) return null;
+        return {
+          dayKey: grouped.dayKey,
+          hour: grouped.hour,
+          weekday: grouped.weekday,
+          kind: row.kind,
+          signedAmount: row.signedAmount,
+        } as AggregatedSalesRow;
+      })
+      .filter((row): row is AggregatedSalesRow => !!row);
+
+    const hasLivePayUSalesData = payuFinancialRows.length > 0;
+    const refundRows = salesRows.filter((row) => row.kind === "refund");
+
     const salesHourlyMap = new Map<string, { count: number; revenueInr: number }>();
     const salesDailyMap = new Map<string, { count: number; revenueInr: number }>();
     const salesWeekdayMap = new Map<string, { count: number; revenueInr: number }>();
@@ -799,80 +758,34 @@ export async function GET(request: NextRequest) {
     let paidOrders = 0;
     let refundedOrders = 0;
 
-    if (hasPayUSalesData) {
-      for (const txn of payuTransactions) {
-        const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
-        if (financial.kind === "ignore") continue;
-        if (!txn.addedon) continue;
-        const created = new Date(txn.addedon.replace(" ", "T") + "+05:30");
-        if (Number.isNaN(created.getTime())) continue;
+    for (const row of salesRows) {
+      const hourLabel = formatHourLabel(row.hour, dayMode);
+      const amount = row.signedAmount;
+      const countDelta = row.kind === "refund" ? -1 : 1;
+      totalRevenueInr += amount;
+      if (row.kind === "sale") paidOrders += 1;
+      if (row.kind === "refund") refundedOrders += 1;
 
-        const grouped = getMatrixDateGroup(created, dayMode);
-        const { dayKey, hour, weekday } = grouped;
-        if (dayKey < startDate || dayKey > endDate) continue;
-        const hourLabel = formatHourLabel(hour, dayMode);
-        const amount = financial.signedAmount;
-        const countDelta = financial.kind === "refund" ? -1 : 1;
-        totalRevenueInr += amount;
-        if (financial.kind === "sale") paidOrders += 1;
-        if (financial.kind === "refund") refundedOrders += 1;
+      const hourEntry = salesHourlyMap.get(hourLabel) || { count: 0, revenueInr: 0 };
+      hourEntry.count += countDelta;
+      hourEntry.revenueInr += amount;
+      salesHourlyMap.set(hourLabel, hourEntry);
 
-        const hourEntry = salesHourlyMap.get(hourLabel) || { count: 0, revenueInr: 0 };
-        hourEntry.count += countDelta;
-        hourEntry.revenueInr += amount;
-        salesHourlyMap.set(hourLabel, hourEntry);
+      const dayEntry = salesDailyMap.get(row.dayKey) || { count: 0, revenueInr: 0 };
+      dayEntry.count += countDelta;
+      dayEntry.revenueInr += amount;
+      salesDailyMap.set(row.dayKey, dayEntry);
 
-        const dayEntry = salesDailyMap.get(dayKey) || { count: 0, revenueInr: 0 };
-        dayEntry.count += countDelta;
-        dayEntry.revenueInr += amount;
-        salesDailyMap.set(dayKey, dayEntry);
+      const dayHourKey = `${row.dayKey}|${row.hour}`;
+      const dayHourEntry = salesDayHourMap.get(dayHourKey) || { count: 0, revenueInr: 0 };
+      dayHourEntry.count += countDelta;
+      dayHourEntry.revenueInr += amount;
+      salesDayHourMap.set(dayHourKey, dayHourEntry);
 
-        const dayHourKey = `${dayKey}|${hour}`;
-        const dayHourEntry = salesDayHourMap.get(dayHourKey) || { count: 0, revenueInr: 0 };
-        dayHourEntry.count += countDelta;
-        dayHourEntry.revenueInr += amount;
-        salesDayHourMap.set(dayHourKey, dayHourEntry);
-
-        const weekdayEntry = salesWeekdayMap.get(weekday) || { count: 0, revenueInr: 0 };
-        weekdayEntry.count += countDelta;
-        weekdayEntry.revenueInr += amount;
-        salesWeekdayMap.set(weekday, weekdayEntry);
-      }
-    } else {
-      for (const row of financialRows) {
-        if (!row.created_at) continue;
-        const created = new Date(row.created_at);
-        const grouped = getMatrixDateGroup(created, dayMode);
-        const { dayKey, hour, weekday } = grouped;
-        if (dayKey < startDate || dayKey > endDate) continue;
-        const hourLabel = formatHourLabel(hour, dayMode);
-        const amount = row.signedAmountInr;
-        const countDelta = row.financialKind === "refund" ? -1 : 1;
-        totalRevenueInr += amount;
-        if (row.financialKind === "sale") paidOrders += 1;
-        if (row.financialKind === "refund") refundedOrders += 1;
-
-        const hourEntry = salesHourlyMap.get(hourLabel) || { count: 0, revenueInr: 0 };
-        hourEntry.count += countDelta;
-        hourEntry.revenueInr += amount;
-        salesHourlyMap.set(hourLabel, hourEntry);
-
-        const dayEntry = salesDailyMap.get(dayKey) || { count: 0, revenueInr: 0 };
-        dayEntry.count += countDelta;
-        dayEntry.revenueInr += amount;
-        salesDailyMap.set(dayKey, dayEntry);
-
-        const dayHourKey = `${dayKey}|${hour}`;
-        const dayHourEntry = salesDayHourMap.get(dayHourKey) || { count: 0, revenueInr: 0 };
-        dayHourEntry.count += countDelta;
-        dayHourEntry.revenueInr += amount;
-        salesDayHourMap.set(dayHourKey, dayHourEntry);
-
-        const weekdayEntry = salesWeekdayMap.get(weekday) || { count: 0, revenueInr: 0 };
-        weekdayEntry.count += countDelta;
-        weekdayEntry.revenueInr += amount;
-        salesWeekdayMap.set(weekday, weekdayEntry);
-      }
+      const weekdayEntry = salesWeekdayMap.get(row.weekday) || { count: 0, revenueInr: 0 };
+      weekdayEntry.count += countDelta;
+      weekdayEntry.revenueInr += amount;
+      salesWeekdayMap.set(row.weekday, weekdayEntry);
     }
 
     const peakSalesHour = pickTopSalesMetric(salesHourlyMap, "N/A");
@@ -896,84 +809,34 @@ export async function GET(request: NextRequest) {
 
     const matrixDailyRevenueMap = new Map<string, number>();
     const matrixDayHourMap = new Map<string, { count: number; revenueInr: number }>();
+    type AggregatedMatrixRow = {
+      dayKey: string;
+      hour: number;
+      kind: "sale" | "refund";
+      signedAmount: number;
+    };
 
-    if (hasPayUSalesData) {
-      const matrixToDate = matrixDayMode === "business_1130_ist" ? shiftIsoDate(endDate, 1) : endDate;
-      const matrixTxns = matrixDayMode === "business_1130_ist"
-        ? await fetchPayUTransactions(startDate, matrixToDate)
-        : payuTransactions;
+    const matrixRows: AggregatedMatrixRow[] = payuFinancialRows
+      .map((row) => {
+        const grouped = getMatrixDateGroup(row.created, matrixDayMode);
+        if (!inRange(grouped.dayKey)) return null;
+        return {
+          dayKey: grouped.dayKey,
+          hour: grouped.hour,
+          kind: row.kind,
+          signedAmount: row.signedAmount,
+        } as AggregatedMatrixRow;
+      })
+      .filter((row): row is AggregatedMatrixRow => !!row);
 
-      for (const txn of matrixTxns) {
-        const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
-        if (financial.kind === "ignore") continue;
-        if (!txn.addedon) continue;
-        const created = new Date(txn.addedon.replace(" ", "T") + "+05:30");
-        if (Number.isNaN(created.getTime())) continue;
-        const amount = financial.signedAmount;
-        const countDelta = financial.kind === "refund" ? -1 : 1;
-        const grouped = getMatrixDateGroup(created, matrixDayMode);
-        if (grouped.dayKey < startDate || grouped.dayKey > endDate) continue;
-
-        matrixDailyRevenueMap.set(grouped.dayKey, (matrixDailyRevenueMap.get(grouped.dayKey) || 0) + amount);
-        const key = `${grouped.dayKey}|${grouped.hour}`;
-        const prev = matrixDayHourMap.get(key) || { count: 0, revenueInr: 0 };
-        prev.count += countDelta;
-        prev.revenueInr += amount;
-        matrixDayHourMap.set(key, prev);
-      }
-    } else {
-      type MatrixPaymentRow = {
-        amount: unknown;
-        payment_status: unknown;
-        created_at: string | null;
-        financialKind: "sale" | "refund" | "ignore";
-        signedAmountInr: number;
-      };
-      let matrixPaidRows: MatrixPaymentRow[] = financialRows.map((row) => ({
-        amount: row.amount,
-        payment_status: row.payment_status,
-        created_at: row.created_at,
-        financialKind: row.financialKind,
-        signedAmountInr: row.signedAmountInr,
-      }));
-      if (matrixDayMode === "business_1130_ist") {
-        const matrixEndIso = `${shiftIsoDate(endDate, 1)}T23:59:59.999Z`;
-        const { data: extraRows } = await supabase
-          .from("payments")
-          .select("amount, payment_status, created_at")
-          .gte("created_at", startIso)
-          .lte("created_at", matrixEndIso)
-          .order("created_at", { ascending: false })
-          .limit(10000);
-
-        matrixPaidRows = (extraRows || [])
-          .map((row) => {
-            const event = classifyStoredPaymentEvent(row.payment_status, row.amount);
-            return {
-              ...row,
-              financialKind: event.kind,
-              signedAmountInr: event.signedAmount,
-            };
-          })
-          .filter((row) => row.financialKind !== "ignore");
-      }
-
-      for (const row of matrixPaidRows) {
-        if (!row.created_at) continue;
-        const created = new Date(row.created_at);
-        if (Number.isNaN(created.getTime())) continue;
-        const amount = row.signedAmountInr;
-        const countDelta = row.financialKind === "refund" ? -1 : 1;
-        const grouped = getMatrixDateGroup(created, matrixDayMode);
-        if (grouped.dayKey < startDate || grouped.dayKey > endDate) continue;
-
-        matrixDailyRevenueMap.set(grouped.dayKey, (matrixDailyRevenueMap.get(grouped.dayKey) || 0) + amount);
-        const key = `${grouped.dayKey}|${grouped.hour}`;
-        const prev = matrixDayHourMap.get(key) || { count: 0, revenueInr: 0 };
-        prev.count += countDelta;
-        prev.revenueInr += amount;
-        matrixDayHourMap.set(key, prev);
-      }
+    for (const row of matrixRows) {
+      const countDelta = row.kind === "refund" ? -1 : 1;
+      matrixDailyRevenueMap.set(row.dayKey, (matrixDailyRevenueMap.get(row.dayKey) || 0) + row.signedAmount);
+      const key = `${row.dayKey}|${row.hour}`;
+      const prev = matrixDayHourMap.get(key) || { count: 0, revenueInr: 0 };
+      prev.count += countDelta;
+      prev.revenueInr += row.signedAmount;
+      matrixDayHourMap.set(key, prev);
     }
 
     for (const dayKey of dateKeys) {
@@ -1095,10 +958,10 @@ export async function GET(request: NextRequest) {
       sources: {
         sales: {
           configured: true,
-          connected: hasPayUSalesData,
-          message: hasPayUSalesData
-            ? "Sales data source: PayU Transactions API."
-            : "PayU API unavailable for this range. Using payments table fallback.",
+          connected: hasLivePayUSalesData,
+          message: hasLivePayUSalesData
+            ? "Sales are sourced from PayU live API for the full selected date range."
+            : "PayU live returned no sales data for the selected date range.",
         },
         googleAnalytics: gaData.sourceStatus,
         clarity: {
@@ -1127,9 +990,9 @@ export async function GET(request: NextRequest) {
           ? `Paywall audience inferred from route: ${paywallSignal.matchedRoute}.`
           : "Paywall audience inferred from payment starts because paywall route traffic was unavailable.",
         "Checkout funnel conversion is calculated using total visitors (not only paywall visitors).",
-        hasPayUSalesData
-          ? "Sales metrics are sourced from PayU transaction API to match Profit Sheet totals."
-          : "Sales metrics are sourced from payments table with refund events subtracted.",
+        hasLivePayUSalesData
+          ? "Sales metrics are sourced from PayU live with refund/chargeback events subtracted."
+          : "PayU live did not return sales rows for this range.",
         refundRows.length > 0 || refundedOrders > 0
           ? "Refund and chargeback events are subtracted from revenue metrics."
           : "No refund events were detected in this range.",

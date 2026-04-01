@@ -1,34 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import crypto from "crypto";
 import { classifyPayUEvent } from "@/lib/finance-events";
+import { getPayUTransactions } from "@/lib/payu-api";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const APP_LAUNCH_DATE = "2026-03-13";
 
-// PayU API URL
-const PAYU_BASE_URL = process.env.PAYU_MODE === "live" 
-  ? "https://info.payu.in/merchant/postservice?form=2"
-  : "https://test.payu.in/merchant/postservice?form=2";
-
 // Meta API
 const META_API_VERSION = "v21.0";
 const META_BASE_URL = `https://graph.facebook.com/${META_API_VERSION}`;
-
-interface PayUTransaction {
-  mihpayid: string;
-  txnid: string;
-  amount: string;
-  status: string;
-  addedon: string;
-  email: string;
-  net_amount_debit?: string;
-  field9?: string;
-  error_Message?: string;
-  unmappedstatus?: string;
-}
 
 interface ProfitSheetRow {
   date: string;
@@ -58,96 +40,6 @@ async function fetchExchangeRate(): Promise<number> {
   }
 }
 
-function generateHash(params: string): string {
-  return crypto.createHash("sha512").update(params).digest("hex");
-}
-
-// Fetch PayU transactions for a single chunk (max 7 days)
-async function fetchPayUTransactionsChunk(fromDate: string, toDate: string): Promise<PayUTransaction[]> {
-  const merchantKey = process.env.PAYU_MERCHANT_KEY;
-  const merchantSalt = process.env.PAYU_MERCHANT_SALT;
-
-  if (!merchantKey || !merchantSalt) {
-    throw new Error("PayU credentials not configured");
-  }
-
-  const command = "get_Transaction_Details";
-  const hashString = `${merchantKey}|${command}|${fromDate}|${merchantSalt}`;
-  const hash = generateHash(hashString);
-
-  const formData = new URLSearchParams();
-  formData.append("key", merchantKey);
-  formData.append("command", command);
-  formData.append("var1", fromDate);
-  formData.append("var2", toDate);
-  formData.append("hash", hash);
-
-  const response = await fetch(PAYU_BASE_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "Accept": "application/json",
-    },
-    body: formData.toString(),
-  });
-
-  const responseText = await response.text();
-  let data;
-  try {
-    data = JSON.parse(responseText);
-  } catch {
-    console.error("PayU response parse error for chunk", fromDate, "-", toDate);
-    return [];
-  }
-
-  if (data.status === 1 && data.Transaction_details) {
-    const allTxns = Array.isArray(data.Transaction_details) 
-      ? data.Transaction_details 
-      : Object.values(data.Transaction_details);
-    return allTxns as PayUTransaction[];
-  }
-
-  if (data.msg) {
-    console.log("PayU chunk response:", fromDate, "-", toDate, "msg:", data.msg);
-  }
-
-  return [];
-}
-
-// Fetch PayU transactions for a date range (handles >7 day ranges by chunking)
-async function fetchPayUTransactions(fromDate: string, toDate: string): Promise<PayUTransaction[]> {
-  const startDate = new Date(fromDate);
-  const endDate = new Date(toDate);
-  const allTransactions: PayUTransaction[] = [];
-  
-  // PayU API has a 7-day limit, so we fetch in chunks
-  const MAX_DAYS = 7;
-  let currentStart = new Date(startDate);
-  
-  while (currentStart <= endDate) {
-    const currentEnd = new Date(currentStart);
-    currentEnd.setDate(currentEnd.getDate() + MAX_DAYS - 1);
-    
-    // Don't go past the end date
-    if (currentEnd > endDate) {
-      currentEnd.setTime(endDate.getTime());
-    }
-    
-    const chunkFromDate = currentStart.toISOString().split("T")[0];
-    const chunkToDate = currentEnd.toISOString().split("T")[0];
-    
-    console.log(`Fetching PayU chunk: ${chunkFromDate} to ${chunkToDate}`);
-    
-    const chunkTransactions = await fetchPayUTransactionsChunk(chunkFromDate, chunkToDate);
-    allTransactions.push(...chunkTransactions);
-    
-    // Move to next chunk
-    currentStart.setDate(currentEnd.getDate() + 1);
-  }
-  
-  console.log(`Total PayU transactions fetched: ${allTransactions.length}`);
-  return allTransactions;
-}
 
 // Fetch Meta Ads daily spend for a date range
 async function fetchMetaAdsDailySpend(startDate: string, endDate: string): Promise<Map<string, number>> {
@@ -214,6 +106,36 @@ function getDayOfWeek(dateStr: string): string {
   return days[date.getDay()];
 }
 
+function getIstDateTimeParts(date: Date): { dayKey: string; hour: number; minute: number } {
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = formatter.formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || "00";
+  const dayKey = `${get("year")}-${get("month")}-${get("day")}`;
+  const hour = Number(get("hour"));
+  const minute = Number(get("minute"));
+  return { dayKey, hour: Number.isFinite(hour) ? hour : 0, minute: Number.isFinite(minute) ? minute : 0 };
+}
+
+function getCostaRicaBusinessDayKeyFromDate(date: Date): string {
+  const { dayKey, hour, minute } = getIstDateTimeParts(date);
+  const isBeforeBoundary = hour < 11 || (hour === 11 && minute < 30);
+  return isBeforeBoundary ? addDaysToIsoDate(dayKey, -1) : dayKey;
+}
+
+function addDaysToIsoDate(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().split("T")[0];
+}
+
 export async function GET(request: NextRequest) {
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -251,10 +173,6 @@ export async function GET(request: NextRequest) {
     const exchangeRate = customExchangeRate ? parseFloat(customExchangeRate) : await fetchExchangeRate();
     console.log(`Using exchange rate: ${exchangeRate}`);
 
-    // Fetch PayU transactions for the entire range
-    const transactions = await fetchPayUTransactions(startDate, endDate);
-    console.log(`Fetched ${transactions.length} PayU transactions for profit sheet`);
-
     // Fetch Meta Ads daily spend (in USD)
     const metaSpendMap = await fetchMetaAdsDailySpend(startDate, endDate);
     console.log(`Fetched Meta Ads spend for ${metaSpendMap.size} days`);
@@ -268,6 +186,38 @@ export async function GET(request: NextRequest) {
       current.setDate(current.getDate() + 1);
     }
 
+    type FinancialRow = {
+      createdAt: Date;
+      dayKey: string;
+      kind: "sale" | "refund";
+      amount: number;
+      signedAmount: number;
+    };
+
+    const payuFetchEnd = addDaysToIsoDate(endDate, 1);
+    const payuTransactions = await getPayUTransactions(startDate, payuFetchEnd);
+    const financialRows: FinancialRow[] = payuTransactions
+      .map((txn) => {
+        const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
+        if (financial.kind === "ignore") return null;
+        const createdAt = new Date(String(txn.addedon || "").replace(" ", "T") + "+05:30");
+        if (Number.isNaN(createdAt.getTime())) return null;
+        const dayKey = getCostaRicaBusinessDayKeyFromDate(createdAt);
+        if (dayKey < startDate || dayKey > endDate) return null;
+        return {
+          createdAt,
+          dayKey,
+          kind: financial.kind,
+          amount: financial.amount,
+          signedAmount: financial.signedAmount,
+        } as FinancialRow;
+      })
+      .filter((row): row is FinancialRow => !!row);
+
+    const sourceUsed = "payu_live";
+
+    console.log(`Profit sheet financial source: ${sourceUsed}, rows: ${financialRows.length}`);
+
     // Build profit sheet rows
     const profitSheet: ProfitSheetRow[] = dates.map(costaRicaDate => {
       const { start: istStart, end: istEnd } = getISTRangeForCostaRicaDate(costaRicaDate);
@@ -277,28 +227,19 @@ export async function GET(request: NextRequest) {
         console.log(`Profit Sheet Debug - Date: ${costaRicaDate}`);
         console.log(`IST Start: ${istStart.toISOString()} (${istStart.toString()})`);
         console.log(`IST End: ${istEnd.toISOString()} (${istEnd.toString()})`);
-        if (transactions.length > 0) {
-          const sampleTxn = transactions[0];
-          const sampleDate = new Date(sampleTxn.addedon.replace(" ", "T") + "+05:30");
-          console.log(`Sample txn: ${sampleTxn.addedon} -> ${sampleDate.toISOString()}`);
+        if (financialRows.length > 0) {
+          const sample = financialRows[0];
+          console.log(`Sample financial row: kind=${sample.kind}, amount=${sample.signedAmount}, at=${sample.createdAt.toISOString()}`);
         }
       }
       
-      // Filter transactions for this Costa Rica day (IST 11:30 AM to next day 11:29 AM)
-      const dayTransactions = transactions.filter(txn => {
-        // PayU addedon is in IST format: "2026-03-15 14:03:53"
-        const txnDate = new Date(txn.addedon.replace(" ", "T") + "+05:30");
-        return txnDate >= istStart && txnDate <= istEnd;
-      });
+      // Filter transactions for this Costa Rica day (historical from Supabase, current day optionally overlaid from PayU live)
+      const dayTransactions = financialRows.filter((txn) => txn.dayKey === costaRicaDate);
 
-      const classified = dayTransactions
-        .map((txn) => classifyPayUEvent(txn as unknown as Record<string, unknown>))
-        .filter((event) => event.kind !== "ignore");
-
-      const grossRevenue = classified
+      const grossRevenue = dayTransactions
         .filter((event) => event.kind === "sale")
         .reduce((sum, event) => sum + event.amount, 0);
-      const refundAmount = classified
+      const refundAmount = dayTransactions
         .filter((event) => event.kind === "refund")
         .reduce((sum, event) => sum + event.amount, 0);
       const revenue = grossRevenue - refundAmount;
@@ -309,8 +250,8 @@ export async function GET(request: NextRequest) {
       const netRevenue = revenue - gst - adsCostINR;
       const profitPercent = revenue > 0 ? (netRevenue / revenue) * 100 : 0;
       const roas = adsCostINR > 0 ? revenue / adsCostINR : 0;
-      const salesCount = classified.filter((event) => event.kind === "sale").length;
-      const refundCount = classified.filter((event) => event.kind === "refund").length;
+      const salesCount = dayTransactions.filter((event) => event.kind === "sale").length;
+      const refundCount = dayTransactions.filter((event) => event.kind === "refund").length;
 
       return {
         date: costaRicaDate,
@@ -369,6 +310,7 @@ export async function GET(request: NextRequest) {
         profitPercent: overallProfitPercent,
       },
       exchangeRate,
+      source: sourceUsed,
       dateRange: { start: startDate, end: endDate },
     });
   } catch (error: any) {

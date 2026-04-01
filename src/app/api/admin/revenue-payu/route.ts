@@ -13,6 +13,8 @@ const APP_LAUNCH_DATE = "2026-03-13";
 const PAYU_BASE_URL = process.env.PAYU_MODE === "live" 
   ? "https://info.payu.in/merchant/postservice?form=2"
   : "https://test.payu.in/merchant/postservice?form=2";
+const PAYU_RATE_LIMIT_COOLDOWN_MS = 5 * 60 * 1000;
+let payuRateLimitedUntil = 0;
 
 interface PayUTransaction {
   mihpayid: string;
@@ -46,6 +48,10 @@ function generateHash(params: string): string {
 
 // Fetch PayU transactions for a single chunk (max 7 days)
 async function fetchPayUTransactionsChunk(fromDate: string, toDate: string): Promise<PayUTransaction[]> {
+  if (Date.now() < payuRateLimitedUntil) {
+    return [];
+  }
+
   const merchantKey = process.env.PAYU_MERCHANT_KEY;
   const merchantSalt = process.env.PAYU_MERCHANT_SALT;
 
@@ -90,7 +96,12 @@ async function fetchPayUTransactionsChunk(fromDate: string, toDate: string): Pro
     }
 
     if (data.msg) {
-      console.log("PayU chunk response:", fromDate, "-", toDate, "msg:", data.msg);
+      const msg = String(data.msg);
+      console.log("PayU chunk response:", fromDate, "-", toDate, "msg:", msg);
+      if (msg.toLowerCase().includes("request") && msg.toLowerCase().includes("limit")) {
+        payuRateLimitedUntil = Date.now() + PAYU_RATE_LIMIT_COOLDOWN_MS;
+        console.warn(`PayU rate limited (revenue-payu). Cooling down for ${PAYU_RATE_LIMIT_COOLDOWN_MS / 1000}s`);
+      }
     }
 
     return [];
@@ -111,6 +122,11 @@ async function fetchPayUTransactions(fromDate: string, toDate: string): Promise<
   let currentStart = new Date(startDate);
   
   while (currentStart <= endDate) {
+    if (Date.now() < payuRateLimitedUntil) {
+      console.warn("Skipping remaining PayU revenue chunks due to active rate-limit cooldown");
+      break;
+    }
+
     const currentEnd = new Date(currentStart);
     currentEnd.setDate(currentEnd.getDate() + MAX_DAYS - 1);
     
@@ -156,6 +172,20 @@ function formatDateForPayU(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getIstDateKey(date: Date): string {
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((p) => p.type === "year")?.value || "1970";
+  const month = parts.find((p) => p.type === "month")?.value || "01";
+  const day = parts.find((p) => p.type === "day")?.value || "01";
   return `${year}-${month}-${day}`;
 }
 
@@ -229,42 +259,38 @@ export async function GET(request: NextRequest) {
       payuStartDate = APP_LAUNCH_DATE;
     }
 
-    // Fetch transactions from PayU
+    const toPayUDate = (value: string) => new Date(value.replace(" ", "T") + "+05:30");
+    if (!filterStartTime) {
+      filterStartTime = new Date(`${payuStartDate}T00:00:00+05:30`);
+    }
+    if (!filterEndTime) {
+      filterEndTime = new Date(`${payuEndDate}T23:59:59+05:30`);
+    }
+
     let transactions: PayUTransaction[] = [];
     try {
       transactions = await fetchPayUTransactions(payuStartDate, payuEndDate);
     } catch (payuError: any) {
       console.error("PayU fetch error:", payuError);
-      return NextResponse.json({ 
-        error: "Failed to fetch PayU transactions", 
-        details: payuError.message 
-      }, { status: 500 });
+      return NextResponse.json(
+        { error: "Failed to fetch PayU transactions", details: payuError?.message || "unknown error" },
+        { status: 500 }
+      );
     }
 
-    // Filter by exact time if specified
-    console.log("Before time filter:", transactions.length, "transactions");
-    console.log("Filter start:", filterStartTime?.toISOString(), "Filter end:", filterEndTime?.toISOString());
-    
     if (filterStartTime && filterEndTime) {
-      transactions = transactions.filter(txn => {
-        // PayU addedon format: "2026-03-15 14:03:53" (IST)
-        const txnDate = new Date(txn.addedon.replace(" ", "T") + "+05:30");
-        const isInRange = txnDate >= filterStartTime! && txnDate <= filterEndTime!;
-        if (!isInRange) {
-          console.log("Filtered out:", txn.addedon, "->", txnDate.toISOString());
-        }
-        return isInRange;
+      transactions = transactions.filter((txn) => {
+        const txnDate = toPayUDate(txn.addedon);
+        return txnDate >= filterStartTime! && txnDate <= filterEndTime!;
       });
     }
-    
-    console.log("After time filter:", transactions.length, "transactions");
 
-    const toPayUDate = (value: string) => new Date(value.replace(" ", "T") + "+05:30");
-
-    // Keep only sale/refund financial events and attach signed amount.
     const processedTransactions = transactions
       .map((txn) => {
         const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
+        if (financial.kind === "ignore") return null;
+        const txnDate = toPayUDate(txn.addedon);
+        if (Number.isNaN(txnDate.getTime())) return null;
         return {
           id: txn.mihpayid,
           payuId: txn.mihpayid,
@@ -278,7 +304,7 @@ export async function GET(request: NextRequest) {
           name: txn.firstname || "Customer",
           productInfo: txn.productinfo,
           date: txn.addedon,
-          dateIST: toPayUDate(txn.addedon),
+          dateIST: txnDate,
           userId: txn.udf1 || "",
           type: txn.udf2 || "bundle",
           bundleId: txn.udf3 || "",
@@ -289,7 +315,9 @@ export async function GET(request: NextRequest) {
           netAmount: parseFloat(txn.net_amount_debit) || parseFloat(txn.amount) || 0,
         };
       })
-      .filter((txn) => txn.financialKind !== "ignore");
+      .filter((txn): txn is NonNullable<typeof txn> => !!txn);
+
+    const sourceUsed = "payu_live";
 
     const saleTransactions = processedTransactions.filter((txn) => txn.financialKind === "sale");
     const refundTransactions = processedTransactions.filter((txn) => txn.financialKind === "refund");
@@ -336,7 +364,7 @@ export async function GET(request: NextRequest) {
     // Revenue by day (for chart)
     const revenueByDay: Record<string, number> = {};
     processedTransactions.forEach((txn) => {
-      const dateStr = txn.date.split(" ")[0]; // Get just the date part
+      const dateStr = getIstDateKey(txn.dateIST);
       revenueByDay[dateStr] = (revenueByDay[dateStr] || 0) + txn.signedAmount;
     });
 
@@ -344,12 +372,12 @@ export async function GET(request: NextRequest) {
       .map(([date, revenue]) => ({ date, revenue }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
-    // Calculate period metrics
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    // Calculate period metrics (IST boundaries)
+    const todayIstKey = getIstDateKey(new Date());
+    const startOfToday = new Date(`${todayIstKey}T00:00:00+05:30`);
     const startOfWeek = new Date(startOfToday);
     startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfMonth = new Date(`${todayIstKey.slice(0, 7)}-01T00:00:00+05:30`);
 
     const revenueToday = processedTransactions
       .filter((txn) => txn.dateIST >= startOfToday)
@@ -385,7 +413,7 @@ export async function GET(request: NextRequest) {
       }));
 
     return NextResponse.json({
-      source: "payu",
+      source: sourceUsed,
       currency: "INR",
       dateRange: {
         start: payuStartDate,

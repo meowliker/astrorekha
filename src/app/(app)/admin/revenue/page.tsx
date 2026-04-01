@@ -385,6 +385,7 @@ export default function AdminRevenuePage() {
   // Analytics tab
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [analyticsStartDate, setAnalyticsStartDate] = useState<string>("2026-03-13");
   const [analyticsEndDate, setAnalyticsEndDate] = useState<string>(
     new Date().toISOString().split("T")[0]
@@ -394,6 +395,7 @@ export default function AdminRevenuePage() {
   // Profit Sheet state
   const [profitSheetData, setProfitSheetData] = useState<ProfitSheetRow[]>([]);
   const [profitSheetLoading, setProfitSheetLoading] = useState(false);
+  const [profitSheetError, setProfitSheetError] = useState<string | null>(null);
   const [profitSheetStartDate, setProfitSheetStartDate] = useState<string>("2026-03-13");
   const [profitSheetEndDate, setProfitSheetEndDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const [profitSheetFilter, setProfitSheetFilter] = useState<string>("all");
@@ -538,6 +540,7 @@ export default function AdminRevenuePage() {
   const fetchProfitSheet = async (customRate?: number) => {
     try {
       setProfitSheetLoading(true);
+      setProfitSheetError(null);
       const token = localStorage.getItem("admin_session_token");
       if (!token) return;
       
@@ -550,18 +553,30 @@ export default function AdminRevenuePage() {
       }
       
       const res = await fetch(url);
-      if (res.ok) {
-        const result = await res.json();
-        setProfitSheetData(result.rows || []);
-        if (result.exchangeRate) {
-          setProfitSheetExchangeRate(result.exchangeRate);
-          if (!profitSheetCustomExchangeRate) {
-            setProfitSheetCustomExchangeRate(result.exchangeRate.toFixed(2));
-          }
+      if (res.status === 401) {
+        localStorage.removeItem("admin_session_token");
+        localStorage.removeItem("admin_session_expiry");
+        router.push("/admin/login");
+        return;
+      }
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed to fetch profit sheet" }));
+        throw new Error(err.error || "Failed to fetch profit sheet");
+      }
+
+      const result = await res.json();
+      setProfitSheetData(result.rows || []);
+      if (result.exchangeRate) {
+        setProfitSheetExchangeRate(result.exchangeRate);
+        if (!profitSheetCustomExchangeRate) {
+          setProfitSheetCustomExchangeRate(result.exchangeRate.toFixed(2));
         }
       }
     } catch (err) {
       console.error("Profit sheet fetch error:", err);
+      setProfitSheetError(err instanceof Error ? err.message : "Failed to fetch profit sheet");
+      setProfitSheetData([]);
     } finally {
       setProfitSheetLoading(false);
     }
@@ -609,6 +624,7 @@ export default function AdminRevenuePage() {
   const fetchAnalytics = async () => {
     try {
       setAnalyticsLoading(true);
+      setAnalyticsError(null);
       const token = localStorage.getItem("admin_session_token");
       if (!token) return;
 
@@ -617,6 +633,12 @@ export default function AdminRevenuePage() {
       )}&endDate=${encodeURIComponent(analyticsEndDate)}&dayMode=${encodeURIComponent(analyticsDayMode)}`;
 
       const res = await fetch(url, { cache: "no-store" });
+      if (res.status === 401) {
+        localStorage.removeItem("admin_session_token");
+        localStorage.removeItem("admin_session_expiry");
+        router.push("/admin/login");
+        return;
+      }
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "Failed to fetch analytics" }));
         throw new Error(err.error || "Failed to fetch analytics");
@@ -625,6 +647,8 @@ export default function AdminRevenuePage() {
       setAnalyticsData(result);
     } catch (err) {
       console.error("Analytics fetch error:", err);
+      setAnalyticsError(err instanceof Error ? err.message : "Failed to fetch analytics");
+      setAnalyticsData(null);
     } finally {
       setAnalyticsLoading(false);
     }
@@ -1609,6 +1633,7 @@ export default function AdminRevenuePage() {
           <ProfitSheetTab
             data={profitSheetData}
             loading={profitSheetLoading}
+            error={profitSheetError}
             startDate={profitSheetStartDate}
             endDate={profitSheetEndDate}
             setStartDate={setProfitSheetStartDate}
@@ -1651,6 +1676,7 @@ export default function AdminRevenuePage() {
           <AnalyticsTab
             data={analyticsData}
             loading={analyticsLoading}
+            error={analyticsError}
             startDate={analyticsStartDate}
             endDate={analyticsEndDate}
             setStartDate={setAnalyticsStartDate}
@@ -1669,6 +1695,7 @@ export default function AdminRevenuePage() {
 function ProfitSheetTab({
   data,
   loading,
+  error,
   startDate,
   endDate,
   setStartDate,
@@ -1684,6 +1711,7 @@ function ProfitSheetTab({
 }: {
   data: ProfitSheetRow[];
   loading: boolean;
+  error: string | null;
   startDate: string;
   endDate: string;
   setStartDate: (v: string) => void;
@@ -1841,6 +1869,11 @@ function ProfitSheetTab({
           Note: Each date represents Costa Rica timezone (UTC-6). Revenue is calculated from 11:30 AM IST to next day 11:29 AM IST. Ads cost is fetched in USD and converted to INR.
         </p>
       </div>
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-300">
+          {error}
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
@@ -2331,6 +2364,7 @@ function MetaBreakdownTab({
 function AnalyticsTab({
   data,
   loading,
+  error,
   startDate,
   endDate,
   setStartDate,
@@ -2341,6 +2375,7 @@ function AnalyticsTab({
 }: {
   data: AnalyticsData | null;
   loading: boolean;
+  error: string | null;
   startDate: string;
   endDate: string;
   setStartDate: (value: string) => void;
@@ -3593,6 +3628,11 @@ function AnalyticsTab({
           </p>
         )}
       </div>
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-300">
+          {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="bg-[#1A2235] rounded-xl p-10 border border-white/10 flex items-center justify-center gap-2">
