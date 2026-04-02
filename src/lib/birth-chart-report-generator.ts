@@ -17,6 +17,33 @@ type ReportSections = {
 
 const SYSTEM_PROMPT = `You are an expert Vedic astrologer writing a personalized birth chart report. Use authentic Jyotish principles. Write in warm, flowing second-person prose. No bullet points. Reference specific chart placements in every paragraph. Each section should be 2-3 paragraphs unless specified otherwise.`;
 
+const SIGN_LORD_BY_NAME: Record<string, string> = {
+  aries: "Mars",
+  mesha: "Mars",
+  taurus: "Venus",
+  vrishabha: "Venus",
+  gemini: "Mercury",
+  mithuna: "Mercury",
+  cancer: "Moon",
+  karka: "Moon",
+  leo: "Sun",
+  simha: "Sun",
+  virgo: "Mercury",
+  kanya: "Mercury",
+  libra: "Venus",
+  tula: "Venus",
+  scorpio: "Mars",
+  vrischika: "Mars",
+  sagittarius: "Jupiter",
+  dhanu: "Jupiter",
+  capricorn: "Saturn",
+  makara: "Saturn",
+  aquarius: "Saturn",
+  kumbha: "Saturn",
+  pisces: "Jupiter",
+  meena: "Jupiter",
+};
+
 function isObject(value: unknown): value is AnyRecord {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -73,16 +100,53 @@ function getAnthropicText(response: any): string {
   return firstText?.text?.trim() || "";
 }
 
+function getSignLord(sign: string): string {
+  const key = String(sign || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\w]/g, "");
+  return SIGN_LORD_BY_NAME[key] || "—";
+}
+
+function getAscendantFromPlanetPositions(chartData: AnyRecord): { lagna: string; lagnaLord: string } {
+  const list = Array.isArray(chartData?.planet_positions) ? chartData.planet_positions : [];
+  const ascendant = list.find((item: any) => String(item?.name || "").toLowerCase() === "ascendant");
+
+  const lagna = ascendant?.rasi?.name || "";
+  const lagnaLord = ascendant?.rasi?.lord?.name || getSignLord(lagna);
+
+  return {
+    lagna: lagna || "",
+    lagnaLord: lagnaLord === "—" ? "" : lagnaLord,
+  };
+}
+
 export async function generateBirthChartReport(
   chartData: Record<string, any>,
   userProfile: Record<string, any>,
   user: Record<string, any>
 ): Promise<{ sections: Record<string, string> }> {
   const mergedChart = isObject(chartData?.data) ? { ...chartData, ...chartData.data } : chartData;
+  const ascendantFromPlanetPositions = getAscendantFromPlanetPositions(mergedChart);
 
   const name = userProfile?.name || userProfile?.full_name || "you";
-  const lagna = mergedChart?.lagna || mergedChart?.ascendant || mergedChart?.kundli?.nakshatra_details?.zodiac?.name || "—";
-  const lagnaLord = mergedChart?.lagna_lord || mergedChart?.ascendant_lord || "—";
+  const lagna =
+    ascendantFromPlanetPositions.lagna ||
+    mergedChart?.planets?.Ascendant?.zodiac_sign ||
+    mergedChart?.lagna ||
+    mergedChart?.ascendant ||
+    mergedChart?.chart?.ascendant?.sidereal?.sign ||
+    mergedChart?.chart?.ascendant?.sign ||
+    mergedChart?.chart?.big_three?.rising?.sign ||
+    mergedChart?.kundli?.nakshatra_details?.zodiac?.name ||
+    "—";
+  const lagnaLord =
+    mergedChart?.lagna_lord ||
+    mergedChart?.ascendant_lord ||
+    mergedChart?.planets?.Ascendant?.lord ||
+    ascendantFromPlanetPositions.lagnaLord ||
+    getSignLord(lagna) ||
+    "—";
   const moonSign =
     mergedChart?.moon_sign ||
     mergedChart?.kundli?.nakshatra_details?.chandra_rasi?.name ||

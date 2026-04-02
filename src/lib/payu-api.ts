@@ -1,11 +1,13 @@
 import crypto from "crypto";
+import { classifyPayUEvent } from "@/lib/finance-events";
 
 const PAYU_BASE_URL = process.env.PAYU_MODE === "live"
   ? "https://info.payu.in/merchant/postservice.php?form=2"
   : "https://test.payu.in/merchant/postservice.php?form=2";
 
 export interface PayUTransaction {
-  mihpayid: string;
+  mihpayid?: string;
+  id?: string;
   txnid: string;
   amount: string;
   status: string;
@@ -20,16 +22,19 @@ export interface PayUTransaction {
   udf3: string; // bundleId
   udf4: string; // feature
   udf5: string; // coins
-  bank_ref_num: string;
+  bank_ref_num?: string;
+  bank_ref_no?: string;
   bankcode: string;
   error_code: string;
   error_Message: string;
-  net_amount_debit: string;
+  net_amount_debit?: string;
+  transaction_fee?: string;
   discount: string;
   offer_key: string;
   offer_type: string;
   offer_availed: string;
   field9: string; // Transaction message
+  unmappedstatus?: string;
 }
 
 interface PayUTransactionResponse {
@@ -38,16 +43,37 @@ interface PayUTransactionResponse {
   Transaction_details: PayUTransaction[];
 }
 
+interface PayURefundRecord {
+  PayuID?: string;
+  RequestID?: string;
+  RefundToken?: string;
+  Amount?: string;
+  Status?: string;
+  RefundCreationDate?: string;
+  success_at?: string;
+  bank_ref_no?: string;
+  bank_arn?: string;
+}
+
+interface PayURefundResponse {
+  status: number;
+  msg: string;
+  "Refund Details"?: Record<string, PayURefundRecord[] | PayURefundRecord>;
+}
+
 const PAYU_MAX_DAYS_PER_CHUNK = 7;
 const PAYU_MAX_RETRIES = 4;
 const PAYU_RETRY_BASE_DELAY_MS = 1200;
 const PAYU_MIN_REQUEST_INTERVAL_MS = 900;
 const PAYU_CHUNK_CACHE_TTL_MS = 5 * 60 * 1000;
 const PAYU_RANGE_CACHE_TTL_MS = 90 * 1000;
+const PAYU_REFUND_CACHE_TTL_MS = 5 * 60 * 1000;
+const PAYU_REFUND_BATCH_SIZE = 25;
 
 type CacheEntry<T> = { ts: number; data: T };
 const payuChunkCache = new Map<string, CacheEntry<PayUTransaction[]>>();
 const payuRangeCache = new Map<string, CacheEntry<PayUTransaction[]>>();
+const payuRefundBatchCache = new Map<string, CacheEntry<PayURefundRecord[]>>();
 let payuRateLimitedUntil = 0;
 let lastPayURequestAt = 0;
 
@@ -68,6 +94,74 @@ function getFreshCache<T>(entry: CacheEntry<T> | undefined, ttlMs: number): T | 
 
 function generateHash(params: string): string {
   return crypto.createHash("sha512").update(params).digest("hex");
+}
+
+function normalizeToken(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function normalizeAmountToken(value: unknown): string {
+  const amount = Number(value ?? NaN);
+  return Number.isFinite(amount) ? amount.toFixed(2) : "";
+}
+
+function toNumber(value: unknown): number {
+  const amount = Number(value ?? NaN);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function toIsoAmountToken(value: unknown): string {
+  return toNumber(value).toFixed(2);
+}
+
+function normalizePayUDateTime(value: unknown): string {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  const parsed = new Date(text.replace(" ", "T") + "+05:30");
+  return Number.isNaN(parsed.getTime()) ? "" : text;
+}
+
+function getRefundDuplicateKey(txnid: string, payuId: string, amount: number): string {
+  return `${normalizeToken(txnid)}|${normalizeToken(payuId)}|${amount.toFixed(2)}`;
+}
+
+function parseRefundDetails(data: PayURefundResponse): PayURefundRecord[] {
+  const container = data?.["Refund Details"];
+  if (!container || typeof container !== "object") return [];
+
+  const rows: PayURefundRecord[] = [];
+  for (const value of Object.values(container)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item && typeof item === "object") rows.push(item);
+      }
+      continue;
+    }
+    if (value && typeof value === "object") {
+      rows.push(value);
+    }
+  }
+  return rows;
+}
+
+export function getPayUPaymentId(txn: Partial<PayUTransaction>): string {
+  const value = (txn as any)?.mihpayid ?? (txn as any)?.id ?? "";
+  return String(value || "").trim();
+}
+
+export function getPayUEventFingerprint(txn: Partial<PayUTransaction>): string {
+  return [
+    normalizeToken(txn?.txnid),
+    normalizeToken(getPayUPaymentId(txn)),
+    normalizeToken((txn as any)?.status),
+    normalizeToken((txn as any)?.addedon),
+    normalizeAmountToken((txn as any)?.amount),
+    normalizeAmountToken((txn as any)?.amt),
+    normalizeAmountToken((txn as any)?.transaction_fee),
+    normalizeToken((txn as any)?.field9),
+    normalizeToken((txn as any)?.error_Message),
+    normalizeToken((txn as any)?.unmappedstatus),
+  ].join("|");
 }
 
 export async function getPayUTransactions(
@@ -94,8 +188,9 @@ export async function getPayUTransactions(
     const fromDateTime = fromTime ? `${fromDate} ${fromTime}` : `${fromDate} 00:00:00`;
     const toDateTime = toTime ? `${toDate} ${toTime}` : `${toDate} 23:59:59`;
     const single = await fetchPayUTransactionsChunk(merchantKey, merchantSalt, fromDateTime, toDateTime);
-    payuRangeCache.set(rangeCacheKey, { ts: Date.now(), data: single });
-    return single;
+    const enrichedSingle = await enrichTransactionsWithRefundDetails(merchantKey, merchantSalt, single);
+    payuRangeCache.set(rangeCacheKey, { ts: Date.now(), data: enrichedSingle });
+    return enrichedSingle;
   }
 
   // PayU postservice is most reliable when queried in <= 7-day chunks.
@@ -106,7 +201,7 @@ export async function getPayUTransactions(
   }
 
   const allTransactions: PayUTransaction[] = [];
-  const seenTxnIds = new Set<string>();
+  const seenEventKeys = new Set<string>();
   let currentStart = new Date(startDate);
 
   while (currentStart.getTime() <= endDate.getTime()) {
@@ -126,9 +221,9 @@ export async function getPayUTransactions(
     );
 
     for (const txn of chunkTransactions) {
-      if (!txn?.txnid) continue;
-      if (seenTxnIds.has(txn.txnid)) continue;
-      seenTxnIds.add(txn.txnid);
+      const eventKey = getPayUEventFingerprint(txn);
+      if (seenEventKeys.has(eventKey)) continue;
+      seenEventKeys.add(eventKey);
       allTransactions.push(txn);
     }
 
@@ -146,8 +241,13 @@ export async function getPayUTransactions(
     currentStart = nextStart;
   }
 
-  payuRangeCache.set(rangeCacheKey, { ts: Date.now(), data: allTransactions });
-  return allTransactions;
+  const enrichedTransactions = await enrichTransactionsWithRefundDetails(
+    merchantKey,
+    merchantSalt,
+    allTransactions
+  );
+  payuRangeCache.set(rangeCacheKey, { ts: Date.now(), data: enrichedTransactions });
+  return enrichedTransactions;
 }
 
 async function fetchPayUTransactionsChunk(
@@ -240,6 +340,211 @@ async function fetchPayUTransactionsChunk(
   return staleChunk || [];
 }
 
+async function fetchPayURefundDetailsBatch(
+  merchantKey: string,
+  merchantSalt: string,
+  txnIds: string[]
+): Promise<PayURefundRecord[]> {
+  const cleanTxnIds = txnIds.map((id) => String(id || "").trim()).filter(Boolean);
+  if (cleanTxnIds.length === 0) return [];
+
+  const var1 = cleanTxnIds.join("|");
+  const cacheKey = `refunds|${var1}`;
+  const fresh = getFreshCache(payuRefundBatchCache.get(cacheKey), PAYU_REFUND_CACHE_TTL_MS);
+  if (fresh) return fresh;
+
+  const stale = payuRefundBatchCache.get(cacheKey)?.data || null;
+
+  const command = "getAllRefundsFromTxnIds";
+  const hashString = `${merchantKey}|${command}|${var1}|${merchantSalt}`;
+  const hash = generateHash(hashString);
+
+  const formData = new URLSearchParams();
+  formData.append("key", merchantKey);
+  formData.append("command", command);
+  formData.append("var1", var1);
+  formData.append("hash", hash);
+
+  for (let attempt = 1; attempt <= PAYU_MAX_RETRIES; attempt += 1) {
+    try {
+      const now = Date.now();
+      if (payuRateLimitedUntil > now) {
+        await sleep(payuRateLimitedUntil - now);
+      }
+      const sinceLastRequest = now - lastPayURequestAt;
+      if (sinceLastRequest < PAYU_MIN_REQUEST_INTERVAL_MS) {
+        await sleep(PAYU_MIN_REQUEST_INTERVAL_MS - sinceLastRequest);
+      }
+
+      lastPayURequestAt = Date.now();
+      const response = await fetch(PAYU_BASE_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: formData.toString(),
+      });
+
+      const raw = await response.text();
+      let data: PayURefundResponse;
+      try {
+        data = JSON.parse(raw) as PayURefundResponse;
+      } catch {
+        throw new Error(`PayU refund lookup returned non-JSON response: ${raw.slice(0, 200)}`);
+      }
+
+      if (data.status === 1) {
+        const rows = parseRefundDetails(data);
+        payuRefundBatchCache.set(cacheKey, { ts: Date.now(), data: rows });
+        return rows;
+      }
+
+      if (isRateLimitMessage(data.msg)) {
+        const delay = PAYU_RETRY_BASE_DELAY_MS * attempt;
+        payuRateLimitedUntil = Date.now() + delay;
+        if (attempt < PAYU_MAX_RETRIES) {
+          await sleep(delay);
+          continue;
+        }
+      }
+
+      const empty: PayURefundRecord[] = [];
+      payuRefundBatchCache.set(cacheKey, { ts: Date.now(), data: empty });
+      return empty;
+    } catch (error) {
+      const delay = PAYU_RETRY_BASE_DELAY_MS * attempt;
+      if (attempt < PAYU_MAX_RETRIES) {
+        await sleep(delay);
+        continue;
+      }
+      if (stale) {
+        console.warn(`Using stale PayU refund cache for batch (${cleanTxnIds.length} txnIds) after retries`);
+        return stale;
+      }
+      throw error;
+    }
+  }
+
+  return stale || [];
+}
+
+async function enrichTransactionsWithRefundDetails(
+  merchantKey: string,
+  merchantSalt: string,
+  transactions: PayUTransaction[]
+): Promise<PayUTransaction[]> {
+  if (!transactions.length) return transactions;
+
+  const txnsByPayuId = new Map<string, PayUTransaction>();
+  const txnIds: string[] = [];
+  for (const txn of transactions) {
+    const txnId = String(txn.txnid || "").trim();
+    if (txnId) txnIds.push(txnId);
+    const payuId = getPayUPaymentId(txn);
+    if (payuId && !txnsByPayuId.has(payuId)) {
+      txnsByPayuId.set(payuId, txn);
+    }
+  }
+
+  const uniqueTxnIds = Array.from(new Set(txnIds));
+  if (!uniqueTxnIds.length) return transactions;
+
+  const existingRefundBudget = new Map<string, number>();
+  for (const txn of transactions) {
+    const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
+    if (financial.kind !== "refund" || financial.amount <= 0) continue;
+    const key = getRefundDuplicateKey(txn.txnid, getPayUPaymentId(txn), financial.amount);
+    existingRefundBudget.set(key, (existingRefundBudget.get(key) || 0) + 1);
+  }
+
+  const syntheticRefundRows: PayUTransaction[] = [];
+  const seenSyntheticKeys = new Set<string>();
+
+  for (let i = 0; i < uniqueTxnIds.length; i += PAYU_REFUND_BATCH_SIZE) {
+    const batch = uniqueTxnIds.slice(i, i + PAYU_REFUND_BATCH_SIZE);
+    const refundRows = await fetchPayURefundDetailsBatch(merchantKey, merchantSalt, batch);
+
+    for (const refund of refundRows) {
+      const payuId = String(refund.PayuID || "").trim();
+      const amount = Math.abs(toNumber(refund.Amount));
+      if (!payuId || amount <= 0) continue;
+
+      const baseTxn = txnsByPayuId.get(payuId);
+      const txnid = String(baseTxn?.txnid || "").trim();
+      if (!txnid) continue;
+
+      const duplicateKey = getRefundDuplicateKey(txnid, payuId, amount);
+      const duplicateBudget = existingRefundBudget.get(duplicateKey) || 0;
+      if (duplicateBudget > 0) {
+        existingRefundBudget.set(duplicateKey, duplicateBudget - 1);
+        continue;
+      }
+
+      const refundStatus = normalizeToken(refund.Status) || "success";
+      const requestId = String(refund.RequestID || "").trim();
+      const addedon = normalizePayUDateTime(refund.success_at || refund.RefundCreationDate || baseTxn?.addedon);
+      if (!addedon) continue;
+
+      const syntheticKey = [
+        normalizeToken(txnid),
+        normalizeToken(payuId),
+        toIsoAmountToken(amount),
+        normalizeToken(requestId),
+        normalizeToken(addedon),
+      ].join("|");
+
+      if (seenSyntheticKeys.has(syntheticKey)) continue;
+      seenSyntheticKeys.add(syntheticKey);
+
+      syntheticRefundRows.push({
+        mihpayid: payuId,
+        id: payuId,
+        txnid,
+        amount: amount.toFixed(2),
+        status: `refund_${refundStatus}`,
+        mode: String(baseTxn?.mode || ""),
+        email: String(baseTxn?.email || ""),
+        phone: String(baseTxn?.phone || ""),
+        firstname: String(baseTxn?.firstname || ""),
+        productinfo: String(baseTxn?.productinfo || ""),
+        addedon,
+        udf1: String(baseTxn?.udf1 || ""),
+        udf2: String(baseTxn?.udf2 || ""),
+        udf3: String(baseTxn?.udf3 || ""),
+        udf4: String(baseTxn?.udf4 || ""),
+        udf5: String(baseTxn?.udf5 || ""),
+        bank_ref_num: String(refund.bank_ref_no || refund.bank_arn || baseTxn?.bank_ref_num || baseTxn?.bank_ref_no || ""),
+        bank_ref_no: String(refund.bank_ref_no || refund.bank_arn || baseTxn?.bank_ref_no || baseTxn?.bank_ref_num || ""),
+        bankcode: String(baseTxn?.bankcode || ""),
+        error_code: "",
+        error_Message: "",
+        net_amount_debit: `-${amount.toFixed(2)}`,
+        transaction_fee: amount.toFixed(2),
+        discount: "0.00",
+        offer_key: "",
+        offer_type: "",
+        offer_availed: "",
+        field9: `refund|${refundStatus}|${requestId}`.replace(/\|+$/, ""),
+        unmappedstatus: refundStatus,
+      });
+    }
+  }
+
+  if (syntheticRefundRows.length === 0) return transactions;
+
+  const combined = [...transactions, ...syntheticRefundRows];
+  const deduped: PayUTransaction[] = [];
+  const seen = new Set<string>();
+  for (const txn of combined) {
+    const key = getPayUEventFingerprint(txn);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(txn);
+  }
+  return deduped;
+}
+
 function toYMD(date: Date): string {
   const y = date.getUTCFullYear();
   const m = String(date.getUTCMonth() + 1).padStart(2, "0");
@@ -270,8 +575,8 @@ export interface ProcessedTransaction {
 
 export function processPayUTransactions(transactions: PayUTransaction[]): ProcessedTransaction[] {
   return transactions.map((txn) => ({
-    id: txn.mihpayid,
-    payuId: txn.mihpayid,
+    id: getPayUPaymentId(txn) || txn.txnid,
+    payuId: getPayUPaymentId(txn),
     txnId: txn.txnid,
     amount: parseFloat(txn.amount) || 0,
     status: txn.status,
@@ -286,7 +591,7 @@ export function processPayUTransactions(transactions: PayUTransaction[]): Proces
     bundleId: txn.udf3 || "",
     feature: txn.udf4 || "",
     coins: parseInt(txn.udf5) || 0,
-    bankRef: txn.bank_ref_num,
+    bankRef: txn.bank_ref_num || txn.bank_ref_no || "",
     paymentMode: txn.mode,
   }));
 }

@@ -96,6 +96,20 @@ export async function POST(request: NextRequest) {
       coordinates,
     }, token);
 
+    // Fetch detailed planet positions (includes true Ascendant rasi)
+    const planetPositionData = await fetchProkeralaAPI("/astrology/planet-position", {
+      ayanamsa: "1",
+      datetime,
+      coordinates,
+    }, token);
+
+    // Fetch panchang details (tithi, paksha, yoga, karana, sunrise/sunset, etc.)
+    const panchangData = await fetchProkeralaAPI("/astrology/panchang", {
+      ayanamsa: "1",
+      datetime,
+      coordinates,
+    }, token);
+
     // Fetch chart SVG
     const chartData = await fetchProkeralaAPI("/astrology/chart", {
       ayanamsa: "1",
@@ -123,7 +137,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Extract planet positions from kundli data
+    const planetPositions = Array.isArray(planetPositionData?.data?.planet_position)
+      ? planetPositionData.data.planet_position
+      : [];
+
+    // Extract key planet data
     const planets: Record<string, any> = {};
     if (kundliData?.data?.nakshatra_details) {
       const nd = kundliData.data.nakshatra_details;
@@ -146,7 +164,15 @@ export async function POST(request: NextRequest) {
           lord: nd.soorya_rasi.lord?.name,
         };
       }
-      if (nd.zodiac) {
+      // IMPORTANT: use planet-position Ascendant as Lagna source.
+      // `nakshatra_details.zodiac` often represents western zodiac for date.
+      const ascendantFromPlanetPosition = planetPositions.find((p: any) => p?.name === "Ascendant");
+      if (ascendantFromPlanetPosition?.rasi?.name) {
+        planets["Ascendant"] = {
+          zodiac_sign: ascendantFromPlanetPosition.rasi.name,
+          lord: ascendantFromPlanetPosition.rasi?.lord?.name,
+        };
+      } else if (nd.zodiac) {
         planets["Ascendant"] = {
           zodiac_sign: nd.zodiac.name,
         };
@@ -172,6 +198,8 @@ export async function POST(request: NextRequest) {
       data: {
         chart: chartData,
         planets,
+        planet_positions: planetPositions,
+        panchang: panchangData?.data || null,
         navamsaChart,
         kundli: kundliData?.data,
         chartType: isWestern ? "western" : "vedic",

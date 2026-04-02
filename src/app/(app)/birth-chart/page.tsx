@@ -43,6 +43,19 @@ function hasRenderableChartData(data: any): boolean {
   return hasMainChart || hasNavamsa || hasKundli;
 }
 
+function getAscendantLagna(data: any): string {
+  if (!data) return "";
+  const fromPlanetPosition = Array.isArray(data?.planet_positions)
+    ? data.planet_positions.find((p: any) => String(p?.name || "").toLowerCase() === "ascendant")?.rasi?.name
+    : "";
+  return (
+    fromPlanetPosition ||
+    data?.planets?.Ascendant?.zodiac_sign ||
+    data?.kundli?.nakshatra_details?.zodiac?.name ||
+    ""
+  );
+}
+
 export default function BirthChartPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -70,6 +83,7 @@ export default function BirthChartPage() {
   } = useOnboardingStore();
   
   const isMissingRequiredData = !birthMonth || !birthDay || !birthYear;
+  const ascendantLagna = getAscendantLagna(chartData);
 
   const getBirthDate = () => {
     const month = getMonthNumber(birthMonth);
@@ -178,7 +192,12 @@ export default function BirthChartPage() {
 
     try {
       const { data: cached } = await supabase.from("birth_charts").select("data").eq("id", cacheKey).single();
-      if (cached?.data && hasRenderableChartData(cached.data)) {
+      const cachedData = cached?.data;
+      const hasAscendantPlanetSource =
+        Array.isArray(cachedData?.planet_positions) &&
+        cachedData.planet_positions.some((p: any) => String(p?.name || "").toLowerCase() === "ascendant");
+
+      if (cachedData && hasRenderableChartData(cachedData) && hasAscendantPlanetSource) {
         setChartData(cached.data);
         setLoading(false);
         return;
@@ -426,10 +445,10 @@ export default function BirthChartPage() {
                           <p className="text-white/50 text-sm">Lord: {chartData.kundli.nakshatra_details.soorya_rasi.lord?.name}</p>
                         </div>
                       )}
-                      {chartData.kundli.nakshatra_details.zodiac && (
+                      {ascendantLagna && (
                         <div className="bg-white/5 rounded-xl p-3">
                           <p className="text-white/60 text-xs">Ascendant (Lagna)</p>
-                          <p className="text-white font-medium">{chartData.kundli.nakshatra_details.zodiac.name}</p>
+                          <p className="text-white font-medium">{ascendantLagna}</p>
                         </div>
                       )}
                       {chartData.kundli.nakshatra_details.additional_info && (

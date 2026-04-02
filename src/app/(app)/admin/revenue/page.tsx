@@ -47,7 +47,9 @@ type TabType = "dashboard" | "profit-sheet" | "meta-details" | "analytics";
 interface ProfitSheetRow {
   date: string;           // Costa Rica date (e.g., "2026-03-13")
   day: string;            // Day of week (e.g., "Sat")
-  revenue: number;        // PayU revenue for that Costa Rica day
+  revenue: number;        // Net revenue after refunds for that Costa Rica day
+  grossRevenue?: number;  // Gross received amount before refunds
+  refundAmount?: number;  // Refund amount for that day
   gst: number;            // 5% of revenue
   adsCostUSD: number;     // Meta Ads spend in USD
   adsCostINR: number;     // Meta Ads spend converted to INR
@@ -1773,13 +1775,15 @@ function ProfitSheetTab({
   const totals = filteredData.reduce(
     (acc, row) => ({
       revenue: acc.revenue + row.revenue,
+      grossRevenue: acc.grossRevenue + (row.grossRevenue ?? row.revenue),
+      refundAmount: acc.refundAmount + (row.refundAmount ?? 0),
       gst: acc.gst + row.gst,
       adsCostUSD: acc.adsCostUSD + row.adsCostUSD,
       adsCostINR: acc.adsCostINR + row.adsCostINR,
       netRevenue: acc.netRevenue + row.netRevenue,
       transactionCount: acc.transactionCount + row.transactionCount,
     }),
-    { revenue: 0, gst: 0, adsCostUSD: 0, adsCostINR: 0, netRevenue: 0, transactionCount: 0 }
+    { revenue: 0, grossRevenue: 0, refundAmount: 0, gst: 0, adsCostUSD: 0, adsCostINR: 0, netRevenue: 0, transactionCount: 0 }
   );
   const overallRoas = totals.adsCostINR > 0 ? totals.revenue / totals.adsCostINR : 0;
   const overallProfitPercent = totals.revenue > 0 ? (totals.netRevenue / totals.revenue) * 100 : 0;
@@ -1876,36 +1880,48 @@ function ProfitSheetTab({
       )}
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
-        <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
-          <p className="text-white/50 text-xs mb-1">Total Revenue</p>
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
+          <p className="text-white/50 text-xs mb-1">Total Received</p>
+          <p className="text-green-400 text-xl font-bold">{formatCurrency(totals.grossRevenue)}</p>
+        </div>
+        <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
+          <p className="text-white/50 text-xs mb-1">Total Orders</p>
+          <p className="text-white text-xl font-bold">{totals.transactionCount}</p>
+        </div>
+        <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
+          <p className="text-white/50 text-xs mb-1">Refund Amount</p>
+          <p className="text-red-400 text-xl font-bold">-{formatCurrency(totals.refundAmount)}</p>
+        </div>
+        <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
+          <p className="text-white/50 text-xs mb-1">Revenue After Refunds</p>
           <p className="text-green-400 text-xl font-bold">{formatCurrency(totals.revenue)}</p>
         </div>
-        <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
+        <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Total GST (5%)</p>
           <p className="text-amber-400 text-xl font-bold">{formatCurrency(totals.gst)}</p>
         </div>
-        <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
+        <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Ads Cost (USD)</p>
           <p className="text-red-400/70 text-lg font-bold">${totals.adsCostUSD.toFixed(2)}</p>
         </div>
-        <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
+        <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Ads Cost (INR)</p>
           <p className="text-red-400 text-xl font-bold">{formatCurrency(totals.adsCostINR)}</p>
         </div>
-        <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
+        <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Net Revenue</p>
           <p className={`text-xl font-bold ${totals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>
             {formatCurrency(totals.netRevenue)}
           </p>
         </div>
-        <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
+        <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Overall Profit %</p>
           <p className={`text-xl font-bold ${overallProfitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>
             {overallProfitPercent.toFixed(2)}%
           </p>
         </div>
-        <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
+        <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Overall ROAS</p>
           <p className={`text-xl font-bold ${overallRoas >= 1 ? "text-green-400" : overallRoas > 0 ? "text-amber-400" : "text-white/40"}`}>
             {overallRoas > 0 ? overallRoas.toFixed(2) : "-"}
@@ -1927,6 +1943,8 @@ function ProfitSheetTab({
                 <tr className="border-b border-white/10 bg-white/5">
                   <th className="text-left text-white/70 text-xs font-semibold px-4 py-3">Date</th>
                   <th className="text-left text-white/70 text-xs font-semibold px-4 py-3">Day</th>
+                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Received</th>
+                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Refund</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Revenue</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">GST (5%)</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Ads (USD)</th>
@@ -1940,7 +1958,7 @@ function ProfitSheetTab({
               <tbody>
                 {filteredData.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="text-center text-white/40 py-8">
+                    <td colSpan={12} className="text-center text-white/40 py-8">
                       No data available for the selected filters
                     </td>
                   </tr>
@@ -1950,6 +1968,12 @@ function ProfitSheetTab({
                       <tr key={row.date} className={`border-b border-white/5 hover:bg-white/5 ${idx % 2 === 0 ? "bg-white/[0.02]" : ""}`}>
                         <td className="text-white/80 text-sm px-4 py-3">{formatDate(row.date)}</td>
                         <td className="text-white/60 text-sm px-4 py-3">{row.day}</td>
+                        <td className="text-green-400 text-sm px-4 py-3 text-right font-medium">
+                          {formatCurrency(row.grossRevenue ?? row.revenue)}
+                        </td>
+                        <td className="text-red-400 text-sm px-4 py-3 text-right font-medium">
+                          -{formatCurrency(row.refundAmount ?? 0)}
+                        </td>
                         <td className="text-green-400 text-sm px-4 py-3 text-right font-medium">{formatCurrency(row.revenue)}</td>
                         <td className="text-amber-400/70 text-sm px-4 py-3 text-right">{formatCurrency(row.gst)}</td>
                         <td className="text-red-400/50 text-sm px-4 py-3 text-right">${row.adsCostUSD.toFixed(2)}</td>
@@ -1971,6 +1995,8 @@ function ProfitSheetTab({
                     {/* Totals Row */}
                     <tr className="bg-white/10 border-t-2 border-white/20 font-semibold">
                       <td className="text-white text-sm px-4 py-3" colSpan={2}>TOTAL</td>
+                      <td className="text-green-400 text-sm px-4 py-3 text-right">{formatCurrency(totals.grossRevenue)}</td>
+                      <td className="text-red-400 text-sm px-4 py-3 text-right">-{formatCurrency(totals.refundAmount)}</td>
                       <td className="text-green-400 text-sm px-4 py-3 text-right">{formatCurrency(totals.revenue)}</td>
                       <td className="text-amber-400 text-sm px-4 py-3 text-right">{formatCurrency(totals.gst)}</td>
                       <td className="text-red-400/70 text-sm px-4 py-3 text-right">${totals.adsCostUSD.toFixed(2)}</td>

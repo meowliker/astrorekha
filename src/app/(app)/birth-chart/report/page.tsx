@@ -21,6 +21,7 @@ interface ReportRow {
       nakshatra: string;
       pada: string;
     }>;
+    planetary_columns?: Array<"sign" | "house" | "nakshatra" | "pada">;
     lagna_chart_svg?: string | null;
     navamsa_chart_svg?: string | null;
   };

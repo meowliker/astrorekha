@@ -26,6 +26,107 @@ type PlanetRow = {
   nakshatra: string;
   pada: string;
 };
+type PlanetaryColumnKey = "sign" | "house" | "nakshatra" | "pada";
+
+const ZODIAC_SIGNS = [
+  "Aries",
+  "Taurus",
+  "Gemini",
+  "Cancer",
+  "Leo",
+  "Virgo",
+  "Libra",
+  "Scorpio",
+  "Sagittarius",
+  "Capricorn",
+  "Aquarius",
+  "Pisces",
+];
+
+const PLANET_ORDER = [
+  "Ascendant",
+  "Sun",
+  "Moon",
+  "Mars",
+  "Mercury",
+  "Jupiter",
+  "Venus",
+  "Saturn",
+  "Rahu",
+  "Ketu",
+];
+
+const SIGN_LORD_BY_NAME: Record<string, string> = {
+  aries: "Mars",
+  mesha: "Mars",
+  taurus: "Venus",
+  vrishabha: "Venus",
+  gemini: "Mercury",
+  mithuna: "Mercury",
+  cancer: "Moon",
+  karka: "Moon",
+  leo: "Sun",
+  simha: "Sun",
+  virgo: "Mercury",
+  kanya: "Mercury",
+  libra: "Venus",
+  tula: "Venus",
+  scorpio: "Mars",
+  vrischika: "Mars",
+  sagittarius: "Jupiter",
+  dhanu: "Jupiter",
+  capricorn: "Saturn",
+  makara: "Saturn",
+  aquarius: "Saturn",
+  kumbha: "Saturn",
+  pisces: "Jupiter",
+  meena: "Jupiter",
+};
+
+function canonicalizePlanetName(value: string): string | null {
+  const normalized = String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z]/g, "");
+
+  const aliases: Record<string, string> = {
+    asc: "Ascendant",
+    ascendant: "Ascendant",
+    sun: "Sun",
+    moon: "Moon",
+    mars: "Mars",
+    mercury: "Mercury",
+    merc: "Mercury",
+    jupiter: "Jupiter",
+    jup: "Jupiter",
+    venus: "Venus",
+    saturn: "Saturn",
+    sat: "Saturn",
+    rahu: "Rahu",
+    ketu: "Ketu",
+  };
+
+  return aliases[normalized] || null;
+}
+
+function getSignLord(value: string): string {
+  const key = String(value || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\w]/g, "");
+  return SIGN_LORD_BY_NAME[key] || "—";
+}
+
+function hasAscendantPlanetSource(data: Record<string, any> | null | undefined): boolean {
+  if (!data) return false;
+  return (
+    Array.isArray(data?.planet_positions) &&
+    data.planet_positions.some((p: any) => canonicalizePlanetName(safeText(p?.name)) === "Ascendant")
+  );
+}
+
+function hasPanchangSource(data: Record<string, any> | null | undefined): boolean {
+  return !!data?.panchang && typeof data.panchang === "object";
+}
 
 function getMonthNumber(month: string): number {
   const monthMap: Record<string, number> = {
@@ -221,6 +322,65 @@ function safeText(value: unknown): string {
   return "—";
 }
 
+function toTitleCase(value: string): string {
+  return value
+    .toLowerCase()
+    .split(" ")
+    .map((part) => (part ? `${part[0].toUpperCase()}${part.slice(1)}` : part))
+    .join(" ");
+}
+
+function normalizePlanetAndSign(planetRaw: string, signRaw: string): { planet: string; sign: string } {
+  let planet = String(planetRaw || "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim();
+  const incomingSign = String(signRaw || "").trim();
+  let sign = incomingSign || "—";
+
+  // If sign is already known, still strip it from a packed planet token like
+  // "AscendantCancer" so columns remain visually clean and separated.
+  if (sign !== "—") {
+    const compactSign = sign.replace(/\s+/g, "");
+    const lowerPlanet = planet.toLowerCase();
+    const lowerSign = sign.toLowerCase();
+    const lowerCompact = compactSign.toLowerCase();
+
+    if (lowerPlanet.endsWith(` ${lowerSign}`)) {
+      planet = planet.slice(0, planet.length - sign.length).trim();
+    } else if (lowerPlanet.endsWith(lowerCompact) && lowerPlanet.length > lowerCompact.length) {
+      planet = planet.slice(0, planet.length - compactSign.length).trim();
+    }
+
+    if (!planet) planet = "Ascendant";
+    return { planet, sign };
+  }
+
+  for (const zodiac of ZODIAC_SIGNS) {
+    const compact = zodiac.replace(/\s+/g, "");
+    const lowerPlanet = planet.toLowerCase();
+
+    if (lowerPlanet.endsWith(` ${zodiac.toLowerCase()}`)) {
+      return {
+        planet: planet.slice(0, planet.length - zodiac.length).trim(),
+        sign: zodiac,
+      };
+    }
+
+    if (lowerPlanet.endsWith(compact.toLowerCase()) && lowerPlanet.length > compact.length) {
+      const withoutSign = planet.slice(0, planet.length - compact.length).trim();
+      if (withoutSign.length > 0) {
+        return {
+          planet: withoutSign,
+          sign: zodiac,
+        };
+      }
+    }
+  }
+
+  return { planet, sign };
+}
+
 function formatBirthDate(userProfile: Record<string, any> | null): string {
   const month = safeText(userProfile?.birth_month);
   const day = safeText(userProfile?.birth_day);
@@ -241,6 +401,87 @@ function formatBirthTime(userProfile: Record<string, any> | null, birthData: Rec
   return `${hour}:${String(minute).padStart(2, "0")} ${period === "—" ? "" : period}`.trim();
 }
 
+function formatNumber(value: unknown, fractionDigits = 6): string {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "—";
+  return num.toFixed(fractionDigits).replace(/\.?0+$/, "");
+}
+
+function timezoneToOffset(timezone: unknown): string {
+  const tz = Number(timezone);
+  if (!Number.isFinite(tz)) return "+05:30";
+  const sign = tz >= 0 ? "+" : "-";
+  const abs = Math.abs(tz);
+  const hours = Math.floor(abs);
+  const minutes = Math.round((abs - hours) * 60);
+  return `${sign}${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function getBirthDateTime(birthData: Record<string, any>): Date | null {
+  const date = safeText(birthData?.birthDetails?.date);
+  const time = safeText(birthData?.birthDetails?.time);
+  const tz = timezoneToOffset(birthData?.birthDetails?.timezone);
+  if (date === "—" || time === "—") return null;
+  const iso = `${date}T${String(time).padStart(5, "0")}:00${tz}`;
+  const parsed = new Date(iso);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function pickByBirthTime<T extends { start?: string; end?: string }>(
+  items: T[] | undefined,
+  birthAt: Date | null
+): T | null {
+  if (!Array.isArray(items) || items.length === 0) return null;
+  if (!birthAt) return items[0];
+
+  const birthTs = birthAt.getTime();
+  for (const item of items) {
+    const startTs = Date.parse(String(item?.start || ""));
+    const endTs = Date.parse(String(item?.end || ""));
+    if (!Number.isNaN(startTs) && !Number.isNaN(endTs) && birthTs >= startTs && birthTs <= endTs) {
+      return item;
+    }
+  }
+
+  return items[0];
+}
+
+function toReadableDateTime(value: unknown): string {
+  const text = safeText(value);
+  if (text === "—") return "—";
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return text;
+  return parsed.toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function toReadableTime(value: unknown): string {
+  const text = safeText(value);
+  if (text === "—") return "—";
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return text;
+  return parsed.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function filterAvailableRows(rows: KeyValue[]): KeyValue[] {
+  return rows.filter((row) => safeText(row.value) !== "—");
+}
+
+function getAvailablePlanetaryColumns(rows: PlanetRow[]): PlanetaryColumnKey[] {
+  const columns: PlanetaryColumnKey[] = ["sign", "house", "nakshatra", "pada"];
+  return columns.filter((column) => rows.some((row) => safeText(row[column]) !== "—"));
+}
+
 function buildPlanetaryRows(birthData: Record<string, any>, natalChart: Record<string, any> | null): PlanetRow[] {
   const rows: PlanetRow[] = [];
 
@@ -248,9 +489,13 @@ function buildPlanetaryRows(birthData: Record<string, any>, natalChart: Record<s
   if (natalPlanets && typeof natalPlanets === "object") {
     for (const [planet, raw] of Object.entries(natalPlanets as Record<string, any>)) {
       const data = raw || {};
+      const signValue = safeText(data?.tropical?.sign || data?.sign || data?.rasi);
+      const normalized = normalizePlanetAndSign(planet, signValue);
+      const canonicalPlanet = canonicalizePlanetName(normalized.planet);
+      if (!canonicalPlanet) continue;
       rows.push({
-        planet,
-        sign: safeText(data?.tropical?.sign || data?.sign || data?.rasi),
+        planet: canonicalPlanet,
+        sign: normalized.sign,
         house: safeText(data?.house_western || data?.house),
         nakshatra: safeText(data?.nakshatra || data?.vedic?.nakshatra),
         pada: safeText(data?.pada || data?.vedic?.pada),
@@ -259,13 +504,34 @@ function buildPlanetaryRows(birthData: Record<string, any>, natalChart: Record<s
   }
 
   if (rows.length === 0) {
+    const prokeralaPlanetPositions = birthData?.planet_positions;
+    if (Array.isArray(prokeralaPlanetPositions)) {
+      for (const raw of prokeralaPlanetPositions as Array<Record<string, any>>) {
+        const canonicalPlanet = canonicalizePlanetName(raw?.name || "");
+        if (!canonicalPlanet) continue;
+        rows.push({
+          planet: canonicalPlanet,
+          sign: safeText(raw?.rasi?.name),
+          house: safeText(raw?.position),
+          nakshatra: safeText(raw?.nakshatra?.name),
+          pada: safeText(raw?.nakshatra?.pada),
+        });
+      }
+    }
+  }
+
+  if (rows.length === 0) {
     const fallbackPlanets = birthData?.planets;
     if (fallbackPlanets && typeof fallbackPlanets === "object") {
       for (const [planet, raw] of Object.entries(fallbackPlanets as Record<string, any>)) {
         const data = raw || {};
+        const signValue = safeText(data?.zodiac_sign || data?.sign);
+        const normalized = normalizePlanetAndSign(planet, signValue);
+        const canonicalPlanet = canonicalizePlanetName(normalized.planet);
+        if (!canonicalPlanet) continue;
         rows.push({
-          planet,
-          sign: safeText(data?.zodiac_sign || data?.sign),
+          planet: canonicalPlanet,
+          sign: normalized.sign,
           house: safeText(data?.house),
           nakshatra: safeText(data?.name || data?.nakshatra),
           pada: safeText(data?.pada),
@@ -274,10 +540,9 @@ function buildPlanetaryRows(birthData: Record<string, any>, natalChart: Record<s
     }
   }
 
-  const order = ["Ascendant", "Sun", "Moon", "Mars", "Mercury", "Jupiter", "Venus", "Saturn", "Rahu", "Ketu"];
   rows.sort((a, b) => {
-    const ai = order.indexOf(a.planet);
-    const bi = order.indexOf(b.planet);
+    const ai = PLANET_ORDER.indexOf(a.planet);
+    const bi = PLANET_ORDER.indexOf(b.planet);
     return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
   });
 
@@ -346,7 +611,12 @@ export async function GET(
     birthChartData = (birthChart?.data as Record<string, any>) || {};
   }
 
-  if (!birthChartData || Object.keys(birthChartData).length === 0) {
+  if (
+    !birthChartData ||
+    Object.keys(birthChartData).length === 0 ||
+    !hasAscendantPlanetSource(birthChartData) ||
+    !hasPanchangSource(birthChartData)
+  ) {
     const fallbackCacheKey = makeBirthChartCacheKey(
       (userProfile as Record<string, any> | null) || null,
       (user as Record<string, any> | null) || null
@@ -365,7 +635,15 @@ export async function GET(
     }
   }
 
-  if ((!birthChartData || Object.keys(birthChartData).length === 0) && (userProfile || user)) {
+  if (
+    (
+      !birthChartData ||
+      Object.keys(birthChartData).length === 0 ||
+      !hasAscendantPlanetSource(birthChartData) ||
+      !hasPanchangSource(birthChartData)
+    ) &&
+    (userProfile || user)
+  ) {
     const fallbackCacheKey = makeBirthChartCacheKey(
       (userProfile as Record<string, any> | null) || null,
       (user as Record<string, any> | null) || null
@@ -386,36 +664,93 @@ export async function GET(
   }
 
   const kundli = birthChartData?.kundli || {};
+  const panchang = birthChartData?.panchang || {};
   const nakshatraDetails = kundli?.nakshatra_details || {};
   const currentDasha = natalChart?.dasha?.current_period;
+  const birthAt = getBirthDateTime(birthChartData);
+  const activeTithi = pickByBirthTime<Record<string, any>>(
+    Array.isArray(panchang?.tithi) ? panchang.tithi : undefined,
+    birthAt
+  );
+  const activeKaran = pickByBirthTime<Record<string, any>>(
+    Array.isArray(panchang?.karana) ? panchang.karana : undefined,
+    birthAt
+  );
+  const activeYoga = pickByBirthTime<Record<string, any>>(
+    Array.isArray(panchang?.yoga) ? panchang.yoga : undefined,
+    birthAt
+  );
+  const activeNakshatra = pickByBirthTime<Record<string, any>>(
+    Array.isArray(panchang?.nakshatra) ? panchang.nakshatra : undefined,
+    birthAt
+  );
+  const prokeralaPlanetPositions = Array.isArray(birthChartData?.planet_positions)
+    ? (birthChartData.planet_positions as Array<Record<string, any>>)
+    : [];
+  const ascendantFromPlanetPosition = prokeralaPlanetPositions.find(
+    (p) => canonicalizePlanetName(safeText(p?.name)) === "Ascendant"
+  );
+
+  const lagnaValue = safeText(
+    ascendantFromPlanetPosition?.rasi?.name ||
+      birthChartData?.planets?.Ascendant?.zodiac_sign ||
+      natalChart?.chart?.ascendant?.sidereal?.sign ||
+      natalChart?.chart?.ascendant?.sign ||
+      nakshatraDetails?.zodiac?.name
+  );
+  const lagnaLordValue = safeText(
+    ascendantFromPlanetPosition?.rasi?.lord?.name ||
+      birthChartData?.planets?.Ascendant?.lord ||
+      getSignLord(lagnaValue)
+  );
 
   const basicDetails = [
     { label: "Name", value: safeText(user?.name || userProfile?.name) },
-    { label: "Sex", value: safeText(userProfile?.gender || user?.gender) },
+    { label: "Sex", value: toTitleCase(safeText(userProfile?.gender || user?.gender)) },
     { label: "Date of Birth", value: formatBirthDate(userProfile as Record<string, any> | null) },
     { label: "Time of Birth", value: formatBirthTime(userProfile as Record<string, any> | null, birthChartData) },
+    { label: "Day of Birth", value: safeText(panchang?.vaara) },
     { label: "Place of Birth", value: safeText(userProfile?.birth_place || birthChartData?.birthDetails?.place) },
     { label: "Timezone", value: safeText(user?.timezone || birthChartData?.birthDetails?.timezone) },
-    { label: "Latitude", value: safeText(birthChartData?.birthDetails?.latitude) },
-    { label: "Longitude", value: safeText(birthChartData?.birthDetails?.longitude) },
+    { label: "Latitude", value: formatNumber(birthChartData?.birthDetails?.latitude) },
+    { label: "Longitude", value: formatNumber(birthChartData?.birthDetails?.longitude) },
+    { label: "Julian Day", value: safeText(natalChart?.chart?.birth_data?.julian_day) },
+    { label: "Ayanamsa (Lahiri)", value: safeText(natalChart?.chart?.birth_data?.ayanamsa_lahiri) },
+    {
+      label: "Bal Dasa",
+      value: safeText(natalChart?.dasha?.balance_at_birth),
+    },
   ];
 
   const astroDetails = [
-    { label: "Lagna", value: safeText(nakshatraDetails?.zodiac?.name) },
-    { label: "Lagna Lord", value: safeText(nakshatraDetails?.zodiac?.lord?.name) },
+    { label: "Lagna", value: lagnaValue },
+    { label: "Lagna Lord", value: lagnaLordValue },
     { label: "Rasi", value: safeText(nakshatraDetails?.chandra_rasi?.name) },
     { label: "Rasi Lord", value: safeText(nakshatraDetails?.chandra_rasi?.lord?.name) },
     {
       label: "Nakshatra-Pada",
-      value: safeText(
-        nakshatraDetails?.nakshatra?.name
-          ? `${nakshatraDetails?.nakshatra?.name} ${safeText(nakshatraDetails?.nakshatra?.pada)}`
-          : "—"
-      ),
+      value: (() => {
+        const nakshatraName = safeText(nakshatraDetails?.nakshatra?.name);
+        const nakshatraPada = safeText(nakshatraDetails?.nakshatra?.pada);
+        if (nakshatraName === "—") return "—";
+        if (nakshatraPada === "—") return nakshatraName;
+        return `${nakshatraName} ${nakshatraPada}`;
+      })(),
     },
     { label: "Nakshatra Lord", value: safeText(nakshatraDetails?.nakshatra?.lord?.name) },
     { label: "Sun Sign (Indian)", value: safeText(nakshatraDetails?.soorya_rasi?.name) },
     { label: "Moon Sign", value: safeText(nakshatraDetails?.chandra_rasi?.name) },
+    { label: "Tithi", value: safeText(activeTithi?.name) },
+    { label: "Paksha", value: safeText(activeTithi?.paksha) },
+    { label: "Yoga", value: safeText(activeYoga?.name) },
+    { label: "Karan", value: safeText(activeKaran?.name) },
+    { label: "Sunrise", value: toReadableTime(panchang?.sunrise) },
+    { label: "Sunset", value: toReadableTime(panchang?.sunset) },
+    { label: "Moonrise", value: toReadableTime(panchang?.moonrise) },
+    { label: "Moonset", value: toReadableTime(panchang?.moonset) },
+    { label: "Birth Nakshatra (Panchang)", value: safeText(activeNakshatra?.name) },
+    { label: "Birth Nakshatra Start", value: toReadableDateTime(activeNakshatra?.start) },
+    { label: "Birth Nakshatra End", value: toReadableDateTime(activeNakshatra?.end) },
     {
       label: "Current Dasha",
       value: safeText(currentDasha?.label || currentDasha?.mahadasha),
@@ -427,6 +762,7 @@ export async function GET(
   ];
 
   const planetaryPositions = buildPlanetaryRows(birthChartData, natalChart as Record<string, any> | null);
+  const planetaryColumns = getAvailablePlanetaryColumns(planetaryPositions);
   const chartSvgs = {
     lagna_chart_svg: safeText(birthChartData?.chart?.output) !== "—" ? birthChartData?.chart?.output : null,
     navamsa_chart_svg: safeText(birthChartData?.navamsaChart?.output) !== "—" ? birthChartData?.navamsaChart?.output : null,
@@ -435,9 +771,10 @@ export async function GET(
   return NextResponse.json({
     ...report,
     chart_details: {
-      basic_details: basicDetails,
-      astro_details: astroDetails,
+      basic_details: filterAvailableRows(basicDetails),
+      astro_details: filterAvailableRows(astroDetails),
       planetary_positions: planetaryPositions,
+      planetary_columns: planetaryColumns,
       ...chartSvgs,
     },
   });
