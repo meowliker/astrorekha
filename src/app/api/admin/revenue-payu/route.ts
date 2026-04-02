@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { classifyPayUEvent } from "@/lib/finance-events";
+import { getPayUEventFingerprint, getPayUPaymentId, getPayUTransactions } from "@/lib/payu-api";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -33,6 +34,7 @@ interface PayUTransaction {
   udf4: string;
   udf5: string;
   bank_ref_num: string;
+  bank_ref_no?: string;
   bankcode: string;
   error_code: string;
   error_Message: string;
@@ -269,7 +271,7 @@ export async function GET(request: NextRequest) {
 
     let transactions: PayUTransaction[] = [];
     try {
-      transactions = await fetchPayUTransactions(payuStartDate, payuEndDate);
+      transactions = (await getPayUTransactions(payuStartDate, payuEndDate)) as unknown as PayUTransaction[];
     } catch (payuError: any) {
       console.error("PayU fetch error:", payuError);
       return NextResponse.json(
@@ -285,6 +287,16 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // Deduplicate exact repeated rows while preserving status transitions
+    // (e.g., failed -> captured updates for the same txnid).
+    const seenEventKeys = new Set<string>();
+    transactions = transactions.filter((txn) => {
+      const eventKey = getPayUEventFingerprint(txn as any);
+      if (seenEventKeys.has(eventKey)) return false;
+      seenEventKeys.add(eventKey);
+      return true;
+    });
+
     const processedTransactions = transactions
       .map((txn) => {
         const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
@@ -292,8 +304,8 @@ export async function GET(request: NextRequest) {
         const txnDate = toPayUDate(txn.addedon);
         if (Number.isNaN(txnDate.getTime())) return null;
         return {
-          id: txn.mihpayid,
-          payuId: txn.mihpayid,
+          id: getPayUPaymentId(txn as any) || txn.txnid,
+          payuId: getPayUPaymentId(txn as any),
           txnId: txn.txnid,
           amountAbs: financial.amount,
           signedAmount: financial.signedAmount,
@@ -310,7 +322,7 @@ export async function GET(request: NextRequest) {
           bundleId: txn.udf3 || "",
           feature: txn.udf4 || "",
           coins: parseInt(txn.udf5) || 0,
-          bankRef: txn.bank_ref_num,
+          bankRef: txn.bank_ref_num || txn.bank_ref_no || "",
           paymentMode: txn.mode,
           netAmount: parseFloat(txn.net_amount_debit) || parseFloat(txn.amount) || 0,
         };

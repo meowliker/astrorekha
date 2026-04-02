@@ -74,7 +74,8 @@ export function classifyStoredPaymentEvent(status: unknown, amountInPaise: unkno
 
 export function classifyPayUEvent(txn: Record<string, unknown>): FinancialEvent {
   const status = normalizeFinanceStatus(txn?.status);
-  const grossAmount = Math.abs(toNumber(txn?.amount) || toNumber(txn?.amt));
+  // Some PayU records can report amount=0 but carry the paid value in transaction_fee.
+  const grossAmount = Math.abs(toNumber(txn?.amount) || toNumber(txn?.amt) || toNumber(txn?.transaction_fee));
   const netAmount = Math.abs(toNumber(txn?.net_amount_debit));
   const resolvedAmount = grossAmount > 0 ? grossAmount : netAmount;
 

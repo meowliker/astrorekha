@@ -66,7 +66,7 @@ async function runReconciliation(lookbackDays: number, maxRows: number) {
       try {
         const result = await fulfillPayUPayment({
           txnid: payuTxn.txnid,
-          mihpayid: payuTxn.mihpayid,
+          mihpayid: payuTxn.mihpayid || payuTxn.id,
           status: payuTxn.status || "success",
           amount: payuTxn.amount,
           productinfo: payuTxn.productinfo,
