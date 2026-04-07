@@ -22,9 +22,10 @@ export async function POST(request: NextRequest) {
   try {
     // Verify admin access
     const authHeader = request.headers.get("authorization");
-    const expectedAuth = `Bearer ${process.env.ADMIN_SYNC_SECRET}`;
-    
-    if (!process.env.ADMIN_SYNC_SECRET || authHeader !== expectedAuth) {
+    const adminSecret = process.env.ADMIN_SYNC_SECRET || process.env.CRON_SECRET;
+    const expectedAuth = adminSecret ? `Bearer ${adminSecret}` : null;
+
+    if (!expectedAuth || authHeader !== expectedAuth) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

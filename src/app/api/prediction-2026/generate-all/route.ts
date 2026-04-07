@@ -87,7 +87,16 @@ export async function POST(request: NextRequest) {
   try {
     // Optional: Add a secret key check for security
     const { secretKey } = await request.json();
-    if (secretKey !== process.env.ADMIN_SECRET_KEY && secretKey !== "generate-all-2026") {
+    const adminSecret =
+      process.env.ADMIN_SECRET_KEY ||
+      process.env.ADMIN_SYNC_SECRET ||
+      process.env.CRON_SECRET;
+
+    const isAuthorized =
+      secretKey === "generate-all-2026" ||
+      Boolean(adminSecret && secretKey === adminSecret);
+
+    if (!isAuthorized) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
