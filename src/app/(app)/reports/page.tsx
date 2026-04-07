@@ -51,7 +51,7 @@ export default function DashboardPage() {
   const { birthMonth: storeBirthMonth, birthDay: storeBirthDay, sunSign: storeSunSign } = useOnboardingStore();
   
   // Get unlocked features from user store
-  const { unlockedFeatures, birthChartGenerating, birthChartReady, syncFromServer } = useUserStore();
+  const { unlockedFeatures, birthChartGenerating, birthChartReady, syncFromServer, unlockFeature } = useUserStore();
 
   useEffect(() => {
     loadUserZodiac();
@@ -593,6 +593,39 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
+                {/* Soulmate Sketch */}
+                <div
+                  onClick={() => {
+                    if (unlockedFeatures.soulmateSketch) {
+                      router.push("/soulmate-sketch");
+                    } else {
+                      setUpsellPopup({ isOpen: true, feature: "soulmateSketch" });
+                    }
+                  }}
+                  className="bg-[#1A2235] rounded-2xl border border-primary/20 p-3 cursor-pointer hover:border-primary/40 transition-colors relative"
+                >
+                  {!unlockedFeatures.soulmateSketch && (
+                    <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
+                      <Lock className="w-3 h-3 text-white/60" />
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-500/30 to-cyan-600/30 flex items-center justify-center flex-shrink-0 overflow-hidden border border-white/10">
+                      <span className="text-3xl">🎨</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-semibold">Soulmate Sketch</h3>
+                      <p className="text-white/50 text-xs mt-0.5">AI portrait + relationship timeline highlights</p>
+                      {!unlockedFeatures.soulmateSketch && (
+                        <button className="mt-1 px-3 py-1 bg-primary/20 text-primary text-xs rounded-full">
+                          Unlock for ₹199
+                        </button>
+                      )}
+                    </div>
+                    <ChevronRight className="w-6 h-6 text-white/40" />
+                  </div>
+                </div>
+
                 {/* Prediction 2026 Report */}
                 <div 
                   onClick={() => {
@@ -637,6 +670,14 @@ export default function DashboardPage() {
             isOpen={upsellPopup.isOpen}
             onClose={() => setUpsellPopup({ isOpen: false, feature: null })}
             feature={upsellPopup.feature}
+            onPurchase={() => {
+              if (upsellPopup.feature === "soulmateSketch") {
+                unlockFeature("soulmateSketch");
+                router.push("/soulmate-sketch");
+                return;
+              }
+              window.location.reload();
+            }}
           />
         )}
       </div>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { DEFAULT_PRICING, type PricingConfig } from "@/lib/pricing";
+import { DEFAULT_PRICING, normalizePricing, type PricingConfig } from "@/lib/pricing";
 
 // Fetch dynamic pricing from database
 async function getPricingConfig(): Promise<PricingConfig> {
@@ -13,7 +13,7 @@ async function getPricingConfig(): Promise<PricingConfig> {
       .eq("key", "pricing")
       .maybeSingle();
     
-    return data?.value || DEFAULT_PRICING;
+    return normalizePricing(data?.value) || DEFAULT_PRICING;
   } catch {
     return DEFAULT_PRICING;
   }
@@ -60,13 +60,33 @@ export async function POST(request: NextRequest) {
       metadata.bundleId = bundleId;
       metadata.features = JSON.stringify(bundle.features);
     } else if (type === "upsell") {
-      const upsell = pricing.upsells.find(u => u.id === (bundleId || packageId));
-      if (!upsell) {
+      const selectedUpsellIds = (bundleId || packageId || "")
+        .split(",")
+        .map((id: string) => id.trim())
+        .filter(Boolean);
+
+      if (selectedUpsellIds.length === 0) {
+        return NextResponse.json({ error: "Invalid upsell selection" }, { status: 400 });
+      }
+
+      const selectedUpsells = selectedUpsellIds
+        .map((id: string) => pricing.upsells.find((u) => u.id === id))
+        .filter(Boolean) as PricingConfig["upsells"];
+
+      if (selectedUpsells.length !== selectedUpsellIds.length) {
         return NextResponse.json({ error: "Invalid upsell" }, { status: 400 });
       }
-      amount = upsell.price;
-      productInfo = upsell.name;
-      metadata.feature = upsell.feature;
+
+      amount = selectedUpsells.reduce((sum, upsell) => sum + upsell.price, 0);
+      productInfo =
+        selectedUpsells.length === 1
+          ? selectedUpsells[0].name
+          : `Upsells: ${selectedUpsells.map((u) => u.name).join(" + ")}`;
+
+      metadata.feature =
+        selectedUpsells.length === 1
+          ? selectedUpsells[0].feature
+          : selectedUpsells.map((u) => u.feature).join(",");
     } else if (type === "coins") {
       const coinPkg = pricing.coinPackages.find(c => c.id === packageId);
       if (!coinPkg) {
@@ -117,7 +137,7 @@ export async function POST(request: NextRequest) {
       payu_txn_id: txnId,
       user_id: userId || null,
       type,
-      bundle_id: bundleId || packageId || null,
+      bundle_id: (bundleId || packageId || null),
       feature: metadata.feature || null,
       coins: metadata.coins ? parseInt(metadata.coins) : null,
       customer_email: normalizedEmail || null,

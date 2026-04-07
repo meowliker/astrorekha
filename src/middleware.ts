@@ -13,6 +13,7 @@ export async function middleware(request: NextRequest) {
     "/birth-chart",
     "/compatibility",
     "/prediction-2026",
+    "/soulmate-sketch",
     "/profile",
     "/settings",
   ];

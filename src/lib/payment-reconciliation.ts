@@ -4,18 +4,21 @@ const BUNDLE_FEATURES: Record<string, string[]> = {
   "palm-reading": ["palmReading"],
   "palm-birth": ["palmReading", "birthChart"],
   "palm-birth-compat": ["palmReading", "birthChart", "compatibilityTest"],
+  "palm-birth-sketch": ["palmReading", "birthChart", "soulmateSketch"],
 };
 
 const BUNDLE_COIN_BONUS: Record<string, number> = {
   "palm-reading": 15,
   "palm-birth": 15,
   "palm-birth-compat": 30,
+  "palm-birth-sketch": 30,
 };
 
 const OFFER_ID_TO_FEATURE: Record<string, string> = {
   "2026-predictions": "prediction2026",
   "birth-chart": "birthChart",
   compatibility: "compatibilityTest",
+  "soulmate-sketch": "soulmateSketch",
 };
 
 interface PaymentRow {
@@ -42,6 +45,7 @@ function mergeFeatures(
     prediction2026: false,
     birthChart: false,
     compatibilityTest: false,
+    soulmateSketch: false,
     ...(current || {}),
   };
 
@@ -61,7 +65,12 @@ function getFeatureList(row: PaymentRow): string[] {
     return BUNDLE_FEATURES[bundleId] || [];
   }
 
-  if (feature) return [feature];
+  if (feature) {
+    return feature
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+  }
 
   if (!bundleId) return [];
   if (bundleId.includes(",")) {
@@ -144,6 +153,7 @@ export async function reconcilePaidPaymentsForEmail({
     prediction2026: false,
     birthChart: false,
     compatibilityTest: false,
+    soulmateSketch: false,
     ...(userData?.unlocked_features || {}),
   };
   let computedCoinsFromPayments = 0;

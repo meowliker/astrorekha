@@ -78,6 +78,12 @@ function Step18Content() {
     const sessionId = searchParams.get("session_id");
     const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
     const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
+    const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
+
+    if (layoutVariant === "B") {
+      router.replace("/onboarding/bundle-upsell-b");
+      return;
+    }
     
     // If user has completed registration, redirect to app
     if (hasCompletedRegistration) {

@@ -73,11 +73,13 @@ export default function UserHydrator() {
       const hasPrediction2026 = !!unlocked.prediction2026;
       const hasBirthChart = !!unlocked.birthChart;
       const hasCompatibility = !!unlocked.compatibilityTest;
+      const hasSoulmateSketch = !!unlocked.soulmateSketch;
 
       if (hasPalmReading) unlockFeature("palmReading");
       if (hasPrediction2026) unlockFeature("prediction2026");
       if (hasBirthChart) unlockFeature("birthChart");
       if (hasCompatibility) unlockFeature("compatibilityTest");
+      if (hasSoulmateSketch) unlockFeature("soulmateSketch");
     } catch (err) {
       console.error("Failed to hydrate user:", err);
     }

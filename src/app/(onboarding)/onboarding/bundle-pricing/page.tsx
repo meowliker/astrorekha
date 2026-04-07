@@ -20,6 +20,8 @@ const predictionLabels = [
   { text: "Big change at", emoji: "✨", top: "55%", left: "15%", rotation: -10 },
 ];
 
+const LAYOUT_TEST_ID = "onboarding-layout-qa";
+
 // Generate random stats with some variation for authenticity
 function generateRandomStats() {
   const baseStats = [
@@ -99,9 +101,14 @@ export default function BundlePricingPage() {
   const testimonialSectionRef = useRef<HTMLDivElement>(null);
   const birthChartSectionRef = useRef<HTMLDivElement>(null);
   const getFullReportRef = useRef<HTMLButtonElement>(null);
+  const checkoutStartedRef = useRef(false);
   const [showStickyCTA, setShowStickyCTA] = useState(false);
   
   const { userId } = useUserStore();
+  const getVisitorId = () =>
+    localStorage.getItem("astrorekha_ab_visitor_id") ||
+    localStorage.getItem("astrorekha_user_id") ||
+    generateUserId();
 
   useEffect(() => {
     const handlePageShow = () => setIsProcessing(false);
@@ -109,6 +116,9 @@ export default function BundlePricingPage() {
     
     // Set flow type in localStorage
     localStorage.setItem("astrorekha_onboarding_flow", "flow-b");
+    if (localStorage.getItem("astrorekha_layout_variant") !== "B") {
+      localStorage.setItem("astrorekha_layout_variant", "A");
+    }
     
     // Route protection: Check if user has already completed payment
     const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
@@ -118,12 +128,44 @@ export default function BundlePricingPage() {
       router.replace("/dashboard");
       return;
     } else if (hasCompletedPayment) {
-      router.replace("/onboarding/bundle-upsell");
+      const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
+      router.replace(layoutVariant === "B" ? "/onboarding/bundle-upsell-b" : "/onboarding/bundle-upsell");
       return;
     }
     
     return () => window.removeEventListener("pageshow", handlePageShow);
   }, [router]);
+
+  useEffect(() => {
+    if (localStorage.getItem("astrorekha_layout_variant") === "B") return;
+
+    fetch("/api/ab-test/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        testId: LAYOUT_TEST_ID,
+        variant: "A",
+        eventType: "impression",
+        visitorId: getVisitorId(),
+      }),
+    }).catch(() => {});
+
+    return () => {
+      if (checkoutStartedRef.current) return;
+      if (localStorage.getItem("astrorekha_payment_completed") === "true") return;
+      fetch("/api/ab-test/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          testId: LAYOUT_TEST_ID,
+          variant: "A",
+          eventType: "bounce",
+          visitorId: getVisitorId(),
+        }),
+        keepalive: true,
+      }).catch(() => {});
+    };
+  }, []);
 
   // Load saved palm image and generate stats
   useEffect(() => {
@@ -235,6 +277,7 @@ export default function BundlePricingPage() {
   const handlePurchase = async () => {
     setPaymentError("");
     setIsProcessing(true);
+    checkoutStartedRef.current = true;
     
     const plan = bundlePlans.find(p => p.id === selectedPlan);
     if (!plan) {
@@ -249,6 +292,19 @@ export default function BundlePricingPage() {
     
     // Track AddToCart
     pixelEvents.addToCart(plan.price, plan.name);
+    if (localStorage.getItem("astrorekha_layout_variant") !== "B") {
+      fetch("/api/ab-test/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          testId: LAYOUT_TEST_ID,
+          variant: "A",
+          eventType: "checkout_started",
+          visitorId: getVisitorId(),
+          metadata: { plan: selectedPlan, amount: plan.price },
+        }),
+      }).catch(() => {});
+    }
 
     // Track Brevo checkout_started for abandoned checkout automation (30-min email)
     const userEmail = localStorage.getItem("astrorekha_email");
@@ -336,6 +392,19 @@ export default function BundlePricingPage() {
                 localStorage.setItem("astrorekha_purchase_type", "one-time");
                 localStorage.setItem("astrorekha_bundle_id", selectedPlan);
                 pixelEvents.purchase(plan.price, selectedPlan, plan.name);
+                if (localStorage.getItem("astrorekha_layout_variant") !== "B") {
+                  fetch("/api/ab-test/event", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      testId: LAYOUT_TEST_ID,
+                      variant: "A",
+                      eventType: "conversion",
+                      visitorId: getVisitorId(),
+                      metadata: { plan: selectedPlan, amount: plan.price },
+                    }),
+                  }).catch(() => {});
+                }
                 router.push("/onboarding/bundle-upsell");
               } else {
                 setPaymentError("Payment verification failed. Please contact support.");

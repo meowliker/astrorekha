@@ -16,7 +16,7 @@ const subscriptionBenefits = [
 ];
 
 // Bundle benefits based on what was purchased
-const getBundleBenefits = (bundleId: string | null, unlockedFeatures?: { birthChart?: boolean; compatibilityTest?: boolean; prediction2026?: boolean }) => {
+const getBundleBenefits = (bundleId: string | null, unlockedFeatures?: { birthChart?: boolean; compatibilityTest?: boolean; prediction2026?: boolean; soulmateSketch?: boolean }) => {
   const benefits = [];
   
   // Always included for all users
@@ -24,15 +24,18 @@ const getBundleBenefits = (bundleId: string | null, unlockedFeatures?: { birthCh
   benefits.push({ icon: "🖐️", text: "Palm Reading Report" });
   
   // Show based on what was purchased (check both bundleId and unlockedFeatures)
-  if (bundleId === "palm-birth" || bundleId === "palm-birth-compat" || unlockedFeatures?.birthChart) {
+  if (bundleId === "palm-birth" || bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" || unlockedFeatures?.birthChart) {
   benefits.push({ icon: "🌙", text: "Birth Chart Analysis" });
 }
 if (bundleId === "palm-birth-compat" || unlockedFeatures?.compatibilityTest) {
   benefits.push({ icon: "💕", text: "Compatibility Report" });
 }
+if (bundleId === "palm-birth-sketch" || unlockedFeatures?.soulmateSketch) {
+  benefits.push({ icon: "🎨", text: "Soulmate Sketch" });
+}
 
 // Bundle 3 (palm-birth-compat) gives 30 coins, others give 15
-const coinCount = bundleId === "palm-birth-compat" ? 30 : 15;
+const coinCount = bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" ? 30 : 15;
   benefits.push({ icon: "💬", text: `${coinCount} AI Chat Coins` });
   
   return benefits;

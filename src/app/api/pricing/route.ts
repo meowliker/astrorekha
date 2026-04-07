@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { DEFAULT_PRICING } from "@/lib/pricing";
+import { DEFAULT_PRICING, normalizePricing } from "@/lib/pricing";
 
 // GET - Fetch current pricing (public endpoint for frontend)
 export async function GET() {
@@ -17,7 +17,7 @@ export async function GET() {
       return NextResponse.json({ success: true, pricing: DEFAULT_PRICING });
     }
 
-    return NextResponse.json({ success: true, pricing: data.value });
+    return NextResponse.json({ success: true, pricing: normalizePricing(data.value) });
   } catch (error: any) {
     console.error("Error fetching pricing:", error);
     return NextResponse.json({ success: true, pricing: DEFAULT_PRICING });

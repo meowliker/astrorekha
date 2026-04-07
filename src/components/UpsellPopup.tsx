@@ -13,6 +13,7 @@ const featureToReportId: Record<keyof UnlockedFeatures, string> = {
   prediction2026: "report-2026",
   birthChart: "report-birth-chart",
   compatibilityTest: "report-compatibility",
+  soulmateSketch: "report-soulmate-sketch",
 };
 
 interface UpsellPopupProps {
@@ -97,7 +98,9 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
               setIsProcessing(false);
               onPurchase?.();
               onClose();
-              window.location.reload();
+              if (!onPurchase) {
+                window.location.reload();
+              }
             } else {
               setError("Payment failed. Please try again.");
               setIsProcessing(false);

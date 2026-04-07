@@ -86,12 +86,17 @@ export async function GET(request: NextRequest) {
 
       const resolvedTestData = testData || {
         id: testId,
-        name: "Pricing Page A/B Test",
+        name: testId.startsWith("onboarding-layout") ? "Onboarding Layout A/B (QA)" : "Pricing Page A/B Test",
         status: "active",
-        variants: {
-          A: { weight: 50, page: "step-17" },
-          B: { weight: 50, page: "a-step-17" },
-        },
+        variants: testId.startsWith("onboarding-layout")
+          ? {
+              A: { weight: 50, page: "bundle-pricing" },
+              B: { weight: 50, page: "bundle-pricing-b" },
+            }
+          : {
+              A: { weight: 50, page: "step-17" },
+              B: { weight: 50, page: "a-step-17" },
+            },
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };

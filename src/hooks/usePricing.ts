@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { DEFAULT_PRICING, type PricingConfig } from "@/lib/pricing";
+import { DEFAULT_PRICING, normalizePricing, type PricingConfig } from "@/lib/pricing";
 
 export function usePricing() {
   const [pricing, setPricing] = useState<PricingConfig>(DEFAULT_PRICING);
@@ -13,7 +13,7 @@ export function usePricing() {
         const response = await fetch("/api/pricing");
         const data = await response.json();
         if (data.success && data.pricing) {
-          setPricing(data.pricing);
+          setPricing(normalizePricing(data.pricing));
         }
       } catch (error) {
         console.error("Failed to fetch pricing:", error);

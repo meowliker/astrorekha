@@ -250,7 +250,7 @@ function Step19Content() {
       }
 
       // Pre-generate birth chart if user bought a bundle that includes it
-      if (bundleId === "palm-birth" || bundleId === "palm-birth-compat") {
+      if (bundleId === "palm-birth" || bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch") {
         const birthTime = onboardingData.knowsBirthTime
           ? (() => {
               let hour = parseInt(onboardingData.birthHour) || 12;

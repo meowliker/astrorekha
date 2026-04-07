@@ -31,7 +31,7 @@ const getBundleFeatures = (bundleId: string | null) => {
   features.push({ icon: "🖐️", title: "Palm Reading", description: "AI-powered palm analysis for life insights" });
   
   // Palm + Birth Chart and Full Bundle include birth chart
-  if (bundleId === "palm-birth" || bundleId === "palm-birth-compat") {
+  if (bundleId === "palm-birth" || bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch") {
     features.push({ icon: "📊", title: "Birth Chart", description: "Complete astrological birth chart analysis" });
   }
   
@@ -39,9 +39,12 @@ const getBundleFeatures = (bundleId: string | null) => {
   if (bundleId === "palm-birth-compat") {
     features.push({ icon: "💕", title: "Compatibility Report", description: "Find your perfect cosmic match" });
   }
+  if (bundleId === "palm-birth-sketch") {
+    features.push({ icon: "🎨", title: "Soulmate Sketch", description: "One personalized AI soulmate portrait" });
+  }
   
   // Bundle 3 (palm-birth-compat) gives 30 coins, others give 15
-  const coinCount = bundleId === "palm-birth-compat" ? 30 : 15;
+  const coinCount = bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" ? 30 : 15;
   features.push({ icon: "💬", title: `${coinCount} AI Chat Coins`, description: "Ask Elysia anything about your destiny" });
   
   return features;
@@ -74,7 +77,8 @@ export default function Step20Page() {
       // No payment - redirect to payment page
       const onboardingFlow = localStorage.getItem("astrorekha_onboarding_flow");
       if (onboardingFlow === "flow-b") {
-        router.replace("/onboarding/bundle-pricing");
+        const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
+        router.replace(layoutVariant === "B" ? "/onboarding/bundle-pricing-b" : "/onboarding/bundle-pricing");
       } else {
         router.replace("/onboarding/step-17");
       }

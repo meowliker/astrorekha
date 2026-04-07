@@ -26,7 +26,8 @@ export default function WelcomePage() {
       return;
     } else if (hasCompletedPayment) {
       // User has paid but not registered - redirect to upsell page
-      router.replace("/onboarding/step-18");
+      const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
+      router.replace(layoutVariant === "B" ? "/onboarding/bundle-upsell-b" : "/onboarding/step-18");
       return;
     }
     // New user - allow access to welcome page

@@ -23,6 +23,12 @@ import {
   AlertTriangle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DEFAULT_LAYOUT_B_CONFIG,
+  SKETCH_QUESTION_BANK,
+  normalizeLayoutBConfig,
+  type LayoutBFunnelConfig,
+} from "@/lib/layout-b-funnel";
 
 interface ABTest {
   id: string;
@@ -81,6 +87,8 @@ export default function ABTestsPage() {
   const [saving, setSaving] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [funnelConfig, setFunnelConfig] = useState<LayoutBFunnelConfig>(DEFAULT_LAYOUT_B_CONFIG);
+  const [savingFunnelConfig, setSavingFunnelConfig] = useState(false);
 
   // Check admin session and fetch data (same pattern as revenue dashboard)
   useEffect(() => {
@@ -99,6 +107,7 @@ export default function ABTestsPage() {
       
       // Valid session, fetch tests
       fetchTests();
+      fetchFunnelConfig();
     };
     
     checkAdminAndFetch();
@@ -117,6 +126,18 @@ export default function ABTestsPage() {
     }
   };
 
+  const fetchFunnelConfig = async () => {
+    try {
+      const response = await fetch("/api/admin/funnel-config");
+      const data = await response.json();
+      if (data?.success && data.config) {
+        setFunnelConfig(normalizeLayoutBConfig(data.config));
+      }
+    } catch (error) {
+      console.error("Failed to fetch funnel config:", error);
+    }
+  };
+
   const fetchTestDetails = async (testId: string) => {
     try {
       setLoading(true);
@@ -125,6 +146,13 @@ export default function ABTestsPage() {
       setSelectedTest(data);
       setWeightA(data.test?.variants?.A?.weight || 50);
       setWeightB(data.test?.variants?.B?.weight || 50);
+      if (data?.test?.id && data.test.id === funnelConfig.testId) {
+        setFunnelConfig((prev) => ({
+          ...prev,
+          variantAWeight: data.test?.variants?.A?.weight || prev.variantAWeight,
+          variantBWeight: data.test?.variants?.B?.weight || prev.variantBWeight,
+        }));
+      }
     } catch (error) {
       console.error("Failed to fetch test details:", error);
     } finally {
@@ -227,6 +255,29 @@ export default function ABTestsPage() {
       alert("Failed to reset analytics");
     } finally {
       setResetting(false);
+    }
+  };
+
+  const saveFunnelConfig = async () => {
+    try {
+      setSavingFunnelConfig(true);
+      const response = await fetch("/api/admin/funnel-config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: funnelConfig }),
+      });
+      const data = await response.json();
+      if (data?.success && data.config) {
+        setFunnelConfig(normalizeLayoutBConfig(data.config));
+      }
+      await fetchTests();
+      if (selectedTest?.test?.id) {
+        await fetchTestDetails(selectedTest.test.id);
+      }
+    } catch (error) {
+      console.error("Failed to save funnel config:", error);
+    } finally {
+      setSavingFunnelConfig(false);
     }
   };
 
@@ -412,6 +463,78 @@ export default function ABTestsPage() {
             </div>
           )}
 
+          {/* Layout B Funnel Controls */}
+          <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">Layout B Funnel Controls</h2>
+              <Button size="sm" onClick={saveFunnelConfig} disabled={savingFunnelConfig}>
+                {savingFunnelConfig ? "Saving..." : "Save Funnel Config"}
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <label className="flex items-center justify-between px-3 py-2 bg-background border border-border rounded-lg">
+                <span className="text-sm">A/B Test Enabled</span>
+                <input
+                  type="checkbox"
+                  checked={funnelConfig.enabled}
+                  onChange={(e) => setFunnelConfig((prev) => ({ ...prev, enabled: e.target.checked }))}
+                />
+              </label>
+              <label className="flex items-center justify-between px-3 py-2 bg-background border border-border rounded-lg">
+                <span className="text-sm">Layout B Enabled</span>
+                <input
+                  type="checkbox"
+                  checked={funnelConfig.layoutBEnabled}
+                  onChange={(e) => setFunnelConfig((prev) => ({ ...prev, layoutBEnabled: e.target.checked }))}
+                />
+              </label>
+              <label className="flex items-center justify-between px-3 py-2 bg-background border border-border rounded-lg">
+                <span className="text-sm">Max Sketch / User</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={1}
+                  value={funnelConfig.maxSketchPerUser}
+                  onChange={(e) =>
+                    setFunnelConfig((prev) => ({
+                      ...prev,
+                      maxSketchPerUser: Math.max(1, Math.min(1, Number(e.target.value) || 1)),
+                    }))
+                  }
+                  className="w-14 bg-transparent text-right"
+                />
+              </label>
+            </div>
+
+            <div className="mb-3">
+              <p className="text-sm text-muted-foreground mb-2">Question Toggles (turn off low-signal steps to reduce bounce)</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {SKETCH_QUESTION_BANK.map((question) => (
+                  <label
+                    key={question.id}
+                    className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2"
+                  >
+                    <span className="text-sm">{question.title}</span>
+                    <input
+                      type="checkbox"
+                      checked={funnelConfig.questions[question.id]}
+                      onChange={(e) =>
+                        setFunnelConfig((prev) => ({
+                          ...prev,
+                          questions: {
+                            ...prev.questions,
+                            [question.id]: e.target.checked,
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+
           {/* Traffic Split */}
           <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
@@ -478,16 +601,20 @@ export default function ABTestsPage() {
                     <span className="font-medium">Variant A</span>
                     <span className="text-2xl font-bold text-blue-400">{test.variants?.A?.weight || 50}%</span>
                   </div>
-                  <p className="text-xs text-muted-foreground">Current pricing page (step-17)</p>
-                  <p className="text-xs text-muted-foreground mt-1">1-Week ($1), 2-Week ($5.49), Yearly ($49.99)</p>
+                  <p className="text-xs text-muted-foreground">
+                    Layout A route: {test.variants?.A?.page || "bundle-pricing"}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Current baseline onboarding/paywall experience</p>
                 </div>
                 <div className="flex-1 bg-purple-500/10 border border-purple-500/30 rounded-lg p-4">
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-medium">Variant B</span>
                     <span className="text-2xl font-bold text-purple-400">{test.variants?.B?.weight || 50}%</span>
                   </div>
-                  <p className="text-xs text-muted-foreground">New pricing page (a-step-17)</p>
-                  <p className="text-xs text-muted-foreground mt-1">1-Week ($2.99), 4-Week ($7.99), 12-Week ($14.99)</p>
+                  <p className="text-xs text-muted-foreground">
+                    Layout B route: {test.variants?.B?.page || "bundle-pricing-b"}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Sketch-focused onboarding + compatibility on upsell</p>
                 </div>
               </div>
             )}

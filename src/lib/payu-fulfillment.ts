@@ -4,18 +4,21 @@ const BUNDLE_FEATURES: Record<string, string[]> = {
   "palm-reading": ["palmReading"],
   "palm-birth": ["palmReading", "birthChart"],
   "palm-birth-compat": ["palmReading", "birthChart", "compatibilityTest"],
+  "palm-birth-sketch": ["palmReading", "birthChart", "soulmateSketch"],
 };
 
 const BUNDLE_COIN_BONUS: Record<string, number> = {
   "palm-reading": 15,
   "palm-birth": 15,
   "palm-birth-compat": 30,
+  "palm-birth-sketch": 30,
 };
 
 const OFFER_ID_TO_FEATURE: Record<string, string> = {
   "2026-predictions": "prediction2026",
   "birth-chart": "birthChart",
   compatibility: "compatibilityTest",
+  "soulmate-sketch": "soulmateSketch",
 };
 
 const SUCCESS_STATUSES = new Set(["success", "paid", "captured"]);
@@ -53,7 +56,10 @@ function parseFeaturesFromMetadata(type: string, bundleId: string, feature: stri
   }
 
   if (feature) {
-    return [feature];
+    return feature
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
   }
 
   if (bundleId.includes(",")) {
@@ -203,6 +209,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload): Promise<
     prediction2026: false,
     birthChart: false,
     compatibilityTest: false,
+    soulmateSketch: false,
   };
   let updatedFeatures = { ...currentFeatures } as Record<string, boolean>;
   let updatedCoins = typeof user?.coins === "number" ? user.coins : 0;

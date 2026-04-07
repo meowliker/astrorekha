@@ -53,6 +53,27 @@ export interface PricingConfig {
   coinPackages: CoinPackage[];
 }
 
+function mergeById<T extends { id: string }>(defaults: T[], incoming?: T[]): T[] {
+  const incomingList = Array.isArray(incoming) ? incoming : [];
+  const incomingMap = new Map(incomingList.map((item) => [item.id, item]));
+  const mergedDefaults = defaults.map((d) => ({ ...d, ...(incomingMap.get(d.id) || {}) }));
+  const extraIncoming = incomingList.filter((item) => !defaults.some((d) => d.id === item.id));
+  return [...mergedDefaults, ...extraIncoming];
+}
+
+export function normalizePricing(raw?: Partial<PricingConfig> | null): PricingConfig {
+  if (!raw || typeof raw !== "object") {
+    return DEFAULT_PRICING;
+  }
+
+  return {
+    bundles: mergeById(DEFAULT_PRICING.bundles, raw.bundles as BundlePlan[] | undefined),
+    upsells: mergeById(DEFAULT_PRICING.upsells, raw.upsells as UpsellPlan[] | undefined),
+    reports: mergeById(DEFAULT_PRICING.reports, raw.reports as ReportPlan[] | undefined),
+    coinPackages: mergeById(DEFAULT_PRICING.coinPackages, raw.coinPackages as CoinPackage[] | undefined),
+  };
+}
+
 // Default pricing (fallback)
 export const DEFAULT_PRICING: PricingConfig = {
   bundles: [
@@ -110,6 +131,24 @@ export const DEFAULT_PRICING: PricingConfig = {
       limitedOffer: true,
       active: true,
     },
+    {
+      id: "palm-birth-sketch",
+      name: "Palm + Birth + Sketch",
+      price: 1599,
+      displayPrice: 1599,
+      originalPrice: 3199,
+      discount: "50% OFF",
+      description: "Palm reading + birth chart + AI soulmate sketch.",
+      features: ["palmReading", "birthChart", "soulmateSketch"],
+      featureList: [
+        "Everything in Palm + Birth Chart",
+        "One AI soulmate sketch",
+        "Relationship energy insights",
+      ],
+      popular: false,
+      limitedOffer: true,
+      active: false,
+    },
   ],
   upsells: [
     {
@@ -121,6 +160,39 @@ export const DEFAULT_PRICING: PricingConfig = {
       discount: "50% OFF",
       description: "Detailed predictions for your 2026 journey.",
       feature: "prediction2026",
+      active: true,
+    },
+    {
+      id: "compatibility",
+      name: "Compatibility Report",
+      price: 499,
+      displayPrice: 499,
+      originalPrice: 999,
+      discount: "50% OFF",
+      description: "Check your love match and relationship chemistry.",
+      feature: "compatibilityTest",
+      active: true,
+    },
+    {
+      id: "birth-chart",
+      name: "Birth Chart Report",
+      price: 499,
+      displayPrice: 499,
+      originalPrice: 999,
+      discount: "50% OFF",
+      description: "Unlock your complete astrological blueprint.",
+      feature: "birthChart",
+      active: true,
+    },
+    {
+      id: "soulmate-sketch",
+      name: "Soulmate Sketch",
+      price: 499,
+      displayPrice: 499,
+      originalPrice: 999,
+      discount: "50% OFF",
+      description: "Generate your one-time AI soulmate portrait.",
+      feature: "soulmateSketch",
       active: true,
     },
   ],
@@ -149,6 +221,14 @@ export const DEFAULT_PRICING: PricingConfig = {
       feature: "compatibilityTest",
       active: true,
     },
+    {
+      id: "report-soulmate-sketch",
+      name: "Soulmate Sketch",
+      price: 199,
+      originalPrice: 499,
+      feature: "soulmateSketch",
+      active: true,
+    },
   ],
   coinPackages: [
     { id: "coins-50", coins: 50, price: 416, displayPrice: 416, originalPrice: 500, active: true },
@@ -165,7 +245,7 @@ export async function getPricing(): Promise<PricingConfig> {
       cache: 'no-store',
     });
     const data = await response.json();
-    return data.pricing || DEFAULT_PRICING;
+    return normalizePricing(data.pricing);
   } catch {
     return DEFAULT_PRICING;
   }

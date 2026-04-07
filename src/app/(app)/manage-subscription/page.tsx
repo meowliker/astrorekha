@@ -11,6 +11,7 @@ const BUNDLE_NAMES: Record<string, string> = {
   "palm-reading": "Palm Reading Report",
   "palm-birth": "Palm + Birth Chart Report",
   "palm-birth-compat": "Palm + Birth Chart + Compatibility Report",
+  "palm-birth-sketch": "Palm + Birth + Sketch Report",
 };
 
 const FEATURE_LABELS: Record<string, string> = {
@@ -18,6 +19,7 @@ const FEATURE_LABELS: Record<string, string> = {
   birthChart: "Birth Chart",
   compatibilityTest: "Compatibility Report",
   prediction2026: "2026 Predictions",
+  soulmateSketch: "Soulmate Sketch",
 };
 
 export default function ManageSubscriptionPage() {

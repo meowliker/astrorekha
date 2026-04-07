@@ -23,7 +23,8 @@ export default function WelcomeBPage() {
       return;
     } else if (hasCompletedPayment) {
       // User has paid but not registered - redirect to bundle upsell page
-      router.replace("/onboarding/bundle-upsell");
+      const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
+      router.replace(layoutVariant === "B" ? "/onboarding/bundle-upsell-b" : "/onboarding/bundle-upsell");
       return;
     }
     // New user - allow access to welcome page

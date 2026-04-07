@@ -11,24 +11,41 @@ export async function GET(request: NextRequest) {
     const visitorId = searchParams.get("visitorId");
 
     const supabase = getSupabaseAdmin();
+    const isOnboardingLayoutTest = testId.startsWith("onboarding-layout");
+
+    const defaultTest = {
+      id: testId,
+      name: isOnboardingLayoutTest ? "Onboarding Layout A/B (QA)" : "Pricing Page A/B Test",
+      status: "active",
+      variants: isOnboardingLayoutTest
+        ? {
+            A: { weight: 50, page: "bundle-pricing" },
+            B: { weight: 50, page: "bundle-pricing-b" },
+          }
+        : {
+            A: { weight: 50, page: "step-17" },
+            B: { weight: 50, page: "a-step-17" },
+          },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const pageForVariant = (variant: string, test: any): string => {
+      const configured = test?.variants?.[variant]?.page;
+      if (configured && typeof configured === "string") {
+        return configured;
+      }
+      if (isOnboardingLayoutTest) {
+        return variant === "A" ? "bundle-pricing" : "bundle-pricing-b";
+      }
+      return variant === "A" ? "step-17" : "a-step-17";
+    };
 
     // Get test configuration
     const { data: testData } = await supabase.from("ab_tests").select("*").eq("id", testId).single();
     
     if (!testData) {
       // Create default test if it doesn't exist
-      const defaultTest = {
-        id: testId,
-        name: "Pricing Page A/B Test",
-        status: "active",
-        variants: {
-          A: { weight: 50, page: "step-17" },
-          B: { weight: 50, page: "a-step-17" },
-        },
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      
       await supabase.from("ab_tests").insert(defaultTest);
       
       const variant = Math.random() < 0.5 ? "A" : "B";
@@ -36,7 +53,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         testId,
         variant,
-        page: variant === "A" ? "step-17" : "a-step-17",
+        page: pageForVariant(variant, defaultTest),
         test: defaultTest,
       });
     }
@@ -46,7 +63,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         testId,
         variant: "A",
-        page: "step-17",
+        page: pageForVariant("A", testData),
         test: testData,
         message: "Test is not active, defaulting to variant A",
       });
@@ -64,7 +81,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
           testId,
           variant: assignment.variant,
-          page: assignment.variant === "A" ? "step-17" : "a-step-17",
+          page: pageForVariant(assignment.variant, testData),
           test: testData,
           cached: true,
         });
@@ -103,7 +120,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       testId,
       variant: assignedVariant,
-      page: assignedVariant === "A" ? "step-17" : "a-step-17",
+      page: pageForVariant(assignedVariant, testData),
       test: testData,
     });
   } catch (error) {

@@ -3,13 +3,14 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type PurchasedBundle = "palm-reading" | "palm-birth" | "palm-birth-compat" | null;
+export type PurchasedBundle = "palm-reading" | "palm-birth" | "palm-birth-compat" | "palm-birth-sketch" | null;
 
 export interface UnlockedFeatures {
   palmReading: boolean;
   prediction2026: boolean;
   birthChart: boolean;
   compatibilityTest: boolean;
+  soulmateSketch: boolean;
 }
 
 interface UserState {
@@ -51,6 +52,7 @@ interface UserState {
     birthChart?: boolean;
     compatibilityTest?: boolean;
     prediction2026?: boolean;
+    soulmateSketch?: boolean;
     coins?: number;
     purchasedBundle?: PurchasedBundle;
   }) => void;
@@ -61,6 +63,7 @@ const initialUnlockedFeatures: UnlockedFeatures = {
   prediction2026: false,
   birthChart: false,
   compatibilityTest: false,
+  soulmateSketch: false,
 };
 
 const initialState = {
@@ -94,6 +97,7 @@ export const useUserStore = create<UserState>()(
             prediction2026: true,
             birthChart: true,
             compatibilityTest: true,
+            soulmateSketch: true,
           },
         }),
 
@@ -147,6 +151,7 @@ export const useUserStore = create<UserState>()(
             prediction2026: true,
             birthChart: true,
             compatibilityTest: true,
+            soulmateSketch: true,
           },
         }),
 
@@ -162,6 +167,7 @@ export const useUserStore = create<UserState>()(
           birthChart: data.unlockedFeatures?.birthChart ?? data.birthChart ?? false,
           compatibilityTest: data.unlockedFeatures?.compatibilityTest ?? data.compatibilityTest ?? false,
           prediction2026: data.unlockedFeatures?.prediction2026 ?? data.prediction2026 ?? false,
+          soulmateSketch: data.unlockedFeatures?.soulmateSketch ?? data.soulmateSketch ?? false,
         };
         updates.unlockedFeatures = features;
         
@@ -196,6 +202,7 @@ export const featureNames: Record<keyof UnlockedFeatures, string> = {
   prediction2026: "2026 Predictions",
   birthChart: "Birth Chart",
   compatibilityTest: "Compatibility Test",
+  soulmateSketch: "Soulmate Sketch",
 };
 
 // Feature prices (INR)
@@ -204,4 +211,5 @@ export const featurePrices: Record<keyof UnlockedFeatures, number> = {
   prediction2026: 582,
   birthChart: 582,
   compatibilityTest: 582,
+  soulmateSketch: 199,
 };

@@ -58,6 +58,12 @@ function BundleUpsellContent() {
     const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
     const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
     const flow = localStorage.getItem("astrorekha_onboarding_flow");
+    const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
+
+    if (layoutVariant === "B") {
+      router.replace("/onboarding/bundle-upsell-b");
+      return;
+    }
     
     // If not flow-b, redirect to regular upsell
     if (flow !== "flow-b") {
@@ -87,6 +93,7 @@ function BundleUpsellContent() {
           "palm-reading": 1163,
           "palm-birth": 1578,
           "palm-birth-compat": 3158,
+          "palm-birth-sketch": 3158,
         };
         pixelEvents.purchase(planPrices[selectedPlan] || 1578, selectedPlan, selectedPlan);
         
