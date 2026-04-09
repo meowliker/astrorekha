@@ -9,11 +9,19 @@ export default function WelcomeBPage() {
   const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  const seedFlowB = () => {
+    try {
+      localStorage.setItem("astrorekha_onboarding_flow", "flow-b");
+      localStorage.setItem("astrorekha_layout_variant", "B");
+    } catch (error) {
+      console.error("Failed to seed flow-b localStorage:", error);
+    }
+  };
+
   // Route protection: Check user status and redirect accordingly
   useEffect(() => {
     // Mark user as Flow B (bundle flow)
-    localStorage.setItem("astrorekha_onboarding_flow", "flow-b");
-    localStorage.setItem("astrorekha_layout_variant", "B");
+    seedFlowB();
     
     const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
     const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
@@ -269,7 +277,10 @@ export default function WelcomeBPage() {
         >
           {/* Begin Journey Button */}
           <button
-            onClick={() => router.push("/onboarding")}
+            onClick={() => {
+              seedFlowB();
+              router.push("/onboarding");
+            }}
             className="w-full py-4 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-500 text-white font-semibold text-lg rounded-2xl transition-all duration-300 shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.98]"
           >
             Begin Your Journey

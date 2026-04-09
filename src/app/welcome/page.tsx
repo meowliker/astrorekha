@@ -12,11 +12,19 @@ export default function WelcomePage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const seedFlowA = () => {
+    try {
+      localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
+      localStorage.setItem("astrorekha_layout_variant", "A");
+    } catch (error) {
+      console.error("Failed to seed flow-a localStorage:", error);
+    }
+  };
+
   // Route protection: Check user status and redirect accordingly
   useEffect(() => {
     // Mark user as Flow A (subscription flow)
-    localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
-    localStorage.setItem("astrorekha_layout_variant", "A");
+    seedFlowA();
     
     const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
     const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
@@ -283,7 +291,10 @@ export default function WelcomePage() {
         >
           {/* Begin Journey Button */}
           <button
-            onClick={() => router.push("/onboarding")}
+            onClick={() => {
+              seedFlowA();
+              router.push("/onboarding");
+            }}
             className="w-full py-4 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-500 text-white font-semibold text-lg rounded-2xl transition-all duration-300 shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.98]"
           >
             Begin Your Journey
