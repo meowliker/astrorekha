@@ -40,10 +40,10 @@ async function ensureOnboardingLayoutTest(supabase: ReturnType<typeof getSupabas
     return testId;
   }
 
-  // Keep metadata/weights aligned with funnel config, but do not overwrite
-  // active/paused status on read (admin Start/Pause controls this).
+  // Keep metadata aligned with funnel config, but do not overwrite admin
+  // controls such as status or split weights on every read.
   const shouldUpdateName = existing.name !== "Onboarding Layout A/B (QA)";
-  const shouldUpdateVariants = JSON.stringify(existing.variants || {}) !== JSON.stringify(variants);
+  const shouldUpdateVariants = !existing.variants;
 
   if (shouldUpdateName || shouldUpdateVariants) {
     const patch: Record<string, unknown> = {

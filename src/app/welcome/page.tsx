@@ -6,39 +6,79 @@ import { useRouter } from "next/navigation";
 import { Menu } from "lucide-react";
 import { OnboardingSidebar } from "@/components/OnboardingSidebar";
 import Image from "next/image";
+import { generateUserId } from "@/lib/user-profile";
 
 export default function WelcomePage() {
   const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const seedFlowA = () => {
+  const seedFlowVariant = (variant: "A" | "B") => {
     try {
-      localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
-      localStorage.setItem("astrorekha_layout_variant", "A");
+      localStorage.setItem("astrorekha_onboarding_flow", variant === "B" ? "flow-b" : "flow-a");
+      localStorage.setItem("astrorekha_layout_variant", variant);
     } catch (error) {
-      console.error("Failed to seed flow-a localStorage:", error);
+      console.error("Failed to seed flow variant localStorage:", error);
     }
   };
 
   // Route protection: Check user status and redirect accordingly
   useEffect(() => {
-    // Mark user as Flow A (subscription flow)
-    seedFlowA();
-    
-    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
-    const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
-    
-    if (hasCompletedRegistration) {
-      // User has completed registration - redirect to app
-      router.replace("/dashboard");
-      return;
-    } else if (hasCompletedPayment) {
-      // User has paid but not registered - redirect to upsell page
-      router.replace("/onboarding/bundle-upsell");
-      return;
-    }
-    // New user - allow access to welcome page
+    let cancelled = false;
+
+    const assignVariant = async () => {
+      const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
+      const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
+      const userId = localStorage.getItem("astrorekha_user_id") || generateUserId();
+      const visitorId = localStorage.getItem("astrorekha_ab_visitor_id") || userId;
+      localStorage.setItem("astrorekha_ab_visitor_id", visitorId);
+
+      let variant: "A" | "B" =
+        localStorage.getItem("astrorekha_layout_variant") === "B" ? "B" : "A";
+
+      try {
+        const cfgRes = await fetch("/api/ab-test/layout-config", { cache: "no-store" });
+        const cfgJson = await cfgRes.json().catch(() => ({}));
+        const enabled = cfgJson?.config?.enabled !== false;
+        const layoutBEnabled = cfgJson?.config?.layoutBEnabled !== false;
+        const testId = cfgJson?.config?.testId || "onboarding-layout-qa";
+
+        if (enabled && layoutBEnabled) {
+          const params = new URLSearchParams({ testId, visitorId, userId });
+          const variantRes = await fetch(`/api/ab-test?${params.toString()}`, { cache: "no-store" });
+          const variantJson = await variantRes.json().catch(() => ({}));
+          variant = variantJson?.variant === "B" ? "B" : "A";
+        } else {
+          variant = "A";
+        }
+      } catch (error) {
+        console.error("Failed to assign welcome variant, falling back to A:", error);
+        variant = "A";
+      }
+
+      seedFlowVariant(variant);
+      if (cancelled) return;
+
+      if (hasCompletedRegistration) {
+        router.replace("/dashboard");
+        return;
+      }
+
+      if (hasCompletedPayment) {
+        router.replace(variant === "B" ? "/onboarding/bundle-upsell-b" : "/onboarding/bundle-upsell");
+        return;
+      }
+
+      if (variant === "B") {
+        router.replace("/welcome-b");
+      }
+    };
+
+    assignVariant();
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   useEffect(() => {
@@ -292,7 +332,6 @@ export default function WelcomePage() {
           {/* Begin Journey Button */}
           <button
             onClick={() => {
-              seedFlowA();
               router.push("/onboarding");
             }}
             className="w-full py-4 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-500 text-white font-semibold text-lg rounded-2xl transition-all duration-300 shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.98]"
