@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fadeUp } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
@@ -20,7 +20,72 @@ const predictionLabels = [
   { text: "Big change at", emoji: "✨", top: "55%", left: "15%", rotation: -10 },
 ];
 
+const sketchPredictionLabels = [
+  { text: "First date", emoji: "💕", top: "15%", left: "10%", rotation: -12 },
+  { text: "Marriage", emoji: "💍", top: "35%", left: "56%", rotation: 5 },
+  { text: "Anniversary", emoji: "🎉", top: "58%", left: "12%", rotation: -10 },
+  { text: "Big change", emoji: "🚀", top: "60%", left: "52%", rotation: 8 },
+];
+
 const LAYOUT_TEST_ID = "onboarding-layout-qa";
+const FLOW_B_BUNDLE_IDS = ["palm-reading", "palm-birth", "palm-birth-sketch"] as const;
+
+const SOULMATE_ANSWER_KEYS = [
+  "attracted_to",
+  "attractedTo",
+  "attracted",
+  "gender_preference",
+  "genderPreference",
+  "target_gender",
+] as const;
+
+function parseSelectionValues(raw: unknown): string[] {
+  if (raw === null || raw === undefined) return [];
+  if (Array.isArray(raw)) {
+    return raw.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
+  }
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
+        }
+      } catch {
+        // fallback to comma split below
+      }
+    }
+    return trimmed
+      .split(",")
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean);
+  }
+  const asText = String(raw).trim().toLowerCase();
+  return asText ? [asText] : [];
+}
+
+function resolveSoulmatePreviewImage(attractedToRaw: unknown, userGenderRaw: unknown): "/male.png" | "/female.png" {
+  const selections = parseSelectionValues(attractedToRaw);
+  const attractedTo =
+    selections.find((item) => item === "male" || item === "female" || item === "any") || "";
+  const gender = String(userGenderRaw || "").trim().toLowerCase();
+
+  if (attractedTo === "female") return "/female.png";
+  if (attractedTo === "male") return "/male.png";
+
+  if (attractedTo === "any") {
+    if (gender === "male") return "/female.png";
+    if (gender === "female") return "/male.png";
+    return "/female.png";
+  }
+
+  // Safe fallback if selection is missing: infer opposite of user gender.
+  if (gender === "male") return "/female.png";
+  if (gender === "female") return "/male.png";
+  return "/female.png";
+}
 
 // Generate random stats with some variation for authenticity
 function generateRandomStats() {
@@ -87,7 +152,7 @@ const scrollingEmails = [
 export default function BundlePricingPage() {
   const router = useRouter();
   const { pricing } = usePricing();
-  const bundlePlans = pricing.bundles.filter(b => b.active);
+  const allBundlePlans = pricing.bundles;
   
   const [selectedPlan, setSelectedPlan] = useState<string>("palm-birth");
   const [agreedToTerms, setAgreedToTerms] = useState(true);
@@ -97,6 +162,9 @@ export default function BundlePricingPage() {
   const [croppedPalmImage, setCroppedPalmImage] = useState<string | null>(null);
   const [readingStats, setReadingStats] = useState<{ label: string; color: string; value: number }[]>([]);
   const [compatibilityStats, setCompatibilityStats] = useState<{ label: string; color: string; value: number }[]>([]);
+  const [onboardingFlow, setOnboardingFlow] = useState<"flow-a" | "flow-b">("flow-a");
+  const [layoutVariant, setLayoutVariant] = useState<"A" | "B">("A");
+  const [soulmatePreviewImage, setSoulmatePreviewImage] = useState<"/male.png" | "/female.png">("/female.png");
   const paymentSectionRef = useRef<HTMLDivElement>(null);
   const testimonialSectionRef = useRef<HTMLDivElement>(null);
   const birthChartSectionRef = useRef<HTMLDivElement>(null);
@@ -105,6 +173,16 @@ export default function BundlePricingPage() {
   const [showStickyCTA, setShowStickyCTA] = useState(false);
   
   const { userId } = useUserStore();
+  const isLayoutB = onboardingFlow === "flow-b" && layoutVariant === "B";
+  const bundlePlans = useMemo(() => {
+    if (!isLayoutB) {
+      return allBundlePlans.filter((bundle) => bundle.active);
+    }
+
+    const byId = new Map(allBundlePlans.map((bundle) => [bundle.id, bundle]));
+    return FLOW_B_BUNDLE_IDS.map((id) => byId.get(id)).filter((bundle): bundle is NonNullable<typeof bundle> => Boolean(bundle));
+  }, [allBundlePlans, isLayoutB]);
+  const heroPredictionLabels = isLayoutB ? sketchPredictionLabels : predictionLabels;
   const getVisitorId = () =>
     localStorage.getItem("astrorekha_ab_visitor_id") ||
     localStorage.getItem("astrorekha_user_id") ||
@@ -113,11 +191,30 @@ export default function BundlePricingPage() {
   useEffect(() => {
     const handlePageShow = () => setIsProcessing(false);
     window.addEventListener("pageshow", handlePageShow);
-    
-    // Set flow type in localStorage
-    localStorage.setItem("astrorekha_onboarding_flow", "flow-b");
-    if (localStorage.getItem("astrorekha_layout_variant") !== "B") {
-      localStorage.setItem("astrorekha_layout_variant", "A");
+
+    const storedFlow = localStorage.getItem("astrorekha_onboarding_flow") === "flow-b" ? "flow-b" : "flow-a";
+    const storedVariant = localStorage.getItem("astrorekha_layout_variant") === "B" ? "B" : "A";
+    const resolvedVariant = storedFlow === "flow-b" ? storedVariant : "A";
+
+    setOnboardingFlow(storedFlow);
+    setLayoutVariant(resolvedVariant);
+
+    // Resolve preview image for layout-b sketch card.
+    try {
+      const answersRaw = localStorage.getItem("astrorekha_soulmate_answers");
+      const answers = answersRaw ? JSON.parse(answersRaw) : {};
+      const answerValue =
+        SOULMATE_ANSWER_KEYS.map((key) => answers?.[key]).find(
+          (value) => parseSelectionValues(value).length > 0
+        ) ?? null;
+
+      const onboardingStoreRaw = localStorage.getItem("astrorekha-onboarding");
+      const parsedOnboarding = onboardingStoreRaw ? JSON.parse(onboardingStoreRaw) : {};
+      const userGender = parsedOnboarding?.state?.gender ?? parsedOnboarding?.gender ?? null;
+
+      setSoulmatePreviewImage(resolveSoulmatePreviewImage(answerValue, userGender));
+    } catch {
+      setSoulmatePreviewImage("/female.png");
     }
     
     // Route protection: Check if user has already completed payment
@@ -128,8 +225,8 @@ export default function BundlePricingPage() {
       router.replace("/dashboard");
       return;
     } else if (hasCompletedPayment) {
-      const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
-      router.replace(layoutVariant === "B" ? "/onboarding/bundle-upsell-b" : "/onboarding/bundle-upsell");
+      const shouldUseLayoutB = storedFlow === "flow-b" && resolvedVariant === "B";
+      router.replace(shouldUseLayoutB ? "/onboarding/bundle-upsell-b" : "/onboarding/bundle-upsell");
       return;
     }
     
@@ -137,14 +234,14 @@ export default function BundlePricingPage() {
   }, [router]);
 
   useEffect(() => {
-    if (localStorage.getItem("astrorekha_layout_variant") === "B") return;
+    const variant = isLayoutB ? "B" : "A";
 
     fetch("/api/ab-test/event", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         testId: LAYOUT_TEST_ID,
-        variant: "A",
+        variant,
         eventType: "impression",
         visitorId: getVisitorId(),
       }),
@@ -158,14 +255,14 @@ export default function BundlePricingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           testId: LAYOUT_TEST_ID,
-          variant: "A",
+          variant,
           eventType: "bounce",
           visitorId: getVisitorId(),
         }),
         keepalive: true,
       }).catch(() => {});
     };
-  }, []);
+  }, [isLayoutB]);
 
   // Load saved palm image and generate stats
   useEffect(() => {
@@ -176,6 +273,13 @@ export default function BundlePricingPage() {
     setReadingStats(generateRandomStats());
     setCompatibilityStats(generateCompatibilityStats());
   }, []);
+
+  useEffect(() => {
+    if (bundlePlans.length === 0) return;
+    setSelectedPlan((current) =>
+      bundlePlans.some((plan) => plan.id === current) ? current : bundlePlans[0].id
+    );
+  }, [bundlePlans]);
 
   // Sticky CTA visibility
   useEffect(() => {
@@ -288,23 +392,21 @@ export default function BundlePricingPage() {
     
     // Save selected plan to localStorage
     localStorage.setItem("astrorekha_selected_plan", selectedPlan);
-    localStorage.setItem("astrorekha_onboarding_flow", "flow-b");
     
     // Track AddToCart
     pixelEvents.addToCart(plan.price, plan.name);
-    if (localStorage.getItem("astrorekha_layout_variant") !== "B") {
-      fetch("/api/ab-test/event", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          testId: LAYOUT_TEST_ID,
-          variant: "A",
-          eventType: "checkout_started",
-          visitorId: getVisitorId(),
-          metadata: { plan: selectedPlan, amount: plan.price },
-        }),
-      }).catch(() => {});
-    }
+    const variant = isLayoutB ? "B" : "A";
+    fetch("/api/ab-test/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        testId: LAYOUT_TEST_ID,
+        variant,
+        eventType: "checkout_started",
+        visitorId: getVisitorId(),
+        metadata: { plan: selectedPlan, amount: plan.price },
+      }),
+    }).catch(() => {});
 
     // Track Brevo checkout_started for abandoned checkout automation (30-min email)
     const userEmail = localStorage.getItem("astrorekha_email");
@@ -392,20 +494,18 @@ export default function BundlePricingPage() {
                 localStorage.setItem("astrorekha_purchase_type", "one-time");
                 localStorage.setItem("astrorekha_bundle_id", selectedPlan);
                 pixelEvents.purchase(plan.price, selectedPlan, plan.name);
-                if (localStorage.getItem("astrorekha_layout_variant") !== "B") {
-                  fetch("/api/ab-test/event", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      testId: LAYOUT_TEST_ID,
-                      variant: "A",
-                      eventType: "conversion",
-                      visitorId: getVisitorId(),
-                      metadata: { plan: selectedPlan, amount: plan.price },
-                    }),
-                  }).catch(() => {});
-                }
-                router.push("/onboarding/bundle-upsell");
+                fetch("/api/ab-test/event", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    testId: LAYOUT_TEST_ID,
+                    variant,
+                    eventType: "conversion",
+                    visitorId: getVisitorId(),
+                    metadata: { plan: selectedPlan, amount: plan.price },
+                  }),
+                }).catch(() => {});
+                router.push(variant === "B" ? "/onboarding/bundle-upsell-b" : "/onboarding/bundle-upsell");
               } else {
                 setPaymentError("Payment verification failed. Please contact support.");
                 setIsProcessing(false);
@@ -444,7 +544,7 @@ export default function BundlePricingPage() {
       variants={fadeUp}
       className="flex flex-col bg-background"
     >
-      {/* Section 1: Palm Reading Ready - Full Screen */}
+      {/* Section 1: Hero Ready - Full Screen */}
       <div className="min-h-[100vh] flex flex-col items-center justify-center px-6 py-8">
         {/* Header with Logo */}
         <motion.div
@@ -462,7 +562,7 @@ export default function BundlePricingPage() {
           transition={{ delay: 0.1 }}
           className="text-2xl md:text-3xl font-bold text-center mb-1"
         >
-          Your Palm Reading
+          {isLayoutB ? "Your Soulmate Sketch" : "Your Palm Reading"}
         </motion.h1>
 
         <motion.p
@@ -486,12 +586,14 @@ export default function BundlePricingPage() {
           
           {/* Dark circle container */}
           <div className="absolute inset-4 rounded-full bg-card/80 border border-border/50 overflow-hidden flex items-center justify-center">
-            {croppedPalmImage ? (
+            {isLayoutB ? (
               <img
-                src={croppedPalmImage}
-                alt="Your palm"
-                className="w-full h-full object-cover opacity-80"
+                src={soulmatePreviewImage}
+                alt="Your soulmate sketch preview"
+                className="h-[78%] w-[68%] rounded-3xl object-cover border border-white/10"
               />
+            ) : croppedPalmImage ? (
+              <img src={croppedPalmImage} alt="Your palm" className="w-full h-full object-cover opacity-80" />
             ) : (
               <img
                 src="/palm.png"
@@ -502,7 +604,7 @@ export default function BundlePricingPage() {
           </div>
 
           {/* Prediction labels */}
-          {predictionLabels.map((label, index) => (
+          {heroPredictionLabels.map((label, index) => (
             <motion.div
               key={label.text}
               initial={{ opacity: 0, scale: 0, y: 20 }}
@@ -720,7 +822,15 @@ export default function BundlePricingPage() {
         >
           {/* Palm image with stats overlay */}
           <div className="relative w-full h-48 rounded-xl overflow-hidden mb-4 bg-gradient-to-b from-muted/50 to-muted">
-            {palmImage ? (
+            {isLayoutB ? (
+              <div className="flex h-full w-full items-center justify-center">
+                <img
+                  src={soulmatePreviewImage}
+                  alt="Your soulmate sketch preview"
+                  className="h-[86%] w-[52%] rounded-2xl object-cover border border-white/10"
+                />
+              </div>
+            ) : palmImage ? (
               <img
                 src={palmImage}
                 alt="Your palm"
@@ -737,7 +847,9 @@ export default function BundlePricingPage() {
             )}
           </div>
 
-          <h3 className="text-lg font-semibold text-center mb-4">Your palm reading</h3>
+          <h3 className="text-lg font-semibold text-center mb-4">
+            {isLayoutB ? "Your soulmate sketch preview" : "Your palm reading"}
+          </h3>
 
           {/* Stats bars */}
           <div className="space-y-3 mb-4">

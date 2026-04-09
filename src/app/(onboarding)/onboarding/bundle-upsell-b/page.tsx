@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Check, Loader2 } from "lucide-react";
 import Script from "next/script";
 import { generateUserId } from "@/lib/user-profile";
+import { fadeUp } from "@/lib/motion";
+import { cn } from "@/lib/utils";
 
 const offers = [
   {
@@ -64,7 +66,7 @@ export default function BundleUpsellBPage() {
 
   const handleCheckout = async () => {
     if (selectedIds.size === 0) {
-      router.push("/onboarding/sketch-funnel");
+      router.push("/onboarding/step-19");
       return;
     }
 
@@ -143,7 +145,7 @@ export default function BundleUpsellBPage() {
             });
 
             setIsProcessing(false);
-            router.push("/onboarding/sketch-funnel");
+            router.push("/onboarding/step-19");
           },
           catchException: () => {
             setError("Payment was cancelled or failed.");
@@ -160,11 +162,11 @@ export default function BundleUpsellBPage() {
 
   return (
     <>
-      <div className="min-h-screen bg-[#0A0E1A] px-5 py-6">
-        <div className="mx-auto w-full max-w-md">
-          <h1 className="text-center text-2xl font-semibold text-white">Optional Add-ons</h1>
-          <p className="mt-2 text-center text-sm text-white/60">
-            Choose one, both, or skip. These are optional upsells for Layout B.
+      <motion.div initial="hidden" animate="visible" variants={fadeUp} className="min-h-screen bg-background px-6 py-6">
+        <div className="mx-auto w-full max-w-sm">
+          <h1 className="text-center text-2xl font-bold">Optional Add-ons</h1>
+          <p className="mt-2 text-center text-sm text-muted-foreground">
+            Choose one, both, or skip.
           </p>
 
           <div className="mt-6 space-y-3">
@@ -175,20 +177,22 @@ export default function BundleUpsellBPage() {
                   key={offer.id}
                   type="button"
                   onClick={() => toggleOffer(offer.id)}
-                  className={`w-full rounded-2xl border p-4 text-left transition ${
-                    selected ? "border-indigo-400 bg-indigo-500/10" : "border-white/10 bg-white/[0.03]"
-                  }`}
+                  className={cn(
+                    "w-full rounded-2xl border p-4 text-left transition-all duration-200",
+                    "bg-card hover:bg-card/80 border-border hover:border-primary/50",
+                    selected && "border-primary bg-primary/10"
+                  )}
                 >
                   <div className="flex items-start gap-3">
                     <span className="text-2xl">{offer.icon}</span>
                     <div className="flex-1">
-                      <p className="font-semibold text-white">{offer.name}</p>
-                      <p className="text-xs text-white/60">{offer.description}</p>
-                      <p className="mt-2 text-sm text-indigo-200">₹{offer.price}</p>
+                      <p className="font-semibold">{offer.name}</p>
+                      <p className="text-xs text-muted-foreground">{offer.description}</p>
+                      <p className="mt-2 text-sm text-primary">₹{offer.price}</p>
                     </div>
                     {selected ? (
-                      <div className="rounded-full bg-indigo-500 p-1">
-                        <Check className="h-4 w-4 text-white" />
+                      <div className="rounded-full bg-primary p-1">
+                        <Check className="h-4 w-4 text-primary-foreground" />
                       </div>
                     ) : null}
                   </div>
@@ -198,12 +202,12 @@ export default function BundleUpsellBPage() {
           </div>
 
           {error ? (
-            <div className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+            <div className="mt-4 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
             </div>
           ) : null}
 
-          <Button onClick={handleCheckout} disabled={isProcessing} className="mt-6 h-14 w-full bg-indigo-500 hover:bg-indigo-400">
+          <Button onClick={handleCheckout} disabled={isProcessing} className="mt-6 h-14 w-full text-lg font-semibold">
             {isProcessing ? (
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -216,15 +220,8 @@ export default function BundleUpsellBPage() {
             )}
           </Button>
 
-          <button
-            type="button"
-            onClick={() => router.push("/onboarding/sketch-funnel")}
-            className="mt-3 w-full text-center text-sm text-white/50 underline"
-          >
-            No thanks, continue
-          </button>
         </div>
-      </div>
+      </motion.div>
       <Script src="https://jssdk.payu.in/bolt/bolt.min.js" strategy="afterInteractive" />
     </>
   );

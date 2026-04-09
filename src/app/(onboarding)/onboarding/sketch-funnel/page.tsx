@@ -5,6 +5,8 @@ import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Check, Loader2 } from "lucide-react";
+import { OnboardingHeader, ProgressBar } from "@/components/onboarding/OnboardingHeader";
+import { cn } from "@/lib/utils";
 import {
   DEFAULT_LAYOUT_B_CONFIG,
   getActiveSketchQuestions,
@@ -34,22 +36,51 @@ export default function SketchFunnelPage() {
         return;
       }
 
+      let parsedAnswers: Record<string, unknown> = {};
       try {
         const savedAnswers = localStorage.getItem(ANSWERS_STORAGE_KEY);
         if (savedAnswers) {
-          setAnswers(JSON.parse(savedAnswers));
+          const parsed = JSON.parse(savedAnswers);
+          if (parsed && typeof parsed === "object") {
+            parsedAnswers = parsed as Record<string, unknown>;
+            setAnswers(parsed as Record<string, string>);
+          }
         }
       } catch {
         // ignore invalid JSON and continue
       }
 
+      let normalizedConfig = DEFAULT_LAYOUT_B_CONFIG;
       try {
         const response = await fetch("/api/ab-test/layout-config", { cache: "no-store" });
         const json = await response.json().catch(() => ({}));
-        setConfig(normalizeLayoutBConfig(json?.config || DEFAULT_LAYOUT_B_CONFIG));
+        normalizedConfig = normalizeLayoutBConfig(json?.config || DEFAULT_LAYOUT_B_CONFIG);
+        setConfig(normalizedConfig);
       } catch {
-        setConfig(DEFAULT_LAYOUT_B_CONFIG);
+        normalizedConfig = DEFAULT_LAYOUT_B_CONFIG;
+        setConfig(normalizedConfig);
       } finally {
+        const activeQuestions = getActiveSketchQuestions(normalizedConfig);
+        const hasValue = (value: unknown) =>
+          Array.isArray(value)
+            ? value.length > 0
+            : typeof value === "string"
+            ? value.trim().length > 0
+            : Boolean(value);
+
+        const firstUnansweredIndex = activeQuestions.findIndex(
+          (question) => !hasValue(parsedAnswers[question.id])
+        );
+
+        if (activeQuestions.length > 0 && firstUnansweredIndex === -1) {
+          router.replace("/onboarding/step-19");
+          return;
+        }
+
+        if (firstUnansweredIndex > 0) {
+          setStep(firstUnansweredIndex);
+        }
+
         setLoading(false);
       }
     };
@@ -73,17 +104,20 @@ export default function SketchFunnelPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0A0E1A] flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-indigo-300" />
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#0A0E1A] px-5 py-6">
-      <div className="mx-auto w-full max-w-md">
-        <h1 className="text-center text-2xl font-semibold text-white">Personalize Your Soulmate Sketch</h1>
-        <p className="mt-2 text-center text-sm text-white/60">
+    <div className="min-h-screen bg-background flex flex-col">
+      <OnboardingHeader showBack currentStep={13} totalSteps={14} />
+      <ProgressBar currentStep={13} totalSteps={14} />
+
+      <div className="mx-auto w-full max-w-md flex-1 px-6 pt-8">
+        <h1 className="text-center text-2xl font-semibold">Personalize Your Soulmate Sketch</h1>
+        <p className="mt-2 text-center text-sm text-muted-foreground">
           Quick 30-second funnel. This helps generate a better portrait.
         </p>
 
@@ -92,21 +126,21 @@ export default function SketchFunnelPage() {
             key={current.id}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+            className="mt-6 rounded-2xl border border-border bg-card p-4"
           >
-            <div className="mb-3 flex items-center justify-between text-xs text-white/50">
+            <div className="mb-3 flex items-center justify-between text-xs text-muted-foreground">
               <span>
                 Step {step + 1} / {questions.length}
               </span>
               <span>{Math.round(((step + 1) / questions.length) * 100)}%</span>
             </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
               <div
-                className="h-full rounded-full bg-indigo-400 transition-all"
+                className="h-full rounded-full bg-primary transition-all"
                 style={{ width: `${((step + 1) / questions.length) * 100}%` }}
               />
             </div>
-            <h2 className="mt-4 text-xl font-medium text-white">{current.title}</h2>
+            <h2 className="mt-4 text-xl font-medium">{current.title}</h2>
             <div className="mt-4 space-y-2">
               {current.options.map((option) => {
                 const selected = answers[current.id] === option.value;
@@ -115,13 +149,15 @@ export default function SketchFunnelPage() {
                     key={option.value}
                     type="button"
                     onClick={() => selectOption(option.value)}
-                    className={`w-full rounded-xl border p-3 text-left transition ${
-                      selected ? "border-indigo-400 bg-indigo-500/15" : "border-white/10 bg-white/[0.03]"
-                    }`}
+                    className={cn(
+                      "w-full rounded-xl border p-3 text-left transition",
+                      "bg-card hover:bg-card/80 border-border hover:border-primary/50",
+                      selected && "border-primary bg-primary/10"
+                    )}
                   >
                     <span className="inline-flex items-center gap-3">
                       <span className="text-xl">{option.emoji}</span>
-                      <span className="text-white">{option.label}</span>
+                      <span>{option.label}</span>
                     </span>
                   </button>
                 );
@@ -129,20 +165,19 @@ export default function SketchFunnelPage() {
             </div>
           </motion.div>
         ) : (
-          <div className="mt-6 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-5 text-center">
-            <div className="mx-auto w-fit rounded-full bg-emerald-500/20 p-2">
-              <Check className="h-5 w-5 text-emerald-300" />
+          <div className="mt-6 rounded-2xl border border-primary/30 bg-primary/10 p-5 text-center">
+            <div className="mx-auto w-fit rounded-full bg-primary/20 p-2">
+              <Check className="h-5 w-5 text-primary" />
             </div>
-            <p className="mt-3 text-sm text-emerald-100">
+            <p className="mt-3 text-sm text-foreground">
               Great. Your sketch preferences are saved.
             </p>
           </div>
         )}
+      </div>
 
-        <Button
-          onClick={() => router.push("/onboarding/step-19")}
-          className="mt-6 h-12 w-full bg-indigo-500 hover:bg-indigo-400"
-        >
+      <div className="px-6 pb-24">
+        <Button onClick={() => router.push("/onboarding/step-19")} className="h-14 w-full text-lg font-semibold">
           {done ? "Continue to Create Account" : "Skip for now"}
         </Button>
       </div>

@@ -1,13 +1,15 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { fadeUp, staggerContainer, staggerItem } from "@/lib/motion";
+import { staggerContainer, staggerItem } from "@/lib/motion";
 import { OnboardingHeader, ProgressBar } from "@/components/onboarding/OnboardingHeader";
 import { Button } from "@/components/ui/button";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useHaptic } from "@/hooks/useHaptic";
+import { useEffect, useState } from "react";
+import { LayoutBQuestionStep } from "@/components/onboarding/LayoutBQuestionStep";
 
 const goalOptions = [
   { id: "family-harmony", label: "Family harmony", emoji: "👨‍👩‍👧" },
@@ -26,6 +28,15 @@ export default function Step8Page() {
   const router = useRouter();
   const { goals, setGoals } = useOnboardingStore();
   const { triggerLight } = useHaptic();
+  const [isLayoutB, setIsLayoutB] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const onboardingFlow = localStorage.getItem("astrorekha_onboarding_flow");
+    const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
+    setIsLayoutB(onboardingFlow === "flow-b" && layoutVariant === "B");
+    setReady(true);
+  }, []);
 
   const toggleGoal = (goalId: string) => {
     if (goals.includes(goalId)) {
@@ -39,6 +50,9 @@ export default function Step8Page() {
     triggerLight();
     router.push("/onboarding/step-9");
   };
+
+  if (!ready) return null;
+  if (isLayoutB) return <LayoutBQuestionStep routeStep={8} />;
 
   return (
     <motion.div

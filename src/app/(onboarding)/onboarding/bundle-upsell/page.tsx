@@ -60,14 +60,8 @@ function BundleUpsellContent() {
     const flow = localStorage.getItem("astrorekha_onboarding_flow");
     const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
 
-    if (layoutVariant === "B") {
+    if (flow === "flow-b" || layoutVariant === "B") {
       router.replace("/onboarding/bundle-upsell-b");
-      return;
-    }
-    
-    // If not flow-b, redirect to regular upsell
-    if (flow !== "flow-b") {
-      router.replace("/onboarding/step-18");
       return;
     }
     

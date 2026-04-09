@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ForecastSphere } from "@/components/onboarding/ForecastSphere";
 import { useRouter } from "next/navigation";
 import { useHaptic } from "@/hooks/useHaptic";
+import { generateUserId } from "@/lib/user-profile";
 
 export default function Step6Page() {
   const router = useRouter();
@@ -21,8 +22,61 @@ export default function Step6Page() {
   }, []);
   const { triggerLight } = useHaptic();
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     triggerLight();
+
+    const onboardingFlow = localStorage.getItem("astrorekha_onboarding_flow");
+    if (onboardingFlow !== "flow-b") {
+      router.push("/onboarding/step-7");
+      return;
+    }
+
+    const existingVariant = localStorage.getItem("astrorekha_layout_variant");
+    if (existingVariant === "B") {
+      router.push("/onboarding/step-7");
+      return;
+    }
+    if (existingVariant === "A") {
+      router.push("/onboarding/step-7");
+      return;
+    }
+
+    try {
+      const userId = localStorage.getItem("astrorekha_user_id") || generateUserId();
+      const visitorId =
+        localStorage.getItem("astrorekha_ab_visitor_id") ||
+        userId;
+      localStorage.setItem("astrorekha_ab_visitor_id", visitorId);
+
+      const cfgRes = await fetch("/api/ab-test/layout-config", { cache: "no-store" });
+      const cfgJson = await cfgRes.json().catch(() => ({}));
+      const testId = cfgJson?.config?.testId || "onboarding-layout-qa";
+      const enabled = cfgJson?.config?.enabled !== false;
+
+      if (!enabled) {
+        localStorage.setItem("astrorekha_layout_variant", "A");
+        router.push("/onboarding/step-7");
+        return;
+      }
+
+      const variantParams = new URLSearchParams({
+        testId,
+        visitorId,
+        userId,
+      });
+      const variantRes = await fetch(`/api/ab-test?${variantParams.toString()}`, { cache: "no-store" });
+      const variantJson = await variantRes.json().catch(() => ({}));
+      const variant = variantJson?.variant === "B" ? "B" : "A";
+
+      localStorage.setItem("astrorekha_layout_variant", variant);
+      if (variant === "B") {
+        router.push("/onboarding/step-7");
+        return;
+      }
+    } catch (error) {
+      console.error("Failed to assign onboarding layout variant at step-6:", error);
+    }
+
     router.push("/onboarding/step-7");
   };
 

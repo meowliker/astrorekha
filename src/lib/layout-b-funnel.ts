@@ -4,6 +4,7 @@ export type SketchQuestionId =
   | "attracted_to"
   | "appearance"
   | "age_group"
+  | "vibe"
   | "connection_type"
   | "energy_type"
   | "love_signal"
@@ -52,6 +53,7 @@ export const SKETCH_QUESTION_BANK: SketchQuestion[] = [
       { value: "hispanic", label: "Hispanic / Latino", emoji: "🧑" },
       { value: "african", label: "African / African-American", emoji: "🧑🏿" },
       { value: "asian", label: "Asian", emoji: "👦" },
+      { value: "indian", label: "Indian / South Asian", emoji: "🧑🏽" },
       { value: "any", label: "Any", emoji: "🤗" },
     ],
   },
@@ -66,6 +68,16 @@ export const SKETCH_QUESTION_BANK: SketchQuestion[] = [
       { value: "40-45", label: "40-45", emoji: "👨‍🦱" },
       { value: "45-50", label: "45-50", emoji: "👨‍🦳" },
       { value: "50+", label: "50+", emoji: "🧓" },
+    ],
+  },
+  {
+    id: "vibe",
+    title: "What vibe do you want your soulmate to have?",
+    options: [
+      { value: "cute", label: "Cute", emoji: "😊" },
+      { value: "bold", label: "Bold", emoji: "⚡" },
+      { value: "elegant", label: "Elegant", emoji: "✨" },
+      { value: "mysterious", label: "Mysterious", emoji: "🌙" },
     ],
   },
   {
@@ -147,8 +159,7 @@ export const DEFAULT_LAYOUT_B_CONFIG: LayoutBFunnelConfig = {
   questionOrder: [
     "attracted_to",
     "age_group",
-    "connection_type",
-    "love_signal",
+    "vibe",
     "main_worry",
     "future_goal",
   ],
@@ -156,6 +167,7 @@ export const DEFAULT_LAYOUT_B_CONFIG: LayoutBFunnelConfig = {
     attracted_to: true,
     appearance: false,
     age_group: true,
+    vibe: true,
     connection_type: true,
     energy_type: false,
     love_signal: true,
@@ -194,6 +206,7 @@ export function normalizeLayoutBConfig(raw: any): LayoutBFunnelConfig {
 export function getActiveSketchQuestions(config: LayoutBFunnelConfig): SketchQuestion[] {
   const byId = new Map(SKETCH_QUESTION_BANK.map((q) => [q.id, q]));
   return config.questionOrder
+    .filter((id) => id !== "appearance")
     .filter((id) => config.questions[id] !== false)
     .map((id) => byId.get(id))
     .filter((q): q is SketchQuestion => !!q);

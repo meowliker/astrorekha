@@ -94,11 +94,21 @@ export default function Step16Page() {
     // Check if user is in Flow B (bundle flow)
     const flow = localStorage.getItem("astrorekha_onboarding_flow");
     if (flow === "flow-b") {
+      const existingVariant = localStorage.getItem("astrorekha_layout_variant");
+      if (existingVariant === "B") {
+        router.push("/onboarding/bundle-pricing-b");
+        return;
+      }
+      if (existingVariant === "A") {
+        router.push("/onboarding/bundle-pricing");
+        return;
+      }
+
       try {
+        const userId = localStorage.getItem("astrorekha_user_id") || generateUserId();
         const visitorId =
-          localStorage.getItem("astrorekha_user_id") ||
           localStorage.getItem("astrorekha_ab_visitor_id") ||
-          generateUserId();
+          userId;
         localStorage.setItem("astrorekha_ab_visitor_id", visitorId);
 
         const cfgRes = await fetch("/api/ab-test/layout-config", { cache: "no-store" });
@@ -112,10 +122,12 @@ export default function Step16Page() {
           return;
         }
 
-        const variantRes = await fetch(
-          `/api/ab-test?testId=${encodeURIComponent(testId)}&visitorId=${encodeURIComponent(visitorId)}`,
-          { cache: "no-store" }
-        );
+        const variantParams = new URLSearchParams({
+          testId,
+          visitorId,
+          userId,
+        });
+        const variantRes = await fetch(`/api/ab-test?${variantParams.toString()}`, { cache: "no-store" });
         const variantJson = await variantRes.json().catch(() => ({}));
         const variant = variantJson?.variant === "B" ? "B" : "A";
         const page = variantJson?.page;

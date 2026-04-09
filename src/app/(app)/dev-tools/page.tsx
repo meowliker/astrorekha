@@ -477,10 +477,10 @@ export default function DevToolsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => router.push("/onboarding/step-18")}
+                onClick={() => router.push("/onboarding/bundle-upsell")}
                 className="text-xs"
               >
-                Upsells (Step 18)
+                Upsell (Flow A)
               </Button>
               <Button
                 variant="outline"

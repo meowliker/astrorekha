@@ -6,6 +6,8 @@ import { OnboardingHeader, ProgressBar } from "@/components/onboarding/Onboardin
 import { useOnboardingStore, ElementPreference } from "@/lib/onboarding-store";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useEffect, useState } from "react";
+import { LayoutBQuestionStep } from "@/components/onboarding/LayoutBQuestionStep";
 
 const elementOptions: { value: ElementPreference; label: string; icon: string; color: string }[] = [
   { value: "earth", label: "Earth", icon: "≡", color: "#8B7355" },
@@ -17,11 +19,23 @@ const elementOptions: { value: ElementPreference; label: string; icon: string; c
 export default function Step10Page() {
   const router = useRouter();
   const { elementPreference, setElementPreference } = useOnboardingStore();
+  const [isLayoutB, setIsLayoutB] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const onboardingFlow = localStorage.getItem("astrorekha_onboarding_flow");
+    const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
+    setIsLayoutB(onboardingFlow === "flow-b" && layoutVariant === "B");
+    setReady(true);
+  }, []);
 
   const handleSelect = (element: ElementPreference) => {
     setElementPreference(element);
     router.push("/onboarding/step-11");
   };
+
+  if (!ready) return null;
+  if (isLayoutB) return <LayoutBQuestionStep routeStep={10} />;
 
   return (
     <motion.div

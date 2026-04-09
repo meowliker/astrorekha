@@ -6,6 +6,8 @@ import { OnboardingHeader, ProgressBar } from "@/components/onboarding/Onboardin
 import { useOnboardingStore, RelationshipStatus } from "@/lib/onboarding-store";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useEffect, useState } from "react";
+import { LayoutBQuestionStep } from "@/components/onboarding/LayoutBQuestionStep";
 
 const relationshipOptions: { value: RelationshipStatus; label: string; emoji: string }[] = [
   { value: "in-relationship", label: "In a relationship", emoji: "💕" },
@@ -20,11 +22,23 @@ const relationshipOptions: { value: RelationshipStatus; label: string; emoji: st
 export default function Step7Page() {
   const router = useRouter();
   const { relationshipStatus, setRelationshipStatus } = useOnboardingStore();
+  const [isLayoutB, setIsLayoutB] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const onboardingFlow = localStorage.getItem("astrorekha_onboarding_flow");
+    const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
+    setIsLayoutB(onboardingFlow === "flow-b" && layoutVariant === "B");
+    setReady(true);
+  }, []);
 
   const handleSelect = (status: RelationshipStatus) => {
     setRelationshipStatus(status);
     router.push("/onboarding/step-8");
   };
+
+  if (!ready) return null;
+  if (isLayoutB) return <LayoutBQuestionStep routeStep={7} />;
 
   return (
     <motion.div

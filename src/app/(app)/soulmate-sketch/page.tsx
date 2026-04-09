@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUserStore } from "@/lib/user-store";
 import {
@@ -24,6 +24,15 @@ interface SketchStatus {
 }
 
 const ANSWERS_STORAGE_KEY = "astrorekha_soulmate_answers";
+const MULTI_SELECT_QUESTION_IDS = new Set(["main_worry", "future_goal"]);
+
+function parseMultiAnswer(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
 
 export default function SoulmateSketchPage() {
   const router = useRouter();
@@ -36,9 +45,14 @@ export default function SoulmateSketchPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState("");
   const [userId, setUserId] = useState("");
+  const [hasSyncedStepFromSavedAnswers, setHasSyncedStepFromSavedAnswers] = useState(false);
 
-  const questions = useMemo(() => getActiveSketchQuestions(config), [config]);
+  const questions = useMemo(
+    () => getActiveSketchQuestions(config).filter((question) => question.id !== "future_goal"),
+    [config]
+  );
   const activeQuestion: SketchQuestion | null = questions[currentStep] || null;
+  const isMultiSelectQuestion = !!activeQuestion && MULTI_SELECT_QUESTION_IDS.has(activeQuestion.id);
 
   const fetchStatus = useCallback(async () => {
     if (!userId) return;
@@ -98,16 +112,78 @@ export default function SoulmateSketchPage() {
   }, [answers]);
 
   useEffect(() => {
+    if (loading || hasSyncedStepFromSavedAnswers || questions.length === 0) return;
+
+    const firstUnansweredIndex = questions.findIndex((question) => {
+      const value = answers[question.id];
+      if (!value) return true;
+      if (MULTI_SELECT_QUESTION_IDS.has(question.id)) {
+        return parseMultiAnswer(value).length === 0;
+      }
+      return value.trim().length === 0;
+    });
+
+    setCurrentStep(firstUnansweredIndex === -1 ? questions.length : firstUnansweredIndex);
+    setHasSyncedStepFromSavedAnswers(true);
+  }, [answers, hasSyncedStepFromSavedAnswers, loading, questions]);
+
+  useEffect(() => {
     if (!status || status.status !== "generating") return;
     const id = setInterval(() => {
       fetchStatus().catch(() => {});
-    }, 3000);
+    }, 7000);
     return () => clearInterval(id);
   }, [status, fetchStatus]);
 
+  const persistAnswers = useCallback(
+    (nextAnswers: Record<string, string>) => {
+      if (!userId) return;
+      fetch(`/api/soulmate-sketch/answers?userId=${encodeURIComponent(userId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, answers: nextAnswers }),
+      }).catch((persistError) => {
+        console.error("[soulmate-sketch] failed to persist answers", persistError);
+      });
+    },
+    [userId]
+  );
+
   const handleSelect = (value: string) => {
     if (!activeQuestion) return;
-    setAnswers((prev) => ({ ...prev, [activeQuestion.id]: value }));
+    if (MULTI_SELECT_QUESTION_IDS.has(activeQuestion.id)) {
+      setAnswers((prev) => {
+        const existing = parseMultiAnswer(prev[activeQuestion.id]);
+        const next = existing.includes(value)
+          ? existing.filter((item) => item !== value)
+          : [...existing, value];
+        const updated = { ...prev };
+        if (next.length === 0) {
+          delete updated[activeQuestion.id];
+        } else {
+          updated[activeQuestion.id] = next.join(",");
+        }
+        persistAnswers(updated);
+        return updated;
+      });
+      return;
+    }
+
+    const nextAnswers = { ...answers, [activeQuestion.id]: value };
+    setAnswers(nextAnswers);
+    persistAnswers(nextAnswers);
+    if (currentStep < questions.length - 1) {
+      setCurrentStep((s) => s + 1);
+    }
+  };
+
+  const handleContinue = () => {
+    if (!activeQuestion) return;
+    if (!MULTI_SELECT_QUESTION_IDS.has(activeQuestion.id)) return;
+
+    const selected = parseMultiAnswer(answers[activeQuestion.id]);
+    if (selected.length === 0) return;
+
     if (currentStep < questions.length - 1) {
       setCurrentStep((s) => s + 1);
     }
@@ -129,15 +205,25 @@ export default function SoulmateSketchPage() {
       });
       const json = await response.json();
       if (!response.ok) {
+        console.error("[soulmate-sketch] generate api error", {
+          status: response.status,
+          body: json,
+        });
         if (json?.error === "generation_limit_reached") {
           setStatus(json.sketch || { status: "complete" });
           return;
         }
-        throw new Error(json?.message || "Generation failed");
+        const apiMessage = typeof json?.message === "string" ? json.message.trim() : "";
+        const safeMessage =
+          apiMessage && apiMessage.toLowerCase() !== "no message available"
+            ? apiMessage
+            : "Sketch generation failed. Please try again in a minute.";
+        throw new Error(safeMessage);
       }
       setStatus(json.sketch || { status: "complete" });
       await fetchStatus();
     } catch (generateError: any) {
+      console.error("[soulmate-sketch] generate failed", generateError);
       setError(generateError?.message || "Unable to generate sketch right now.");
     } finally {
       setIsGenerating(false);
@@ -147,7 +233,7 @@ export default function SoulmateSketchPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0A0E1A] flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-indigo-300" />
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -167,7 +253,7 @@ export default function SoulmateSketchPage() {
             <ArrowLeft className="h-4 w-4" />
             Reports
           </button>
-          <div className="rounded-3xl border border-white/10 bg-[#121a2f] p-5 text-center">
+          <div className="rounded-3xl border border-primary/20 bg-[#1A2235] p-5 text-center">
             <h1 className="text-xl font-semibold text-white">Soulmate Sketch is locked</h1>
             <p className="mt-2 text-sm text-white/60">Unlock it from Reports to start your sketch funnel.</p>
             <Button onClick={() => router.push("/reports")} className="mt-5 w-full">
@@ -190,16 +276,13 @@ export default function SoulmateSketchPage() {
           Reports
         </button>
 
-        <div className="rounded-3xl border border-white/10 bg-[#121a2f] p-5">
-          <h1 className="text-2xl font-semibold text-white">Soulmate Sketch</h1>
-          <p className="mt-1 text-sm text-white/60">
-            One personalized sketch per user. Complete the mini funnel and generate once.
-          </p>
+        <div className="rounded-3xl border border-primary/20 bg-[#1A2235] p-5">
+          <h1 className="text-2xl font-semibold text-white">Your Soulmate Portrait</h1>
 
           {status?.status === "generating" || isGenerating ? (
-            <div className="mt-6 rounded-2xl border border-indigo-400/30 bg-indigo-500/10 p-6 text-center">
-              <Loader2 className="mx-auto h-7 w-7 animate-spin text-indigo-300" />
-              <p className="mt-3 text-sm text-indigo-100">Generating your soulmate portrait...</p>
+            <div className="mt-6 rounded-2xl border border-primary/30 bg-primary/10 p-6 text-center">
+              <Loader2 className="mx-auto h-7 w-7 animate-spin text-primary" />
+              <p className="mt-3 text-sm text-white">Generating your soulmate portrait...</p>
             </div>
           ) : imageUrl ? (
             <motion.div
@@ -210,9 +293,6 @@ export default function SoulmateSketchPage() {
               <div className="overflow-hidden rounded-2xl border border-white/15">
                 <img src={imageUrl} alt="Soulmate sketch" className="w-full object-cover" />
               </div>
-              <p className="mt-3 text-center text-xs text-white/50">
-                Your one-time sketch has been generated successfully.
-              </p>
             </motion.div>
           ) : (
             <>
@@ -220,28 +300,33 @@ export default function SoulmateSketchPage() {
                 <div className="mt-6">
                   <div className="mb-3 flex items-center justify-between text-xs text-white/50">
                     <span>
-                      Step {Math.min(currentStep + 1, questions.length)} / {questions.length}
+                      {Math.min(currentStep + 1, questions.length)}/{questions.length}
                     </span>
                     <span>{Math.round(((currentStep + 1) / questions.length) * 100)}%</span>
                   </div>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                     <div
-                      className="h-full rounded-full bg-indigo-400 transition-all"
+                      className="h-full rounded-full bg-primary transition-all"
                       style={{ width: `${((currentStep + 1) / questions.length) * 100}%` }}
                     />
                   </div>
 
                   <h2 className="mt-5 text-xl font-medium text-white">{activeQuestion.title}</h2>
+                  {isMultiSelectQuestion ? (
+                    <p className="mt-1 text-xs text-white/55">Select one or more options.</p>
+                  ) : null}
                   <div className="mt-4 space-y-2">
                     {activeQuestion.options.map((option) => {
-                      const selected = answers[activeQuestion.id] === option.value;
+                      const selected = isMultiSelectQuestion
+                        ? parseMultiAnswer(answers[activeQuestion.id]).includes(option.value)
+                        : answers[activeQuestion.id] === option.value;
                       return (
                         <button
                           key={option.value}
                           type="button"
                           onClick={() => handleSelect(option.value)}
                           className={`w-full rounded-xl border p-3 text-left transition ${
-                            selected ? "border-indigo-400 bg-indigo-500/15" : "border-white/10 bg-white/[0.03]"
+                            selected ? "border-primary bg-primary/10" : "border-white/10 bg-white/[0.03]"
                           }`}
                         >
                           <span className="inline-flex items-center gap-3">
@@ -252,6 +337,15 @@ export default function SoulmateSketchPage() {
                       );
                     })}
                   </div>
+                  {isMultiSelectQuestion && currentStep < questions.length - 1 ? (
+                    <Button
+                      onClick={handleContinue}
+                      disabled={parseMultiAnswer(answers[activeQuestion.id]).length === 0}
+                      className="mt-4 h-11 w-full"
+                    >
+                      Continue
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -259,7 +353,7 @@ export default function SoulmateSketchPage() {
                 <Button
                   onClick={handleGenerate}
                   disabled={isGenerating || hasReachedLimit}
-                  className="mt-6 h-12 w-full bg-indigo-500 hover:bg-indigo-400"
+                  className="mt-6 h-12 w-full"
                 >
                   {isGenerating ? (
                     <span className="inline-flex items-center gap-2">
@@ -289,23 +383,6 @@ export default function SoulmateSketchPage() {
             </div>
           ) : null}
 
-          <div className="mt-5 flex flex-wrap gap-2">
-            {questions.map((question, idx) => (
-              <span
-                key={question.id}
-                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] ${
-                  answers[question.id]
-                    ? "border-green-400/40 bg-green-500/10 text-green-200"
-                    : idx === currentStep
-                    ? "border-indigo-400/50 bg-indigo-500/10 text-indigo-100"
-                    : "border-white/15 bg-white/[0.03] text-white/55"
-                }`}
-              >
-                {answers[question.id] ? <Check className="h-3 w-3" /> : null}
-                {question.id.replaceAll("_", " ")}
-              </span>
-            ))}
-          </div>
         </div>
       </div>
     </div>

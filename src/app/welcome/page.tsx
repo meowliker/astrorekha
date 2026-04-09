@@ -16,6 +16,7 @@ export default function WelcomePage() {
   useEffect(() => {
     // Mark user as Flow A (subscription flow)
     localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
+    localStorage.setItem("astrorekha_layout_variant", "A");
     
     const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
     const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
@@ -26,8 +27,7 @@ export default function WelcomePage() {
       return;
     } else if (hasCompletedPayment) {
       // User has paid but not registered - redirect to upsell page
-      const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
-      router.replace(layoutVariant === "B" ? "/onboarding/bundle-upsell-b" : "/onboarding/step-18");
+      router.replace("/onboarding/bundle-upsell");
       return;
     }
     // New user - allow access to welcome page

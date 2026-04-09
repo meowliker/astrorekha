@@ -4,11 +4,43 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 // A/B Test configuration API
 // Handles getting assigned variant for a user and managing test configs
 
+async function persistUserFlowVariant(params: {
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  userId: string | null;
+  variant: string;
+  isOnboardingLayoutTest: boolean;
+}) {
+  const { supabase, userId, variant, isOnboardingLayoutTest } = params;
+  if (!userId) return;
+
+  const nowIso = new Date().toISOString();
+  const payload: Record<string, unknown> = {
+    id: userId,
+    ab_variant: variant,
+    updated_at: nowIso,
+  };
+
+  if (isOnboardingLayoutTest) {
+    payload.onboarding_flow = "flow-b";
+  }
+
+  const { error } = await supabase.from("users").upsert(payload, { onConflict: "id" });
+  if (error) {
+    console.error("[ab-test] failed to persist user variant", {
+      userId,
+      variant,
+      isOnboardingLayoutTest,
+      error,
+    });
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const testId = searchParams.get("testId") || "pricing-test-1";
     const visitorId = searchParams.get("visitorId");
+    const userIdFromQuery = searchParams.get("userId")?.trim() || null;
 
     const supabase = getSupabaseAdmin();
     const isOnboardingLayoutTest = testId.startsWith("onboarding-layout");
@@ -78,6 +110,13 @@ export async function GET(request: NextRequest) {
         .single();
       
       if (assignment) {
+        await persistUserFlowVariant({
+          supabase,
+          userId: userIdFromQuery || visitorId,
+          variant: assignment.variant,
+          isOnboardingLayoutTest,
+        });
+
         return NextResponse.json({
           testId,
           variant: assignment.variant,
@@ -116,6 +155,13 @@ export async function GET(request: NextRequest) {
         assigned_at: new Date().toISOString(),
       }, { onConflict: "id" });
     }
+
+    await persistUserFlowVariant({
+      supabase,
+      userId: userIdFromQuery || visitorId,
+      variant: assignedVariant,
+      isOnboardingLayoutTest,
+    });
 
     return NextResponse.json({
       testId,

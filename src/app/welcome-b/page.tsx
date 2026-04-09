@@ -13,6 +13,7 @@ export default function WelcomeBPage() {
   useEffect(() => {
     // Mark user as Flow B (bundle flow)
     localStorage.setItem("astrorekha_onboarding_flow", "flow-b");
+    localStorage.setItem("astrorekha_layout_variant", "B");
     
     const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
     const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
@@ -22,9 +23,8 @@ export default function WelcomeBPage() {
       router.replace("/dashboard");
       return;
     } else if (hasCompletedPayment) {
-      // User has paid but not registered - redirect to bundle upsell page
-      const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
-      router.replace(layoutVariant === "B" ? "/onboarding/bundle-upsell-b" : "/onboarding/bundle-upsell");
+      // User has paid but not registered - redirect to Flow B upsell page
+      router.replace("/onboarding/bundle-upsell-b");
       return;
     }
     // New user - allow access to welcome page

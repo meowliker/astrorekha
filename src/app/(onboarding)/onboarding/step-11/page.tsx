@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { useRouter } from "next/navigation";
 import { useHaptic } from "@/hooks/useHaptic";
+import { SKETCH_QUESTION_BANK, type SketchQuestionId } from "@/lib/layout-b-funnel";
 
 interface SignData {
   name: string;
@@ -40,6 +41,8 @@ const relationshipLabels: Record<string, string> = {
 export default function Step11Page() {
   const router = useRouter();
   const [phase, setPhase] = useState(0);
+  const [isLayoutB, setIsLayoutB] = useState(false);
+  const [flowBAnswers, setFlowBAnswers] = useState<Record<string, unknown>>({});
   
   const {
     gender,
@@ -86,6 +89,46 @@ export default function Step11Page() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onboardingFlow = localStorage.getItem("astrorekha_onboarding_flow");
+    const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
+    const bFlow = onboardingFlow === "flow-b" && layoutVariant === "B";
+    setIsLayoutB(bFlow);
+    if (!bFlow) return;
+
+    try {
+      const saved = localStorage.getItem("astrorekha_soulmate_answers");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === "object") {
+          setFlowBAnswers(parsed as Record<string, unknown>);
+        }
+      }
+    } catch {
+      // ignore malformed local data
+    }
+
+    const userId = localStorage.getItem("astrorekha_user_id");
+    if (!userId) return;
+    fetch(`/api/soulmate-sketch/status?userId=${encodeURIComponent(userId)}`, {
+      cache: "no-store",
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((json) => {
+        if (!json?.question_answers || typeof json.question_answers !== "object") return;
+        const nonEmptyAnswers = Object.fromEntries(
+          Object.entries(json.question_answers as Record<string, unknown>).filter(
+            ([, value]) => normalizeAnswerValues(value).length > 0
+          )
+        );
+        setFlowBAnswers((prev) => ({ ...prev, ...nonEmptyAnswers }));
+      })
+      .catch(() => {
+        // ignore status fetch issues during onboarding
+      });
+  }, []);
+
+  useEffect(() => {
     const timers = [
       setTimeout(() => setPhase(1), 800),
       setTimeout(() => setPhase(2), 2500),
@@ -106,6 +149,99 @@ export default function Step11Page() {
   const formattedBirthDate = `${birthMonth.slice(0, 3)} ${birthDay}, ${birthYear}`;
   const formattedGoals = goals.map((g) => goalLabels[g] || g).join(", ");
   const formattedStatus = relationshipStatus ? relationshipLabels[relationshipStatus] : "Not specified";
+
+  const normalizeAnswerValues = (rawValue: unknown): string[] => {
+    if (rawValue === null || rawValue === undefined) return [];
+    if (Array.isArray(rawValue)) {
+      return rawValue.map((item) => String(item).trim()).filter(Boolean);
+    }
+    if (typeof rawValue === "string") {
+      const trimmed = rawValue.trim();
+      if (!trimmed) return [];
+      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) {
+            return parsed.map((item) => String(item).trim()).filter(Boolean);
+          }
+        } catch {
+          // fall through to comma split
+        }
+      }
+      return trimmed
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+    const asText = String(rawValue).trim();
+    return asText ? [asText] : [];
+  };
+
+  const getRawFlowBAnswer = (...keys: string[]) => {
+    for (const key of keys) {
+      if (!(key in flowBAnswers)) continue;
+      const value = flowBAnswers[key];
+      if (normalizeAnswerValues(value).length > 0) {
+        return value;
+      }
+    }
+    return undefined;
+  };
+
+  const getFlowBAnswerLabel = (id: SketchQuestionId, rawValue: unknown) => {
+    const question = SKETCH_QUESTION_BANK.find((q) => q.id === id);
+    if (!question) return "";
+    const values = normalizeAnswerValues(rawValue);
+    if (values.length === 0) return "";
+
+    const labels = values.map((value) => {
+      const option = question.options.find((opt) => opt.value === value);
+      return option?.label || value.replaceAll("_", " ");
+    });
+    return labels.join(", ");
+  };
+
+  const attractedRaw = getRawFlowBAnswer(
+    "attracted_to",
+    "attractedTo",
+    "attracted",
+    "gender_preference",
+    "genderPreference",
+    "target_gender"
+  );
+  const ageRaw = getRawFlowBAnswer("age_group", "ageGroup");
+  const vibeRaw = getRawFlowBAnswer("vibe", "relationship_feel", "relationshipFeel");
+  const futureRaw = getRawFlowBAnswer("future_goal", "futureGoal", "future");
+  const mainWorryRaw = getRawFlowBAnswer(
+    "main_worry",
+    "mainWorry",
+    "relationship_worries",
+    "relationshipWorries",
+    "sketch_prefs",
+    "sketchPrefs"
+  );
+  const appearanceRaw = getRawFlowBAnswer("appearance");
+
+  const flowBAttractedTo = getFlowBAnswerLabel("attracted_to", attractedRaw);
+  const flowBAge = getFlowBAnswerLabel("age_group", ageRaw);
+  const flowBVibe = getFlowBAnswerLabel("vibe", vibeRaw);
+  const flowBFutureGoal = getFlowBAnswerLabel("future_goal", futureRaw);
+  const flowBMainWorry = getFlowBAnswerLabel("main_worry", mainWorryRaw);
+
+  const detailLabel3 = isLayoutB ? "Attracted To" : "Status";
+  const detailValue3 = isLayoutB
+    ? flowBAttractedTo ||
+      getFlowBAnswerLabel("appearance", appearanceRaw) ||
+      "Not specified"
+    : formattedStatus;
+
+  const detailLabel4 = isLayoutB ? "Relationship Worries" : "Goals";
+  const detailValue4 = isLayoutB
+    ? flowBMainWorry || [flowBAge, flowBVibe].filter(Boolean).join(" • ") || "Not specified"
+    : formattedGoals || "Not specified";
+
+  const detailLabel5 = "Future";
+  const detailValue5 = flowBFutureGoal || "Not specified";
 
   return (
     <motion.div
@@ -235,8 +371,8 @@ export default function Step11Page() {
                     transition={{ delay: 1.1, duration: 0.6, ease: "easeOut" }}
                     className="flex justify-between"
                   >
-                    <span className="text-muted-foreground font-medium">Status</span>
-                    <span>{formattedStatus}</span>
+                    <span className="text-muted-foreground font-medium">{detailLabel3}</span>
+                    <span>{detailValue3}</span>
                   </motion.div>
                   
                   <motion.div
@@ -245,9 +381,21 @@ export default function Step11Page() {
                     transition={{ delay: 1.4, duration: 0.6, ease: "easeOut" }}
                     className="flex justify-between"
                   >
-                    <span className="text-muted-foreground font-medium">Goals</span>
-                    <span className="text-right max-w-[180px]">{formattedGoals || "Not specified"}</span>
+                    <span className="text-muted-foreground font-medium">{detailLabel4}</span>
+                    <span className="text-right max-w-[180px]">{detailValue4}</span>
                   </motion.div>
+
+                  {isLayoutB ? (
+                    <motion.div
+                      initial={{ opacity: 0, x: -15 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 1.7, duration: 0.6, ease: "easeOut" }}
+                      className="flex justify-between"
+                    >
+                      <span className="text-muted-foreground font-medium">{detailLabel5}</span>
+                      <span className="text-right max-w-[180px]">{detailValue5}</span>
+                    </motion.div>
+                  ) : null}
                 </div>
               </motion.div>
             )}

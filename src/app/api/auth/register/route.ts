@@ -134,6 +134,7 @@ export async function POST(request: NextRequest) {
             supabase.from("palm_readings").update({ id: uid }).eq("id", anonId),
             supabase.from("chat_messages").update({ user_id: uid }).eq("user_id", anonId),
             supabase.from("daily_insights").update({ id: uid }).eq("id", anonId),
+            supabase.from("soulmate_sketches").update({ user_id: uid }).eq("user_id", anonId),
           ]);
           await supabase.from("user_profiles").delete().eq("id", anonId);
           await supabase.from("users").delete().eq("id", anonId);
