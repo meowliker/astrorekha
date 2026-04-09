@@ -28,22 +28,6 @@ async function saveConfig(config: any) {
     { onConflict: "key" }
   );
 
-  // Keep AB test row in sync for the assignment API/admin analytics.
-  await supabase.from("ab_tests").upsert(
-    {
-      id: normalized.testId,
-      name: "Onboarding Layout A/B (QA)",
-      status: normalized.enabled ? "active" : "paused",
-      variants: {
-        A: { weight: normalized.variantAWeight, page: "bundle-pricing" },
-        B: { weight: normalized.variantBWeight, page: "bundle-pricing-b" },
-      },
-      updated_at: new Date().toISOString(),
-      created_at: new Date().toISOString(),
-    },
-    { onConflict: "id" }
-  );
-
   return normalized;
 }
 

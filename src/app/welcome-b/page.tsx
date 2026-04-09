@@ -20,22 +20,8 @@ export default function WelcomeBPage() {
 
   // Route protection: Check user status and redirect accordingly
   useEffect(() => {
-    // Mark user as Flow B (bundle flow)
     seedFlowB();
-    
-    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
-    const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
-    
-    if (hasCompletedRegistration) {
-      // User has completed registration - redirect to app
-      router.replace("/dashboard");
-      return;
-    } else if (hasCompletedPayment) {
-      // User has paid but not registered - redirect to Flow B upsell page
-      router.replace("/onboarding/bundle-upsell-b");
-      return;
-    }
-    // New user - allow access to welcome page
+    router.replace("/welcome?variant=b");
   }, [router]);
 
   useEffect(() => {
@@ -279,7 +265,7 @@ export default function WelcomeBPage() {
           <button
             onClick={() => {
               seedFlowB();
-              router.push("/onboarding");
+              router.push("/onboarding?variant=b");
             }}
             className="w-full py-4 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-500 text-white font-semibold text-lg rounded-2xl transition-all duration-300 shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.98]"
           >

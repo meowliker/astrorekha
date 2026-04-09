@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Menu } from "lucide-react";
 import { OnboardingSidebar } from "@/components/OnboardingSidebar";
 import Image from "next/image";
@@ -10,8 +10,12 @@ import { generateUserId } from "@/lib/user-profile";
 
 export default function WelcomePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const forcedVariantRaw = (searchParams.get("variant") || "").toUpperCase();
+  const forcedVariant: "A" | "B" | null =
+    forcedVariantRaw === "A" || forcedVariantRaw === "B" ? (forcedVariantRaw as "A" | "B") : null;
 
   const seedFlowVariant = (variant: "A" | "B") => {
     try {
@@ -33,27 +37,30 @@ export default function WelcomePage() {
       const visitorId = localStorage.getItem("astrorekha_ab_visitor_id") || userId;
       localStorage.setItem("astrorekha_ab_visitor_id", visitorId);
 
-      let variant: "A" | "B" =
-        localStorage.getItem("astrorekha_layout_variant") === "B" ? "B" : "A";
+      let variant: "A" | "B" = forcedVariant || (
+        localStorage.getItem("astrorekha_layout_variant") === "B" ? "B" : "A"
+      );
 
-      try {
-        const cfgRes = await fetch("/api/ab-test/layout-config", { cache: "no-store" });
-        const cfgJson = await cfgRes.json().catch(() => ({}));
-        const enabled = cfgJson?.config?.enabled !== false;
-        const layoutBEnabled = cfgJson?.config?.layoutBEnabled !== false;
-        const testId = cfgJson?.config?.testId || "onboarding-layout-qa";
+      if (!forcedVariant) {
+        try {
+          const cfgRes = await fetch("/api/ab-test/layout-config", { cache: "no-store" });
+          const cfgJson = await cfgRes.json().catch(() => ({}));
+          const enabled = cfgJson?.config?.enabled !== false;
+          const layoutBEnabled = cfgJson?.config?.layoutBEnabled !== false;
+          const testId = cfgJson?.config?.testId || "onboarding-layout-qa";
 
-        if (enabled && layoutBEnabled) {
-          const params = new URLSearchParams({ testId, visitorId, userId });
-          const variantRes = await fetch(`/api/ab-test?${params.toString()}`, { cache: "no-store" });
-          const variantJson = await variantRes.json().catch(() => ({}));
-          variant = variantJson?.variant === "B" ? "B" : "A";
-        } else {
+          if (enabled && layoutBEnabled) {
+            const params = new URLSearchParams({ testId, visitorId, userId });
+            const variantRes = await fetch(`/api/ab-test?${params.toString()}`, { cache: "no-store" });
+            const variantJson = await variantRes.json().catch(() => ({}));
+            variant = variantJson?.variant === "B" ? "B" : "A";
+          } else {
+            variant = "A";
+          }
+        } catch (error) {
+          console.error("Failed to assign welcome variant, falling back to A:", error);
           variant = "A";
         }
-      } catch (error) {
-        console.error("Failed to assign welcome variant, falling back to A:", error);
-        variant = "A";
       }
 
       seedFlowVariant(variant);
@@ -69,8 +76,8 @@ export default function WelcomePage() {
         return;
       }
 
-      if (variant === "B") {
-        router.replace("/welcome-b");
+      if (!forcedVariant) {
+        router.replace(`/welcome?variant=${variant.toLowerCase()}`);
       }
     };
 
@@ -79,7 +86,7 @@ export default function WelcomePage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, forcedVariant]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
