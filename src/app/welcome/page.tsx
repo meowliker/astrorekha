@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Menu } from "lucide-react";
 import { OnboardingSidebar } from "@/components/OnboardingSidebar";
 import Image from "next/image";
@@ -10,12 +10,8 @@ import { generateUserId } from "@/lib/user-profile";
 
 export default function WelcomePage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const forcedVariantRaw = (searchParams.get("variant") || "").toUpperCase();
-  const forcedVariant: "A" | "B" | null =
-    forcedVariantRaw === "A" || forcedVariantRaw === "B" ? (forcedVariantRaw as "A" | "B") : null;
 
   const seedFlowVariant = (variant: "A" | "B") => {
     try {
@@ -31,6 +27,12 @@ export default function WelcomePage() {
     let cancelled = false;
 
     const assignVariant = async () => {
+      const forcedVariantRaw = new URLSearchParams(window.location.search).get("variant") || "";
+      const forcedVariant: "A" | "B" | null =
+        forcedVariantRaw.toUpperCase() === "A" || forcedVariantRaw.toUpperCase() === "B"
+          ? (forcedVariantRaw.toUpperCase() as "A" | "B")
+          : null;
+
       const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
       const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
       const userId = localStorage.getItem("astrorekha_user_id") || generateUserId();
@@ -86,7 +88,7 @@ export default function WelcomePage() {
     return () => {
       cancelled = true;
     };
-  }, [router, forcedVariant]);
+  }, [router]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
