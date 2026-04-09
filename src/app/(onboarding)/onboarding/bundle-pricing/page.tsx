@@ -27,7 +27,7 @@ const sketchPredictionLabels = [
   { text: "Big change", emoji: "🚀", top: "60%", left: "52%", rotation: 8 },
 ];
 
-const LAYOUT_TEST_ID = "onboarding-layout-qa";
+const DEFAULT_LAYOUT_TEST_ID = "onboarding-layout-qa";
 const FLOW_B_BUNDLE_IDS = ["palm-reading", "palm-birth", "palm-birth-sketch"] as const;
 
 const SOULMATE_ANSWER_KEYS = [
@@ -164,6 +164,7 @@ export default function BundlePricingPage() {
   const [compatibilityStats, setCompatibilityStats] = useState<{ label: string; color: string; value: number }[]>([]);
   const [onboardingFlow, setOnboardingFlow] = useState<"flow-a" | "flow-b">("flow-a");
   const [layoutVariant, setLayoutVariant] = useState<"A" | "B">("A");
+  const [layoutTestId, setLayoutTestId] = useState<string>("");
   const [soulmatePreviewImage, setSoulmatePreviewImage] = useState<"/male.png" | "/female.png">("/female.png");
   const paymentSectionRef = useRef<HTMLDivElement>(null);
   const testimonialSectionRef = useRef<HTMLDivElement>(null);
@@ -194,10 +195,28 @@ export default function BundlePricingPage() {
 
     const storedFlow = localStorage.getItem("astrorekha_onboarding_flow") === "flow-b" ? "flow-b" : "flow-a";
     const storedVariant = localStorage.getItem("astrorekha_layout_variant") === "B" ? "B" : "A";
+    const storedTestId = (localStorage.getItem("astrorekha_ab_test_id") || "").trim();
     const resolvedVariant = storedFlow === "flow-b" ? storedVariant : "A";
 
     setOnboardingFlow(storedFlow);
     setLayoutVariant(resolvedVariant);
+    if (storedTestId) {
+      setLayoutTestId(storedTestId);
+    }
+
+    fetch("/api/ab-test/layout-config", { cache: "no-store" })
+      .then((response) => response.json().catch(() => ({})))
+      .then((json) => {
+        const resolvedTestId = json?.config?.testId || storedTestId || DEFAULT_LAYOUT_TEST_ID;
+        localStorage.setItem("astrorekha_ab_test_id", resolvedTestId);
+        setLayoutTestId(resolvedTestId);
+      })
+      .catch(() => {
+        if (!storedTestId) {
+          localStorage.setItem("astrorekha_ab_test_id", DEFAULT_LAYOUT_TEST_ID);
+          setLayoutTestId(DEFAULT_LAYOUT_TEST_ID);
+        }
+      });
 
     // Resolve preview image for layout-b sketch card.
     try {
@@ -234,13 +253,14 @@ export default function BundlePricingPage() {
   }, [router]);
 
   useEffect(() => {
+    if (!layoutTestId) return;
     const variant = isLayoutB ? "B" : "A";
 
     fetch("/api/ab-test/event", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        testId: LAYOUT_TEST_ID,
+        testId: layoutTestId,
         variant,
         eventType: "impression",
         visitorId: getVisitorId(),
@@ -254,7 +274,7 @@ export default function BundlePricingPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          testId: LAYOUT_TEST_ID,
+          testId: layoutTestId,
           variant,
           eventType: "bounce",
           visitorId: getVisitorId(),
@@ -262,7 +282,7 @@ export default function BundlePricingPage() {
         keepalive: true,
       }).catch(() => {});
     };
-  }, [isLayoutB]);
+  }, [isLayoutB, layoutTestId]);
 
   // Load saved palm image and generate stats
   useEffect(() => {
@@ -400,7 +420,7 @@ export default function BundlePricingPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        testId: LAYOUT_TEST_ID,
+        testId: layoutTestId,
         variant,
         eventType: "checkout_started",
         visitorId: getVisitorId(),
@@ -498,7 +518,7 @@ export default function BundlePricingPage() {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
-                    testId: LAYOUT_TEST_ID,
+                    testId: layoutTestId,
                     variant,
                     eventType: "conversion",
                     visitorId: getVisitorId(),

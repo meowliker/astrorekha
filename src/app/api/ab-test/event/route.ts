@@ -18,7 +18,12 @@ async function resolveDefaultTestId(supabase: ReturnType<typeof getSupabaseAdmin
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { testId, variant, eventType, visitorId, userId, metadata } = body;
+    let { testId, variant, eventType, visitorId, userId, metadata } = body;
+
+    const supabase = getSupabaseAdmin();
+    if (!testId) {
+      testId = await resolveDefaultTestId(supabase);
+    }
 
     if (!testId || !variant || !eventType) {
       return NextResponse.json(
@@ -35,11 +40,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = getSupabaseAdmin();
     const now = new Date().toISOString();
 
     // Create event record
-    await supabase.from("ab_test_events").insert({
+    const { error: eventInsertError } = await supabase.from("ab_test_events").insert({
       test_id: testId,
       variant,
       event_type: eventType,
@@ -48,10 +52,16 @@ export async function POST(request: NextRequest) {
       metadata: metadata || {},
       created_at: now,
     });
+    if (eventInsertError) throw eventInsertError;
 
     // Update aggregated stats
     const statsId = `${testId}_${variant}`;
-    const { data: currentStats } = await supabase.from("ab_test_stats").select("*").eq("id", statsId).single();
+    const { data: currentStats, error: currentStatsError } = await supabase
+      .from("ab_test_stats")
+      .select("*")
+      .eq("id", statsId)
+      .maybeSingle();
+    if (currentStatsError) throw currentStatsError;
 
     if (currentStats) {
       const updates: any = { updated_at: now };
@@ -69,9 +79,10 @@ export async function POST(request: NextRequest) {
         updates.checkouts_started = (currentStats.checkouts_started || 0) + 1;
       }
 
-      await supabase.from("ab_test_stats").update(updates).eq("id", statsId);
+      const { error: updateError } = await supabase.from("ab_test_stats").update(updates).eq("id", statsId);
+      if (updateError) throw updateError;
     } else {
-      await supabase.from("ab_test_stats").insert({
+      const { error: insertStatsError } = await supabase.from("ab_test_stats").insert({
         id: statsId,
         test_id: testId,
         variant,
@@ -83,6 +94,7 @@ export async function POST(request: NextRequest) {
         created_at: now,
         updated_at: now,
       });
+      if (insertStatsError) throw insertStatsError;
     }
 
     return NextResponse.json({ success: true });

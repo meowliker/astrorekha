@@ -192,12 +192,22 @@ export function normalizeLayoutBConfig(raw: any): LayoutBFunnelConfig {
 
   const questionOrder = validOrder.length > 0 ? validOrder : DEFAULT_LAYOUT_B_CONFIG.questionOrder;
 
+  const parseInteger = (value: unknown, fallback: number) => {
+    if (value === null || value === undefined || value === "") return fallback;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+
+  const variantAWeight = Math.min(100, Math.max(0, parseInteger(cfg.variantAWeight, DEFAULT_LAYOUT_B_CONFIG.variantAWeight)));
+  const variantBWeight = Math.min(100, Math.max(0, parseInteger(cfg.variantBWeight, DEFAULT_LAYOUT_B_CONFIG.variantBWeight)));
+  const maxSketchPerUser = Math.max(1, parseInteger(cfg.maxSketchPerUser, DEFAULT_LAYOUT_B_CONFIG.maxSketchPerUser));
+
   return {
     ...DEFAULT_LAYOUT_B_CONFIG,
     ...cfg,
-    variantAWeight: Number(cfg.variantAWeight ?? DEFAULT_LAYOUT_B_CONFIG.variantAWeight) || 50,
-    variantBWeight: Number(cfg.variantBWeight ?? DEFAULT_LAYOUT_B_CONFIG.variantBWeight) || 50,
-    maxSketchPerUser: Number(cfg.maxSketchPerUser ?? DEFAULT_LAYOUT_B_CONFIG.maxSketchPerUser) || 1,
+    variantAWeight,
+    variantBWeight,
+    maxSketchPerUser,
     questionOrder,
     questions,
   };

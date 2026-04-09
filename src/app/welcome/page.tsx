@@ -27,35 +27,39 @@ export default function WelcomePage() {
     let cancelled = false;
 
     const assignVariant = async () => {
-      const forcedVariantRaw = new URLSearchParams(window.location.search).get("variant") || "";
-      const forcedVariant: "A" | "B" | null =
-        forcedVariantRaw.toUpperCase() === "A" || forcedVariantRaw.toUpperCase() === "B"
-          ? (forcedVariantRaw.toUpperCase() as "A" | "B")
-          : null;
-
       const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
       const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
       const userId = localStorage.getItem("astrorekha_user_id") || generateUserId();
       const visitorId = localStorage.getItem("astrorekha_ab_visitor_id") || userId;
       localStorage.setItem("astrorekha_ab_visitor_id", visitorId);
+      if (!localStorage.getItem("astrorekha_ab_test_id")) {
+        localStorage.setItem("astrorekha_ab_test_id", "onboarding-layout-qa");
+      }
 
-      let variant: "A" | "B" = forcedVariant || (
-        localStorage.getItem("astrorekha_layout_variant") === "B" ? "B" : "A"
-      );
+      let variant: "A" | "B" = localStorage.getItem("astrorekha_layout_variant") === "B" ? "B" : "A";
+      const forcedVariantRaw = new URLSearchParams(window.location.search).get("variant") || "";
+      const forcedVariant = forcedVariantRaw.toUpperCase();
+      if (forcedVariant === "A" || forcedVariant === "B") {
+        variant = forcedVariant as "A" | "B";
+      }
 
-      if (!forcedVariant) {
+      if (!(forcedVariant === "A" || forcedVariant === "B")) {
         try {
           const cfgRes = await fetch("/api/ab-test/layout-config", { cache: "no-store" });
           const cfgJson = await cfgRes.json().catch(() => ({}));
           const enabled = cfgJson?.config?.enabled !== false;
           const layoutBEnabled = cfgJson?.config?.layoutBEnabled !== false;
           const testId = cfgJson?.config?.testId || "onboarding-layout-qa";
+          localStorage.setItem("astrorekha_ab_test_id", testId);
 
           if (enabled && layoutBEnabled) {
             const params = new URLSearchParams({ testId, visitorId, userId });
             const variantRes = await fetch(`/api/ab-test?${params.toString()}`, { cache: "no-store" });
             const variantJson = await variantRes.json().catch(() => ({}));
             variant = variantJson?.variant === "B" ? "B" : "A";
+            if (variantJson?.testId) {
+              localStorage.setItem("astrorekha_ab_test_id", String(variantJson.testId));
+            }
           } else {
             variant = "A";
           }
@@ -78,8 +82,13 @@ export default function WelcomePage() {
         return;
       }
 
-      if (!forcedVariant) {
-        router.replace(`/welcome?variant=${variant.toLowerCase()}`);
+      if (variant === "B") {
+        router.replace("/welcome-b");
+        return;
+      }
+
+      if (window.location.search) {
+        router.replace("/welcome");
       }
     };
 

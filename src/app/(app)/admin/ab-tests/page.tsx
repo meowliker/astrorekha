@@ -153,13 +153,13 @@ export default function ABTestsPage() {
       const response = await fetch(`/api/admin/ab-tests?testId=${testId}`);
       const data = await response.json();
       setSelectedTest(data);
-      setWeightA(data.test?.variants?.A?.weight || 50);
-      setWeightB(data.test?.variants?.B?.weight || 50);
+      setWeightA(data.test?.variants?.A?.weight ?? 50);
+      setWeightB(data.test?.variants?.B?.weight ?? 50);
       if (data?.test?.id && data.test.id === funnelConfig.testId) {
         setFunnelConfig((prev) => ({
           ...prev,
-          variantAWeight: data.test?.variants?.A?.weight || prev.variantAWeight,
-          variantBWeight: data.test?.variants?.B?.weight || prev.variantBWeight,
+          variantAWeight: data.test?.variants?.A?.weight ?? prev.variantAWeight,
+          variantBWeight: data.test?.variants?.B?.weight ?? prev.variantBWeight,
         }));
       }
     } catch (error) {
@@ -590,7 +590,7 @@ export default function ABTestsPage() {
                 <div className="flex-1 bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-medium">Variant A</span>
-                    <span className="text-2xl font-bold text-blue-400">{test.variants?.A?.weight || 50}%</span>
+                    <span className="text-2xl font-bold text-blue-400">{test.variants?.A?.weight ?? 50}%</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Layout A route: {test.variants?.A?.page || "bundle-pricing"}
@@ -600,7 +600,7 @@ export default function ABTestsPage() {
                 <div className="flex-1 bg-purple-500/10 border border-purple-500/30 rounded-lg p-4">
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-medium">Variant B</span>
-                    <span className="text-2xl font-bold text-purple-400">{test.variants?.B?.weight || 50}%</span>
+                    <span className="text-2xl font-bold text-purple-400">{test.variants?.B?.weight ?? 50}%</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Layout B route: {test.variants?.B?.page || "bundle-pricing-b"}
@@ -842,7 +842,7 @@ export default function ABTestsPage() {
                     <div>
                       <h3 className="font-semibold">{test.name}</h3>
                       <p className="text-sm text-muted-foreground">
-                        {test.variants?.A?.weight || 50}% / {test.variants?.B?.weight || 50}% split
+                        {test.variants?.A?.weight ?? 50}% / {test.variants?.B?.weight ?? 50}% split
                       </p>
                     </div>
                   </div>

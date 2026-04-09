@@ -115,6 +115,7 @@ export default function Step16Page() {
         const cfgJson = await cfgRes.json().catch(() => ({}));
         const testId = cfgJson?.config?.testId || "onboarding-layout-qa";
         const enabled = cfgJson?.config?.enabled !== false;
+        localStorage.setItem("astrorekha_ab_test_id", testId);
 
         if (!enabled) {
           localStorage.setItem("astrorekha_layout_variant", "A");
@@ -131,6 +132,8 @@ export default function Step16Page() {
         const variantJson = await variantRes.json().catch(() => ({}));
         const variant = variantJson?.variant === "B" ? "B" : "A";
         const page = variantJson?.page;
+        const resolvedTestId = variantJson?.testId || testId;
+        localStorage.setItem("astrorekha_ab_test_id", resolvedTestId);
 
         localStorage.setItem("astrorekha_layout_variant", variant);
         if (variant === "B" || page === "bundle-pricing-b") {

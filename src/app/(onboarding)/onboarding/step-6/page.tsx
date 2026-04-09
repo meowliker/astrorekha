@@ -52,6 +52,7 @@ export default function Step6Page() {
       const cfgJson = await cfgRes.json().catch(() => ({}));
       const testId = cfgJson?.config?.testId || "onboarding-layout-qa";
       const enabled = cfgJson?.config?.enabled !== false;
+      localStorage.setItem("astrorekha_ab_test_id", testId);
 
       if (!enabled) {
         localStorage.setItem("astrorekha_layout_variant", "A");
@@ -67,6 +68,8 @@ export default function Step6Page() {
       const variantRes = await fetch(`/api/ab-test?${variantParams.toString()}`, { cache: "no-store" });
       const variantJson = await variantRes.json().catch(() => ({}));
       const variant = variantJson?.variant === "B" ? "B" : "A";
+      const resolvedTestId = variantJson?.testId || testId;
+      localStorage.setItem("astrorekha_ab_test_id", resolvedTestId);
 
       localStorage.setItem("astrorekha_layout_variant", variant);
       if (variant === "B") {
