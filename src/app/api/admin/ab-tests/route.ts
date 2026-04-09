@@ -87,6 +87,20 @@ export async function GET(request: NextRequest) {
       
       const { data: statsA } = await supabase.from("ab_test_stats").select("*").eq("id", `${testId}_A`).single();
       const { data: statsB } = await supabase.from("ab_test_stats").select("*").eq("id", `${testId}_B`).single();
+      const [{ count: assignmentsA = 0 }, { count: assignmentsB = 0 }] = await Promise.all([
+        supabase
+          .from("ab_test_assignments")
+          .select("*", { count: "exact", head: true })
+          .eq("test_id", testId)
+          .eq("variant", "A"),
+        supabase
+          .from("ab_test_assignments")
+          .select("*", { count: "exact", head: true })
+          .eq("test_id", testId)
+          .eq("variant", "B"),
+      ]);
+      const assignmentsACount = Number(assignmentsA ?? 0);
+      const assignmentsBCount = Number(assignmentsB ?? 0);
 
       let recentEvents: any[] = [];
       let dailyBreakdown: any[] = [];
@@ -133,8 +147,8 @@ export async function GET(request: NextRequest) {
         console.error("Failed to fetch events:", eventsErr);
       }
 
-      const calculateRates = (stats: any) => {
-        const impressions = stats?.impressions || 0;
+      const calculateRates = (stats: any, assignedCount: number) => {
+        const impressions = Math.max(stats?.impressions || 0, assignedCount || 0);
         const conversions = stats?.conversions || 0;
         const bounces = stats?.bounces || 0;
         const checkoutsStarted = stats?.checkouts_started || 0;
@@ -152,6 +166,7 @@ export async function GET(request: NextRequest) {
           checkoutToConversionRate: checkoutsStarted > 0 ? ((conversions / checkoutsStarted) * 100).toFixed(2) : "0.00",
           avgRevenuePerUser: conversions > 0 ? (totalRevenue / conversions).toFixed(2) : "0.00",
           avgRevenuePerImpression: impressions > 0 ? (totalRevenue / impressions).toFixed(2) : "0.00",
+          assignedUsers: assignedCount || 0,
         };
       };
 
@@ -174,8 +189,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         test: { id: testId, ...resolvedTestData },
         stats: {
-          A: calculateRates(statsA),
-          B: calculateRates(statsB),
+          A: calculateRates(statsA, assignmentsACount),
+          B: calculateRates(statsB, assignmentsBCount),
         },
         dailyBreakdown,
         recentEvents,
@@ -198,20 +213,36 @@ export async function GET(request: NextRequest) {
     for (const test of hydratedTests) {
       const { data: sA } = await supabase.from("ab_test_stats").select("*").eq("id", `${test.id}_A`).single();
       const { data: sB } = await supabase.from("ab_test_stats").select("*").eq("id", `${test.id}_B`).single();
+      const [{ count: assignmentsA = 0 }, { count: assignmentsB = 0 }] = await Promise.all([
+        supabase
+          .from("ab_test_assignments")
+          .select("*", { count: "exact", head: true })
+          .eq("test_id", test.id)
+          .eq("variant", "A"),
+        supabase
+          .from("ab_test_assignments")
+          .select("*", { count: "exact", head: true })
+          .eq("test_id", test.id)
+          .eq("variant", "B"),
+      ]);
+      const assignmentsACount = Number(assignmentsA ?? 0);
+      const assignmentsBCount = Number(assignmentsB ?? 0);
 
       const aData = sA || { impressions: 0, conversions: 0 };
       const bData = sB || { impressions: 0, conversions: 0 };
+      const variantAImpressions = Math.max(aData.impressions || 0, assignmentsACount);
+      const variantBImpressions = Math.max(bData.impressions || 0, assignmentsBCount);
 
       tests.push({
         ...test,
         quickStats: {
-          totalImpressions: (aData.impressions || 0) + (bData.impressions || 0),
+          totalImpressions: variantAImpressions + variantBImpressions,
           totalConversions: (aData.conversions || 0) + (bData.conversions || 0),
-          variantAConversionRate: aData.impressions > 0 
-            ? ((aData.conversions / aData.impressions) * 100).toFixed(2) 
+          variantAConversionRate: variantAImpressions > 0 
+            ? ((aData.conversions / variantAImpressions) * 100).toFixed(2) 
             : "0.00",
-          variantBConversionRate: bData.impressions > 0 
-            ? ((bData.conversions / bData.impressions) * 100).toFixed(2) 
+          variantBConversionRate: variantBImpressions > 0 
+            ? ((bData.conversions / variantBImpressions) * 100).toFixed(2) 
             : "0.00",
         },
       });
