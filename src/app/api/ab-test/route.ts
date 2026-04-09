@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { DEFAULT_LAYOUT_B_CONFIG, normalizeLayoutBConfig } from "@/lib/layout-b-funnel";
 
 // A/B Test configuration API
 // Handles getting assigned variant for a user and managing test configs
+const SETTINGS_KEY = "funnel_layout_b_config";
+
+async function resolveDefaultTestId(supabase: ReturnType<typeof getSupabaseAdmin>) {
+  const { data } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", SETTINGS_KEY)
+    .maybeSingle();
+
+  return normalizeLayoutBConfig(data?.value).testId || DEFAULT_LAYOUT_B_CONFIG.testId;
+}
 
 async function persistUserFlowVariant(params: {
   supabase: ReturnType<typeof getSupabaseAdmin>;
@@ -38,11 +50,12 @@ async function persistUserFlowVariant(params: {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const testId = searchParams.get("testId") || "pricing-test-1";
+    const requestedTestId = searchParams.get("testId");
     const visitorId = searchParams.get("visitorId");
     const userIdFromQuery = searchParams.get("userId")?.trim() || null;
 
     const supabase = getSupabaseAdmin();
+    const testId = requestedTestId || await resolveDefaultTestId(supabase);
     const isOnboardingLayoutTest = testId.startsWith("onboarding-layout");
 
     const defaultTest = {
@@ -172,9 +185,9 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("A/B test error:", error);
     return NextResponse.json({
-      testId: "pricing-test-1",
+      testId: DEFAULT_LAYOUT_B_CONFIG.testId,
       variant: "A",
-      page: "step-17",
+      page: "bundle-pricing",
       error: "Failed to get A/B test assignment",
     });
   }

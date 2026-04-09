@@ -29,6 +29,7 @@ import {
   normalizeLayoutBConfig,
   type LayoutBFunnelConfig,
 } from "@/lib/layout-b-funnel";
+const DEFAULT_ONBOARDING_TEST_ID = DEFAULT_LAYOUT_B_CONFIG.testId;
 
 interface ABTest {
   id: string;
@@ -118,7 +119,16 @@ export default function ABTestsPage() {
       setLoading(true);
       const response = await fetch("/api/admin/ab-tests");
       const data = await response.json();
-      setTests(data.tests || []);
+      const nextTests = data.tests || [];
+      setTests(nextTests);
+      if (nextTests.length > 0) {
+        const onboardingTest =
+          nextTests.find((test: ABTest) => test.id === funnelConfig.testId) ||
+          nextTests.find((test: ABTest) => test.id === DEFAULT_ONBOARDING_TEST_ID);
+        if (onboardingTest && (!selectedTest || selectedTest.test.id !== onboardingTest.id)) {
+          fetchTestDetails(onboardingTest.id);
+        }
+      }
     } catch (error) {
       console.error("Failed to fetch tests:", error);
     } finally {
@@ -186,15 +196,16 @@ export default function ABTestsPage() {
 
     try {
       setSaving(true);
-      const testId = selectedTest.test?.id || "pricing-test-1";
+      const testId = selectedTest.test?.id || funnelConfig.testId || DEFAULT_ONBOARDING_TEST_ID;
+      const isOnboardingLayoutTest = testId.startsWith("onboarding-layout");
       await fetch("/api/admin/ab-tests", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           testId,
           variants: {
-            A: { weight: weightA, page: "step-17" },
-            B: { weight: weightB, page: "a-step-17" },
+            A: { weight: weightA, page: isOnboardingLayoutTest ? "bundle-pricing" : "step-17" },
+            B: { weight: weightB, page: isOnboardingLayoutTest ? "bundle-pricing-b" : "a-step-17" },
           },
         }),
       });
@@ -209,19 +220,21 @@ export default function ABTestsPage() {
 
   const createDefaultTest = async () => {
     try {
+      const testId = funnelConfig.testId || DEFAULT_ONBOARDING_TEST_ID;
       await fetch("/api/admin/ab-tests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          testId: "pricing-test-1",
-          name: "Pricing Page A/B Test",
+          testId,
+          name: "Onboarding Layout A/B (QA)",
           variants: {
-            A: { weight: 50, page: "step-17" },
-            B: { weight: 50, page: "a-step-17" },
+            A: { weight: funnelConfig.variantAWeight, page: "bundle-pricing" },
+            B: { weight: funnelConfig.variantBWeight, page: "bundle-pricing-b" },
           },
         }),
       });
-      fetchTests();
+      await fetchTests();
+      await fetchTestDetails(testId);
     } catch (error) {
       console.error("Failed to create test:", error);
     }
@@ -377,7 +390,12 @@ export default function ABTestsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => updateTestStatus(test.id || "pricing-test-1", test.status === "active" ? "paused" : "active")}
+                onClick={() =>
+                  updateTestStatus(
+                    test.id || funnelConfig.testId || DEFAULT_ONBOARDING_TEST_ID,
+                    test.status === "active" ? "paused" : "active"
+                  )
+                }
               >
                 {test.status === "active" ? <Pause className="w-4 h-4 mr-2" /> : <Play className="w-4 h-4 mr-2" />}
                 {test.status === "active" ? "Pause" : "Resume"}
@@ -385,7 +403,7 @@ export default function ABTestsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => fetchTestDetails(test.id || "pricing-test-1")}
+                onClick={() => fetchTestDetails(test.id || funnelConfig.testId || DEFAULT_ONBOARDING_TEST_ID)}
                 disabled={loading}
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -829,7 +847,7 @@ export default function ABTestsPage() {
             <h2 className="text-lg font-semibold mb-2">No A/B Tests Found</h2>
             <p className="text-muted-foreground mb-4">Create your first A/B test to start experimenting</p>
             <Button onClick={createDefaultTest}>
-              Create Pricing Test
+              Create Onboarding Test
             </Button>
           </div>
         ) : (

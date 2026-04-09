@@ -1,7 +1,77 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { DEFAULT_LAYOUT_B_CONFIG, normalizeLayoutBConfig } from "@/lib/layout-b-funnel";
 
 // Admin API for managing A/B tests
+const SETTINGS_KEY = "funnel_layout_b_config";
+const DEFAULT_ONBOARDING_TEST_ID = DEFAULT_LAYOUT_B_CONFIG.testId;
+
+async function ensureOnboardingLayoutTest(supabase: ReturnType<typeof getSupabaseAdmin>) {
+  const { data: settingsRow } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", SETTINGS_KEY)
+    .maybeSingle();
+
+  const config = normalizeLayoutBConfig(settingsRow?.value);
+  const testId = config.testId || DEFAULT_ONBOARDING_TEST_ID;
+  const variants = {
+    A: { weight: config.variantAWeight, page: "bundle-pricing" },
+    B: { weight: config.variantBWeight, page: "bundle-pricing-b" },
+  };
+
+  const { data: existing } = await supabase
+    .from("ab_tests")
+    .select("id, name, status, variants")
+    .eq("id", testId)
+    .maybeSingle();
+
+  if (!existing) {
+    const row = {
+      id: testId,
+      name: "Onboarding Layout A/B (QA)",
+      status: config.enabled ? "active" : "paused",
+      variants,
+      updated_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    };
+
+    await supabase.from("ab_tests").upsert(row, { onConflict: "id" });
+    return testId;
+  }
+
+  // Keep metadata/weights aligned with funnel config, but do not overwrite
+  // active/paused status on read (admin Start/Pause controls this).
+  const shouldUpdateName = existing.name !== "Onboarding Layout A/B (QA)";
+  const shouldUpdateVariants = JSON.stringify(existing.variants || {}) !== JSON.stringify(variants);
+
+  if (shouldUpdateName || shouldUpdateVariants) {
+    const patch: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (shouldUpdateName) patch.name = "Onboarding Layout A/B (QA)";
+    if (shouldUpdateVariants) patch.variants = variants;
+
+    await supabase.from("ab_tests").update(patch).eq("id", testId);
+  }
+
+  return testId;
+}
+
+async function buildDefaultTestData(testId: string) {
+  const row = {
+    id: testId,
+    name: "Onboarding Layout A/B (QA)",
+    status: "active",
+    variants: {
+      A: { weight: 50, page: "bundle-pricing" },
+      B: { weight: 50, page: "bundle-pricing-b" },
+    },
+    updated_at: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+  };
+  return row;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,6 +79,7 @@ export async function GET(request: NextRequest) {
     const testId = searchParams.get("testId");
 
     const supabase = getSupabaseAdmin();
+    const onboardingTestId = await ensureOnboardingLayoutTest(supabase);
 
     if (testId) {
       // Get specific test with detailed stats
@@ -84,22 +155,21 @@ export async function GET(request: NextRequest) {
         };
       };
 
-      const resolvedTestData = testData || {
-        id: testId,
-        name: testId.startsWith("onboarding-layout") ? "Onboarding Layout A/B (QA)" : "Pricing Page A/B Test",
-        status: "active",
-        variants: testId.startsWith("onboarding-layout")
-          ? {
-              A: { weight: 50, page: "bundle-pricing" },
-              B: { weight: 50, page: "bundle-pricing-b" },
-            }
+      const resolvedTestData = testData || (
+        testId.startsWith("onboarding-layout")
+          ? await buildDefaultTestData(testId)
           : {
-              A: { weight: 50, page: "step-17" },
-              B: { weight: 50, page: "a-step-17" },
-            },
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+              id: testId,
+              name: "Pricing Page A/B Test",
+              status: "active",
+              variants: {
+                A: { weight: 50, page: "step-17" },
+                B: { weight: 50, page: "a-step-17" },
+              },
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }
+      );
       
       return NextResponse.json({
         test: { id: testId, ...resolvedTestData },
@@ -114,9 +184,18 @@ export async function GET(request: NextRequest) {
 
     // Get all tests
     const { data: allTests } = await supabase.from("ab_tests").select("*");
+    const hydratedTests = [...(allTests || [])];
+    if (!hydratedTests.some((test) => test.id === onboardingTestId)) {
+      const { data: onboardingTest } = await supabase
+        .from("ab_tests")
+        .select("*")
+        .eq("id", onboardingTestId)
+        .single();
+      if (onboardingTest) hydratedTests.push(onboardingTest);
+    }
     const tests = [];
 
-    for (const test of (allTests || [])) {
+    for (const test of hydratedTests) {
       const { data: sA } = await supabase.from("ab_test_stats").select("*").eq("id", `${test.id}_A`).single();
       const { data: sB } = await supabase.from("ab_test_stats").select("*").eq("id", `${test.id}_B`).single();
 
@@ -239,13 +318,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const isOnboardingLayoutTest = testId.startsWith("onboarding-layout");
     const testData = {
       id: testId,
       name,
       status: "active",
       variants: variants || {
-        A: { weight: 50, page: "step-17" },
-        B: { weight: 50, page: "a-step-17" },
+        A: { weight: 50, page: isOnboardingLayoutTest ? "bundle-pricing" : "step-17" },
+        B: { weight: 50, page: isOnboardingLayoutTest ? "bundle-pricing-b" : "a-step-17" },
       },
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
