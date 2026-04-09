@@ -25,7 +25,6 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   DEFAULT_LAYOUT_B_CONFIG,
-  SKETCH_QUESTION_BANK,
   normalizeLayoutBConfig,
   type LayoutBFunnelConfig,
 } from "@/lib/layout-b-funnel";
@@ -525,32 +524,6 @@ export default function ABTestsPage() {
               </label>
             </div>
 
-            <div className="mb-3">
-              <p className="text-sm text-muted-foreground mb-2">Question Toggles (turn off low-signal steps to reduce bounce)</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {SKETCH_QUESTION_BANK.map((question) => (
-                  <label
-                    key={question.id}
-                    className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2"
-                  >
-                    <span className="text-sm">{question.title}</span>
-                    <input
-                      type="checkbox"
-                      checked={funnelConfig.questions[question.id]}
-                      onChange={(e) =>
-                        setFunnelConfig((prev) => ({
-                          ...prev,
-                          questions: {
-                            ...prev.questions,
-                            [question.id]: e.target.checked,
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                ))}
-              </div>
-            </div>
           </div>
 
           {/* Traffic Split */}
