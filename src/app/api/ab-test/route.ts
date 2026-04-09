@@ -87,11 +87,24 @@ export async function GET(request: NextRequest) {
     };
 
     // Get test configuration
-    const { data: testData } = await supabase.from("ab_tests").select("*").eq("id", testId).single();
+    const { data: testData, error: testDataError } = await supabase
+      .from("ab_tests")
+      .select("*")
+      .eq("id", testId)
+      .single();
+    if (testDataError && testDataError.code !== "PGRST116") {
+      console.error("[ab-test] failed to fetch test config", { testId, error: testDataError });
+    }
     
     if (!testData) {
       // Create default test if it doesn't exist
-      await supabase.from("ab_tests").insert(defaultTest);
+      const { error: insertDefaultTestError } = await supabase.from("ab_tests").insert(defaultTest);
+      if (insertDefaultTestError) {
+        console.error("[ab-test] failed to create default test", {
+          testId,
+          error: insertDefaultTestError,
+        });
+      }
       
       const variant = Math.random() < 0.5 ? "A" : "B";
       
@@ -116,11 +129,18 @@ export async function GET(request: NextRequest) {
 
     // Check if visitor already has an assigned variant
     if (visitorId) {
-      const { data: assignment } = await supabase
+      const { data: assignment, error: assignmentLookupError } = await supabase
         .from("ab_test_assignments")
         .select("variant")
         .eq("id", `${testId}_${visitorId}`)
-        .single();
+        .maybeSingle();
+      if (assignmentLookupError && assignmentLookupError.code !== "PGRST116") {
+        console.error("[ab-test] failed to read assignment", {
+          testId,
+          visitorId,
+          error: assignmentLookupError,
+        });
+      }
       
       if (assignment) {
         await persistUserFlowVariant({
@@ -160,13 +180,24 @@ export async function GET(request: NextRequest) {
 
     // Save assignment if visitor ID provided
     if (visitorId) {
-      await supabase.from("ab_test_assignments").upsert({
+      const assignmentPayload = {
         id: `${testId}_${visitorId}`,
         test_id: testId,
         visitor_id: visitorId,
         variant: assignedVariant,
-        assigned_at: new Date().toISOString(),
-      }, { onConflict: "id" });
+        created_at: new Date().toISOString(),
+      };
+      const { error: assignmentUpsertError } = await supabase
+        .from("ab_test_assignments")
+        .upsert(assignmentPayload, { onConflict: "id" });
+      if (assignmentUpsertError) {
+        console.error("[ab-test] failed to persist assignment", {
+          testId,
+          visitorId,
+          variant: assignedVariant,
+          error: assignmentUpsertError,
+        });
+      }
     }
 
     await persistUserFlowVariant({

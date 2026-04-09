@@ -48,7 +48,6 @@ export async function POST(request: NextRequest) {
       variant,
       event_type: eventType,
       visitor_id: visitorId || null,
-      user_id: userId || null,
       metadata: metadata || {},
       created_at: now,
     });
@@ -91,7 +90,6 @@ export async function POST(request: NextRequest) {
         bounces: eventType === "bounce" ? 1 : 0,
         checkouts_started: eventType === "checkout_started" ? 1 : 0,
         total_revenue: eventType === "conversion" && metadata?.amount ? metadata.amount : 0,
-        created_at: now,
         updated_at: now,
       });
       if (insertStatsError) throw insertStatsError;
