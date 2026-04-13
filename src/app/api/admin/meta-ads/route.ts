@@ -5,6 +5,45 @@ export const dynamic = "force-dynamic";
 
 const META_API_VERSION = "v21.0";
 const META_BASE_URL = `https://graph.facebook.com/${META_API_VERSION}`;
+const PURCHASE_ACTION_PRIORITY = [
+  "offsite_conversion.fb_pixel_purchase",
+  "website_purchase",
+  "onsite_web_purchase",
+  "omni_purchase",
+  "purchase",
+];
+
+function parseMetricNumber(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getActionMetricValue(collection: any[], actionTypes: string[]): number {
+  for (const actionType of actionTypes) {
+    const hit = collection.find((row: any) => row?.action_type === actionType);
+    if (hit) return parseMetricNumber(hit.value);
+  }
+  return 0;
+}
+
+function getRoasValue(insight: any): number {
+  const roasSources = [insight?.website_purchase_roas, insight?.purchase_roas];
+  for (const source of roasSources) {
+    if (!source) continue;
+    if (Array.isArray(source)) {
+      const prioritized = getActionMetricValue(source, PURCHASE_ACTION_PRIORITY);
+      if (prioritized > 0) return prioritized;
+      if (source.length > 0) {
+        const fallback = parseMetricNumber(source[0]?.value);
+        if (fallback > 0) return fallback;
+      }
+    } else {
+      const parsed = parseMetricNumber(source);
+      if (parsed > 0) return parsed;
+    }
+  }
+  return 0;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -50,7 +89,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch account-level insights
-    const insightsUrl = `${META_BASE_URL}/act_${adAccountId}/insights?fields=spend,impressions,clicks,cpc,cpm,ctr,reach,frequency,actions,cost_per_action_type,conversions,cost_per_conversion&${dateParams}&access_token=${metaAccessToken}`;
+    const insightsUrl = `${META_BASE_URL}/act_${adAccountId}/insights?fields=spend,impressions,clicks,cpc,cpm,ctr,reach,frequency,actions,cost_per_action_type,conversions,cost_per_conversion,purchase_roas,website_purchase_roas&${dateParams}&access_token=${metaAccessToken}`;
     
     const insightsRes = await fetch(insightsUrl);
     const insightsData = await insightsRes.json();
@@ -65,7 +104,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch campaign-level breakdown
-    const campaignsUrl = `${META_BASE_URL}/act_${adAccountId}/insights?fields=campaign_name,campaign_id,spend,impressions,clicks,cpc,cpm,ctr,reach,actions,cost_per_action_type&level=campaign&${dateParams}&limit=50&access_token=${metaAccessToken}`;
+    const campaignsUrl = `${META_BASE_URL}/act_${adAccountId}/insights?fields=campaign_name,campaign_id,spend,impressions,clicks,cpc,cpm,ctr,reach,actions,cost_per_action_type,purchase_roas,website_purchase_roas&level=campaign&${dateParams}&limit=50&access_token=${metaAccessToken}`;
 
     const campaignsRes = await fetch(campaignsUrl);
     const campaignsData = await campaignsRes.json();
@@ -89,14 +128,12 @@ export async function GET(request: NextRequest) {
     const actions = accountInsights.actions || [];
     const costPerAction = accountInsights.cost_per_action_type || [];
 
-    const getActionValue = (actionType: string) => {
-      const action = actions.find((a: any) => a.action_type === actionType);
-      return action ? parseInt(action.value) : 0;
+    const getActionValue = (actionTypes: string[]) => {
+      return getActionMetricValue(actions, actionTypes);
     };
 
-    const getCostPerAction = (actionType: string) => {
-      const cpa = costPerAction.find((a: any) => a.action_type === actionType);
-      return cpa ? parseFloat(cpa.value) : 0;
+    const getCostPerAction = (actionTypes: string[]) => {
+      return getActionMetricValue(costPerAction, actionTypes);
     };
 
     // Parse campaign insights
@@ -104,14 +141,12 @@ export async function GET(request: NextRequest) {
       const cActions = c.actions || [];
       const cCostPerAction = c.cost_per_action_type || [];
       
-      const getCampaignAction = (actionType: string) => {
-        const action = cActions.find((a: any) => a.action_type === actionType);
-        return action ? parseInt(action.value) : 0;
+      const getCampaignAction = (actionTypes: string[]) => {
+        return getActionMetricValue(cActions, actionTypes);
       };
 
-      const getCampaignCPA = (actionType: string) => {
-        const cpa = cCostPerAction.find((a: any) => a.action_type === actionType);
-        return cpa ? parseFloat(cpa.value) : 0;
+      const getCampaignCPA = (actionTypes: string[]) => {
+        return getActionMetricValue(cCostPerAction, actionTypes);
       };
 
       return {
@@ -123,11 +158,12 @@ export async function GET(request: NextRequest) {
         cpc: parseFloat(c.cpc || "0"),
         ctr: parseFloat(c.ctr || "0"),
         reach: parseInt(c.reach || "0"),
-        leads: getCampaignAction("lead"),
-        purchases: getCampaignAction("purchase") || getCampaignAction("offsite_conversion.fb_pixel_purchase"),
-        linkClicks: getCampaignAction("link_click"),
-        costPerLead: getCampaignCPA("lead"),
-        costPerPurchase: getCampaignCPA("purchase") || getCampaignCPA("offsite_conversion.fb_pixel_purchase"),
+        leads: getCampaignAction(["lead"]),
+        purchases: getCampaignAction(PURCHASE_ACTION_PRIORITY),
+        linkClicks: getCampaignAction(["link_click"]),
+        costPerLead: getCampaignCPA(["lead"]),
+        costPerPurchase: getCampaignCPA(PURCHASE_ACTION_PRIORITY),
+        roas: getRoasValue(c),
       };
     });
 
@@ -173,16 +209,17 @@ export async function GET(request: NextRequest) {
         reach: parseInt(accountInsights.reach || "0"),
         frequency: parseFloat(accountInsights.frequency || "0"),
         // Key conversion actions
-        linkClicks: getActionValue("link_click"),
-        leads: getActionValue("lead"),
-        purchases: getActionValue("purchase") || getActionValue("offsite_conversion.fb_pixel_purchase"),
-        addToCart: getActionValue("offsite_conversion.fb_pixel_add_to_cart"),
-        initiateCheckout: getActionValue("offsite_conversion.fb_pixel_initiate_checkout"),
-        pageViews: getActionValue("landing_page_view"),
+        linkClicks: getActionValue(["link_click"]),
+        leads: getActionValue(["lead"]),
+        purchases: getActionValue(PURCHASE_ACTION_PRIORITY),
+        addToCart: getActionValue(["offsite_conversion.fb_pixel_add_to_cart"]),
+        initiateCheckout: getActionValue(["offsite_conversion.fb_pixel_initiate_checkout"]),
+        pageViews: getActionValue(["landing_page_view"]),
         // Cost per action
-        costPerLead: getCostPerAction("lead"),
-        costPerPurchase: getCostPerAction("purchase") || getCostPerAction("offsite_conversion.fb_pixel_purchase"),
-        costPerLinkClick: getCostPerAction("link_click"),
+        costPerLead: getCostPerAction(["lead"]),
+        costPerPurchase: getCostPerAction(PURCHASE_ACTION_PRIORITY),
+        costPerLinkClick: getCostPerAction(["link_click"]),
+        roas: getRoasValue(accountInsights),
       },
       campaigns,
       dailyBreakdown,

@@ -74,6 +74,7 @@ interface MetaAdMetrics {
   purchases: number;
   costPerPurchase: number;
   reach: number;
+  roas: number;
 }
 
 interface MetaAdData extends MetaAdMetrics {}
@@ -112,6 +113,7 @@ interface MetaBreakdownData {
     cpm: number;
     ctr: number;
     costPerPurchase: number;
+    roas: number;
   };
 }
 
@@ -2068,27 +2070,33 @@ function MetaBreakdownTab({
   };
   const formatPercent = (value: number) => `${value.toFixed(2)}%`;
 
-  // For per-campaign breakdown, we estimate using avg order value since we don't have per-campaign revenue
-  const AVG_ORDER_VALUE = data?.revenue?.totalSales && data?.revenue?.totalRevenue 
-    ? data.revenue.totalRevenue / data.revenue.totalSales 
+  // For per-campaign breakdown, prefer Meta ROAS (matches Ads Manager),
+  // fallback to estimated AOV model when ROAS is unavailable.
+  const AVG_ORDER_VALUE = data?.revenue?.totalSales && data?.revenue?.totalRevenue
+    ? data.revenue.totalRevenue / data.revenue.totalSales
     : 1500;
 
-  // Calculate estimated profit per campaign: (Purchases × Avg Order Value) - Spend in INR
-  const calculateEstimatedProfit = (purchases: number, spend: number) => {
-    const rate = exchangeRate ? parseFloat(exchangeRate) : 85;
-    const estimatedRevenue = purchases * AVG_ORDER_VALUE;
-    const spendINR = spend * rate;
-    return estimatedRevenue - spendINR;
-  };
-
-  // Calculate estimated ROAS per campaign
-  const calculateEstimatedROAS = (purchases: number, spend: number) => {
+  const resolveDisplayRoas = (purchases: number, spend: number, roas: number) => {
+    if (roas > 0) return roas.toFixed(2);
     if (spend === 0 || purchases === 0) return "-";
     const rate = exchangeRate ? parseFloat(exchangeRate) : 85;
     const estimatedRevenue = purchases * AVG_ORDER_VALUE;
     const spendINR = spend * rate;
     if (spendINR === 0) return "-";
     return (estimatedRevenue / spendINR).toFixed(2);
+  };
+
+  // Calculate estimated profit per campaign
+  const calculateEstimatedProfit = (purchases: number, spend: number, roas: number) => {
+    const rate = exchangeRate ? parseFloat(exchangeRate) : 85;
+    const spendINR = spend * rate;
+    if (spendINR <= 0) return 0;
+    if (roas > 0) {
+      const metaRevenueInr = roas * spendINR;
+      return metaRevenueInr - spendINR;
+    }
+    const estimatedRevenueInr = purchases * AVG_ORDER_VALUE;
+    return estimatedRevenueInr - spendINR;
   };
 
   return (
@@ -2310,9 +2318,9 @@ function MetaBreakdownTab({
                       </td>
                       <td className="text-red-400 px-4 py-3 text-right">{formatINR(campaign.spend)}</td>
                       <td className="text-white/60 px-4 py-3 text-right">{campaign.budget ? formatINR(campaign.budget) : "-"}</td>
-                      <td className="text-green-400 px-4 py-3 text-right">{calculateEstimatedROAS(campaign.purchases, campaign.spend)}</td>
-                      <td className={`px-4 py-3 text-right ${calculateEstimatedProfit(campaign.purchases, campaign.spend) >= 0 ? "text-green-400" : "text-red-400"}`}>
-                        {calculateEstimatedProfit(campaign.purchases, campaign.spend) >= 0 ? "" : "-"}₹{Math.abs(calculateEstimatedProfit(campaign.purchases, campaign.spend)).toFixed(2)}
+                      <td className="text-green-400 px-4 py-3 text-right">{resolveDisplayRoas(campaign.purchases, campaign.spend, campaign.roas)}</td>
+                      <td className={`px-4 py-3 text-right ${calculateEstimatedProfit(campaign.purchases, campaign.spend, campaign.roas) >= 0 ? "text-green-400" : "text-red-400"}`}>
+                        {calculateEstimatedProfit(campaign.purchases, campaign.spend, campaign.roas) >= 0 ? "" : "-"}₹{Math.abs(calculateEstimatedProfit(campaign.purchases, campaign.spend, campaign.roas)).toFixed(2)}
                       </td>
                       <td className="text-white px-4 py-3 text-right">{campaign.purchases}</td>
                       <td className="text-white/60 px-4 py-3 text-right">{formatINR(campaign.cpc)}</td>
@@ -2340,9 +2348,9 @@ function MetaBreakdownTab({
                           </td>
                           <td className="text-red-400/80 px-4 py-3 text-right">{formatINR(adset.spend)}</td>
                           <td className="text-white/50 px-4 py-3 text-right">{adset.budget ? formatINR(adset.budget) : "-"}</td>
-                          <td className="text-green-400/80 px-4 py-3 text-right">{calculateEstimatedROAS(adset.purchases, adset.spend)}</td>
-                          <td className={`px-4 py-3 text-right ${calculateEstimatedProfit(adset.purchases, adset.spend) >= 0 ? "text-green-400/80" : "text-red-400/80"}`}>
-                            {calculateEstimatedProfit(adset.purchases, adset.spend) >= 0 ? "" : "-"}₹{Math.abs(calculateEstimatedProfit(adset.purchases, adset.spend)).toFixed(2)}
+                          <td className="text-green-400/80 px-4 py-3 text-right">{resolveDisplayRoas(adset.purchases, adset.spend, adset.roas)}</td>
+                          <td className={`px-4 py-3 text-right ${calculateEstimatedProfit(adset.purchases, adset.spend, adset.roas) >= 0 ? "text-green-400/80" : "text-red-400/80"}`}>
+                            {calculateEstimatedProfit(adset.purchases, adset.spend, adset.roas) >= 0 ? "" : "-"}₹{Math.abs(calculateEstimatedProfit(adset.purchases, adset.spend, adset.roas)).toFixed(2)}
                           </td>
                           <td className="text-white/80 px-4 py-3 text-right">{adset.purchases}</td>
                           <td className="text-white/50 px-4 py-3 text-right">{formatINR(adset.cpc)}</td>
@@ -2363,9 +2371,9 @@ function MetaBreakdownTab({
                             </td>
                             <td className="text-red-400/60 px-4 py-3 text-right text-xs">{formatINR(ad.spend)}</td>
                             <td className="text-white/40 px-4 py-3 text-right text-xs">-</td>
-                            <td className="text-green-400/60 px-4 py-3 text-right text-xs">{calculateEstimatedROAS(ad.purchases, ad.spend)}</td>
-                            <td className={`px-4 py-3 text-right text-xs ${calculateEstimatedProfit(ad.purchases, ad.spend) >= 0 ? "text-green-400/60" : "text-red-400/60"}`}>
-                              {calculateEstimatedProfit(ad.purchases, ad.spend) >= 0 ? "" : "-"}₹{Math.abs(calculateEstimatedProfit(ad.purchases, ad.spend)).toFixed(2)}
+                            <td className="text-green-400/60 px-4 py-3 text-right text-xs">{resolveDisplayRoas(ad.purchases, ad.spend, ad.roas)}</td>
+                            <td className={`px-4 py-3 text-right text-xs ${calculateEstimatedProfit(ad.purchases, ad.spend, ad.roas) >= 0 ? "text-green-400/60" : "text-red-400/60"}`}>
+                              {calculateEstimatedProfit(ad.purchases, ad.spend, ad.roas) >= 0 ? "" : "-"}₹{Math.abs(calculateEstimatedProfit(ad.purchases, ad.spend, ad.roas)).toFixed(2)}
                             </td>
                             <td className="text-white/60 px-4 py-3 text-right text-xs">{ad.purchases}</td>
                             <td className="text-white/40 px-4 py-3 text-right text-xs">{formatINR(ad.cpc)}</td>

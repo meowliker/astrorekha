@@ -189,6 +189,7 @@ interface AdMetrics {
   purchases: number;
   costPerPurchase: number;
   reach: number;
+  roas: number;
 }
 
 interface AdSetData extends AdMetrics {
@@ -197,6 +198,46 @@ interface AdSetData extends AdMetrics {
 
 interface CampaignData extends AdMetrics {
   adsets: AdSetData[];
+}
+
+const PURCHASE_ACTION_PRIORITY = [
+  "offsite_conversion.fb_pixel_purchase",
+  "website_purchase",
+  "onsite_web_purchase",
+  "omni_purchase",
+  "purchase",
+];
+
+function parseMetricNumber(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getActionMetricValue(collection: any[], actionTypes: string[]): number {
+  for (const actionType of actionTypes) {
+    const hit = collection.find((row: any) => row?.action_type === actionType);
+    if (hit) return parseMetricNumber(hit.value);
+  }
+  return 0;
+}
+
+function getRoasValue(insight: any): number {
+  const roasSources = [insight?.website_purchase_roas, insight?.purchase_roas];
+  for (const source of roasSources) {
+    if (!source) continue;
+    if (Array.isArray(source)) {
+      const prioritized = getActionMetricValue(source, PURCHASE_ACTION_PRIORITY);
+      if (prioritized > 0) return prioritized;
+      if (source.length > 0) {
+        const fallback = parseMetricNumber(source[0]?.value);
+        if (fallback > 0) return fallback;
+      }
+    } else if (typeof source === "number" || typeof source === "string") {
+      const parsed = parseMetricNumber(source);
+      if (parsed > 0) return parsed;
+    }
+  }
+  return 0;
 }
 
 // Fetch exchange rate
@@ -298,7 +339,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Fields to fetch for insights
-    const insightFields = "spend,impressions,clicks,cpc,cpm,ctr,reach,actions,cost_per_action_type";
+    const insightFields = "spend,impressions,clicks,cpc,cpm,ctr,reach,actions,cost_per_action_type,purchase_roas,website_purchase_roas";
+
+    // 0. Fetch account-level insights for exact top-line parity with Ads Manager
+    const accountInsightsUrl = `${META_BASE_URL}/act_${adAccountId}/insights?fields=${insightFields}&${dateParams}&limit=1&access_token=${metaAccessToken}`;
+    const accountInsightsRes = await fetch(accountInsightsUrl);
+    const accountInsightsData = await accountInsightsRes.json();
 
     // 1. Fetch all campaigns with their insights
     const campaignsUrl = `${META_BASE_URL}/act_${adAccountId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget&limit=100&access_token=${metaAccessToken}`;
@@ -341,33 +387,21 @@ export async function GET(request: NextRequest) {
     const extractMetrics = (insight: any) => {
       const actions = insight?.actions || [];
       const costPerAction = insight?.cost_per_action_type || [];
-
-      const getPurchases = () => {
-        const purchase = actions.find((a: any) => 
-          a.action_type === "purchase" || 
-          a.action_type === "offsite_conversion.fb_pixel_purchase"
-        );
-        return purchase ? parseInt(purchase.value) : 0;
-      };
-
-      const getCostPerPurchase = () => {
-        const cpa = costPerAction.find((a: any) => 
-          a.action_type === "purchase" || 
-          a.action_type === "offsite_conversion.fb_pixel_purchase"
-        );
-        return cpa ? parseFloat(cpa.value) : 0;
-      };
+      const purchases = getActionMetricValue(actions, PURCHASE_ACTION_PRIORITY);
+      const costPerPurchase = getActionMetricValue(costPerAction, PURCHASE_ACTION_PRIORITY);
+      const roas = getRoasValue(insight);
 
       return {
-        spend: parseFloat(insight?.spend || "0"),
-        impressions: parseInt(insight?.impressions || "0"),
-        clicks: parseInt(insight?.clicks || "0"),
-        cpc: parseFloat(insight?.cpc || "0"),
-        cpm: parseFloat(insight?.cpm || "0"),
-        ctr: parseFloat(insight?.ctr || "0"),
-        reach: parseInt(insight?.reach || "0"),
-        purchases: getPurchases(),
-        costPerPurchase: getCostPerPurchase(),
+        spend: parseMetricNumber(insight?.spend),
+        impressions: parseMetricNumber(insight?.impressions),
+        clicks: parseMetricNumber(insight?.clicks),
+        cpc: parseMetricNumber(insight?.cpc),
+        cpm: parseMetricNumber(insight?.cpm),
+        ctr: parseMetricNumber(insight?.ctr),
+        reach: parseMetricNumber(insight?.reach),
+        purchases,
+        costPerPurchase,
+        roas,
       };
     };
 
@@ -476,8 +510,11 @@ export async function GET(request: NextRequest) {
     // Sort campaigns by spend (highest first)
     campaigns.sort((a, b) => b.spend - a.spend);
 
-    // Calculate totals
-    const totals = campaigns.reduce(
+    const accountInsight = accountInsightsData?.data?.[0] || null;
+    const accountMetrics = extractMetrics(accountInsight);
+
+    // Calculate totals: prefer account-level for parity with Ads Manager UI.
+    const aggregatedCampaignTotals = campaigns.reduce(
       (acc, c) => ({
         spend: acc.spend + c.spend,
         impressions: acc.impressions + c.impressions,
@@ -487,6 +524,14 @@ export async function GET(request: NextRequest) {
       }),
       { spend: 0, impressions: 0, clicks: 0, purchases: 0, reach: 0 }
     );
+
+    const totals = {
+      spend: accountMetrics.spend || aggregatedCampaignTotals.spend,
+      impressions: accountMetrics.impressions || aggregatedCampaignTotals.impressions,
+      clicks: accountMetrics.clicks || aggregatedCampaignTotals.clicks,
+      purchases: accountMetrics.purchases || aggregatedCampaignTotals.purchases,
+      reach: accountMetrics.reach || aggregatedCampaignTotals.reach,
+    };
 
     // Calculate spend in INR and profit
     const totalSpendINR = totals.spend * exchangeRate;
@@ -522,6 +567,7 @@ export async function GET(request: NextRequest) {
         cpm: totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0,
         ctr: totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0,
         costPerPurchase: totals.purchases > 0 ? totals.spend / totals.purchases : 0,
+        roas: accountMetrics.roas || 0,
       },
     });
   } catch (error: any) {
