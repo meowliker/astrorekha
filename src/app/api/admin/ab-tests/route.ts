@@ -973,7 +973,18 @@ export async function GET(request: NextRequest) {
               : new Set<string>();
             const impressionCount = routeImpressionCounts[variant].get(canonicalRoute) || routeRow?.impressions || 0;
             const audience = Math.max(visitorSet.size, impressionCount);
-            const continuedToNext = nextRoute ? countIntersection(visitorSet, nextVisitorSet) : 0;
+            const rawContinuedToNext = nextRoute ? countIntersection(visitorSet, nextVisitorSet) : 0;
+            const paidOrCheckoutProgress =
+              canonicalRoute === pricingRoutes[variant]
+                ? Math.max(
+                    routeRow?.paidOrders || 0,
+                    routeRow?.trackedBundleConversions || 0,
+                    routeRow?.checkoutsStarted || 0
+                  )
+                : canonicalRoute === upsellRoutes[variant]
+                  ? Math.max(routeRow?.upsellOrders || 0, routeRow?.checkoutsStarted || 0)
+                  : 0;
+            const continuedToNext = Math.min(audience, Math.max(rawContinuedToNext, paidOrCheckoutProgress));
             const dropOffs = nextRoute ? Math.max(audience - continuedToNext, 0) : 0;
             const bounceRate = audience > 0 ? ((dropOffs / audience) * 100).toFixed(2) : "0.00";
 
