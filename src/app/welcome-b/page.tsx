@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { trackABEvent, getABVisitorId, shouldTrackRouteImpressionOnce } from "@/lib/ab-test-tracking";
 
 export default function WelcomeBPage() {
   const router = useRouter();
@@ -21,6 +22,29 @@ export default function WelcomeBPage() {
   // Route protection: Check user status and redirect accordingly
   useEffect(() => {
     seedFlowB();
+    const testId = localStorage.getItem("astrorekha_ab_test_id") || "onboarding-layout-qa";
+    const visitorId = getABVisitorId();
+    if (
+      shouldTrackRouteImpressionOnce({
+        testId,
+        variant: "B",
+        visitorId,
+        route: "/welcome-b",
+      })
+    ) {
+      trackABEvent({
+        eventType: "impression",
+        testId,
+        visitorId,
+        variant: "B",
+        route: "/welcome-b",
+        metadata: {
+          source: "welcome-entry",
+          page: "/welcome-b",
+        },
+      }).catch(() => {});
+    }
+
     const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
     const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
 

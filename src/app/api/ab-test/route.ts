@@ -6,6 +6,39 @@ import { DEFAULT_LAYOUT_B_CONFIG, normalizeLayoutBConfig } from "@/lib/layout-b-
 // Handles getting assigned variant for a user and managing test configs
 const SETTINGS_KEY = "funnel_layout_b_config";
 
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) return 50;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function getNormalizedVariants(testData: any, isOnboardingLayoutTest: boolean) {
+  const defaults = isOnboardingLayoutTest
+    ? { pageA: "bundle-pricing", pageB: "bundle-pricing-b" }
+    : { pageA: "step-17", pageB: "a-step-17" };
+
+  const configA = Number(testData?.variants?.A?.weight);
+  const configB = Number(testData?.variants?.B?.weight);
+  let aWeight = Number.isFinite(configA) ? clampPercent(configA) : NaN;
+  let bWeight = Number.isFinite(configB) ? clampPercent(configB) : NaN;
+
+  if (!Number.isFinite(aWeight) || !Number.isFinite(bWeight) || aWeight + bWeight !== 100) {
+    const rawSplit = Number(testData?.traffic_split);
+    if (Number.isFinite(rawSplit)) {
+      const b = rawSplit <= 1 ? rawSplit * 100 : rawSplit;
+      bWeight = clampPercent(b);
+      aWeight = 100 - bWeight;
+    } else {
+      aWeight = 50;
+      bWeight = 50;
+    }
+  }
+
+  return {
+    A: { weight: aWeight, page: testData?.variants?.A?.page || defaults.pageA },
+    B: { weight: bWeight, page: testData?.variants?.B?.page || defaults.pageB },
+  };
+}
+
 async function resolveDefaultTestId(supabase: ReturnType<typeof getSupabaseAdmin>) {
   const { data } = await supabase
     .from("settings")
@@ -62,6 +95,7 @@ export async function GET(request: NextRequest) {
       id: testId,
       name: isOnboardingLayoutTest ? "Onboarding Layout A/B (QA)" : "Pricing Page A/B Test",
       status: "active",
+      traffic_split: 0.5,
       variants: isOnboardingLayoutTest
         ? {
             A: { weight: 50, page: "bundle-pricing" },
@@ -73,6 +107,14 @@ export async function GET(request: NextRequest) {
           },
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+    };
+    const defaultTestInsertRow = {
+      id: testId,
+      name: defaultTest.name,
+      status: defaultTest.status,
+      traffic_split: defaultTest.traffic_split,
+      created_at: defaultTest.created_at,
+      updated_at: defaultTest.updated_at,
     };
 
     const pageForVariant = (variant: string, test: any): string => {
@@ -98,7 +140,7 @@ export async function GET(request: NextRequest) {
     
     if (!testData) {
       // Create default test if it doesn't exist
-      const { error: insertDefaultTestError } = await supabase.from("ab_tests").insert(defaultTest);
+      const { error: insertDefaultTestError } = await supabase.from("ab_tests").insert(defaultTestInsertRow);
       if (insertDefaultTestError) {
         console.error("[ab-test] failed to create default test", {
           testId,
@@ -161,7 +203,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Assign variant based on weights
-    const variants = testData.variants || { A: { weight: 50 }, B: { weight: 50 } };
+    const variants = getNormalizedVariants(testData, isOnboardingLayoutTest);
     const totalWeight = Object.values(variants).reduce(
       (sum: number, v: any) => sum + (v.weight || 0),
       0
@@ -236,6 +278,7 @@ export async function POST(request: NextRequest) {
 
     const supabase = getSupabaseAdmin();
 
+    let nextTrafficSplit: number | null = null;
     if (variants) {
       const totalWeight = Object.values(variants).reduce(
         (sum: number, v: any) => sum + (v.weight || 0),
@@ -248,13 +291,15 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+      const bWeight = clampPercent(Number((variants as any)?.B?.weight ?? 50));
+      nextTrafficSplit = bWeight / 100;
     }
 
     const updateData: any = {
       updated_at: new Date().toISOString(),
     };
 
-    if (variants) updateData.variants = variants;
+    if (nextTrafficSplit !== null) updateData.traffic_split = nextTrafficSplit;
     if (status) updateData.status = status;
     if (name) updateData.name = name;
 

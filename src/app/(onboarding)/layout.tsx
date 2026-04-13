@@ -1,6 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
+import ABRouteImpressionTracker from "@/components/ABRouteImpressionTracker";
 
 export default function OnboardingLayout({
   children,
@@ -9,6 +10,7 @@ export default function OnboardingLayout({
 }) {
   return (
     <div className="onboarding-shell min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+      <ABRouteImpressionTracker />
       <div className="w-full max-w-md h-screen bg-background overflow-hidden shadow-2xl shadow-black/50 flex flex-col">
         <AnimatePresence mode="wait">
           <motion.main

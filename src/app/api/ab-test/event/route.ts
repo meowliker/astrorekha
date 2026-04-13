@@ -15,6 +15,39 @@ async function resolveDefaultTestId(supabase: ReturnType<typeof getSupabaseAdmin
   return normalizeLayoutBConfig(data?.value).testId || DEFAULT_LAYOUT_B_CONFIG.testId;
 }
 
+async function ensureTestRowExists(supabase: ReturnType<typeof getSupabaseAdmin>, testId: string) {
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("ab_tests").upsert(
+    {
+      id: testId,
+      name: "Onboarding Layout A/B (QA)",
+      status: "active",
+      traffic_split: 0.5,
+      updated_at: now,
+      created_at: now,
+    },
+    { onConflict: "id" }
+  );
+  if (error) {
+    console.error("[ab-test/event] failed to ensure test row", { testId, error });
+  }
+}
+
+function isRetryableSchemaError(error: any): boolean {
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    error?.code === "PGRST204" ||
+    error?.code === "PGRST205" ||
+    message.includes("column") ||
+    message.includes("schema cache")
+  );
+}
+
+function isForeignKeyError(error: any): boolean {
+  const message = String(error?.message || "").toLowerCase();
+  return error?.code === "23503" || message.includes("foreign key");
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -42,60 +75,102 @@ export async function POST(request: NextRequest) {
 
     const now = new Date().toISOString();
 
-    // Create event record
-    const { error: eventInsertError } = await supabase.from("ab_test_events").insert({
+    // Create event record. Different environments may have either
+    // `metadata` or `event_data` column; try both for compatibility.
+    const baseEventRow = {
       test_id: testId,
       variant,
       event_type: eventType,
       visitor_id: visitorId || null,
-      metadata: metadata || {},
       created_at: now,
-    });
-    if (eventInsertError) throw eventInsertError;
+    };
 
-    // Update aggregated stats
-    const statsId = `${testId}_${variant}`;
-    const { data: currentStats, error: currentStatsError } = await supabase
-      .from("ab_test_stats")
-      .select("*")
-      .eq("id", statsId)
-      .maybeSingle();
-    if (currentStatsError) throw currentStatsError;
+    let eventInsertError: any = null;
+    const metadataCandidates: Array<Record<string, unknown>> = [
+      { ...baseEventRow, metadata: metadata || {} },
+      { ...baseEventRow, event_data: metadata || {} },
+      { ...baseEventRow, data: metadata || {} },
+    ];
 
-    if (currentStats) {
-      const updates: any = { updated_at: now };
-
-      if (eventType === "impression") {
-        updates.impressions = (currentStats.impressions || 0) + 1;
-      } else if (eventType === "conversion") {
-        updates.conversions = (currentStats.conversions || 0) + 1;
-        if (metadata?.amount) {
-          updates.total_revenue = (currentStats.total_revenue || 0) + metadata.amount;
+    const tryInsertEvent = async () => {
+      eventInsertError = null;
+      for (const candidate of metadataCandidates) {
+        const { error } = await supabase.from("ab_test_events").insert(candidate);
+        if (!error) {
+          eventInsertError = null;
+          return true;
         }
-      } else if (eventType === "bounce") {
-        updates.bounces = (currentStats.bounces || 0) + 1;
-      } else if (eventType === "checkout_started") {
-        updates.checkouts_started = (currentStats.checkouts_started || 0) + 1;
+        eventInsertError = error;
+        if (!isRetryableSchemaError(error)) {
+          return false;
+        }
       }
+      return false;
+    };
 
-      const { error: updateError } = await supabase.from("ab_test_stats").update(updates).eq("id", statsId);
-      if (updateError) throw updateError;
-    } else {
-      const { error: insertStatsError } = await supabase.from("ab_test_stats").insert({
-        id: statsId,
-        test_id: testId,
-        variant,
-        impressions: eventType === "impression" ? 1 : 0,
-        conversions: eventType === "conversion" ? 1 : 0,
-        bounces: eventType === "bounce" ? 1 : 0,
-        checkouts_started: eventType === "checkout_started" ? 1 : 0,
-        total_revenue: eventType === "conversion" && metadata?.amount ? metadata.amount : 0,
-        updated_at: now,
-      });
-      if (insertStatsError) throw insertStatsError;
+    const inserted = await tryInsertEvent();
+    if (!inserted && isForeignKeyError(eventInsertError)) {
+      await ensureTestRowExists(supabase, String(testId));
+      const retryInserted = await tryInsertEvent();
+      if (!retryInserted && eventInsertError) throw eventInsertError;
+    } else if (!inserted && eventInsertError) {
+      throw eventInsertError;
     }
 
-    return NextResponse.json({ success: true });
+    // Best effort stats update. Never fail event ingestion if stats write fails.
+    let statsUpdated = true;
+    try {
+      const statsId = `${testId}_${variant}`;
+      const { data: currentStats, error: currentStatsError } = await supabase
+        .from("ab_test_stats")
+        .select("*")
+        .eq("id", statsId)
+        .maybeSingle();
+      if (currentStatsError) throw currentStatsError;
+
+      if (currentStats) {
+        const updates: any = { updated_at: now };
+
+        if (eventType === "impression") {
+          updates.impressions = (currentStats.impressions || 0) + 1;
+        } else if (eventType === "conversion") {
+          updates.conversions = (currentStats.conversions || 0) + 1;
+          if (metadata?.amount) {
+            updates.total_revenue = (currentStats.total_revenue || 0) + metadata.amount;
+          }
+        } else if (eventType === "bounce") {
+          updates.bounces = (currentStats.bounces || 0) + 1;
+        } else if (eventType === "checkout_started") {
+          updates.checkouts_started = (currentStats.checkouts_started || 0) + 1;
+        }
+
+        const { error: updateError } = await supabase.from("ab_test_stats").update(updates).eq("id", statsId);
+        if (updateError) throw updateError;
+      } else {
+        const { error: insertStatsError } = await supabase.from("ab_test_stats").insert({
+          id: statsId,
+          test_id: testId,
+          variant,
+          impressions: eventType === "impression" ? 1 : 0,
+          conversions: eventType === "conversion" ? 1 : 0,
+          bounces: eventType === "bounce" ? 1 : 0,
+          checkouts_started: eventType === "checkout_started" ? 1 : 0,
+          total_revenue: eventType === "conversion" && metadata?.amount ? metadata.amount : 0,
+          updated_at: now,
+        });
+        if (insertStatsError) throw insertStatsError;
+      }
+    } catch (statsError) {
+      statsUpdated = false;
+      console.warn("[ab-test/event] stats update failed; event kept", {
+        testId,
+        variant,
+        eventType,
+        statsError,
+      });
+    }
+
+    return NextResponse.json({ success: true, statsUpdated });
   } catch (error) {
     console.error("A/B test event tracking error:", error);
     return NextResponse.json(

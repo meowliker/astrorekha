@@ -1,22 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ComponentType } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { 
   ArrowLeft, 
   BarChart3, 
-  Users, 
-  TrendingUp, 
   DollarSign,
-  Percent,
   RefreshCw,
   Play,
   Pause,
   Settings,
   ChevronRight,
   Eye,
-  ShoppingCart,
   UserCheck,
   XCircle,
   RotateCcw,
@@ -62,8 +58,85 @@ interface TestStats {
   avgRevenuePerImpression: string;
 }
 
+interface RouteStatsRow {
+  route: string;
+  assignedUsers: number;
+  uniqueAudience: number;
+  impressions: number;
+  checkoutsStarted: number;
+  trackedBundleConversions: number;
+  bounces: number;
+  bounceRate: string;
+  checkoutStartRate: string;
+  trackedConversionRate: string;
+  trackedCheckoutToConversionRate: string;
+  trackedRevenueInr: number;
+  paidOrders: number;
+  paidRevenueInr: number;
+  upsellOrders: number;
+  upsellRevenueInr: number;
+  upsellAttachRate: string;
+}
+
+interface FunnelFlowStepRow {
+  step: number;
+  route: string;
+  audience: number;
+  impressions: number;
+  continuedToNext: number;
+  dropOffs: number;
+  bounceRate: string;
+  checkoutsStarted: number;
+  trackedBundleConversions: number;
+  paidOrders: number;
+  paidRevenueInr: number;
+  upsellOrders: number;
+  upsellRevenueInr: number;
+}
+
+interface PurchaseDetailRow {
+  purchasedAt: string;
+  userId: string;
+  email: string;
+  variant: "A" | "B";
+  funnel: string;
+  item: string;
+  amountInr: number;
+  paymentId: string;
+  transactionId: string;
+  paymentStatus: string;
+}
+
+interface MixSummaryRow {
+  item: string;
+  orders: number;
+  buyers: number;
+  revenueInr: number;
+}
+
+interface FunnelDecisionSummary {
+  assignedUsers: number;
+  bundleBuyers: number;
+  upsellBuyers: number;
+  upsellAttachRate: string;
+  bundleRevenueInr: number;
+  upsellRevenueInr: number;
+  totalRevenueInr: number;
+  avgRevenuePerBundleBuyerInr: string;
+}
+
 interface TestDetails {
   test: ABTest;
+  analyticsWindowStart?: string;
+  appliedDateRange?: {
+    start: string;
+    end: string | null;
+  };
+  appliedCostaRicaDateRange?: {
+    startDate: string | null;
+    endDate: string | null;
+    timezoneNote?: string;
+  };
   stats: {
     A: TestStats;
     B: TestStats;
@@ -74,10 +147,91 @@ interface TestDetails {
     B: { impressions: number; conversions: number; bounces: number; revenue: number };
   }>;
   recentEvents: Array<any>;
+  routeStats?: { A: RouteStatsRow[]; B: RouteStatsRow[] };
+  orderedFunnelFlow?: { A: FunnelFlowStepRow[]; B: FunnelFlowStepRow[] };
+  bundlePurchases?: PurchaseDetailRow[];
+  upsellPurchases?: PurchaseDetailRow[];
+  bundleBreakdown?: { A: MixSummaryRow[]; B: MixSummaryRow[] };
+  upsellBreakdown?: { A: MixSummaryRow[]; B: MixSummaryRow[] };
+  funnelSummary?: { A: FunnelDecisionSummary; B: FunnelDecisionSummary };
+}
+
+type DateRangePreset =
+  | "custom"
+  | "today"
+  | "yesterday"
+  | "last_7d"
+  | "last_14d"
+  | "last_30d"
+  | "this_month"
+  | "last_month"
+  | "test_window";
+
+function addDaysToIsoDate(isoDate: string, days: number): string {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    date.getUTCDate()
+  ).padStart(2, "0")}`;
+}
+
+function getIstDateParts(date: Date): { dayKey: string; hour: number; minute: number } {
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = formatter.formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || "00";
+  const dayKey = `${get("year")}-${get("month")}-${get("day")}`;
+  const hour = Number(get("hour"));
+  const minute = Number(get("minute"));
+  return { dayKey, hour: Number.isFinite(hour) ? hour : 0, minute: Number.isFinite(minute) ? minute : 0 };
+}
+
+function getCurrentCostaRicaBusinessDayKey(): string {
+  const { dayKey, hour, minute } = getIstDateParts(new Date());
+  const isBeforeBoundary = hour < 11 || (hour === 11 && minute < 30);
+  return isBeforeBoundary ? addDaysToIsoDate(dayKey, -1) : dayKey;
+}
+
+function getPresetRange(preset: DateRangePreset): { startDate: string; endDate: string } | null {
+  const businessToday = getCurrentCostaRicaBusinessDayKey();
+  if (preset === "today") return { startDate: businessToday, endDate: businessToday };
+  if (preset === "yesterday") {
+    const yesterday = addDaysToIsoDate(businessToday, -1);
+    return { startDate: yesterday, endDate: yesterday };
+  }
+  if (preset === "last_7d") return { startDate: addDaysToIsoDate(businessToday, -6), endDate: businessToday };
+  if (preset === "last_14d") return { startDate: addDaysToIsoDate(businessToday, -13), endDate: businessToday };
+  if (preset === "last_30d") return { startDate: addDaysToIsoDate(businessToday, -29), endDate: businessToday };
+
+  const [year, month] = businessToday.split("-").map(Number);
+  const thisMonthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+  if (preset === "this_month") return { startDate: thisMonthStart, endDate: businessToday };
+
+  if (preset === "last_month") {
+    const lastMonthDate = new Date(Date.UTC(year, month - 2, 1));
+    const lmYear = lastMonthDate.getUTCFullYear();
+    const lmMonth = lastMonthDate.getUTCMonth() + 1;
+    const startDate = `${lmYear}-${String(lmMonth).padStart(2, "0")}-01`;
+    const endDate = `${lmYear}-${String(lmMonth).padStart(2, "0")}-${String(
+      new Date(Date.UTC(lmYear, lmMonth, 0)).getUTCDate()
+    ).padStart(2, "0")}`;
+    return { startDate, endDate };
+  }
+
+  return null;
 }
 
 export default function ABTestsPage() {
   const router = useRouter();
+  const initialTodayRange = getPresetRange("today");
   const [tests, setTests] = useState<ABTest[]>([]);
   const [selectedTest, setSelectedTest] = useState<TestDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -89,6 +243,9 @@ export default function ABTestsPage() {
   const [resetting, setResetting] = useState(false);
   const [funnelConfig, setFunnelConfig] = useState<LayoutBFunnelConfig>(DEFAULT_LAYOUT_B_CONFIG);
   const [savingFunnelConfig, setSavingFunnelConfig] = useState(false);
+  const [dateStart, setDateStart] = useState(initialTodayRange?.startDate || "");
+  const [dateEnd, setDateEnd] = useState(initialTodayRange?.endDate || "");
+  const [dateRangePreset, setDateRangePreset] = useState<DateRangePreset>("today");
 
   // Check admin session and fetch data (same pattern as revenue dashboard)
   useEffect(() => {
@@ -147,10 +304,26 @@ export default function ABTestsPage() {
     }
   };
 
-  const fetchTestDetails = async (testId: string) => {
+  const buildDetailsUrl = (testId: string, startDate = dateStart, endDate = dateEnd) => {
+    const params = new URLSearchParams({ testId });
+    if (startDate) params.set("startDate", startDate);
+    if (endDate) params.set("endDate", endDate);
+    return `/api/admin/ab-tests?${params.toString()}`;
+  };
+
+  const fetchTestDetails = async (
+    testId: string,
+    rangeOverrides?: { startDate?: string; endDate?: string }
+  ) => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/admin/ab-tests?testId=${testId}`);
+      const response = await fetch(
+        buildDetailsUrl(
+          testId,
+          rangeOverrides?.startDate ?? dateStart,
+          rangeOverrides?.endDate ?? dateEnd
+        )
+      );
       const data = await response.json();
       setSelectedTest(data);
       setWeightA(data.test?.variants?.A?.weight ?? 50);
@@ -304,7 +477,7 @@ export default function ABTestsPage() {
     title: string; 
     value: string | number; 
     subtitle?: string; 
-    icon: any;
+    icon: ComponentType<{ className?: string }>;
     color?: string;
     comparison?: { value: string; better: boolean };
   }) => (
@@ -324,7 +497,21 @@ export default function ABTestsPage() {
   );
 
   if (selectedTest) {
-    const { test, stats, dailyBreakdown } = selectedTest;
+    const {
+      test,
+      stats,
+      analyticsWindowStart,
+      appliedDateRange,
+      appliedCostaRicaDateRange,
+      dailyBreakdown,
+      routeStats = { A: [], B: [] },
+      orderedFunnelFlow = { A: [], B: [] },
+      bundlePurchases = [],
+      upsellPurchases = [],
+      bundleBreakdown = { A: [], B: [] },
+      upsellBreakdown = { A: [], B: [] },
+      funnelSummary,
+    } = selectedTest;
     
     // Default stats if not available
     const defaultStats: TestStats = {
@@ -343,6 +530,94 @@ export default function ABTestsPage() {
     
     const aStats = stats?.A || defaultStats;
     const bStats = stats?.B || defaultStats;
+    const summaryA = funnelSummary?.A || {
+      assignedUsers: aStats.impressions,
+      bundleBuyers: aStats.conversions,
+      upsellBuyers: 0,
+      upsellAttachRate: "0.00",
+      bundleRevenueInr: aStats.totalRevenue,
+      upsellRevenueInr: 0,
+      totalRevenueInr: aStats.totalRevenue,
+      avgRevenuePerBundleBuyerInr: aStats.avgRevenuePerUser,
+    };
+    const summaryB = funnelSummary?.B || {
+      assignedUsers: bStats.impressions,
+      bundleBuyers: bStats.conversions,
+      upsellBuyers: 0,
+      upsellAttachRate: "0.00",
+      bundleRevenueInr: bStats.totalRevenue,
+      upsellRevenueInr: 0,
+      totalRevenueInr: bStats.totalRevenue,
+      avgRevenuePerBundleBuyerInr: bStats.avgRevenuePerUser,
+    };
+
+    const formatDateTime = (value: string) => {
+      if (!value) return "—";
+      const dt = new Date(value);
+      if (Number.isNaN(dt.getTime())) return "—";
+      return dt.toLocaleString();
+    };
+
+    const shortId = (value: string) => {
+      if (!value) return "—";
+      if (value.length <= 14) return value;
+      return `${value.slice(0, 6)}...${value.slice(-4)}`;
+    };
+
+    const groupedBundleRows = Object.values(
+      bundlePurchases.reduce<Record<string, {
+        key: string;
+        funnel: string;
+        variant: "A" | "B";
+        bundle: string;
+        orders: number;
+        uniqueUsers: Set<string>;
+        revenueInr: number;
+        latestPurchasedAt: string;
+      }>>((acc, row) => {
+        const key = `${row.variant}|${row.item}`;
+        if (!acc[key]) {
+          acc[key] = {
+            key,
+            funnel: row.funnel,
+            variant: row.variant,
+            bundle: row.item,
+            orders: 0,
+            uniqueUsers: new Set<string>(),
+            revenueInr: 0,
+            latestPurchasedAt: row.purchasedAt,
+          };
+        }
+        acc[key].orders += 1;
+        acc[key].uniqueUsers.add(row.userId);
+        acc[key].revenueInr += row.amountInr;
+        if (new Date(row.purchasedAt).getTime() > new Date(acc[key].latestPurchasedAt).getTime()) {
+          acc[key].latestPurchasedAt = row.purchasedAt;
+        }
+        return acc;
+      }, {})
+    )
+      .map((row) => ({
+        ...row,
+        buyers: row.uniqueUsers.size,
+        revenueInr: Number(row.revenueInr.toFixed(2)),
+      }))
+      .sort((a, b) => b.orders - a.orders);
+
+    const groupedBundleRowsByVariant = {
+      A: groupedBundleRows.filter((row) => row.variant === "A"),
+      B: groupedBundleRows.filter((row) => row.variant === "B"),
+    };
+
+    const bundlePurchasesByVariant = {
+      A: bundlePurchases.filter((row) => row.variant === "A"),
+      B: bundlePurchases.filter((row) => row.variant === "B"),
+    };
+
+    const upsellPurchasesByVariant = {
+      A: upsellPurchases.filter((row) => row.variant === "A"),
+      B: upsellPurchases.filter((row) => row.variant === "B"),
+    };
 
     // If test is undefined, show loading or error state
     if (!test) {
@@ -374,6 +649,17 @@ export default function ABTestsPage() {
                 <p className="text-sm text-muted-foreground">
                   Created {test.createdAt ? new Date(test.createdAt).toLocaleDateString() : "N/A"}
                 </p>
+                <p className="text-xs text-muted-foreground">
+                  Analytics base: {analyticsWindowStart ? `since ${new Date(analyticsWindowStart).toLocaleString()}` : "all tracked data"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Applied range: {appliedDateRange?.start ? new Date(appliedDateRange.start).toLocaleString() : "start"}
+                  {" → "}
+                  {appliedDateRange?.end ? new Date(appliedDateRange.end).toLocaleString() : "now"}
+                </p>
+                {appliedCostaRicaDateRange?.timezoneNote ? (
+                  <p className="text-xs text-muted-foreground">{appliedCostaRicaDateRange.timezoneNote}</p>
+                ) : null}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -402,7 +688,12 @@ export default function ABTestsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => fetchTestDetails(test.id || funnelConfig.testId || DEFAULT_ONBOARDING_TEST_ID)}
+                onClick={() =>
+                  fetchTestDetails(test.id || funnelConfig.testId || DEFAULT_ONBOARDING_TEST_ID, {
+                    startDate: dateStart,
+                    endDate: dateEnd,
+                  })
+                }
                 disabled={loading}
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -417,6 +708,101 @@ export default function ABTestsPage() {
                 Reset Analytics
               </Button>
             </div>
+          </div>
+
+          <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6 mb-6">
+            <h2 className="text-lg font-semibold mb-4">Date Range Filter</h2>
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+              <label className="text-sm">
+                <span className="text-muted-foreground block mb-1">Range Preset</span>
+                <select
+                  value={dateRangePreset}
+                  onChange={(e) => setDateRangePreset(e.target.value as DateRangePreset)}
+                  className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                >
+                  <option value="custom">Custom (Calendar)</option>
+                  <option value="today">Today</option>
+                  <option value="yesterday">Yesterday</option>
+                  <option value="last_7d">Last 7 Days</option>
+                  <option value="last_14d">Last 14 Days</option>
+                  <option value="last_30d">Last 30 Days</option>
+                  <option value="this_month">This Month</option>
+                  <option value="last_month">Last Month</option>
+                  <option value="test_window">Since Test Reset/Start</option>
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="text-muted-foreground block mb-1">Start Date</span>
+                <input
+                  type="date"
+                  value={dateStart}
+                  onChange={(e) => {
+                    setDateStart(e.target.value);
+                    setDateRangePreset("custom");
+                  }}
+                  className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="text-muted-foreground block mb-1">End Date</span>
+                <input
+                  type="date"
+                  value={dateEnd}
+                  onChange={(e) => {
+                    setDateEnd(e.target.value);
+                    setDateRangePreset("custom");
+                  }}
+                  className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                />
+              </label>
+              <Button
+                onClick={() => {
+                  const testKey = test.id || funnelConfig.testId || DEFAULT_ONBOARDING_TEST_ID;
+                  if (dateRangePreset === "test_window") {
+                    setDateStart("");
+                    setDateEnd("");
+                    fetchTestDetails(testKey, {
+                      startDate: "",
+                      endDate: "",
+                    });
+                    return;
+                  }
+                  if (dateRangePreset === "custom") {
+                    fetchTestDetails(testKey, {
+                      startDate: dateStart,
+                      endDate: dateEnd,
+                    });
+                    return;
+                  }
+                  const presetRange = getPresetRange(dateRangePreset);
+                  if (!presetRange) return;
+                  setDateStart(presetRange.startDate);
+                  setDateEnd(presetRange.endDate);
+                  fetchTestDetails(testKey, presetRange);
+                }}
+                disabled={loading}
+              >
+                Apply
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDateStart("");
+                  setDateEnd("");
+                  setDateRangePreset("test_window");
+                  fetchTestDetails(test.id || funnelConfig.testId || DEFAULT_ONBOARDING_TEST_ID, {
+                    startDate: "",
+                    endDate: "",
+                  });
+                }}
+                disabled={loading}
+              >
+                Clear
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-3">
+              Each selected date represents Costa Rica day (UTC-6), aligned as 11:30 AM IST to next day 11:29 AM IST.
+            </p>
           </div>
 
           {/* Reset Analytics Modal */}
@@ -748,10 +1134,394 @@ export default function ABTestsPage() {
             </div>
           </div>
 
+          {/* Funnel Decision Summary */}
+          <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6 mb-6">
+            <h2 className="text-lg font-semibold mb-4">Funnel Decision Summary</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
+                <p className="text-sm font-semibold text-blue-300 mb-3">Variant A (Layout A)</p>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Assigned</p>
+                    <p className="text-lg font-semibold">{summaryA.assignedUsers}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Bundle Buyers</p>
+                    <p className="text-lg font-semibold">{summaryA.bundleBuyers}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Upsell Buyers</p>
+                    <p className="text-lg font-semibold">{summaryA.upsellBuyers}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Upsell Attach Rate</p>
+                    <p className="text-lg font-semibold">{summaryA.upsellAttachRate}%</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Bundle Revenue</p>
+                    <p className="text-lg font-semibold">₹{summaryA.bundleRevenueInr.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Upsell Revenue</p>
+                    <p className="text-lg font-semibold">₹{summaryA.upsellRevenueInr.toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-4">
+                <p className="text-sm font-semibold text-purple-300 mb-3">Variant B (Layout B)</p>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Assigned</p>
+                    <p className="text-lg font-semibold">{summaryB.assignedUsers}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Bundle Buyers</p>
+                    <p className="text-lg font-semibold">{summaryB.bundleBuyers}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Upsell Buyers</p>
+                    <p className="text-lg font-semibold">{summaryB.upsellBuyers}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Upsell Attach Rate</p>
+                    <p className="text-lg font-semibold">{summaryB.upsellAttachRate}%</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Bundle Revenue</p>
+                    <p className="text-lg font-semibold">₹{summaryB.bundleRevenueInr.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Upsell Revenue</p>
+                    <p className="text-lg font-semibold">₹{summaryB.upsellRevenueInr.toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Ordered Funnel Flow */}
+          <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6 mb-6">
+            <h2 className="text-lg font-semibold mb-2">Ordered Funnel Flow (Welcome → Pre-Dashboard)</h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Routes are shown in exact funnel order for each variant. Drop-off is estimated from visitors who did not continue to the next step.
+            </p>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {([
+                { variant: "A" as const, label: "Variant A Flow", accent: "text-blue-400", rows: orderedFunnelFlow.A || [] },
+                { variant: "B" as const, label: "Variant B Flow", accent: "text-purple-400", rows: orderedFunnelFlow.B || [] },
+              ]).map((group) => (
+                <div key={group.variant} className="rounded-lg border border-border/70 bg-background/40 p-4">
+                  <p className={`text-sm font-semibold mb-3 ${group.accent}`}>{group.label}</p>
+                  {group.rows.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No ordered funnel data yet.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[860px]">
+                        <thead>
+                          <tr className="border-b border-border/70 text-xs text-muted-foreground">
+                            <th className="text-left py-2 pr-3">Step</th>
+                            <th className="text-left py-2 px-2">Route</th>
+                            <th className="text-right py-2 px-2">Audience</th>
+                            <th className="text-right py-2 px-2">Impressions</th>
+                            <th className="text-right py-2 px-2">Continued</th>
+                            <th className="text-right py-2 px-2">Drop-off</th>
+                            <th className="text-right py-2 px-2">Bounce %</th>
+                            <th className="text-right py-2 px-2">Checkout</th>
+                            <th className="text-right py-2 px-2">Paid</th>
+                            <th className="text-right py-2 pl-2">Revenue (₹)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.rows.map((row) => (
+                            <tr key={`${group.variant}-flow-${row.step}-${row.route}`} className="border-b border-border/40 text-sm">
+                              <td className="py-2 pr-3">{row.step}</td>
+                              <td className="py-2 px-2">
+                                <p className="font-medium">{row.route}</p>
+                              </td>
+                              <td className="text-right py-2 px-2">{row.audience}</td>
+                              <td className="text-right py-2 px-2">{row.impressions}</td>
+                              <td className="text-right py-2 px-2">{row.continuedToNext}</td>
+                              <td className="text-right py-2 px-2">{row.dropOffs}</td>
+                              <td className="text-right py-2 px-2">{row.bounceRate}%</td>
+                              <td className="text-right py-2 px-2">{row.checkoutsStarted}</td>
+                              <td className="text-right py-2 px-2">{row.paidOrders}</td>
+                              <td className="text-right py-2 pl-2">₹{(row.paidRevenueInr + row.upsellRevenueInr).toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Route Audience Behavior */}
+          <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6 mb-6">
+            <h2 className="text-lg font-semibold mb-4">Route Audience Behavior (Per Funnel)</h2>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {([
+                { variant: "A" as const, label: "Variant A Routes", accent: "text-blue-400", rows: routeStats.A || [] },
+                { variant: "B" as const, label: "Variant B Routes", accent: "text-purple-400", rows: routeStats.B || [] },
+              ]).map((group) => (
+                <div key={group.variant} className="rounded-lg border border-border/70 bg-background/40 p-4">
+                  <p className={`text-sm font-semibold mb-3 ${group.accent}`}>{group.label}</p>
+                  {group.rows.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No tracked route data yet.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[760px]">
+                        <thead>
+                          <tr className="border-b border-border/70 text-xs text-muted-foreground">
+                            <th className="text-left py-2 pr-3">Route</th>
+                            <th className="text-right py-2 px-2">Audience</th>
+                            <th className="text-right py-2 px-2">Impressions</th>
+                            <th className="text-right py-2 px-2">Checkout</th>
+                            <th className="text-right py-2 px-2">Tracked Bundle</th>
+                            <th className="text-right py-2 px-2">Paid Orders</th>
+                            <th className="text-right py-2 px-2">Upsell Orders</th>
+                            <th className="text-right py-2 pl-2">Revenue (₹)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.rows.map((row) => (
+                            <tr key={`${group.variant}-${row.route}`} className="border-b border-border/40 text-sm">
+                              <td className="py-2 pr-3">
+                                <p className="font-medium">{row.route}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Bounce {row.bounceRate}% · Checkout {row.checkoutStartRate}% · Conv {row.trackedConversionRate}%
+                                </p>
+                              </td>
+                              <td className="text-right py-2 px-2">{row.uniqueAudience}</td>
+                              <td className="text-right py-2 px-2">{row.impressions}</td>
+                              <td className="text-right py-2 px-2">{row.checkoutsStarted}</td>
+                              <td className="text-right py-2 px-2">{row.trackedBundleConversions}</td>
+                              <td className="text-right py-2 px-2">{row.paidOrders}</td>
+                              <td className="text-right py-2 px-2">{row.upsellOrders}</td>
+                              <td className="text-right py-2 pl-2">₹{(row.paidRevenueInr + row.upsellRevenueInr).toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Bundle/Upsell Mix */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6">
+              <h2 className="text-lg font-semibold mb-4">Bundle Mix by Funnel</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {([
+                  { variant: "A", label: "Variant A", rows: bundleBreakdown.A || [], accent: "text-blue-400" },
+                  { variant: "B", label: "Variant B", rows: bundleBreakdown.B || [], accent: "text-purple-400" },
+                ]).map((group) => (
+                  <div key={group.variant} className="rounded-lg border border-border/70 p-3">
+                    <p className={`text-sm font-semibold mb-2 ${group.accent}`}>{group.label}</p>
+                    {group.rows.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No bundle purchases yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {group.rows.slice(0, 8).map((row) => (
+                          <div key={`${group.variant}-${row.item}`} className="flex items-center justify-between text-sm">
+                            <div>
+                              <p className="font-medium">{row.item}</p>
+                              <p className="text-xs text-muted-foreground">{row.orders} orders · {row.buyers} buyers</p>
+                            </div>
+                            <p className="font-semibold">₹{row.revenueInr.toLocaleString()}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6">
+              <h2 className="text-lg font-semibold mb-4">Upsell Mix by Funnel</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {([
+                  { variant: "A", label: "Variant A", rows: upsellBreakdown.A || [], accent: "text-blue-400" },
+                  { variant: "B", label: "Variant B", rows: upsellBreakdown.B || [], accent: "text-purple-400" },
+                ]).map((group) => (
+                  <div key={group.variant} className="rounded-lg border border-border/70 p-3">
+                    <p className={`text-sm font-semibold mb-2 ${group.accent}`}>{group.label}</p>
+                    {group.rows.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No upsell purchases yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {group.rows.slice(0, 8).map((row) => (
+                          <div key={`${group.variant}-${row.item}`} className="flex items-center justify-between text-sm">
+                            <div>
+                              <p className="font-medium">{row.item}</p>
+                              <p className="text-xs text-muted-foreground">{row.orders} orders · {row.buyers} buyers</p>
+                            </div>
+                            <p className="font-semibold">₹{row.revenueInr.toLocaleString()}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Bundle/Upsell Purchases */}
+          <div className="grid grid-cols-1 gap-6 mb-6">
+            <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6">
+              <h2 className="text-lg font-semibold mb-4">Bundle Buyers Grouped by Funnel + Bundle</h2>
+              {(groupedBundleRowsByVariant.A.length === 0 && groupedBundleRowsByVariant.B.length === 0) ? (
+                <p className="text-sm text-muted-foreground">No paid bundle purchases in current A/B window.</p>
+              ) : (
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  {([
+                    { variant: "A" as const, label: "Layout A (Variant A)", accent: "text-blue-400", rows: groupedBundleRowsByVariant.A },
+                    { variant: "B" as const, label: "Layout B (Variant B)", accent: "text-purple-400", rows: groupedBundleRowsByVariant.B },
+                  ]).map((group) => (
+                    <div key={group.variant} className="rounded-lg border border-border/70 bg-background/40 p-4">
+                      <p className={`text-sm font-semibold mb-3 ${group.accent}`}>{group.label}</p>
+                      {group.rows.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No paid bundle purchases.</p>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[520px]">
+                            <thead>
+                              <tr className="border-b border-border text-xs text-muted-foreground">
+                                <th className="text-left py-2 pr-3">Bundle</th>
+                                <th className="text-right py-2 px-2">Orders</th>
+                                <th className="text-right py-2 px-2">Buyers</th>
+                                <th className="text-right py-2 px-2">Amount (₹)</th>
+                                <th className="text-left py-2 pl-2">Last Purchase</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {group.rows.slice(0, 40).map((row) => (
+                                <tr key={`bundle-group-${row.key}`} className="border-b border-border/40 text-sm">
+                                  <td className="py-2 pr-3">{row.bundle}</td>
+                                  <td className="py-2 px-2 text-right">{row.orders}</td>
+                                  <td className="py-2 px-2 text-right">{row.buyers}</td>
+                                  <td className="py-2 px-2 text-right">{row.revenueInr.toLocaleString()}</td>
+                                  <td className="py-2 pl-2">{formatDateTime(row.latestPurchasedAt)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6">
+              <h2 className="text-lg font-semibold mb-4">Who Bought Which Bundle (Per Funnel)</h2>
+              {(bundlePurchasesByVariant.A.length === 0 && bundlePurchasesByVariant.B.length === 0) ? (
+                <p className="text-sm text-muted-foreground">No paid bundle purchases in current A/B window.</p>
+              ) : (
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  {([
+                    { variant: "A" as const, label: "Layout A (Variant A)", accent: "text-blue-400", rows: bundlePurchasesByVariant.A },
+                    { variant: "B" as const, label: "Layout B (Variant B)", accent: "text-purple-400", rows: bundlePurchasesByVariant.B },
+                  ]).map((group) => (
+                    <div key={group.variant} className="rounded-lg border border-border/70 bg-background/40 p-4">
+                      <p className={`text-sm font-semibold mb-3 ${group.accent}`}>{group.label}</p>
+                      {group.rows.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No paid bundle purchases.</p>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[680px]">
+                            <thead>
+                              <tr className="border-b border-border text-xs text-muted-foreground">
+                                <th className="text-left py-2 pr-3">Time</th>
+                                <th className="text-left py-2 px-2">User</th>
+                                <th className="text-left py-2 px-2">Email</th>
+                                <th className="text-left py-2 px-2">Bundle</th>
+                                <th className="text-right py-2 px-2">Amount (₹)</th>
+                                <th className="text-left py-2 pl-2">Txn</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {group.rows.slice(0, 120).map((row) => (
+                                <tr key={`bundle-${group.variant}-${row.paymentId}`} className="border-b border-border/40 text-sm">
+                                  <td className="py-2 pr-3">{formatDateTime(row.purchasedAt)}</td>
+                                  <td className="py-2 px-2 font-mono">{shortId(row.userId)}</td>
+                                  <td className="py-2 px-2">{row.email}</td>
+                                  <td className="py-2 px-2">{row.item}</td>
+                                  <td className="py-2 px-2 text-right">{row.amountInr.toLocaleString()}</td>
+                                  <td className="py-2 pl-2 font-mono">{shortId(row.transactionId || row.paymentId)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6">
+              <h2 className="text-lg font-semibold mb-4">Who Bought Which Upsell (Per Funnel)</h2>
+              {(upsellPurchasesByVariant.A.length === 0 && upsellPurchasesByVariant.B.length === 0) ? (
+                <p className="text-sm text-muted-foreground">No paid upsell purchases in current A/B window.</p>
+              ) : (
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  {([
+                    { variant: "A" as const, label: "Layout A (Variant A)", accent: "text-blue-400", rows: upsellPurchasesByVariant.A },
+                    { variant: "B" as const, label: "Layout B (Variant B)", accent: "text-purple-400", rows: upsellPurchasesByVariant.B },
+                  ]).map((group) => (
+                    <div key={group.variant} className="rounded-lg border border-border/70 bg-background/40 p-4">
+                      <p className={`text-sm font-semibold mb-3 ${group.accent}`}>{group.label}</p>
+                      {group.rows.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No paid upsell purchases.</p>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[700px]">
+                            <thead>
+                              <tr className="border-b border-border text-xs text-muted-foreground">
+                                <th className="text-left py-2 pr-3">Time</th>
+                                <th className="text-left py-2 px-2">User</th>
+                                <th className="text-left py-2 px-2">Email</th>
+                                <th className="text-left py-2 px-2">Upsell</th>
+                                <th className="text-right py-2 px-2">Amount (₹)</th>
+                                <th className="text-left py-2 pl-2">Txn</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {group.rows.slice(0, 120).map((row) => (
+                                <tr key={`upsell-${group.variant}-${row.paymentId}`} className="border-b border-border/40 text-sm">
+                                  <td className="py-2 pr-3">{formatDateTime(row.purchasedAt)}</td>
+                                  <td className="py-2 px-2 font-mono">{shortId(row.userId)}</td>
+                                  <td className="py-2 px-2">{row.email}</td>
+                                  <td className="py-2 px-2">{row.item}</td>
+                                  <td className="py-2 px-2 text-right">{row.amountInr.toLocaleString()}</td>
+                                  <td className="py-2 pl-2 font-mono">{shortId(row.transactionId || row.paymentId)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Daily Breakdown Chart (simplified) */}
           {dailyBreakdown.length > 0 && (
             <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6">
-              <h2 className="text-lg font-semibold mb-4">Daily Performance (Last 30 Days)</h2>
+              <h2 className="text-lg font-semibold mb-4">Daily Performance (Filtered Range)</h2>
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {dailyBreakdown.slice(-14).map((day) => (
                   <div key={day.date} className="flex items-center gap-4 text-sm">

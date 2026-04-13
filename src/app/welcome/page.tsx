@@ -7,6 +7,7 @@ import { Menu } from "lucide-react";
 import { OnboardingSidebar } from "@/components/OnboardingSidebar";
 import Image from "next/image";
 import { generateUserId } from "@/lib/user-profile";
+import { shouldTrackRouteImpressionOnce, trackABEvent } from "@/lib/ab-test-tracking";
 
 export default function WelcomePage() {
   const router = useRouter();
@@ -70,6 +71,27 @@ export default function WelcomePage() {
       }
 
       seedFlowVariant(variant);
+      const testId = localStorage.getItem("astrorekha_ab_test_id") || "onboarding-layout-qa";
+      if (
+        shouldTrackRouteImpressionOnce({
+          testId,
+          variant,
+          visitorId,
+          route: "/welcome",
+        })
+      ) {
+        trackABEvent({
+          eventType: "impression",
+          testId,
+          visitorId,
+          variant,
+          route: "/welcome",
+          metadata: {
+            source: "welcome-entry",
+            page: "/welcome",
+          },
+        }).catch(() => {});
+      }
       if (cancelled) return;
 
       if (hasCompletedRegistration) {
