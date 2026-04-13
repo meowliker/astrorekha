@@ -98,8 +98,10 @@ interface PurchaseDetailRow {
   purchasedAt: string;
   userId: string;
   email: string;
+  userName?: string;
   variant: "A" | "B";
   funnel: string;
+  source?: "upsell_page" | "dashboard";
   item: string;
   amountInr: number;
   paymentId: string;
@@ -112,6 +114,16 @@ interface MixSummaryRow {
   orders: number;
   buyers: number;
   revenueInr: number;
+}
+
+interface UpsellKpiRow {
+  item: string;
+  audience: number;
+  orders: number;
+  conversionRate: string;
+  revenueInr: number;
+  avgOrderValue: string;
+  revenuePerAudience: string;
 }
 
 interface FunnelDecisionSummary {
@@ -246,6 +258,13 @@ export default function ABTestsPage() {
   const [dateStart, setDateStart] = useState(initialTodayRange?.startDate || "");
   const [dateEnd, setDateEnd] = useState(initialTodayRange?.endDate || "");
   const [dateRangePreset, setDateRangePreset] = useState<DateRangePreset>("today");
+  const [expandOrderedFlow, setExpandOrderedFlow] = useState(false);
+  const [upsellKpiViewMode, setUpsellKpiViewMode] = useState<"funnel" | "merged">("funnel");
+  const [ordersFunnelFilter, setOrdersFunnelFilter] = useState<"all" | "A" | "B">("all");
+  const [ordersSourceFilter, setOrdersSourceFilter] = useState<"all" | "bundle" | "upsell_page" | "dashboard">("all");
+  const [ordersSearch, setOrdersSearch] = useState("");
+  const [expandedOrderKey, setExpandedOrderKey] = useState<string | null>(null);
+  const [copiedUserId, setCopiedUserId] = useState<string | null>(null);
 
   // Check admin session and fetch data (same pattern as revenue dashboard)
   useEffect(() => {
@@ -555,13 +574,31 @@ export default function ABTestsPage() {
       if (!value) return "—";
       const dt = new Date(value);
       if (Number.isNaN(dt.getTime())) return "—";
-      return dt.toLocaleString();
+      return dt.toLocaleString("en-IN", {
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
     };
 
     const shortId = (value: string) => {
       if (!value) return "—";
       if (value.length <= 14) return value;
       return `${value.slice(0, 6)}...${value.slice(-4)}`;
+    };
+
+    const copyUserId = async (userId: string) => {
+      if (!userId) return;
+      try {
+        await navigator.clipboard.writeText(userId);
+        setCopiedUserId(userId);
+        setTimeout(() => setCopiedUserId((current) => (current === userId ? null : current)), 1200);
+      } catch (error) {
+        console.error("Failed to copy user id", error);
+      }
     };
 
     const groupedBundleRows = Object.values(
@@ -617,6 +654,236 @@ export default function ABTestsPage() {
     const upsellPurchasesByVariant = {
       A: upsellPurchases.filter((row) => row.variant === "A"),
       B: upsellPurchases.filter((row) => row.variant === "B"),
+    };
+
+    type OrderSource = "bundle" | "upsell_page" | "dashboard";
+    type AggregatedOrderRow = {
+      key: string;
+      userId: string;
+      email: string;
+      userName?: string;
+      totalAmountInr: number;
+      totalItems: number;
+      items: Array<{ name: string; count: number }>;
+      variants: ("A" | "B")[];
+      sources: OrderSource[];
+      funnelLabel: string;
+      lastPurchasedAt: string;
+    };
+
+    const toOrderItems = (row: PurchaseDetailRow, kind: "bundle" | "upsell"): string[] => {
+      if (kind === "bundle") return [row.item];
+      return String(row.item || "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    };
+
+    const orderRowsMap = new Map<string, {
+      userId: string;
+      email: string;
+      userName?: string;
+      totalAmountInr: number;
+      itemsMap: Map<string, number>;
+      variants: Set<"A" | "B">;
+      sources: Set<OrderSource>;
+      lastPurchasedAt: string;
+    }>();
+
+    const appendOrderRow = (row: PurchaseDetailRow, kind: "bundle" | "upsell") => {
+      const key = row.userId;
+      if (!orderRowsMap.has(key)) {
+        orderRowsMap.set(key, {
+          userId: row.userId,
+          email: row.email,
+          userName: row.userName,
+          totalAmountInr: 0,
+          itemsMap: new Map<string, number>(),
+          variants: new Set<"A" | "B">(),
+          sources: new Set<OrderSource>(),
+          lastPurchasedAt: row.purchasedAt,
+        });
+      }
+      const entry = orderRowsMap.get(key)!;
+      entry.totalAmountInr += row.amountInr;
+      if (!entry.userName && row.userName) entry.userName = row.userName;
+      if (!entry.email && row.email) entry.email = row.email;
+      entry.variants.add(row.variant);
+      entry.sources.add(kind === "bundle" ? "bundle" : (row.source === "dashboard" ? "dashboard" : "upsell_page"));
+      if (new Date(row.purchasedAt).getTime() > new Date(entry.lastPurchasedAt).getTime()) {
+        entry.lastPurchasedAt = row.purchasedAt;
+      }
+      for (const item of toOrderItems(row, kind)) {
+        entry.itemsMap.set(item, (entry.itemsMap.get(item) || 0) + 1);
+      }
+    };
+
+    bundlePurchases.forEach((row) => appendOrderRow(row, "bundle"));
+    upsellPurchases.forEach((row) => appendOrderRow(row, "upsell"));
+
+    const aggregatedOrderRows: AggregatedOrderRow[] = Array.from(orderRowsMap.values())
+      .map((entry) => {
+        const variants = Array.from(entry.variants).sort();
+        const sources = Array.from(entry.sources).sort() as OrderSource[];
+        const items = Array.from(entry.itemsMap.entries())
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => (b.count - a.count) || a.name.localeCompare(b.name));
+        const totalItems = items.reduce((sum, item) => sum + item.count, 0);
+        const funnelLabel =
+          variants.length === 0
+            ? "Unknown"
+            : variants.length === 1
+              ? `Layout ${variants[0]}`
+              : "Mixed (A/B)";
+        return {
+          key: entry.userId,
+          userId: entry.userId,
+          email: entry.email,
+          userName: entry.userName,
+          totalAmountInr: Number(entry.totalAmountInr.toFixed(2)),
+          totalItems,
+          items,
+          variants,
+          sources,
+          funnelLabel,
+          lastPurchasedAt: entry.lastPurchasedAt,
+        };
+      })
+      .sort((a, b) => new Date(b.lastPurchasedAt).getTime() - new Date(a.lastPurchasedAt).getTime());
+
+    const ordersSearchTerm = ordersSearch.trim().toLowerCase();
+    const filteredOrderRows = aggregatedOrderRows.filter((row) => {
+      if (ordersFunnelFilter !== "all" && !row.variants.includes(ordersFunnelFilter)) return false;
+      if (ordersSourceFilter !== "all" && !row.sources.includes(ordersSourceFilter)) return false;
+      if (!ordersSearchTerm) return true;
+      const haystack = `${row.userId} ${row.email} ${row.userName || ""} ${row.items.map((i) => i.name).join(" ")}`.toLowerCase();
+      return haystack.includes(ordersSearchTerm);
+    });
+
+    const toRate = (num: number, den: number) => (den > 0 ? ((num / den) * 100).toFixed(2) : "0.00");
+    const toMoney = (value: number) => Number(value.toFixed(2));
+    const normalizeUpsellSource = (source?: string): "upsell_page" | "dashboard" =>
+      source === "dashboard" ? "dashboard" : "upsell_page";
+
+    const upsellRouteStatsByVariant = {
+      A: routeStats.A.find((row) => row.route === "/onboarding/bundle-upsell"),
+      B:
+        routeStats.B.find((row) => row.route === "/onboarding/bundle-upsell-b") ||
+        routeStats.B.find((row) => row.route === "/onboarding/bundle-upsell"),
+    };
+
+    const bundleBuyersByVariant = {
+      A: summaryA.bundleBuyers || 0,
+      B: summaryB.bundleBuyers || 0,
+    };
+
+    const upsellAudienceBySourceAndVariant: Record<"upsell_page" | "dashboard", { A: number; B: number }> = {
+      upsell_page: {
+        A: Math.max(upsellRouteStatsByVariant.A?.uniqueAudience || 0, upsellRouteStatsByVariant.A?.impressions || 0),
+        B: Math.max(upsellRouteStatsByVariant.B?.uniqueAudience || 0, upsellRouteStatsByVariant.B?.impressions || 0),
+      },
+      dashboard: {
+        A: bundleBuyersByVariant.A,
+        B: bundleBuyersByVariant.B,
+      },
+    };
+
+    const aggregateUpsellRows = (rows: PurchaseDetailRow[]): MixSummaryRow[] =>
+      Object.values(
+        rows.reduce<Record<string, { item: string; orders: number; users: Set<string>; revenueInr: number }>>(
+          (acc, row) => {
+            const key = row.item || "Unknown Upsell";
+            if (!acc[key]) {
+              acc[key] = {
+                item: key,
+                orders: 0,
+                users: new Set<string>(),
+                revenueInr: 0,
+              };
+            }
+            acc[key].orders += 1;
+            acc[key].users.add(row.userId);
+            acc[key].revenueInr += row.amountInr;
+            return acc;
+          },
+          {}
+        )
+      )
+        .map((row) => ({
+          item: row.item,
+          orders: row.orders,
+          buyers: row.users.size,
+          revenueInr: Number(row.revenueInr.toFixed(2)),
+        }))
+        .sort((a, b) => b.orders - a.orders);
+
+    const upsellBreakdownBySource = {
+      upsell_page: {
+        A: aggregateUpsellRows(upsellPurchasesByVariant.A.filter((row) => normalizeUpsellSource(row.source) === "upsell_page")),
+        B: aggregateUpsellRows(upsellPurchasesByVariant.B.filter((row) => normalizeUpsellSource(row.source) === "upsell_page")),
+      },
+      dashboard: {
+        A: aggregateUpsellRows(upsellPurchasesByVariant.A.filter((row) => normalizeUpsellSource(row.source) === "dashboard")),
+        B: aggregateUpsellRows(upsellPurchasesByVariant.B.filter((row) => normalizeUpsellSource(row.source) === "dashboard")),
+      },
+    };
+
+    const buildUpsellKpiRows = (
+      source: "upsell_page" | "dashboard",
+      variant: "A" | "B",
+      rows: MixSummaryRow[]
+    ): UpsellKpiRow[] => {
+      const audience = upsellAudienceBySourceAndVariant[source][variant];
+      return rows.map((row) => {
+        const orders = row.orders;
+        const revenueInr = row.revenueInr;
+        return {
+          item: row.item,
+          audience,
+          orders,
+          conversionRate: toRate(orders, audience),
+          revenueInr: toMoney(revenueInr),
+          avgOrderValue: orders > 0 ? (revenueInr / orders).toFixed(2) : "0.00",
+          revenuePerAudience: audience > 0 ? (revenueInr / audience).toFixed(2) : "0.00",
+        };
+      });
+    };
+
+    const upsellKpiRowsBySource = {
+      upsell_page: {
+        A: buildUpsellKpiRows("upsell_page", "A", upsellBreakdownBySource.upsell_page.A),
+        B: buildUpsellKpiRows("upsell_page", "B", upsellBreakdownBySource.upsell_page.B),
+      },
+      dashboard: {
+        A: buildUpsellKpiRows("dashboard", "A", upsellBreakdownBySource.dashboard.A),
+        B: buildUpsellKpiRows("dashboard", "B", upsellBreakdownBySource.dashboard.B),
+      },
+    };
+
+    const buildMergedUpsellKpiRows = (source: "upsell_page" | "dashboard"): UpsellKpiRow[] => {
+      const mergedRows = aggregateUpsellRows(
+        upsellPurchases.filter((row) => normalizeUpsellSource(row.source) === source)
+      );
+      const audience = upsellAudienceBySourceAndVariant[source].A + upsellAudienceBySourceAndVariant[source].B;
+
+      return mergedRows.map((row) => {
+        const orders = row.orders;
+        const revenueInr = row.revenueInr;
+        return {
+          item: row.item,
+          audience,
+          orders,
+          conversionRate: toRate(orders, audience),
+          revenueInr: toMoney(revenueInr),
+          avgOrderValue: orders > 0 ? (revenueInr / orders).toFixed(2) : "0.00",
+          revenuePerAudience: audience > 0 ? (revenueInr / audience).toFixed(2) : "0.00",
+        };
+      });
+    };
+
+    const mergedUpsellKpiRowsBySource = {
+      upsell_page: buildMergedUpsellKpiRows("upsell_page"),
+      dashboard: buildMergedUpsellKpiRows("dashboard"),
     };
 
     // If test is undefined, show loading or error state
@@ -1202,11 +1469,20 @@ export default function ABTestsPage() {
 
           {/* Ordered Funnel Flow */}
           <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6 mb-6">
-            <h2 className="text-lg font-semibold mb-2">Ordered Funnel Flow (Welcome → Pre-Dashboard)</h2>
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <h2 className="text-lg font-semibold">Ordered Funnel Flow (Welcome → Pre-Dashboard)</h2>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setExpandOrderedFlow((prev) => !prev)}
+              >
+                {expandOrderedFlow ? "Collapse View" : "Expand View"}
+              </Button>
+            </div>
             <p className="text-sm text-muted-foreground mb-4">
               Routes are shown in exact funnel order for each variant. Drop-off is estimated from visitors who did not continue to the next step.
             </p>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className={expandOrderedFlow ? "grid grid-cols-1 gap-6" : "grid grid-cols-1 lg:grid-cols-2 gap-6"}>
               {([
                 { variant: "A" as const, label: "Variant A Flow", accent: "text-blue-400", rows: orderedFunnelFlow.A || [] },
                 { variant: "B" as const, label: "Variant B Flow", accent: "text-purple-400", rows: orderedFunnelFlow.B || [] },
@@ -1217,7 +1493,7 @@ export default function ABTestsPage() {
                     <p className="text-sm text-muted-foreground">No ordered funnel data yet.</p>
                   ) : (
                     <div className="overflow-x-auto">
-                      <table className="w-full min-w-[860px]">
+                      <table className={expandOrderedFlow ? "w-full min-w-[980px]" : "w-full min-w-[860px]"}>
                         <thead>
                           <tr className="border-b border-border/70 text-xs text-muted-foreground">
                             <th className="text-left py-2 pr-3">Step</th>
@@ -1258,60 +1534,6 @@ export default function ABTestsPage() {
             </div>
           </div>
 
-          {/* Route Audience Behavior */}
-          <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6 mb-6">
-            <h2 className="text-lg font-semibold mb-4">Route Audience Behavior (Per Funnel)</h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {([
-                { variant: "A" as const, label: "Variant A Routes", accent: "text-blue-400", rows: routeStats.A || [] },
-                { variant: "B" as const, label: "Variant B Routes", accent: "text-purple-400", rows: routeStats.B || [] },
-              ]).map((group) => (
-                <div key={group.variant} className="rounded-lg border border-border/70 bg-background/40 p-4">
-                  <p className={`text-sm font-semibold mb-3 ${group.accent}`}>{group.label}</p>
-                  {group.rows.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No tracked route data yet.</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full min-w-[760px]">
-                        <thead>
-                          <tr className="border-b border-border/70 text-xs text-muted-foreground">
-                            <th className="text-left py-2 pr-3">Route</th>
-                            <th className="text-right py-2 px-2">Audience</th>
-                            <th className="text-right py-2 px-2">Impressions</th>
-                            <th className="text-right py-2 px-2">Checkout</th>
-                            <th className="text-right py-2 px-2">Tracked Bundle</th>
-                            <th className="text-right py-2 px-2">Paid Orders</th>
-                            <th className="text-right py-2 px-2">Upsell Orders</th>
-                            <th className="text-right py-2 pl-2">Revenue (₹)</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {group.rows.map((row) => (
-                            <tr key={`${group.variant}-${row.route}`} className="border-b border-border/40 text-sm">
-                              <td className="py-2 pr-3">
-                                <p className="font-medium">{row.route}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  Bounce {row.bounceRate}% · Checkout {row.checkoutStartRate}% · Conv {row.trackedConversionRate}%
-                                </p>
-                              </td>
-                              <td className="text-right py-2 px-2">{row.uniqueAudience}</td>
-                              <td className="text-right py-2 px-2">{row.impressions}</td>
-                              <td className="text-right py-2 px-2">{row.checkoutsStarted}</td>
-                              <td className="text-right py-2 px-2">{row.trackedBundleConversions}</td>
-                              <td className="text-right py-2 px-2">{row.paidOrders}</td>
-                              <td className="text-right py-2 px-2">{row.upsellOrders}</td>
-                              <td className="text-right py-2 pl-2">₹{(row.paidRevenueInr + row.upsellRevenueInr).toLocaleString()}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
           {/* Bundle/Upsell Mix */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6">
@@ -1331,7 +1553,10 @@ export default function ABTestsPage() {
                           <div key={`${group.variant}-${row.item}`} className="flex items-center justify-between text-sm">
                             <div>
                               <p className="font-medium">{row.item}</p>
-                              <p className="text-xs text-muted-foreground">{row.orders} orders · {row.buyers} buyers</p>
+                              <p className="text-xs text-muted-foreground">{row.orders} orders</p>
+                              <p className="text-xs text-muted-foreground">
+                                Price: ₹{(row.orders > 0 ? row.revenueInr / row.orders : 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                              </p>
                             </div>
                             <p className="font-semibold">₹{row.revenueInr.toLocaleString()}</p>
                           </div>
@@ -1360,7 +1585,10 @@ export default function ABTestsPage() {
                           <div key={`${group.variant}-${row.item}`} className="flex items-center justify-between text-sm">
                             <div>
                               <p className="font-medium">{row.item}</p>
-                              <p className="text-xs text-muted-foreground">{row.orders} orders · {row.buyers} buyers</p>
+                              <p className="text-xs text-muted-foreground">{row.orders} orders</p>
+                              <p className="text-xs text-muted-foreground">
+                                Price: ₹{(row.orders > 0 ? row.revenueInr / row.orders : 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                              </p>
                             </div>
                             <p className="font-semibold">₹{row.revenueInr.toLocaleString()}</p>
                           </div>
@@ -1371,6 +1599,249 @@ export default function ABTestsPage() {
                 ))}
               </div>
             </div>
+          </div>
+
+          <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6 mb-6">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <h2 className="text-lg font-semibold">Upsell KPI Performance</h2>
+              <div className="inline-flex items-center rounded-lg border border-border bg-background/60 p-1">
+                <Button
+                  size="sm"
+                  variant={upsellKpiViewMode === "funnel" ? "default" : "ghost"}
+                  onClick={() => setUpsellKpiViewMode("funnel")}
+                >
+                  By Funnel
+                </Button>
+                <Button
+                  size="sm"
+                  variant={upsellKpiViewMode === "merged" ? "default" : "ghost"}
+                  onClick={() => setUpsellKpiViewMode("merged")}
+                >
+                  Merged
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-4">
+              {([
+                { key: "upsell_page" as const, title: "Onboarding Upsell Page KPIs", accent: "text-fuchsia-400" },
+                { key: "dashboard" as const, title: "Dashboard Upsell KPIs", accent: "text-cyan-400" },
+              ]).map((sourceGroup) => (
+                <div key={sourceGroup.key} className="rounded-lg border border-border/70 bg-background/30 p-4">
+                  <p className={`text-sm font-semibold mb-3 ${sourceGroup.accent}`}>{sourceGroup.title}</p>
+                  {upsellKpiViewMode === "funnel" ? (
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                      {([
+                        { variant: "A" as const, label: "Variant A", accent: "text-blue-400", rows: upsellKpiRowsBySource[sourceGroup.key].A },
+                        { variant: "B" as const, label: "Variant B", accent: "text-purple-400", rows: upsellKpiRowsBySource[sourceGroup.key].B },
+                      ]).map((group) => (
+                        <div key={`${sourceGroup.key}-${group.variant}`} className="rounded-lg border border-border/70 bg-background/40 p-4">
+                          <p className={`text-sm font-semibold mb-3 ${group.accent}`}>{group.label}</p>
+                          {group.rows.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">No data in selected range.</p>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <table className="w-full min-w-[860px]">
+                                <thead>
+                                  <tr className="border-b border-border text-xs text-muted-foreground">
+                                    <th className="text-left py-2 pr-3">Upsell</th>
+                                    <th className="text-right py-2 px-2">Audience</th>
+                                    <th className="text-right py-2 px-2">Orders</th>
+                                    <th className="text-right py-2 px-2">Conv %</th>
+                                    <th className="text-right py-2 px-2">Revenue (₹)</th>
+                                    <th className="text-right py-2 px-2">AOV (₹)</th>
+                                    <th className="text-right py-2 pl-2">Rev/Audience (₹)</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {group.rows.map((row) => (
+                                    <tr key={`${sourceGroup.key}-${group.variant}-upsell-kpi-${row.item}`} className="border-b border-border/40 text-sm">
+                                      <td className="py-2 pr-3">{row.item}</td>
+                                      <td className="py-2 px-2 text-right">{row.audience}</td>
+                                      <td className="py-2 px-2 text-right">{row.orders}</td>
+                                      <td className="py-2 px-2 text-right">{row.conversionRate}%</td>
+                                      <td className="py-2 px-2 text-right">{row.revenueInr.toLocaleString()}</td>
+                                      <td className="py-2 px-2 text-right">{Number(row.avgOrderValue).toLocaleString()}</td>
+                                      <td className="py-2 pl-2 text-right">{Number(row.revenuePerAudience).toLocaleString()}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-border/70 bg-background/40 p-4">
+                      <p className="text-sm font-semibold mb-3 text-emerald-400">Merged (All Funnels)</p>
+                      {mergedUpsellKpiRowsBySource[sourceGroup.key].length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No data in selected range.</p>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[860px]">
+                            <thead>
+                              <tr className="border-b border-border text-xs text-muted-foreground">
+                                <th className="text-left py-2 pr-3">Upsell</th>
+                                <th className="text-right py-2 px-2">Audience</th>
+                                <th className="text-right py-2 px-2">Orders</th>
+                                <th className="text-right py-2 px-2">Conv %</th>
+                                <th className="text-right py-2 px-2">Revenue (₹)</th>
+                                <th className="text-right py-2 px-2">AOV (₹)</th>
+                                <th className="text-right py-2 pl-2">Rev/Audience (₹)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {mergedUpsellKpiRowsBySource[sourceGroup.key].map((row) => (
+                                <tr key={`${sourceGroup.key}-merged-upsell-kpi-${row.item}`} className="border-b border-border/40 text-sm">
+                                  <td className="py-2 pr-3">{row.item}</td>
+                                  <td className="py-2 px-2 text-right">{row.audience}</td>
+                                  <td className="py-2 px-2 text-right">{row.orders}</td>
+                                  <td className="py-2 px-2 text-right">{row.conversionRate}%</td>
+                                  <td className="py-2 px-2 text-right">{row.revenueInr.toLocaleString()}</td>
+                                  <td className="py-2 px-2 text-right">{Number(row.avgOrderValue).toLocaleString()}</td>
+                                  <td className="py-2 pl-2 text-right">{Number(row.revenuePerAudience).toLocaleString()}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6 mb-6">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <h2 className="text-lg font-semibold">Orders</h2>
+              <p className="text-xs text-muted-foreground">
+                {filteredOrderRows.length} of {aggregatedOrderRows.length} users
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+              <label className="text-sm">
+                <span className="text-muted-foreground block mb-1">Search</span>
+                <input
+                  type="text"
+                  value={ordersSearch}
+                  onChange={(e) => setOrdersSearch(e.target.value)}
+                  placeholder="User, email, name, item..."
+                  className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="text-muted-foreground block mb-1">Funnel</span>
+                <select
+                  value={ordersFunnelFilter}
+                  onChange={(e) => setOrdersFunnelFilter(e.target.value as "all" | "A" | "B")}
+                  className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                >
+                  <option value="all">All</option>
+                  <option value="A">Layout A</option>
+                  <option value="B">Layout B</option>
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="text-muted-foreground block mb-1">Source</span>
+                <select
+                  value={ordersSourceFilter}
+                  onChange={(e) => setOrdersSourceFilter(e.target.value as "all" | "bundle" | "upsell_page" | "dashboard")}
+                  className="w-full px-3 py-2 bg-background border border-border rounded-lg"
+                >
+                  <option value="all">All</option>
+                  <option value="bundle">Bundle</option>
+                  <option value="upsell_page">Onboarding Upsell</option>
+                  <option value="dashboard">Dashboard Upsell</option>
+                </select>
+              </label>
+              <div className="text-sm flex items-end">
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    setOrdersSearch("");
+                    setOrdersFunnelFilter("all");
+                    setOrdersSourceFilter("all");
+                    setExpandedOrderKey(null);
+                  }}
+                >
+                  Clear Filters
+                </Button>
+              </div>
+            </div>
+
+            {filteredOrderRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No matching orders in selected window.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[980px]">
+                  <thead>
+                    <tr className="border-b border-border text-xs text-muted-foreground">
+                      <th className="text-left py-2 pr-3">User</th>
+                      <th className="text-left py-2 px-2">Email / Name</th>
+                      <th className="text-right py-2 px-2">Total Paid (₹)</th>
+                      <th className="text-left py-2 px-2">Items</th>
+                      <th className="text-left py-2 px-2">Funnel</th>
+                      <th className="text-left py-2 pl-2">Date & Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredOrderRows.map((row) => {
+                      const isExpanded = expandedOrderKey === row.key;
+                      return (
+                          <tr key={`order-${row.key}`} className="border-b border-border/40 text-sm hover:bg-muted/20">
+                            <td className="py-2 pr-3 font-mono">
+                              <div className="group inline-flex items-center gap-2">
+                                <span>{shortId(row.userId)}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => copyUserId(row.userId)}
+                                  className="px-2 py-0.5 text-[10px] rounded border border-border bg-background/70 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-muted/60"
+                                >
+                                  {copiedUserId === row.userId ? "Copied" : "Copy ID"}
+                                </button>
+                              </div>
+                            </td>
+                            <td className="py-2 px-2">
+                              <p className="font-medium">{row.userName || "—"}</p>
+                              <p className="text-xs text-muted-foreground">{row.email}</p>
+                            </td>
+                            <td className="py-2 px-2 text-right font-semibold">{row.totalAmountInr.toLocaleString()}</td>
+                            <td className="py-2 px-2 relative isolate">
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-foreground hover:bg-muted/60 transition-colors"
+                                onClick={() => setExpandedOrderKey(isExpanded ? null : row.key)}
+                              >
+                                {row.totalItems} item{row.totalItems === 1 ? "" : "s"}
+                                <span className={`text-[10px] leading-none transition-transform ${isExpanded ? "rotate-180" : ""}`}>▼</span>
+                              </button>
+                              {isExpanded ? (
+                                <div className="absolute top-[calc(100%+4px)] left-2 z-[999] w-72 rounded-md border border-slate-700 bg-slate-950 shadow-2xl p-3">
+                                  <p className="text-xs text-muted-foreground mb-2">Products bought</p>
+                                  <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                                    {row.items.map((item) => (
+                                      <div key={`${row.key}-${item.name}`} className="flex items-center justify-between text-sm">
+                                        <span className="pr-3">{item.name}</span>
+                                        <span className="text-muted-foreground">x{item.count}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </td>
+                            <td className="py-2 px-2">{row.funnelLabel}</td>
+                            <td className="py-2 pl-2">{formatDateTime(row.lastPurchasedAt)}</td>
+                          </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* Bundle/Upsell Purchases */}
@@ -1396,7 +1867,6 @@ export default function ABTestsPage() {
                               <tr className="border-b border-border text-xs text-muted-foreground">
                                 <th className="text-left py-2 pr-3">Bundle</th>
                                 <th className="text-right py-2 px-2">Orders</th>
-                                <th className="text-right py-2 px-2">Buyers</th>
                                 <th className="text-right py-2 px-2">Amount (₹)</th>
                                 <th className="text-left py-2 pl-2">Last Purchase</th>
                               </tr>
@@ -1404,107 +1874,15 @@ export default function ABTestsPage() {
                             <tbody>
                               {group.rows.slice(0, 40).map((row) => (
                                 <tr key={`bundle-group-${row.key}`} className="border-b border-border/40 text-sm">
-                                  <td className="py-2 pr-3">{row.bundle}</td>
+                                  <td className="py-2 pr-3">
+                                    <p>{row.bundle}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      Price: ₹{(row.orders > 0 ? row.revenueInr / row.orders : 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                    </p>
+                                  </td>
                                   <td className="py-2 px-2 text-right">{row.orders}</td>
-                                  <td className="py-2 px-2 text-right">{row.buyers}</td>
                                   <td className="py-2 px-2 text-right">{row.revenueInr.toLocaleString()}</td>
                                   <td className="py-2 pl-2">{formatDateTime(row.latestPurchasedAt)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6">
-              <h2 className="text-lg font-semibold mb-4">Who Bought Which Bundle (Per Funnel)</h2>
-              {(bundlePurchasesByVariant.A.length === 0 && bundlePurchasesByVariant.B.length === 0) ? (
-                <p className="text-sm text-muted-foreground">No paid bundle purchases in current A/B window.</p>
-              ) : (
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                  {([
-                    { variant: "A" as const, label: "Layout A (Variant A)", accent: "text-blue-400", rows: bundlePurchasesByVariant.A },
-                    { variant: "B" as const, label: "Layout B (Variant B)", accent: "text-purple-400", rows: bundlePurchasesByVariant.B },
-                  ]).map((group) => (
-                    <div key={group.variant} className="rounded-lg border border-border/70 bg-background/40 p-4">
-                      <p className={`text-sm font-semibold mb-3 ${group.accent}`}>{group.label}</p>
-                      {group.rows.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">No paid bundle purchases.</p>
-                      ) : (
-                        <div className="overflow-x-auto">
-                          <table className="w-full min-w-[680px]">
-                            <thead>
-                              <tr className="border-b border-border text-xs text-muted-foreground">
-                                <th className="text-left py-2 pr-3">Time</th>
-                                <th className="text-left py-2 px-2">User</th>
-                                <th className="text-left py-2 px-2">Email</th>
-                                <th className="text-left py-2 px-2">Bundle</th>
-                                <th className="text-right py-2 px-2">Amount (₹)</th>
-                                <th className="text-left py-2 pl-2">Txn</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {group.rows.slice(0, 120).map((row) => (
-                                <tr key={`bundle-${group.variant}-${row.paymentId}`} className="border-b border-border/40 text-sm">
-                                  <td className="py-2 pr-3">{formatDateTime(row.purchasedAt)}</td>
-                                  <td className="py-2 px-2 font-mono">{shortId(row.userId)}</td>
-                                  <td className="py-2 px-2">{row.email}</td>
-                                  <td className="py-2 px-2">{row.item}</td>
-                                  <td className="py-2 px-2 text-right">{row.amountInr.toLocaleString()}</td>
-                                  <td className="py-2 pl-2 font-mono">{shortId(row.transactionId || row.paymentId)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6">
-              <h2 className="text-lg font-semibold mb-4">Who Bought Which Upsell (Per Funnel)</h2>
-              {(upsellPurchasesByVariant.A.length === 0 && upsellPurchasesByVariant.B.length === 0) ? (
-                <p className="text-sm text-muted-foreground">No paid upsell purchases in current A/B window.</p>
-              ) : (
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                  {([
-                    { variant: "A" as const, label: "Layout A (Variant A)", accent: "text-blue-400", rows: upsellPurchasesByVariant.A },
-                    { variant: "B" as const, label: "Layout B (Variant B)", accent: "text-purple-400", rows: upsellPurchasesByVariant.B },
-                  ]).map((group) => (
-                    <div key={group.variant} className="rounded-lg border border-border/70 bg-background/40 p-4">
-                      <p className={`text-sm font-semibold mb-3 ${group.accent}`}>{group.label}</p>
-                      {group.rows.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">No paid upsell purchases.</p>
-                      ) : (
-                        <div className="overflow-x-auto">
-                          <table className="w-full min-w-[700px]">
-                            <thead>
-                              <tr className="border-b border-border text-xs text-muted-foreground">
-                                <th className="text-left py-2 pr-3">Time</th>
-                                <th className="text-left py-2 px-2">User</th>
-                                <th className="text-left py-2 px-2">Email</th>
-                                <th className="text-left py-2 px-2">Upsell</th>
-                                <th className="text-right py-2 px-2">Amount (₹)</th>
-                                <th className="text-left py-2 pl-2">Txn</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {group.rows.slice(0, 120).map((row) => (
-                                <tr key={`upsell-${group.variant}-${row.paymentId}`} className="border-b border-border/40 text-sm">
-                                  <td className="py-2 pr-3">{formatDateTime(row.purchasedAt)}</td>
-                                  <td className="py-2 px-2 font-mono">{shortId(row.userId)}</td>
-                                  <td className="py-2 px-2">{row.email}</td>
-                                  <td className="py-2 px-2">{row.item}</td>
-                                  <td className="py-2 px-2 text-right">{row.amountInr.toLocaleString()}</td>
-                                  <td className="py-2 pl-2 font-mono">{shortId(row.transactionId || row.paymentId)}</td>
                                 </tr>
                               ))}
                             </tbody>

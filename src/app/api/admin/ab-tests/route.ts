@@ -49,8 +49,10 @@ type PurchaseDetailRow = {
   purchasedAt: string;
   userId: string;
   email: string;
+  userName?: string;
   variant: VariantKey;
   funnel: string;
+  source?: "upsell_page" | "dashboard";
   item: string;
   amountInr: number;
   paymentId: string;
@@ -478,7 +480,10 @@ export async function GET(request: NextRequest) {
       const calculateRates = (stats: any, assignedCount: number) => {
         const impressions = Math.max(stats?.impressions || 0, assignedCount || 0);
         const conversions = stats?.conversions || 0;
-        const bounces = stats?.bounces || 0;
+        // For summary cards, bounce should represent users who did not convert
+        // in the selected analytics window (not sparse explicit "bounce" events).
+        const normalizedConversions = Math.min(Math.max(conversions, 0), impressions);
+        const bounces = Math.max(impressions - normalizedConversions, 0);
         const checkoutsStarted = stats?.checkouts_started || 0;
         const totalRevenue = stats?.total_revenue || 0;
 
@@ -707,7 +712,7 @@ export async function GET(request: NextRequest) {
       if (uniqueUserIds.length > 0) {
         const { data: usersData } = await supabase
           .from("users")
-          .select("id, email, ab_variant, onboarding_flow")
+          .select("id, email, name, ab_variant, onboarding_flow")
           .in("id", uniqueUserIds);
         for (const row of usersData || []) {
           usersById.set(String(row.id), row);
@@ -765,6 +770,7 @@ export async function GET(request: NextRequest) {
         const amountInr = toInrAmount(row?.amount, row?.currency);
         const paymentType = String(row?.type || "").trim().toLowerCase();
         const email = String(user?.email || row?.customer_email || "").trim() || "N/A";
+        const userName = String(user?.name || "").trim() || undefined;
         const paymentId = String(row?.id || "");
         const transactionId = String(row?.payu_txn_id || row?.razorpay_order_id || row?.razorpay_payment_id || "");
         const paymentStatus = String(row?.payment_status || "");
@@ -781,6 +787,7 @@ export async function GET(request: NextRequest) {
             purchasedAt,
             userId,
             email,
+            userName,
             variant,
             funnel,
             item: bundleItem,
@@ -791,6 +798,8 @@ export async function GET(request: NextRequest) {
           });
           addMix(variant, bundleMixMaps, bundleItem, userId, amountInr);
         } else if (paymentType === "upsell" || paymentType === "report") {
+          const upsellSource: "upsell_page" | "dashboard" =
+            paymentType === "report" ? "dashboard" : "upsell_page";
           upsellBuyerSets[variant].add(userId);
           const upsellAcc = ensureRoute(variant, upsellRoutes[variant]);
           upsellAcc.upsellOrders += 1;
@@ -803,8 +812,10 @@ export async function GET(request: NextRequest) {
             purchasedAt,
             userId,
             email,
+            userName,
             variant,
             funnel,
+            source: upsellSource,
             item: upsellItemDisplay,
             amountInr,
             paymentId,
@@ -963,7 +974,10 @@ export async function GET(request: NextRequest) {
             ? ONBOARDING_FLOW_ROUTES[variant]
             : [pricingRoutes[variant], upsellRoutes[variant]];
 
-          acc[variant] = flowRoutes.map((route, index) => {
+          const rows: FunnelFlowStepRow[] = [];
+          let previousContinued = 0;
+
+          flowRoutes.forEach((route, index) => {
             const canonicalRoute = canonicalizeTrackedRoute(route);
             const routeRow = routeStatsByVariant[variant].get(canonicalRoute);
             const visitorSet = routeImpressionVisitorSets[variant].get(canonicalRoute) || new Set<string>();
@@ -972,7 +986,16 @@ export async function GET(request: NextRequest) {
               ? routeImpressionVisitorSets[variant].get(canonicalizeTrackedRoute(nextRoute)) || new Set<string>()
               : new Set<string>();
             const impressionCount = routeImpressionCounts[variant].get(canonicalRoute) || routeRow?.impressions || 0;
-            const audience = Math.max(visitorSet.size, impressionCount);
+
+            // Use unique audience (not raw impression count) to avoid inflated late-step audiences.
+            const rawAudience = routeRow?.uniqueAudience || visitorSet.size || impressionCount || 0;
+            const audience =
+              index === 0
+                ? rawAudience
+                : previousContinued > 0
+                  ? Math.min(rawAudience, previousContinued)
+                  : rawAudience;
+
             const rawContinuedToNext = nextRoute ? countIntersection(visitorSet, nextVisitorSet) : 0;
             const paidOrCheckoutProgress =
               canonicalRoute === pricingRoutes[variant]
@@ -984,11 +1007,13 @@ export async function GET(request: NextRequest) {
                 : canonicalRoute === upsellRoutes[variant]
                   ? Math.max(routeRow?.upsellOrders || 0, routeRow?.checkoutsStarted || 0)
                   : 0;
-            const continuedToNext = Math.min(audience, Math.max(rawContinuedToNext, paidOrCheckoutProgress));
+            const continuedToNext = nextRoute
+              ? Math.min(audience, Math.max(rawContinuedToNext, paidOrCheckoutProgress))
+              : 0;
             const dropOffs = nextRoute ? Math.max(audience - continuedToNext, 0) : 0;
             const bounceRate = audience > 0 ? ((dropOffs / audience) * 100).toFixed(2) : "0.00";
 
-            return {
+            rows.push({
               step: index + 1,
               route: canonicalRoute,
               audience,
@@ -1002,8 +1027,12 @@ export async function GET(request: NextRequest) {
               paidRevenueInr: routeRow?.paidRevenueInr || 0,
               upsellOrders: routeRow?.upsellOrders || 0,
               upsellRevenueInr: routeRow?.upsellRevenueInr || 0,
-            };
+            });
+
+            previousContinued = continuedToNext;
           });
+
+          acc[variant] = rows;
           return acc;
         },
         { A: [], B: [] } as Record<VariantKey, FunnelFlowStepRow[]>
