@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { getZodiacSign } from "@/lib/astrology-api";
 import { getInstantCompatibility, getCompatibilityResult, saveCompatibilityResult } from "@/lib/compatibility-data";
 import { supabase } from "@/lib/supabase";
+import ReportDisclaimer from "@/components/ReportDisclaimer";
 
 const ZODIAC_SIGNS = [
   { name: "Aries", symbol: "♈", dates: "21 Mar - 19 Apr", element: "Fire", elementIcon: "≋", birthDate: "1990-04-01" },
@@ -1079,6 +1080,8 @@ export default function CompatibilityPage() {
                 </Button>
               </motion.div>
             )}
+
+            <ReportDisclaimer className="mt-6" />
           </div>
         </div>
       </div>

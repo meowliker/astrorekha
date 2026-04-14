@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUserStore } from "@/lib/user-store";
+import ReportDisclaimer from "@/components/ReportDisclaimer";
 import {
   DEFAULT_LAYOUT_B_CONFIG,
   getActiveSketchQuestions,
@@ -383,6 +384,7 @@ export default function SoulmateSketchPage() {
             </div>
           ) : null}
 
+          <ReportDisclaimer text="This AI-generated portrait is for entertainment only — not professional advice — and AstroRekha assumes no liability for any decisions or outcomes based on its content." />
         </div>
       </div>
     </div>

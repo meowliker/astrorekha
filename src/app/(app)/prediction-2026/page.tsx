@@ -7,6 +7,7 @@ import { ArrowLeft, ChevronDown, ChevronUp, Loader2, Star, Heart, Briefcase, Act
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { supabase } from "@/lib/supabase";
 import { extractStoredSignName } from "@/lib/zodiac-utils";
+import ReportDisclaimer from "@/components/ReportDisclaimer";
 import predictions2026Data from "../../../../data/predictions-2026.json";
 
 const MONTHS = [
@@ -350,6 +351,8 @@ export default function Prediction2026Page() {
                 })}
               </div>
             </div>
+
+            <ReportDisclaimer />
           </div>
         </div>
       </div>

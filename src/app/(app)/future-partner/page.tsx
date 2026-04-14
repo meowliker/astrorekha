@@ -7,6 +7,7 @@ import { ArrowLeft, Heart, Loader2, Sparkles, CalendarDays, UserRound } from "lu
 import { Button } from "@/components/ui/button";
 import { useUserStore } from "@/lib/user-store";
 import type { FuturePartnerReportData } from "@/lib/future-partner-report";
+import ReportDisclaimer from "@/components/ReportDisclaimer";
 
 interface FuturePartnerStatusResponse {
   status: "not_started" | "pending" | "generating" | "complete" | "failed";
@@ -238,6 +239,8 @@ export default function FuturePartnerPage() {
 
             </motion.div>
           ) : null}
+
+          <ReportDisclaimer />
         </div>
       </div>
     </div>

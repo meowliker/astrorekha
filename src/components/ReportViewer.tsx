@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import ReportDisclaimer from "@/components/ReportDisclaimer";
 
 const SECTIONS = [
   { key: "ascendant_nature", title: "Your Ascendant & Core Nature", icon: "⬆" },
@@ -361,6 +362,7 @@ export default function ReportViewer({ report }: ReportViewerProps) {
         );
       })}
 
+      <ReportDisclaimer />
     </div>
   );
 }

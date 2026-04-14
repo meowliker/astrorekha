@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
+import ReportDisclaimer from "@/components/ReportDisclaimer";
 
 export default function ReportCTA() {
   const router = useRouter();
@@ -28,6 +29,8 @@ export default function ReportCTA() {
       >
         Get Detailed Report →
       </button>
+
+      <ReportDisclaimer className="mt-4" />
     </motion.div>
   );
 }

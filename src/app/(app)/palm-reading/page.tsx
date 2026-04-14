@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { supabase } from "@/lib/supabase";
 import { calculateZodiacSign, generateUserId } from "@/lib/user-profile";
+import ReportDisclaimer from "@/components/ReportDisclaimer";
 
 type TabKey = "ageTimeline" | "wealth" | "mounts" | "love";
 
@@ -762,6 +763,8 @@ export default function PalmReadingPage() {
                 </button>
               </div>
             )}
+
+            <ReportDisclaimer />
           </div>
         </div>
       </div>
