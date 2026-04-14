@@ -61,13 +61,74 @@ function mergeById<T extends { id: string }>(defaults: T[], incoming?: T[]): T[]
   return [...mergedDefaults, ...extraIncoming];
 }
 
+function canonicalizeBundleFeatures(bundleId: string, features: string[]): string[] {
+  const unique = new Set(features || []);
+
+  if (bundleId === "palm-birth-compat") {
+    unique.add("palmReading");
+    unique.add("birthChart");
+    unique.add("compatibilityTest");
+    unique.add("futurePartnerReport");
+    return ["palmReading", "birthChart", "compatibilityTest", "futurePartnerReport"];
+  }
+
+  if (bundleId === "palm-birth-sketch") {
+    unique.add("palmReading");
+    unique.add("birthChart");
+    unique.add("soulmateSketch");
+    unique.add("futurePartnerReport");
+    return ["palmReading", "birthChart", "soulmateSketch", "futurePartnerReport"];
+  }
+
+  return Array.from(unique);
+}
+
+function applyBundleOverrides(bundles: BundlePlan[]): BundlePlan[] {
+  return bundles.map((bundle) => {
+    if (bundle.id === "palm-birth-compat") {
+      return {
+        ...bundle,
+        name: "Palm + Birth Chart + Compatibility Report + Future Partner Report",
+        description: "Complete cosmic package with compatibility + future partner report.",
+        features: canonicalizeBundleFeatures(bundle.id, bundle.features),
+        featureList: [
+          "Everything in Palm + Birth Chart",
+          "Full compatibility analysis",
+          "Future partner report",
+        ],
+      };
+    }
+
+    if (bundle.id === "palm-birth-sketch") {
+      return {
+        ...bundle,
+        name: "Palm + Birth Chart + Soulmate Sketch + Future Partner Report",
+        description: "Palm reading + birth chart + soulmate sketch + future partner report.",
+        features: canonicalizeBundleFeatures(bundle.id, bundle.features),
+        featureList: [
+          "Everything in Palm + Birth Chart",
+          "One AI soulmate sketch",
+          "Future partner report",
+        ],
+      };
+    }
+
+    return {
+      ...bundle,
+      features: canonicalizeBundleFeatures(bundle.id, bundle.features),
+    };
+  });
+}
+
 export function normalizePricing(raw?: Partial<PricingConfig> | null): PricingConfig {
   if (!raw || typeof raw !== "object") {
     return DEFAULT_PRICING;
   }
 
+  const mergedBundles = mergeById(DEFAULT_PRICING.bundles, raw.bundles as BundlePlan[] | undefined);
+
   return {
-    bundles: mergeById(DEFAULT_PRICING.bundles, raw.bundles as BundlePlan[] | undefined),
+    bundles: applyBundleOverrides(mergedBundles),
     upsells: mergeById(DEFAULT_PRICING.upsells, raw.upsells as UpsellPlan[] | undefined),
     reports: mergeById(DEFAULT_PRICING.reports, raw.reports as ReportPlan[] | undefined),
     coinPackages: mergeById(DEFAULT_PRICING.coinPackages, raw.coinPackages as CoinPackage[] | undefined),
@@ -115,17 +176,17 @@ export const DEFAULT_PRICING: PricingConfig = {
     },
     {
       id: "palm-birth-compat",
-      name: "Palm + Birth Chart + Compatibility Report",
+      name: "Palm + Birth Chart + Compatibility Report + Future Partner Report",
       price: 1599,
       displayPrice: 1599,
       originalPrice: 3199,
       discount: "50% OFF",
-      description: "Complete cosmic package with all reports included.",
-      features: ["palmReading", "birthChart", "compatibilityTest"],
+      description: "Complete cosmic package with compatibility + future partner report.",
+      features: ["palmReading", "birthChart", "compatibilityTest", "futurePartnerReport"],
       featureList: [
         "Everything in Palm + Birth Chart",
         "Full compatibility analysis",
-        "Partner matching report",
+        "Future partner report",
       ],
       popular: false,
       limitedOffer: true,
@@ -133,17 +194,17 @@ export const DEFAULT_PRICING: PricingConfig = {
     },
     {
       id: "palm-birth-sketch",
-      name: "Palm + Birth + Sketch",
+      name: "Palm + Birth Chart + Soulmate Sketch + Future Partner Report",
       price: 1599,
       displayPrice: 1599,
       originalPrice: 3199,
       discount: "50% OFF",
-      description: "Palm reading + birth chart + AI soulmate sketch.",
-      features: ["palmReading", "birthChart", "soulmateSketch"],
+      description: "Palm reading + birth chart + soulmate sketch + future partner report.",
+      features: ["palmReading", "birthChart", "soulmateSketch", "futurePartnerReport"],
       featureList: [
         "Everything in Palm + Birth Chart",
         "One AI soulmate sketch",
-        "Relationship energy insights",
+        "Future partner report",
       ],
       popular: false,
       limitedOffer: true,
@@ -227,6 +288,14 @@ export const DEFAULT_PRICING: PricingConfig = {
       price: 199,
       originalPrice: 499,
       feature: "soulmateSketch",
+      active: true,
+    },
+    {
+      id: "report-future-partner",
+      name: "Future Partner Report",
+      price: 582,
+      originalPrice: 999,
+      feature: "futurePartnerReport",
       active: true,
     },
   ],

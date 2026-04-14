@@ -11,6 +11,7 @@ export interface UnlockedFeatures {
   birthChart: boolean;
   compatibilityTest: boolean;
   soulmateSketch: boolean;
+  futurePartnerReport: boolean;
 }
 
 interface UserState {
@@ -53,6 +54,7 @@ interface UserState {
     compatibilityTest?: boolean;
     prediction2026?: boolean;
     soulmateSketch?: boolean;
+    futurePartnerReport?: boolean;
     coins?: number;
     purchasedBundle?: PurchasedBundle;
   }) => void;
@@ -64,6 +66,7 @@ const initialUnlockedFeatures: UnlockedFeatures = {
   birthChart: false,
   compatibilityTest: false,
   soulmateSketch: false,
+  futurePartnerReport: false,
 };
 
 const initialState = {
@@ -98,6 +101,7 @@ export const useUserStore = create<UserState>()(
             birthChart: true,
             compatibilityTest: true,
             soulmateSketch: true,
+            futurePartnerReport: true,
           },
         }),
 
@@ -152,6 +156,7 @@ export const useUserStore = create<UserState>()(
             birthChart: true,
             compatibilityTest: true,
             soulmateSketch: true,
+            futurePartnerReport: true,
           },
         }),
 
@@ -168,6 +173,8 @@ export const useUserStore = create<UserState>()(
           compatibilityTest: data.unlockedFeatures?.compatibilityTest ?? data.compatibilityTest ?? false,
           prediction2026: data.unlockedFeatures?.prediction2026 ?? data.prediction2026 ?? false,
           soulmateSketch: data.unlockedFeatures?.soulmateSketch ?? data.soulmateSketch ?? false,
+          futurePartnerReport:
+            data.unlockedFeatures?.futurePartnerReport ?? data.futurePartnerReport ?? false,
         };
         updates.unlockedFeatures = features;
         
@@ -203,6 +210,7 @@ export const featureNames: Record<keyof UnlockedFeatures, string> = {
   birthChart: "Birth Chart",
   compatibilityTest: "Compatibility Test",
   soulmateSketch: "Soulmate Sketch",
+  futurePartnerReport: "Future Partner Report",
 };
 
 // Feature prices (INR)
@@ -212,4 +220,5 @@ export const featurePrices: Record<keyof UnlockedFeatures, number> = {
   birthChart: 582,
   compatibilityTest: 582,
   soulmateSketch: 199,
+  futurePartnerReport: 582,
 };

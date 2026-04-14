@@ -132,10 +132,42 @@ export async function POST(request: NextRequest) {
           await Promise.all([
             supabase.from("payments").update({ user_id: uid }).eq("user_id", anonId),
             supabase.from("palm_readings").update({ id: uid }).eq("id", anonId),
-            supabase.from("chat_messages").update({ user_id: uid }).eq("user_id", anonId),
             supabase.from("daily_insights").update({ id: uid }).eq("id", anonId),
             supabase.from("soulmate_sketches").update({ user_id: uid }).eq("user_id", anonId),
           ]);
+
+          // Migrate chat history from anon id -> registered uid.
+          // chat_messages schema uses `id` as the user key.
+          const { data: anonChat } = await supabase
+            .from("chat_messages")
+            .select("messages, created_at, updated_at")
+            .eq("id", anonId)
+            .maybeSingle();
+
+          if (anonChat?.messages?.length) {
+            const { data: existingUidChat } = await supabase
+              .from("chat_messages")
+              .select("messages, created_at, updated_at")
+              .eq("id", uid)
+              .maybeSingle();
+
+            const mergedMessages = Array.isArray(existingUidChat?.messages)
+              ? [...existingUidChat.messages, ...anonChat.messages]
+              : anonChat.messages;
+
+            await supabase.from("chat_messages").upsert(
+              {
+                id: uid,
+                messages: mergedMessages,
+                created_at: existingUidChat?.created_at || anonChat.created_at || now,
+                updated_at: now,
+              },
+              { onConflict: "id" }
+            );
+
+            await supabase.from("chat_messages").delete().eq("id", anonId);
+          }
+
           await supabase.from("user_profiles").delete().eq("id", anonId);
           await supabase.from("users").delete().eq("id", anonId);
         } catch (err) {

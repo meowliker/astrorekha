@@ -346,6 +346,7 @@ export async function GET(request: NextRequest) {
       "palm-reading": { count: 0, revenue: 0 },
       "palm-birth": { count: 0, revenue: 0 },
       "palm-birth-compat": { count: 0, revenue: 0 },
+      "palm-birth-sketch": { count: 0, revenue: 0 },
     };
 
     processedTransactions.forEach((txn) => {

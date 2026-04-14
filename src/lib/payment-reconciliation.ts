@@ -3,8 +3,8 @@ const SUCCESS_STATUSES = new Set(["paid", "success", "captured"]);
 const BUNDLE_FEATURES: Record<string, string[]> = {
   "palm-reading": ["palmReading"],
   "palm-birth": ["palmReading", "birthChart"],
-  "palm-birth-compat": ["palmReading", "birthChart", "compatibilityTest"],
-  "palm-birth-sketch": ["palmReading", "birthChart", "soulmateSketch"],
+  "palm-birth-compat": ["palmReading", "birthChart", "compatibilityTest", "futurePartnerReport"],
+  "palm-birth-sketch": ["palmReading", "birthChart", "soulmateSketch", "futurePartnerReport"],
 };
 
 const BUNDLE_COIN_BONUS: Record<string, number> = {
@@ -19,6 +19,8 @@ const OFFER_ID_TO_FEATURE: Record<string, string> = {
   "birth-chart": "birthChart",
   compatibility: "compatibilityTest",
   "soulmate-sketch": "soulmateSketch",
+  "future-partner": "futurePartnerReport",
+  "report-future-partner": "futurePartnerReport",
 };
 
 interface PaymentRow {
@@ -46,6 +48,7 @@ function mergeFeatures(
     birthChart: false,
     compatibilityTest: false,
     soulmateSketch: false,
+    futurePartnerReport: false,
     ...(current || {}),
   };
 
@@ -154,6 +157,7 @@ export async function reconcilePaidPaymentsForEmail({
     birthChart: false,
     compatibilityTest: false,
     soulmateSketch: false,
+    futurePartnerReport: false,
     ...(userData?.unlocked_features || {}),
   };
   let computedCoinsFromPayments = 0;

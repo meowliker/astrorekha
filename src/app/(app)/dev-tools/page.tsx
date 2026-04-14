@@ -249,7 +249,7 @@ export default function DevToolsPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  purchaseBundle("palm-birth-compat", ["palmReading", "birthChart", "compatibilityTest"]);
+                  purchaseBundle("palm-birth-compat", ["palmReading", "birthChart", "compatibilityTest", "futurePartnerReport"]);
                   showMessage("Full bundle activated");
                 }}
                 className="text-xs"

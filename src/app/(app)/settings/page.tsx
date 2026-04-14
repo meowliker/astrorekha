@@ -16,7 +16,7 @@ const subscriptionBenefits = [
 ];
 
 // Bundle benefits based on what was purchased
-const getBundleBenefits = (bundleId: string | null, unlockedFeatures?: { birthChart?: boolean; compatibilityTest?: boolean; prediction2026?: boolean; soulmateSketch?: boolean }) => {
+const getBundleBenefits = (bundleId: string | null, unlockedFeatures?: { birthChart?: boolean; compatibilityTest?: boolean; prediction2026?: boolean; soulmateSketch?: boolean; futurePartnerReport?: boolean }) => {
   const benefits = [];
   
   // Always included for all users
@@ -32,6 +32,9 @@ if (bundleId === "palm-birth-compat" || unlockedFeatures?.compatibilityTest) {
 }
 if (bundleId === "palm-birth-sketch" || unlockedFeatures?.soulmateSketch) {
   benefits.push({ icon: "🎨", text: "Soulmate Sketch" });
+}
+if (bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" || unlockedFeatures?.futurePartnerReport) {
+  benefits.push({ icon: "💍", text: "Future Partner Report" });
 }
 
 // Bundle 3 (palm-birth-compat) gives 30 coins, others give 15

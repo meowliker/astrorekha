@@ -199,7 +199,7 @@ export default function ChatPage() {
     }
 
     const loadData = async () => {
-      const userId = generateUserId();
+      const userId = localStorage.getItem("astrorekha_user_id") || generateUserId();
       setCurrentUserId(userId);
 
       // Load palm reading from Supabase
@@ -254,17 +254,50 @@ export default function ChatPage() {
 
       // Load chat history from Supabase
       try {
-        const { data: chatDoc } = await supabase.from("chat_messages").select("*").eq("id", userId).single();
-        if (chatDoc) {
-          if (chatDoc.messages && chatDoc.messages.length > 0) {
-            const loadedMessages: Message[] = chatDoc.messages.map((m: StoredMessage) => ({
-              ...m,
-              timestamp: new Date(m.timestamp),
-            }));
-            setMessages(loadedMessages);
-            setChatLoaded(true);
-            return;
+        let { data: chatDoc } = await supabase
+          .from("chat_messages")
+          .select("*")
+          .eq("id", userId)
+          .maybeSingle();
+
+        // Fallback: if user upgraded from anon to registered ID and old chat row still exists on anon ID,
+        // load that history and migrate it to current user ID.
+        if (!chatDoc) {
+          const anonId = localStorage.getItem("astrorekha_anon_id");
+          if (anonId && anonId !== userId) {
+            const { data: anonChatDoc } = await supabase
+              .from("chat_messages")
+              .select("*")
+              .eq("id", anonId)
+              .maybeSingle();
+
+            if (anonChatDoc?.messages?.length) {
+              chatDoc = anonChatDoc;
+
+              // Best-effort migration to current ID.
+              await supabase.from("chat_messages").upsert(
+                {
+                  id: userId,
+                  messages: anonChatDoc.messages,
+                  updated_at: new Date().toISOString(),
+                },
+                { onConflict: "id" }
+              );
+
+              // Best-effort cleanup of old anon row.
+              await supabase.from("chat_messages").delete().eq("id", anonId);
+            }
           }
+        }
+
+        if (chatDoc?.messages && chatDoc.messages.length > 0) {
+          const loadedMessages: Message[] = chatDoc.messages.map((m: StoredMessage) => ({
+            ...m,
+            timestamp: new Date(m.timestamp),
+          }));
+          setMessages(loadedMessages);
+          setChatLoaded(true);
+          return;
         }
       } catch (err) {
         console.error("[Chat] Failed to load chat history:", err);
@@ -286,7 +319,7 @@ export default function ChatPage() {
     };
 
     loadData();
-  }, [gender, ascendantSign]);
+  }, []);
 
   // Show low balance bubble when coins < 3
   useEffect(() => {
@@ -318,12 +351,14 @@ export default function ChatPage() {
           return msg;
         });
         
-        await supabase.from("chat_messages").upsert({
-          id: currentUserId,
-          messages: storedMessages,
-          updated_at: new Date().toISOString(),
-          user_id: currentUserId,
-        }, { onConflict: "id" });
+        await supabase.from("chat_messages").upsert(
+          {
+            id: currentUserId,
+            messages: storedMessages,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        );
       } catch (err: any) {
         console.error("[Chat] Failed to save chat:", err);
         console.error("[Chat] Error code:", err?.code);

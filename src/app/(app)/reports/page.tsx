@@ -626,6 +626,39 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
+                {/* Future Partner Report */}
+                <div
+                  onClick={() => {
+                    if (unlockedFeatures.futurePartnerReport) {
+                      router.push("/future-partner");
+                    } else {
+                      setUpsellPopup({ isOpen: true, feature: "futurePartnerReport" });
+                    }
+                  }}
+                  className="bg-[#1A2235] rounded-2xl border border-primary/20 p-3 cursor-pointer hover:border-primary/40 transition-colors relative"
+                >
+                  {!unlockedFeatures.futurePartnerReport && (
+                    <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
+                      <Lock className="w-3 h-3 text-white/60" />
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-fuchsia-500/30 to-rose-600/30 flex items-center justify-center flex-shrink-0 overflow-hidden border border-white/10">
+                      <span className="text-3xl">💍</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-semibold">Future Partner Report</h3>
+                      <p className="text-white/50 text-xs mt-0.5">Name, marriage year, age and marriage compatibility</p>
+                      {!unlockedFeatures.futurePartnerReport && (
+                        <button className="mt-1 px-3 py-1 bg-primary/20 text-primary text-xs rounded-full">
+                          Get Report
+                        </button>
+                      )}
+                    </div>
+                    <ChevronRight className="w-6 h-6 text-white/40" />
+                  </div>
+                </div>
+
                 {/* Prediction 2026 Report */}
                 <div 
                   onClick={() => {
@@ -674,6 +707,11 @@ export default function DashboardPage() {
               if (upsellPopup.feature === "soulmateSketch") {
                 unlockFeature("soulmateSketch");
                 router.push("/soulmate-sketch");
+                return;
+              }
+              if (upsellPopup.feature === "futurePartnerReport") {
+                unlockFeature("futurePartnerReport");
+                router.push("/future-partner");
                 return;
               }
               window.location.reload();

@@ -214,6 +214,18 @@ interface UserProfile {
   palmReading?: any;
 }
 
+function isCareerIntent(text: string): boolean {
+  const lower = (text || "").toLowerCase();
+  return (
+    lower.includes("career") ||
+    lower.includes("job") ||
+    lower.includes("profession") ||
+    lower.includes("work field") ||
+    lower.includes("what should i do") ||
+    lower.includes("what role")
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { message, userProfile, palmImageBase64, palmReading, natalChart, context } = await request.json();
@@ -238,8 +250,17 @@ export async function POST(request: NextRequest) {
     // Build structured user context from palm + chart data
     const structuredContext = buildUserContext(userProfile, mergedData);
 
+    const careerDirective = isCareerIntent(String(message || ""))
+      ? `\n\n=== CAREER RESPONSE RULE (MANDATORY FOR THIS MESSAGE) ===
+If the user's question is about job/career/profession:
+1) First identify the strongest suitable career field from the chart + palm evidence.
+2) Then provide exactly 2-3 probable job roles in that field (specific role titles).
+3) For each role, add one short reason tied to the user's data.
+4) Keep the tone practical and concise.`
+      : "";
+
     // Build full system prompt with loaded prompts + user data
-    const fullSystemPrompt = `${elysiaSystemPrompt}\n\n${interpretationRules}\n\n=== THIS USER'S PERSONAL DATA ===\n${structuredContext}`;
+    const fullSystemPrompt = `${elysiaSystemPrompt}\n\n${interpretationRules}${careerDirective}\n\n=== THIS USER'S PERSONAL DATA ===\n${structuredContext}`;
 
     // Build messages array with chat history (last 20 messages for context)
     const messages: { role: "user" | "assistant"; content: string }[] = [];

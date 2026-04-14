@@ -14,6 +14,7 @@ const featureToReportId: Record<keyof UnlockedFeatures, string> = {
   birthChart: "report-birth-chart",
   compatibilityTest: "report-compatibility",
   soulmateSketch: "report-soulmate-sketch",
+  futurePartnerReport: "report-future-partner",
 };
 
 interface UpsellPopupProps {

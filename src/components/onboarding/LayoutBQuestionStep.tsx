@@ -15,6 +15,13 @@ import { generateUserId } from "@/lib/user-profile";
 const ANSWERS_STORAGE_KEY = "astrorekha_soulmate_answers";
 const MAX_ONBOARDING_LAYOUT_B_QUESTIONS = 4;
 const MULTI_SELECT_QUESTION_IDS = new Set(["main_worry", "future_goal"]);
+const ATTRACTED_TO_ALIAS_KEYS = [
+  "attractedTo",
+  "attracted",
+  "gender_preference",
+  "genderPreference",
+  "target_gender",
+] as const;
 
 interface LayoutBQuestionStepProps {
   routeStep: number;
@@ -82,8 +89,19 @@ export function LayoutBQuestionStep({ routeStep }: LayoutBQuestionStepProps) {
     }
   };
 
+  const withAttractedAliases = (sourceAnswers: Record<string, string>) => {
+    const attractedValue = sourceAnswers.attracted_to;
+    if (!attractedValue) return sourceAnswers;
+
+    const next = { ...sourceAnswers };
+    for (const key of ATTRACTED_TO_ALIAS_KEYS) {
+      next[key] = attractedValue;
+    }
+    return next;
+  };
+
   const persistAnswers = (incomingAnswers: Record<string, string>) => {
-    const nextAnswers = mergeWithStoredAnswers(incomingAnswers);
+    const nextAnswers = withAttractedAliases(mergeWithStoredAnswers(incomingAnswers));
     localStorage.setItem(ANSWERS_STORAGE_KEY, JSON.stringify(nextAnswers));
 
     const userId = localStorage.getItem("astrorekha_user_id") || generateUserId();
@@ -129,7 +147,10 @@ export function LayoutBQuestionStep({ routeStep }: LayoutBQuestionStepProps) {
       return;
     }
 
-    const nextAnswers = { ...answers, [current.id]: value };
+    const nextAnswers =
+      current.id === "attracted_to"
+        ? withAttractedAliases({ ...answers, [current.id]: value })
+        : { ...answers, [current.id]: value };
     const mergedAnswers = persistAnswers(nextAnswers);
     setAnswers(mergedAnswers);
     handleContinue();

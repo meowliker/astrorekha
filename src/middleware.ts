@@ -14,6 +14,7 @@ export async function middleware(request: NextRequest) {
     "/compatibility",
     "/prediction-2026",
     "/soulmate-sketch",
+    "/future-partner",
     "/profile",
     "/settings",
   ];

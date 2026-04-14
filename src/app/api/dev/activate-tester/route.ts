@@ -31,6 +31,8 @@ export async function POST(request: NextRequest) {
         prediction2026: true,
         birthChart: true,
         compatibilityTest: true,
+        soulmateSketch: true,
+        futurePartnerReport: true,
       },
       updated_at: now,
     }, { onConflict: "id" });

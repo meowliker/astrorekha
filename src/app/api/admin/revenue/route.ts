@@ -178,6 +178,14 @@ export async function GET(request: NextRequest) {
           .filter((p) => p.bundle_id === "palm-birth-compat")
           .reduce((sum, p) => sum + p.signedAmountInr, 0),
       },
+      "palm-birth-sketch": {
+        count: financialEvents
+          .filter((p) => p.bundle_id === "palm-birth-sketch")
+          .reduce((sum, p) => sum + (p.financialKind === "refund" ? -1 : 1), 0),
+        revenue: financialEvents
+          .filter((p) => p.bundle_id === "palm-birth-sketch")
+          .reduce((sum, p) => sum + p.signedAmountInr, 0),
+      },
     };
 
     // Fetch all users (include anon users who made payments)

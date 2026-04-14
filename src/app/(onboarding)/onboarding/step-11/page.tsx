@@ -121,7 +121,9 @@ export default function Step11Page() {
             ([, value]) => normalizeAnswerValues(value).length > 0
           )
         );
-        setFlowBAnswers((prev) => ({ ...prev, ...nonEmptyAnswers }));
+        // Keep latest local selections as source-of-truth during onboarding.
+        // Server can be slightly stale for a moment after answer updates.
+        setFlowBAnswers((prev) => ({ ...nonEmptyAnswers, ...prev }));
       })
       .catch(() => {
         // ignore status fetch issues during onboarding
@@ -201,14 +203,6 @@ export default function Step11Page() {
     return labels.join(", ");
   };
 
-  const attractedRaw = getRawFlowBAnswer(
-    "attracted_to",
-    "attractedTo",
-    "attracted",
-    "gender_preference",
-    "genderPreference",
-    "target_gender"
-  );
   const ageRaw = getRawFlowBAnswer("age_group", "ageGroup");
   const vibeRaw = getRawFlowBAnswer("vibe", "relationship_feel", "relationshipFeel");
   const futureRaw = getRawFlowBAnswer("future_goal", "futureGoal", "future");
@@ -220,20 +214,13 @@ export default function Step11Page() {
     "sketch_prefs",
     "sketchPrefs"
   );
-  const appearanceRaw = getRawFlowBAnswer("appearance");
-
-  const flowBAttractedTo = getFlowBAnswerLabel("attracted_to", attractedRaw);
   const flowBAge = getFlowBAnswerLabel("age_group", ageRaw);
   const flowBVibe = getFlowBAnswerLabel("vibe", vibeRaw);
   const flowBFutureGoal = getFlowBAnswerLabel("future_goal", futureRaw);
   const flowBMainWorry = getFlowBAnswerLabel("main_worry", mainWorryRaw);
 
-  const detailLabel3 = isLayoutB ? "Attracted To" : "Status";
-  const detailValue3 = isLayoutB
-    ? flowBAttractedTo ||
-      getFlowBAnswerLabel("appearance", appearanceRaw) ||
-      "Not specified"
-    : formattedStatus;
+  const detailLabel3 = "Status";
+  const detailValue3 = formattedStatus;
 
   const detailLabel4 = isLayoutB ? "Relationship Worries" : "Goals";
   const detailValue4 = isLayoutB
@@ -365,15 +352,17 @@ export default function Step11Page() {
                     <span className="text-right max-w-[180px] truncate">{birthPlace || "Not specified"}</span>
                   </motion.div>
                   
-                  <motion.div
-                    initial={{ opacity: 0, x: -15 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 1.1, duration: 0.6, ease: "easeOut" }}
-                    className="flex justify-between"
-                  >
-                    <span className="text-muted-foreground font-medium">{detailLabel3}</span>
-                    <span>{detailValue3}</span>
-                  </motion.div>
+                  {!isLayoutB ? (
+                    <motion.div
+                      initial={{ opacity: 0, x: -15 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 1.1, duration: 0.6, ease: "easeOut" }}
+                      className="flex justify-between"
+                    >
+                      <span className="text-muted-foreground font-medium">{detailLabel3}</span>
+                      <span>{detailValue3}</span>
+                    </motion.div>
+                  ) : null}
                   
                   <motion.div
                     initial={{ opacity: 0, x: -15 }}

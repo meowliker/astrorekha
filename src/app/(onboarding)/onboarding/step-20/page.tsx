@@ -42,6 +42,9 @@ const getBundleFeatures = (bundleId: string | null) => {
   if (bundleId === "palm-birth-sketch") {
     features.push({ icon: "🎨", title: "Soulmate Sketch", description: "One personalized AI soulmate portrait" });
   }
+  if (bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch") {
+    features.push({ icon: "💍", title: "Future Partner Report", description: "One-time partner-name + marriage insights report" });
+  }
   
   // Bundle 3 (palm-birth-compat) gives 30 coins, others give 15
   const coinCount = bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" ? 30 : 15;

@@ -630,7 +630,7 @@ export default function BundlePricingPage() {
               initial={{ opacity: 0, scale: 0, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               transition={{ delay: 0.6 + index * 0.2, type: "spring", stiffness: 200 }}
-              className="absolute bg-card/90 backdrop-blur-sm border border-border rounded-lg px-3 py-1.5 shadow-lg"
+              className="absolute rounded-lg px-3 py-1.5 bg-[#121b2f] border border-white/20 text-white shadow-[0_10px_28px_rgba(0,0,0,0.48)] whitespace-nowrap"
               style={{
                 top: label.top,
                 left: label.left,

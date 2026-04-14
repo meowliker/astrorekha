@@ -209,8 +209,8 @@ function mapBundleName(bundleId: string): string {
   const map: Record<string, string> = {
     "palm-reading": "Palm Reading",
     "palm-birth": "Palm + Birth Chart",
-    "palm-birth-compat": "Palm + Birth + Compatibility",
-    "palm-birth-sketch": "Palm + Birth + Soulmate Sketch",
+    "palm-birth-compat": "Palm + Birth + Compatibility + Future Partner Report",
+    "palm-birth-sketch": "Palm + Birth + Soulmate Sketch + Future Partner Report",
   };
   return map[key] || key || "Unknown Bundle";
 }
@@ -245,6 +245,9 @@ function mapUpsellName(raw: string): string {
     "soulmate-sketch": "Soulmate Sketch",
     "report-soulmate-sketch": "Soulmate Sketch",
     "soulmate-portrait": "Soulmate Sketch",
+    "future-partner": "Future Partner Report",
+    "report-future-partner": "Future Partner Report",
+    futurepartnerreport: "Future Partner Report",
   };
   return map[key] || raw.trim() || "Unknown Upsell";
 }
@@ -997,19 +1000,10 @@ export async function GET(request: NextRequest) {
                   : rawAudience;
 
             const rawContinuedToNext = nextRoute ? countIntersection(visitorSet, nextVisitorSet) : 0;
-            const paidOrCheckoutProgress =
-              canonicalRoute === pricingRoutes[variant]
-                ? Math.max(
-                    routeRow?.paidOrders || 0,
-                    routeRow?.trackedBundleConversions || 0,
-                    routeRow?.checkoutsStarted || 0
-                  )
-                : canonicalRoute === upsellRoutes[variant]
-                  ? Math.max(routeRow?.upsellOrders || 0, routeRow?.checkoutsStarted || 0)
-                  : 0;
-            const continuedToNext = nextRoute
-              ? Math.min(audience, Math.max(rawContinuedToNext, paidOrCheckoutProgress))
-              : 0;
+            // Bounce/drop-off in ordered funnel view must reflect actual progression
+            // to the next route (not payment/checkouts), otherwise bundle-pricing
+            // can incorrectly show 0% bounce despite real route exits.
+            const continuedToNext = nextRoute ? Math.min(audience, rawContinuedToNext) : 0;
             const dropOffs = nextRoute ? Math.max(audience - continuedToNext, 0) : 0;
             const bounceRate = audience > 0 ? ((dropOffs / audience) * 100).toFixed(2) : "0.00";
 

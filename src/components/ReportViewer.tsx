@@ -38,7 +38,6 @@ interface ReportViewerProps {
       navamsa_chart_svg?: string | null;
     };
   };
-  onRegenerate?: () => Promise<void>;
 }
 
 function cleanupMarkdown(text: string): string {
@@ -123,8 +122,7 @@ function removeTitleEcho(paragraphs: string[], sectionTitle: string): string[] {
   return paragraphs;
 }
 
-export default function ReportViewer({ report, onRegenerate }: ReportViewerProps) {
-  const [isRegenerating, setIsRegenerating] = useState(false);
+export default function ReportViewer({ report }: ReportViewerProps) {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(SECTIONS.map((section, idx) => [section.key, idx < 2]))
   );
@@ -142,16 +140,6 @@ export default function ReportViewer({ report, onRegenerate }: ReportViewerProps
     house: "House",
     nakshatra: "Nakshatra",
     pada: "Pada",
-  };
-
-  const handleRegenerate = async () => {
-    if (!onRegenerate || isRegenerating) return;
-    setIsRegenerating(true);
-    try {
-      await onRegenerate();
-    } finally {
-      setIsRegenerating(false);
-    }
   };
 
   const toggleSection = (key: string) => {
@@ -373,16 +361,6 @@ export default function ReportViewer({ report, onRegenerate }: ReportViewerProps
         );
       })}
 
-      <div className="pt-1 text-center">
-        <button
-          type="button"
-          onClick={handleRegenerate}
-          disabled={!onRegenerate || isRegenerating}
-          className="text-white/60 hover:text-amber-300 transition-colors text-sm underline underline-offset-4 disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          {isRegenerating ? "Regenerating report..." : "Regenerate report"}
-        </button>
-      </div>
     </div>
   );
 }

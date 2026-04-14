@@ -219,13 +219,6 @@ export default function BirthChartReportPage() {
     return () => window.clearInterval(interval);
   }, [checkStatus, fetchFullReport, isPolling]);
 
-  const handleRegenerate = useCallback(async () => {
-    setReport(null);
-    setScreenState("loading");
-    setIsPolling(false);
-    await generateReport(true);
-  }, [generateReport]);
-
   return (
     <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
       <div className="w-full max-w-md h-screen bg-[#0A0E1A] overflow-hidden shadow-2xl shadow-black/50 flex flex-col">
@@ -254,7 +247,6 @@ export default function BirthChartReportPage() {
                 generated_at: report.generated_at,
                 chart_details: report.chart_details,
               }}
-              onRegenerate={handleRegenerate}
             />
           )}
 
