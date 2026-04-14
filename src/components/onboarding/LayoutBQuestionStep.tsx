@@ -4,17 +4,20 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OnboardingHeader, ProgressBar } from "@/components/onboarding/OnboardingHeader";
 import {
-  DEFAULT_LAYOUT_B_CONFIG,
-  getActiveSketchQuestions,
-  normalizeLayoutBConfig,
-  type LayoutBFunnelConfig,
+  SKETCH_QUESTION_BANK,
+  type SketchQuestionId,
 } from "@/lib/layout-b-funnel";
 import { cn } from "@/lib/utils";
 import { generateUserId } from "@/lib/user-profile";
 
 const ANSWERS_STORAGE_KEY = "astrorekha_soulmate_answers";
-const MAX_ONBOARDING_LAYOUT_B_QUESTIONS = 4;
 const MULTI_SELECT_QUESTION_IDS = new Set(["main_worry", "future_goal"]);
+const ONBOARDING_LAYOUT_B_QUESTION_ORDER: SketchQuestionId[] = [
+  "attracted_to",
+  "age_group",
+  "vibe",
+  "main_worry",
+];
 const ATTRACTED_TO_ALIAS_KEYS = [
   "attractedTo",
   "attracted",
@@ -29,14 +32,15 @@ interface LayoutBQuestionStepProps {
 
 export function LayoutBQuestionStep({ routeStep }: LayoutBQuestionStepProps) {
   const router = useRouter();
-  const [config, setConfig] = useState<LayoutBFunnelConfig>(DEFAULT_LAYOUT_B_CONFIG);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [ready, setReady] = useState(false);
 
-  const questions = useMemo(
-    () => getActiveSketchQuestions(config).slice(0, MAX_ONBOARDING_LAYOUT_B_QUESTIONS),
-    [config]
-  );
+  const questions = useMemo(() => {
+    const byId = new Map(SKETCH_QUESTION_BANK.map((q) => [q.id, q]));
+    return ONBOARDING_LAYOUT_B_QUESTION_ORDER
+      .map((id) => byId.get(id))
+      .filter((q): q is NonNullable<typeof q> => !!q);
+  }, []);
   const questionIndex = Math.max(0, routeStep - 7);
   const current = questions[questionIndex];
   const totalQuestionSteps = Math.max(questions.length, 1);
@@ -51,14 +55,6 @@ export function LayoutBQuestionStep({ routeStep }: LayoutBQuestionStepProps) {
         }
       } catch {
         // ignore invalid local data
-      }
-
-      try {
-        const response = await fetch("/api/ab-test/layout-config", { cache: "no-store" });
-        const json = await response.json().catch(() => ({}));
-        setConfig(normalizeLayoutBConfig(json?.config || DEFAULT_LAYOUT_B_CONFIG));
-      } catch {
-        setConfig(DEFAULT_LAYOUT_B_CONFIG);
       } finally {
         setReady(true);
       }
