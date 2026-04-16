@@ -66,7 +66,7 @@ async function persistUserFlowVariant(params: {
   };
 
   if (isOnboardingLayoutTest) {
-    payload.onboarding_flow = "flow-b";
+    payload.onboarding_flow = variant === "B" ? "flow-b" : "flow-a";
   }
 
   const { error } = await supabase.from("users").upsert(payload, { onConflict: "id" });
