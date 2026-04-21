@@ -409,6 +409,37 @@ function parseMetricNumber(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function normalizeAdAccountId(value: string): string {
+  return value.replace(/^act_/i, "").trim();
+}
+
+async function fetchMetaJson(url: string): Promise<any> {
+  const response = await fetch(url);
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || payload?.error) {
+    const message = payload?.error?.message || `Meta API HTTP ${response.status}`;
+    throw new Error(`Meta API Error: ${message}`);
+  }
+  return payload;
+}
+
+async function fetchAllMetaPages(initialUrl: string, maxPages: number = 20): Promise<any[]> {
+  const rows: any[] = [];
+  let nextUrl: string | null = initialUrl;
+  let pageCount = 0;
+
+  while (nextUrl && pageCount < maxPages) {
+    const payload = await fetchMetaJson(nextUrl);
+    if (Array.isArray(payload?.data)) {
+      rows.push(...payload.data);
+    }
+    nextUrl = typeof payload?.paging?.next === "string" ? payload.paging.next : null;
+    pageCount += 1;
+  }
+
+  return rows;
+}
+
 function getActionMetricValue(collection: any[], actionTypes: string[]): number {
   for (const actionType of actionTypes) {
     const hit = collection.find((row: any) => row?.action_type === actionType);
@@ -482,6 +513,13 @@ export async function GET(request: NextRequest) {
         error: "Meta Ads not configured",
       });
     }
+    const normalizedAdAccountId = normalizeAdAccountId(adAccountId);
+    if (!normalizedAdAccountId) {
+      return NextResponse.json({
+        configured: false,
+        error: "Meta Ads account ID is invalid",
+      });
+    }
 
     // Get exchange rate
     const exchangeRate = customExchangeRate ? parseFloat(customExchangeRate) : await fetchExchangeRate();
@@ -550,46 +588,36 @@ export async function GET(request: NextRequest) {
     const insightFields = "spend,impressions,clicks,cpc,cpm,ctr,reach,actions,cost_per_action_type,purchase_roas,website_purchase_roas";
 
     // 0. Fetch account-level insights for exact top-line parity with Ads Manager
-    const accountInsightsUrl = `${META_BASE_URL}/act_${adAccountId}/insights?fields=${insightFields}&${dateParams}&limit=1&access_token=${metaAccessToken}`;
-    const accountInsightsRes = await fetch(accountInsightsUrl);
-    const accountInsightsData = await accountInsightsRes.json();
+    const accountInsightsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/insights?fields=${insightFields}&${dateParams}&limit=1&access_token=${metaAccessToken}`;
+    const accountInsightsData = await fetchMetaJson(accountInsightsUrl);
 
-    // 1. Fetch all campaigns with their insights
-    const campaignsUrl = `${META_BASE_URL}/act_${adAccountId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget&limit=100&access_token=${metaAccessToken}`;
-    const campaignsRes = await fetch(campaignsUrl);
-    const campaignsData = await campaignsRes.json();
+    // 1. Fetch account metadata
+    const accountUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}?fields=id,name,currency,timezone_name&access_token=${metaAccessToken}`;
+    const accountData = await fetchMetaJson(accountUrl);
 
-    if (campaignsData.error) {
-      return NextResponse.json({
-        configured: true,
-        error: `Meta API Error: ${campaignsData.error.message}`,
-      });
-    }
+    // 2. Fetch all campaigns with pagination
+    const campaignsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget&limit=200&access_token=${metaAccessToken}`;
+    const campaignsData = await fetchAllMetaPages(campaignsUrl);
 
-    // 2. Fetch campaign-level insights
-    const campaignInsightsUrl = `${META_BASE_URL}/act_${adAccountId}/insights?fields=campaign_id,campaign_name,${insightFields}&level=campaign&${dateParams}&limit=100&access_token=${metaAccessToken}`;
-    const campaignInsightsRes = await fetch(campaignInsightsUrl);
-    const campaignInsightsData = await campaignInsightsRes.json();
+    // 3. Fetch campaign-level insights (paginated)
+    const campaignInsightsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/insights?fields=campaign_id,campaign_name,${insightFields}&level=campaign&${dateParams}&limit=500&access_token=${metaAccessToken}`;
+    const campaignInsightsData = await fetchAllMetaPages(campaignInsightsUrl);
 
-    // 3. Fetch adset-level insights
-    const adsetInsightsUrl = `${META_BASE_URL}/act_${adAccountId}/insights?fields=adset_id,adset_name,campaign_id,${insightFields}&level=adset&${dateParams}&limit=500&access_token=${metaAccessToken}`;
-    const adsetInsightsRes = await fetch(adsetInsightsUrl);
-    const adsetInsightsData = await adsetInsightsRes.json();
+    // 4. Fetch adset-level insights (paginated)
+    const adsetInsightsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/insights?fields=adset_id,adset_name,campaign_id,${insightFields}&level=adset&${dateParams}&limit=500&access_token=${metaAccessToken}`;
+    const adsetInsightsData = await fetchAllMetaPages(adsetInsightsUrl);
 
-    // 4. Fetch ad-level insights
-    const adInsightsUrl = `${META_BASE_URL}/act_${adAccountId}/insights?fields=ad_id,ad_name,adset_id,campaign_id,${insightFields}&level=ad&${dateParams}&limit=500&access_token=${metaAccessToken}`;
-    const adInsightsRes = await fetch(adInsightsUrl);
-    const adInsightsData = await adInsightsRes.json();
+    // 5. Fetch ad-level insights (paginated)
+    const adInsightsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/insights?fields=ad_id,ad_name,adset_id,campaign_id,${insightFields}&level=ad&${dateParams}&limit=500&access_token=${metaAccessToken}`;
+    const adInsightsData = await fetchAllMetaPages(adInsightsUrl);
 
-    // 5. Fetch adsets with budget info
-    const adsetsUrl = `${META_BASE_URL}/act_${adAccountId}/adsets?fields=id,name,status,campaign_id,daily_budget,lifetime_budget&limit=500&access_token=${metaAccessToken}`;
-    const adsetsRes = await fetch(adsetsUrl);
-    const adsetsData = await adsetsRes.json();
+    // 6. Fetch adsets with budget info (paginated)
+    const adsetsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/adsets?fields=id,name,status,campaign_id,daily_budget,lifetime_budget&limit=500&access_token=${metaAccessToken}`;
+    const adsetsData = await fetchAllMetaPages(adsetsUrl);
 
-    // 6. Fetch ads with status
-    const adsUrl = `${META_BASE_URL}/act_${adAccountId}/ads?fields=id,name,status,adset_id&limit=500&access_token=${metaAccessToken}`;
-    const adsRes = await fetch(adsUrl);
-    const adsData = await adsRes.json();
+    // 7. Fetch ads with status (paginated)
+    const adsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/ads?fields=id,name,status,adset_id&limit=500&access_token=${metaAccessToken}`;
+    const adsData = await fetchAllMetaPages(adsUrl);
 
     // Helper to extract metrics from insights
     const extractMetrics = (insight: any) => {
@@ -615,33 +643,33 @@ export async function GET(request: NextRequest) {
 
     // Create lookup maps
     const campaignInsightsMap = new Map();
-    (campaignInsightsData.data || []).forEach((c: any) => {
+    campaignInsightsData.forEach((c: any) => {
       campaignInsightsMap.set(c.campaign_id, c);
     });
 
     const adsetInsightsMap = new Map();
-    (adsetInsightsData.data || []).forEach((a: any) => {
+    adsetInsightsData.forEach((a: any) => {
       adsetInsightsMap.set(a.adset_id, a);
     });
 
     const adInsightsMap = new Map();
-    (adInsightsData.data || []).forEach((a: any) => {
+    adInsightsData.forEach((a: any) => {
       adInsightsMap.set(a.ad_id, a);
     });
 
     const adsetInfoMap = new Map();
-    (adsetsData.data || []).forEach((a: any) => {
+    adsetsData.forEach((a: any) => {
       adsetInfoMap.set(a.id, a);
     });
 
     const adInfoMap = new Map();
-    (adsData.data || []).forEach((a: any) => {
+    adsData.forEach((a: any) => {
       adInfoMap.set(a.id, a);
     });
 
     // Group adsets by campaign
     const adsetsByCampaign = new Map<string, any[]>();
-    (adsetsData.data || []).forEach((adset: any) => {
+    adsetsData.forEach((adset: any) => {
       const campaignId = adset.campaign_id;
       if (!adsetsByCampaign.has(campaignId)) {
         adsetsByCampaign.set(campaignId, []);
@@ -651,7 +679,7 @@ export async function GET(request: NextRequest) {
 
     // Group ads by adset
     const adsByAdset = new Map<string, any[]>();
-    (adsData.data || []).forEach((ad: any) => {
+    adsData.forEach((ad: any) => {
       const adsetId = ad.adset_id;
       if (!adsByAdset.has(adsetId)) {
         adsByAdset.set(adsetId, []);
@@ -660,7 +688,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Build hierarchical structure
-    const campaigns: CampaignData[] = (campaignsData.data || []).map((campaign: any) => {
+    const campaigns: CampaignData[] = campaignsData.map((campaign: any) => {
       const campaignInsight = campaignInsightsMap.get(campaign.id);
       const metrics = extractMetrics(campaignInsight);
       
@@ -750,6 +778,12 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       configured: true,
+      account: {
+        id: accountData?.id || `act_${normalizedAdAccountId}`,
+        name: accountData?.name || "Unknown",
+        currency: accountData?.currency || "USD",
+        timezone: accountData?.timezone_name || "Unknown",
+      },
       exchangeRate,
       datePreset,
       dateRange: {

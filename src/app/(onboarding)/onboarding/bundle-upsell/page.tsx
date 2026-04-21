@@ -125,6 +125,7 @@ function BundleUpsellContent() {
 
       if (data.txnId) {
         pixelEvents.initiateCheckout(upsellPriceINR, ["2026 Future Predictions"]);
+        pixelEvents.addPaymentInfo(upsellPriceINR, "2026 Future Predictions");
 
         const bolt = (window as any).bolt;
         bolt.launch({
@@ -146,7 +147,7 @@ function BundleUpsellContent() {
         }, {
           responseHandler: async (response: any) => {
             if (response.response.txnStatus === "SUCCESS") {
-              await fetch("/api/payu/verify-payment", {
+              const verifyRes = await fetch("/api/payu/verify-payment", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -166,9 +167,15 @@ function BundleUpsellContent() {
                   key: data.key,
                 }),
               });
-              pixelEvents.purchase(upsellPriceINR, "2026-predictions", "2026 Future Predictions");
-              setIsProcessing(false);
-              router.push("/onboarding/step-19");
+              const verifyData = await verifyRes.json().catch(() => ({ success: false }));
+              if (verifyRes.ok && verifyData?.success) {
+                pixelEvents.purchase(upsellPriceINR, "2026-predictions", "2026 Future Predictions");
+                setIsProcessing(false);
+                router.push("/onboarding/step-19");
+              } else {
+                setPaymentError("Payment verification failed. Please contact support.");
+                setIsProcessing(false);
+              }
             } else {
               setPaymentError("Payment failed. Please try again.");
               setIsProcessing(false);

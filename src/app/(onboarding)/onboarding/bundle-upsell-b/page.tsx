@@ -9,6 +9,7 @@ import Script from "next/script";
 import { generateUserId } from "@/lib/user-profile";
 import { fadeUp } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { pixelEvents } from "@/lib/pixel-events";
 
 const offers = [
   {
@@ -76,6 +77,10 @@ export default function BundleUpsellBPage() {
     try {
       const selected = offers.filter((offer) => selectedIds.has(offer.id));
       const offerIds = selected.map((offer) => offer.id).join(",");
+      const selectedOfferNames = selected.map((offer) => offer.name);
+      const combinedOfferLabel = selectedOfferNames.join(", ");
+
+      pixelEvents.addToCart(totalInr, combinedOfferLabel);
 
       const response = await fetch("/api/payu/initiate-payment", {
         method: "POST",
@@ -95,6 +100,8 @@ export default function BundleUpsellBPage() {
         setIsProcessing(false);
         return;
       }
+      pixelEvents.initiateCheckout(totalInr, selectedOfferNames);
+      pixelEvents.addPaymentInfo(totalInr, combinedOfferLabel);
 
       const bolt = (window as any).bolt;
       bolt.launch(
@@ -123,7 +130,7 @@ export default function BundleUpsellBPage() {
               return;
             }
 
-            await fetch("/api/payu/verify-payment", {
+            const verifyRes = await fetch("/api/payu/verify-payment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -144,8 +151,15 @@ export default function BundleUpsellBPage() {
               }),
             });
 
-            setIsProcessing(false);
-            router.push("/onboarding/step-19");
+            const verifyData = await verifyRes.json().catch(() => ({ success: false }));
+            if (verifyRes.ok && verifyData?.success) {
+              pixelEvents.purchase(totalInr, `upsell-${offerIds}`, combinedOfferLabel);
+              setIsProcessing(false);
+              router.push("/onboarding/step-19");
+            } else {
+              setError("Payment verification failed. Please contact support.");
+              setIsProcessing(false);
+            }
           },
           catchException: () => {
             setError("Payment was cancelled or failed.");

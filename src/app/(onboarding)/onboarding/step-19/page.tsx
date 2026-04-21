@@ -129,13 +129,23 @@ function Step19Content() {
     const sessionId = searchParams.get("session_id");
     
     if (upsellSuccess === "true" && offers && sessionId) {
-      // Calculate upsell value based on offers
-      const offerList = offers.split(",");
-      const hasUltraPack = offerList.includes("ultra-pack");
-      const upsellValue = hasUltraPack ? 9.99 : offerList.length * 6.99;
-      
-      // Track PURCHASE event for upsell - Critical for Meta ROAS tracking
+      // De-dupe in case effect runs multiple times (dev strict mode / rerenders).
+      const dedupeKey = `astrorekha_pixel_purchase_${sessionId}`;
+      if (localStorage.getItem(dedupeKey) === "true") {
+        return;
+      }
+
+      // Calculate upsell value in INR (do not send USD-like values with INR currency).
+      const offerList = offers.split(",").map((id) => id.trim()).filter(Boolean);
+      const offerPriceInr: Record<string, number> = {
+        compatibility: 499,
+        "2026-predictions": 499,
+        "ultra-pack": 999,
+      };
+      const upsellValue = offerList.reduce((sum, offerId) => sum + (offerPriceInr[offerId] ?? 499), 0);
+
       pixelEvents.purchase(upsellValue, `upsell-${offers}`, `Upsell: ${offers}`);
+      localStorage.setItem(dedupeKey, "true");
     }
   }, [searchParams]);
 
