@@ -28,6 +28,7 @@ import {
   Eye,
   MousePointerClick,
   Target,
+  ChevronLeft,
   ChevronDown,
   ChevronRight,
   LayoutDashboard,
@@ -92,6 +93,8 @@ interface MetaBreakdownData {
   exchangeRate: number;
   datePreset: string;
   dateRange: { start: string; end: string };
+  businessDateRange?: { start: string; end: string };
+  businessRule?: string;
   campaigns: MetaCampaignData[];
   revenue: {
     totalRevenue: number;
@@ -347,6 +350,209 @@ interface MetaAdsData {
   activeCampaignCount?: number;
 }
 
+const META_IST_TIMEZONE = "Asia/Kolkata";
+const META_BUSINESS_BOUNDARY_HOUR = 11;
+const META_BUSINESS_BOUNDARY_MINUTE = 30;
+const META_MIN_RANGE_START = "2024-01-01";
+
+type CalendarRange = { startDate: string; endDate: string };
+type CalendarCell = { isoDate: string; day: number; inCurrentMonth: boolean };
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function getIstDateTimeParts(date: Date): {
+  dayKey: string;
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+} {
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: META_IST_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = formatter.formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || "00";
+  const year = Number(get("year"));
+  const month = Number(get("month"));
+  const day = Number(get("day"));
+  const hour = Number(get("hour"));
+  const minute = Number(get("minute"));
+  return {
+    dayKey: `${year}-${pad2(month)}-${pad2(day)}`,
+    year: Number.isFinite(year) ? year : 1970,
+    month: Number.isFinite(month) ? month : 1,
+    day: Number.isFinite(day) ? day : 1,
+    hour: Number.isFinite(hour) ? hour : 0,
+    minute: Number.isFinite(minute) ? minute : 0,
+  };
+}
+
+function shiftIsoDate(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().split("T")[0];
+}
+
+function getCurrentBusinessDateIso(now: Date = new Date()): string {
+  const ist = getIstDateTimeParts(now);
+  const isBeforeBoundary =
+    ist.hour < META_BUSINESS_BOUNDARY_HOUR ||
+    (ist.hour === META_BUSINESS_BOUNDARY_HOUR && ist.minute < META_BUSINESS_BOUNDARY_MINUTE);
+  return isBeforeBoundary ? shiftIsoDate(ist.dayKey, -1) : ist.dayKey;
+}
+
+function getWeekStartMondayIso(isoDate: string): string {
+  const d = new Date(`${isoDate}T00:00:00.000Z`);
+  const mondayIndex = (d.getUTCDay() + 6) % 7;
+  return shiftIsoDate(isoDate, -mondayIndex);
+}
+
+function getFirstDayOfMonthIso(isoDate: string): string {
+  const [year, month] = isoDate.split("-").map((v) => Number(v));
+  return `${year}-${pad2(month)}-01`;
+}
+
+function getPreviousMonthFirstIso(monthStartIso: string): string {
+  const d = new Date(`${monthStartIso}T00:00:00.000Z`);
+  d.setUTCMonth(d.getUTCMonth() - 1);
+  return d.toISOString().split("T")[0];
+}
+
+function getFirstDayOfQuarterIso(isoDate: string): string {
+  const [year, month] = isoDate.split("-").map((v) => Number(v));
+  const quarterStartMonth = Math.floor((month - 1) / 3) * 3 + 1;
+  return `${year}-${pad2(quarterStartMonth)}-01`;
+}
+
+function getPreviousQuarterFirstIso(quarterStartIso: string): string {
+  const d = new Date(`${quarterStartIso}T00:00:00.000Z`);
+  d.setUTCMonth(d.getUTCMonth() - 3);
+  return d.toISOString().split("T")[0];
+}
+
+function getFirstDayOfYearIso(isoDate: string): string {
+  const year = Number(isoDate.slice(0, 4));
+  return `${year}-01-01`;
+}
+
+function getPreviousYearFirstIso(yearStartIso: string): string {
+  const year = Number(yearStartIso.slice(0, 4));
+  return `${year - 1}-01-01`;
+}
+
+function getPresetCalendarRange(preset: string, now: Date = new Date()): CalendarRange {
+  const businessTodayIso = getCurrentBusinessDateIso(now);
+  switch (preset) {
+    case "today":
+      return { startDate: businessTodayIso, endDate: businessTodayIso };
+    case "yesterday": {
+      const iso = shiftIsoDate(businessTodayIso, -1);
+      return { startDate: iso, endDate: iso };
+    }
+    case "last_3d":
+      return { startDate: shiftIsoDate(businessTodayIso, -3), endDate: businessTodayIso };
+    case "last_7d":
+      return { startDate: shiftIsoDate(businessTodayIso, -7), endDate: businessTodayIso };
+    case "last_14d":
+      return { startDate: shiftIsoDate(businessTodayIso, -14), endDate: businessTodayIso };
+    case "last_30d":
+      return { startDate: shiftIsoDate(businessTodayIso, -30), endDate: businessTodayIso };
+    case "last_60d":
+      return { startDate: shiftIsoDate(businessTodayIso, -60), endDate: businessTodayIso };
+    case "last_90d":
+      return { startDate: shiftIsoDate(businessTodayIso, -90), endDate: businessTodayIso };
+    case "this_week":
+      return { startDate: getWeekStartMondayIso(businessTodayIso), endDate: businessTodayIso };
+    case "last_week": {
+      const thisWeekStartIso = getWeekStartMondayIso(businessTodayIso);
+      return {
+        startDate: shiftIsoDate(thisWeekStartIso, -7),
+        endDate: shiftIsoDate(thisWeekStartIso, -1),
+      };
+    }
+    case "this_month":
+      return { startDate: getFirstDayOfMonthIso(businessTodayIso), endDate: businessTodayIso };
+    case "last_month": {
+      const thisMonthStartIso = getFirstDayOfMonthIso(businessTodayIso);
+      return {
+        startDate: getPreviousMonthFirstIso(thisMonthStartIso),
+        endDate: shiftIsoDate(thisMonthStartIso, -1),
+      };
+    }
+    case "this_quarter":
+      return { startDate: getFirstDayOfQuarterIso(businessTodayIso), endDate: businessTodayIso };
+    case "last_quarter": {
+      const thisQuarterStartIso = getFirstDayOfQuarterIso(businessTodayIso);
+      return {
+        startDate: getPreviousQuarterFirstIso(thisQuarterStartIso),
+        endDate: shiftIsoDate(thisQuarterStartIso, -1),
+      };
+    }
+    case "this_year":
+      return { startDate: getFirstDayOfYearIso(businessTodayIso), endDate: businessTodayIso };
+    case "last_year": {
+      const thisYearStartIso = getFirstDayOfYearIso(businessTodayIso);
+      return {
+        startDate: getPreviousYearFirstIso(thisYearStartIso),
+        endDate: shiftIsoDate(thisYearStartIso, -1),
+      };
+    }
+    case "maximum":
+      return { startDate: META_MIN_RANGE_START, endDate: businessTodayIso };
+    default:
+      return { startDate: shiftIsoDate(businessTodayIso, -7), endDate: businessTodayIso };
+  }
+}
+
+function getMonthStartUtcDate(isoDate: string): Date {
+  const [year, month] = isoDate.split("-").map((v) => Number(v));
+  return new Date(Date.UTC(year, month - 1, 1));
+}
+
+function buildMonthGrid(viewMonthStart: Date): CalendarCell[] {
+  const firstDayIso = viewMonthStart.toISOString().split("T")[0];
+  const weekdayIndex = (viewMonthStart.getUTCDay() + 6) % 7;
+  const gridStartIso = shiftIsoDate(firstDayIso, -weekdayIndex);
+  const currentMonth = viewMonthStart.getUTCMonth();
+  const cells: CalendarCell[] = [];
+  for (let i = 0; i < 42; i += 1) {
+    const isoDate = shiftIsoDate(gridStartIso, i);
+    const cellDate = new Date(`${isoDate}T00:00:00.000Z`);
+    cells.push({
+      isoDate,
+      day: cellDate.getUTCDate(),
+      inCurrentMonth: cellDate.getUTCMonth() === currentMonth,
+    });
+  }
+  return cells;
+}
+
+function formatCalendarDateLabel(isoDate: string): string {
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: META_IST_TIMEZONE,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(`${isoDate}T12:00:00.000Z`));
+}
+
+function formatCalendarDateShort(isoDate: string): string {
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: META_IST_TIMEZONE,
+    day: "2-digit",
+    month: "short",
+  }).format(new Date(`${isoDate}T12:00:00.000Z`));
+}
+
 export default function AdminRevenuePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -413,8 +619,13 @@ export default function AdminRevenuePage() {
   const [metaBreakdownLoading, setMetaBreakdownLoading] = useState(false);
   const [metaBreakdownDatePreset, setMetaBreakdownDatePreset] = useState<string>("last_7d");
   const [metaBreakdownExchangeRate, setMetaBreakdownExchangeRate] = useState<string>("");
-  const [metaBreakdownStartDate, setMetaBreakdownStartDate] = useState<string>("");
-  const [metaBreakdownEndDate, setMetaBreakdownEndDate] = useState<string>("");
+  const [metaBreakdownStartDate, setMetaBreakdownStartDate] = useState<string>(
+    () => getPresetCalendarRange("last_7d").startDate
+  );
+  const [metaBreakdownEndDate, setMetaBreakdownEndDate] = useState<string>(
+    () => getPresetCalendarRange("last_7d").endDate
+  );
+  const [metaBreakdownUseCustomDateRange, setMetaBreakdownUseCustomDateRange] = useState(false);
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set());
   const [expandedAdsets, setExpandedAdsets] = useState<Set<string>>(new Set());
 
@@ -595,13 +806,16 @@ export default function AdminRevenuePage() {
       if (!token) return;
       
       let url = `/api/admin/meta-ads-breakdown?token=${token}`;
-      
-      // Use custom dates if provided, otherwise use preset
-      const useStartDate = startDate || metaBreakdownStartDate;
-      const useEndDate = endDate || metaBreakdownEndDate;
-      
-      if (useStartDate && useEndDate) {
-        url += `&startDate=${useStartDate}&endDate=${useEndDate}`;
+
+      const hasExplicitCustomDates = typeof startDate === "string" && startDate.length > 0;
+      const resolvedStartDate = hasExplicitCustomDates ? startDate : metaBreakdownStartDate;
+      const resolvedEndDate = hasExplicitCustomDates ? (endDate || startDate) : metaBreakdownEndDate;
+      const shouldUseCustomRange =
+        hasExplicitCustomDates ||
+        (metaBreakdownUseCustomDateRange && !!resolvedStartDate && !!resolvedEndDate);
+
+      if (shouldUseCustomRange && resolvedStartDate && resolvedEndDate) {
+        url += `&startDate=${resolvedStartDate}&endDate=${resolvedEndDate}`;
       } else {
         url += `&datePreset=${metaBreakdownDatePreset}`;
       }
@@ -1674,6 +1888,8 @@ export default function AdminRevenuePage() {
             setStartDate={setMetaBreakdownStartDate}
             endDate={metaBreakdownEndDate}
             setEndDate={setMetaBreakdownEndDate}
+            useCustomDateRange={metaBreakdownUseCustomDateRange}
+            setUseCustomDateRange={setMetaBreakdownUseCustomDateRange}
             exchangeRate={metaBreakdownExchangeRate}
             setExchangeRate={setMetaBreakdownExchangeRate}
             expandedCampaigns={expandedCampaigns}
@@ -2045,6 +2261,8 @@ function MetaBreakdownTab({
   setStartDate,
   endDate,
   setEndDate,
+  useCustomDateRange,
+  setUseCustomDateRange,
   exchangeRate,
   setExchangeRate,
   expandedCampaigns,
@@ -2063,6 +2281,8 @@ function MetaBreakdownTab({
   setStartDate: (v: string) => void;
   endDate: string;
   setEndDate: (v: string) => void;
+  useCustomDateRange: boolean;
+  setUseCustomDateRange: (v: boolean) => void;
   exchangeRate: string;
   setExchangeRate: (v: string) => void;
   expandedCampaigns: Set<string>;
@@ -2109,6 +2329,107 @@ function MetaBreakdownTab({
     return estimatedRevenueInr - spendINR;
   };
 
+  const [pickerStartDate, setPickerStartDate] = useState<string>(startDate);
+  const [pickerEndDate, setPickerEndDate] = useState<string>(endDate);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const calendarDropdownRef = useRef<HTMLDivElement | null>(null);
+  const [calendarMonthStart, setCalendarMonthStart] = useState<Date>(() => {
+    const focusDate = endDate || startDate || getCurrentBusinessDateIso();
+    return getMonthStartUtcDate(focusDate);
+  });
+
+  useEffect(() => {
+    setPickerStartDate(startDate);
+    setPickerEndDate(endDate);
+  }, [startDate, endDate]);
+
+  useEffect(() => {
+    if (!isCalendarOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (calendarDropdownRef.current && target && !calendarDropdownRef.current.contains(target)) {
+        setIsCalendarOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsCalendarOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isCalendarOpen]);
+
+  const maxSelectableBusinessDate = getCurrentBusinessDateIso();
+  const maxMonthStart = getMonthStartUtcDate(maxSelectableBusinessDate);
+  const calendarCells = useMemo(() => buildMonthGrid(calendarMonthStart), [calendarMonthStart]);
+  const monthLabel = new Intl.DateTimeFormat("en-IN", {
+    timeZone: META_IST_TIMEZONE,
+    month: "long",
+    year: "numeric",
+  }).format(calendarMonthStart);
+
+  const applyPresetRange = (preset: string) => {
+    const presetRange = getPresetCalendarRange(preset);
+    setDatePreset(preset);
+    setUseCustomDateRange(false);
+    setStartDate(presetRange.startDate);
+    setEndDate(presetRange.endDate);
+    setPickerStartDate(presetRange.startDate);
+    setPickerEndDate(presetRange.endDate);
+    setCalendarMonthStart(getMonthStartUtcDate(presetRange.endDate));
+    setIsCalendarOpen(false);
+  };
+
+  const handleCalendarDateSelect = (isoDate: string) => {
+    if (isoDate < META_MIN_RANGE_START || isoDate > maxSelectableBusinessDate) {
+      return;
+    }
+    if (!pickerStartDate || (pickerStartDate && pickerEndDate)) {
+      setPickerStartDate(isoDate);
+      setPickerEndDate("");
+      return;
+    }
+    if (isoDate < pickerStartDate) {
+      setPickerStartDate(isoDate);
+      setPickerEndDate("");
+      return;
+    }
+    setPickerEndDate(isoDate);
+  };
+
+  const applyCustomRange = () => {
+    if (!pickerStartDate) return;
+    const finalEndDate = pickerEndDate || pickerStartDate;
+    setUseCustomDateRange(true);
+    setStartDate(pickerStartDate);
+    setEndDate(finalEndDate);
+    onCustomDateRefresh(pickerStartDate, finalEndDate);
+    setIsCalendarOpen(false);
+  };
+
+  const selectedRangeLabel = pickerStartDate
+    ? `${formatCalendarDateLabel(pickerStartDate)}${
+        pickerEndDate ? ` → ${formatCalendarDateLabel(pickerEndDate)}` : ""
+      }`
+    : "No date selected";
+
+  const activeRangeStart = startDate || pickerStartDate;
+  const activeRangeEnd = endDate || pickerEndDate || activeRangeStart;
+  const activeRangeButtonLabel =
+    activeRangeStart && activeRangeEnd
+      ? activeRangeStart === activeRangeEnd
+        ? formatCalendarDateShort(activeRangeStart)
+        : `${formatCalendarDateShort(activeRangeStart)} - ${formatCalendarDateShort(activeRangeEnd)}`
+      : "Select Range";
+
   return (
     <div className="space-y-4">
       {/* Filters */}
@@ -2118,11 +2439,7 @@ function MetaBreakdownTab({
             <label className="text-white/50 text-xs mb-1 block">Quick Select</label>
             <select
               value={datePreset}
-              onChange={(e) => {
-                setDatePreset(e.target.value);
-                setStartDate("");
-                setEndDate("");
-              }}
+              onChange={(e) => applyPresetRange(e.target.value)}
               className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50"
             >
               <option value="today">Today</option>
@@ -2144,34 +2461,120 @@ function MetaBreakdownTab({
               <option value="maximum">All Time</option>
             </select>
           </div>
-          <div>
-            <label className="text-white/50 text-xs mb-1 block">Or Custom Range</label>
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50"
-              />
-              <span className="text-white/30">to</span>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50"
-              />
-              <button
-                onClick={() => {
-                  if (startDate && endDate) {
-                    onCustomDateRefresh(startDate, endDate);
-                  }
-                }}
-                disabled={loading || !startDate || !endDate}
-                className="px-3 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-sm rounded-lg transition-colors disabled:opacity-50"
-              >
-                Go
-              </button>
-            </div>
+          <div ref={calendarDropdownRef} className="relative">
+            <label className="text-white/50 text-xs mb-1 block">Custom Range</label>
+            <button
+              onClick={() => setIsCalendarOpen((prev) => !prev)}
+              className={`px-3 py-2 rounded-lg text-sm border transition-colors ${
+                useCustomDateRange
+                  ? "bg-blue-500/20 border-blue-500/40 text-blue-300"
+                  : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
+              }`}
+            >
+              {activeRangeButtonLabel}
+            </button>
+            {isCalendarOpen && (
+              <div className="absolute left-0 top-[calc(100%+8px)] z-50 w-[92vw] sm:w-[680px] max-w-[92vw] rounded-2xl border border-white/15 bg-[#1A2235] shadow-2xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-white/80 text-sm font-medium">Custom Range</p>
+                  <button
+                    onClick={() => setIsCalendarOpen(false)}
+                    className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
+                    aria-label="Close custom range picker"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between mb-3">
+                  <button
+                    onClick={() =>
+                      setCalendarMonthStart(
+                        (prev) => new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() - 1, 1))
+                      )
+                    }
+                    className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
+                    aria-label="Previous month"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <p className="text-white text-sm font-medium">{monthLabel}</p>
+                  <button
+                    onClick={() =>
+                      setCalendarMonthStart(
+                        (prev) => new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() + 1, 1))
+                      )
+                    }
+                    disabled={calendarMonthStart.getTime() >= maxMonthStart.getTime()}
+                    className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    aria-label="Next month"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-7 gap-1 text-[11px] text-white/50 mb-2">
+                  {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((weekday) => (
+                    <div key={weekday} className="text-center py-1">
+                      {weekday}
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-1">
+                  {calendarCells.map((cell) => {
+                    const isDisabled =
+                      cell.isoDate < META_MIN_RANGE_START || cell.isoDate > maxSelectableBusinessDate;
+                    const isStart = pickerStartDate === cell.isoDate;
+                    const isEnd = pickerEndDate === cell.isoDate;
+                    const isInRange =
+                      !!pickerStartDate &&
+                      !!pickerEndDate &&
+                      cell.isoDate >= pickerStartDate &&
+                      cell.isoDate <= pickerEndDate;
+                    return (
+                      <button
+                        key={cell.isoDate}
+                        onClick={() => handleCalendarDateSelect(cell.isoDate)}
+                        disabled={isDisabled}
+                        className={`h-9 rounded-md text-sm transition-colors ${
+                          isStart || isEnd
+                            ? "bg-primary text-white"
+                            : isInRange
+                            ? "bg-primary/25 text-white"
+                            : cell.inCurrentMonth
+                            ? "bg-white/5 text-white hover:bg-white/15"
+                            : "bg-white/[0.02] text-white/45 hover:bg-white/10"
+                        } ${isDisabled ? "opacity-30 cursor-not-allowed" : ""}`}
+                        title={formatCalendarDateLabel(cell.isoDate)}
+                      >
+                        {cell.day}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-white/60">
+                    Selected: <span className="text-white/90">{selectedRangeLabel}</span>
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setPickerStartDate(startDate);
+                        setPickerEndDate(endDate);
+                      }}
+                      className="px-3 py-1.5 text-xs rounded-md bg-white/10 hover:bg-white/20 text-white/80 transition-colors"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      onClick={applyCustomRange}
+                      disabled={loading || !pickerStartDate}
+                      className="px-3 py-1.5 text-xs rounded-md bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 transition-colors disabled:opacity-50"
+                    >
+                      Apply Range
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <div>
             <label className="text-white/50 text-xs mb-1 block">USD to INR Rate</label>
@@ -2206,8 +2609,7 @@ function MetaBreakdownTab({
           </button>
         </div>
         <p className="text-white/30 text-xs mt-3">
-          Click on campaigns to expand and see adsets. Click on adsets to see individual ads.
-          {data?.dateRange && ` | Date Range: ${data.dateRange.start} to ${data.dateRange.end}`}
+          {data?.dateRange ? `Selected Dates: ${data.dateRange.start} to ${data.dateRange.end}` : ""}
         </p>
       </div>
 

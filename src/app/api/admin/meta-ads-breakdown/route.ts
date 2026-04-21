@@ -8,6 +8,11 @@ export const dynamic = "force-dynamic";
 const META_API_VERSION = "v21.0";
 const META_BASE_URL = `https://graph.facebook.com/${META_API_VERSION}`;
 const PAYU_BASE_URL = "https://info.payu.in/merchant/postservice?form=2";
+const IST_TIMEZONE = "Asia/Kolkata";
+const IST_OFFSET_MINUTES = 5 * 60 + 30;
+const BUSINESS_BOUNDARY_HOUR = 11;
+const BUSINESS_BOUNDARY_MINUTE = 30;
+const MAX_RANGE_START_ISO = "2024-01-01";
 
 // Generate SHA-512 hash for PayU
 function generateHash(input: string): string {
@@ -88,91 +93,282 @@ async function fetchPayUTransactions(fromDate: string, toDate: string): Promise<
   return [];
 }
 
-// Calculate date range from preset
-function getDateRangeFromPreset(preset: string): { startDate: string; endDate: string } {
-  const today = new Date();
-  const formatDate = (d: Date) => d.toISOString().split("T")[0];
-  
-  let startDate: Date;
-  let endDate: Date = today;
+interface BusinessWindow {
+  start: Date;
+  end: Date;
+  startDateIso: string;
+  endDateIso: string;
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function isIsoDate(value: string | null): value is string {
+  return !!value && /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
+}
+
+function getIstDateTimeParts(date: Date): {
+  dayKey: string;
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+} {
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: IST_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = formatter.formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || "00";
+  const year = Number(get("year"));
+  const month = Number(get("month"));
+  const day = Number(get("day"));
+  const hour = Number(get("hour"));
+  const minute = Number(get("minute"));
+  return {
+    dayKey: `${year}-${pad2(month)}-${pad2(day)}`,
+    year: Number.isFinite(year) ? year : 1970,
+    month: Number.isFinite(month) ? month : 1,
+    day: Number.isFinite(day) ? day : 1,
+    hour: Number.isFinite(hour) ? hour : 0,
+    minute: Number.isFinite(minute) ? minute : 0,
+  };
+}
+
+function shiftIsoDate(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().split("T")[0];
+}
+
+function getCurrentBusinessDateIso(now: Date): string {
+  const ist = getIstDateTimeParts(now);
+  const isBeforeBoundary =
+    ist.hour < BUSINESS_BOUNDARY_HOUR ||
+    (ist.hour === BUSINESS_BOUNDARY_HOUR && ist.minute < BUSINESS_BOUNDARY_MINUTE);
+  return isBeforeBoundary ? shiftIsoDate(ist.dayKey, -1) : ist.dayKey;
+}
+
+function getBoundaryUtcDate(isoDate: string): Date {
+  const [year, month, day] = isoDate.split("-").map((v) => Number(v));
+  const utcMs =
+    Date.UTC(year, month - 1, day, BUSINESS_BOUNDARY_HOUR, BUSINESS_BOUNDARY_MINUTE, 0, 0) -
+    IST_OFFSET_MINUTES * 60 * 1000;
+  return new Date(utcMs);
+}
+
+function getWeekStartMondayIso(isoDate: string): string {
+  const d = new Date(`${isoDate}T00:00:00.000Z`);
+  const mondayIndex = (d.getUTCDay() + 6) % 7;
+  return shiftIsoDate(isoDate, -mondayIndex);
+}
+
+function getFirstDayOfMonthIso(isoDate: string): string {
+  const [year, month] = isoDate.split("-").map((v) => Number(v));
+  return `${year}-${pad2(month)}-01`;
+}
+
+function getPreviousMonthFirstIso(monthStartIso: string): string {
+  const d = new Date(`${monthStartIso}T00:00:00.000Z`);
+  d.setUTCMonth(d.getUTCMonth() - 1);
+  return d.toISOString().split("T")[0];
+}
+
+function getFirstDayOfQuarterIso(isoDate: string): string {
+  const [year, month] = isoDate.split("-").map((v) => Number(v));
+  const quarterStartMonth = Math.floor((month - 1) / 3) * 3 + 1;
+  return `${year}-${pad2(quarterStartMonth)}-01`;
+}
+
+function getPreviousQuarterFirstIso(quarterStartIso: string): string {
+  const d = new Date(`${quarterStartIso}T00:00:00.000Z`);
+  d.setUTCMonth(d.getUTCMonth() - 3);
+  return d.toISOString().split("T")[0];
+}
+
+function getFirstDayOfYearIso(isoDate: string): string {
+  const year = Number(isoDate.slice(0, 4));
+  return `${year}-01-01`;
+}
+
+function getPreviousYearFirstIso(yearStartIso: string): string {
+  const year = Number(yearStartIso.slice(0, 4));
+  return `${year - 1}-01-01`;
+}
+
+function resolvePresetBusinessWindow(preset: string, now: Date): BusinessWindow {
+  const businessTodayIso = getCurrentBusinessDateIso(now);
+  let startDateIso = businessTodayIso;
+  let endDateIso = businessTodayIso;
+  let end = now;
 
   switch (preset) {
     case "today":
-      startDate = today;
+      startDateIso = businessTodayIso;
+      endDateIso = businessTodayIso;
+      end = now;
       break;
     case "yesterday":
-      startDate = new Date(today);
-      startDate.setDate(startDate.getDate() - 1);
-      endDate = startDate;
+      startDateIso = shiftIsoDate(businessTodayIso, -1);
+      endDateIso = startDateIso;
+      end = getBoundaryUtcDate(shiftIsoDate(startDateIso, 1));
       break;
     case "last_3d":
-      startDate = new Date(today);
-      startDate.setDate(startDate.getDate() - 2);
+      startDateIso = shiftIsoDate(businessTodayIso, -3);
+      endDateIso = businessTodayIso;
+      end = now;
       break;
     case "last_7d":
-      startDate = new Date(today);
-      startDate.setDate(startDate.getDate() - 6);
+      startDateIso = shiftIsoDate(businessTodayIso, -7);
+      endDateIso = businessTodayIso;
+      end = now;
       break;
     case "last_14d":
-      startDate = new Date(today);
-      startDate.setDate(startDate.getDate() - 13);
+      startDateIso = shiftIsoDate(businessTodayIso, -14);
+      endDateIso = businessTodayIso;
+      end = now;
       break;
     case "last_30d":
-      startDate = new Date(today);
-      startDate.setDate(startDate.getDate() - 29);
+      startDateIso = shiftIsoDate(businessTodayIso, -30);
+      endDateIso = businessTodayIso;
+      end = now;
       break;
     case "last_60d":
-      startDate = new Date(today);
-      startDate.setDate(startDate.getDate() - 59);
+      startDateIso = shiftIsoDate(businessTodayIso, -60);
+      endDateIso = businessTodayIso;
+      end = now;
       break;
     case "last_90d":
-      startDate = new Date(today);
-      startDate.setDate(startDate.getDate() - 89);
+      startDateIso = shiftIsoDate(businessTodayIso, -90);
+      endDateIso = businessTodayIso;
+      end = now;
       break;
     case "this_week":
-      startDate = new Date(today);
-      startDate.setDate(startDate.getDate() - startDate.getDay());
+      startDateIso = getWeekStartMondayIso(businessTodayIso);
+      endDateIso = businessTodayIso;
+      end = now;
       break;
-    case "last_week":
-      startDate = new Date(today);
-      startDate.setDate(startDate.getDate() - startDate.getDay() - 7);
-      endDate = new Date(startDate);
-      endDate.setDate(endDate.getDate() + 6);
+    case "last_week": {
+      const thisWeekStartIso = getWeekStartMondayIso(businessTodayIso);
+      startDateIso = shiftIsoDate(thisWeekStartIso, -7);
+      endDateIso = shiftIsoDate(thisWeekStartIso, -1);
+      end = getBoundaryUtcDate(thisWeekStartIso);
       break;
+    }
     case "this_month":
-      startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+      startDateIso = getFirstDayOfMonthIso(businessTodayIso);
+      endDateIso = businessTodayIso;
+      end = now;
       break;
-    case "last_month":
-      startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      endDate = new Date(today.getFullYear(), today.getMonth(), 0);
+    case "last_month": {
+      const thisMonthStartIso = getFirstDayOfMonthIso(businessTodayIso);
+      startDateIso = getPreviousMonthFirstIso(thisMonthStartIso);
+      endDateIso = shiftIsoDate(thisMonthStartIso, -1);
+      end = getBoundaryUtcDate(thisMonthStartIso);
       break;
+    }
     case "this_quarter":
-      const currentQuarter = Math.floor(today.getMonth() / 3);
-      startDate = new Date(today.getFullYear(), currentQuarter * 3, 1);
+      startDateIso = getFirstDayOfQuarterIso(businessTodayIso);
+      endDateIso = businessTodayIso;
+      end = now;
       break;
-    case "last_quarter":
-      const lastQuarter = Math.floor(today.getMonth() / 3) - 1;
-      const lastQuarterYear = lastQuarter < 0 ? today.getFullYear() - 1 : today.getFullYear();
-      const adjustedQuarter = lastQuarter < 0 ? 3 : lastQuarter;
-      startDate = new Date(lastQuarterYear, adjustedQuarter * 3, 1);
-      endDate = new Date(lastQuarterYear, adjustedQuarter * 3 + 3, 0);
+    case "last_quarter": {
+      const thisQuarterStartIso = getFirstDayOfQuarterIso(businessTodayIso);
+      startDateIso = getPreviousQuarterFirstIso(thisQuarterStartIso);
+      endDateIso = shiftIsoDate(thisQuarterStartIso, -1);
+      end = getBoundaryUtcDate(thisQuarterStartIso);
       break;
+    }
     case "this_year":
-      startDate = new Date(today.getFullYear(), 0, 1);
+      startDateIso = getFirstDayOfYearIso(businessTodayIso);
+      endDateIso = businessTodayIso;
+      end = now;
       break;
-    case "last_year":
-      startDate = new Date(today.getFullYear() - 1, 0, 1);
-      endDate = new Date(today.getFullYear() - 1, 11, 31);
+    case "last_year": {
+      const thisYearStartIso = getFirstDayOfYearIso(businessTodayIso);
+      startDateIso = getPreviousYearFirstIso(thisYearStartIso);
+      endDateIso = shiftIsoDate(thisYearStartIso, -1);
+      end = getBoundaryUtcDate(thisYearStartIso);
       break;
+    }
     case "maximum":
-      startDate = new Date("2024-01-01");
+      startDateIso = MAX_RANGE_START_ISO;
+      endDateIso = businessTodayIso;
+      end = now;
       break;
     default:
-      startDate = new Date(today);
-      startDate.setDate(startDate.getDate() - 6);
+      startDateIso = shiftIsoDate(businessTodayIso, -7);
+      endDateIso = businessTodayIso;
+      end = now;
+      break;
   }
 
-  return { startDate: formatDate(startDate), endDate: formatDate(endDate) };
+  const start = getBoundaryUtcDate(startDateIso);
+  if (end < start) {
+    end = start;
+  }
+  return { start, end, startDateIso, endDateIso };
+}
+
+function resolveCustomBusinessWindow(
+  customStartDate: string,
+  customEndDate: string | null,
+  now: Date
+): BusinessWindow {
+  let startDateIso = customStartDate.trim();
+  let endDateIso = (customEndDate || customStartDate).trim();
+
+  if (endDateIso < startDateIso) {
+    [startDateIso, endDateIso] = [endDateIso, startDateIso];
+  }
+
+  const businessTodayIso = getCurrentBusinessDateIso(now);
+  if (startDateIso > businessTodayIso) {
+    startDateIso = businessTodayIso;
+  }
+  if (endDateIso > businessTodayIso) {
+    endDateIso = businessTodayIso;
+  }
+
+  const start = getBoundaryUtcDate(startDateIso);
+  const end =
+    endDateIso === businessTodayIso
+      ? now
+      : getBoundaryUtcDate(shiftIsoDate(endDateIso, 1));
+
+  return {
+    start,
+    end: end < start ? start : end,
+    startDateIso,
+    endDateIso,
+  };
+}
+
+function parsePayUTimestamp(value: unknown): Date | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = new Date(value.replace(" ", "T") + "+05:30");
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function formatIstDateTime(date: Date): string {
+  const value = new Intl.DateTimeFormat("en-IN", {
+    timeZone: IST_TIMEZONE,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(date);
+  return `${value} IST`;
 }
 
 interface AdMetrics {
@@ -290,22 +486,30 @@ export async function GET(request: NextRequest) {
     // Get exchange rate
     const exchangeRate = customExchangeRate ? parseFloat(customExchangeRate) : await fetchExchangeRate();
 
-    // Calculate actual date range for PayU
-    let actualStartDate: string;
-    let actualEndDate: string;
-    
-    if (customStartDate && customEndDate) {
-      actualStartDate = customStartDate;
-      actualEndDate = customEndDate;
-    } else {
-      const dateRange = getDateRangeFromPreset(datePreset);
-      actualStartDate = dateRange.startDate;
-      actualEndDate = dateRange.endDate;
+    const now = new Date();
+    const customStartDateValue = isIsoDate(customStartDate) ? customStartDate : null;
+    const hasCustomRange = !!customStartDateValue;
+    if (customStartDate && !customStartDateValue) {
+      return NextResponse.json({ error: "Invalid startDate format. Use YYYY-MM-DD." }, { status: 400 });
+    }
+    if (customEndDate && !isIsoDate(customEndDate)) {
+      return NextResponse.json({ error: "Invalid endDate format. Use YYYY-MM-DD." }, { status: 400 });
     }
 
+    const businessWindow = hasCustomRange
+      ? resolveCustomBusinessWindow(customStartDateValue, customEndDate, now)
+      : resolvePresetBusinessWindow(datePreset, now);
+
+    const payuFetchStartDate = getIstDateTimeParts(businessWindow.start).dayKey;
+    const payuFetchEndDate = getIstDateTimeParts(businessWindow.end).dayKey;
+
     // Fetch PayU transactions for the date range to get actual revenue
-    console.log(`Fetching PayU transactions from ${actualStartDate} to ${actualEndDate}`);
-    const payuTransactions = await fetchPayUTransactions(actualStartDate, actualEndDate);
+    console.log(
+      `Fetching PayU transactions from ${payuFetchStartDate} to ${payuFetchEndDate} for business window ${formatIstDateTime(
+        businessWindow.start
+      )} -> ${formatIstDateTime(businessWindow.end)}`
+    );
+    const payuTransactions = await fetchPayUTransactions(payuFetchStartDate, payuFetchEndDate);
     
     // Debug: log first transaction to see field names
     if (payuTransactions.length > 0) {
@@ -316,8 +520,15 @@ export async function GET(request: NextRequest) {
       .map((txn: any) => ({
         txn,
         financial: classifyPayUEvent(txn as Record<string, unknown>),
+        timestamp: parsePayUTimestamp(txn?.addedon),
       }))
-      .filter((row) => row.financial.kind !== "ignore");
+      .filter(
+        (row) =>
+          row.financial.kind !== "ignore" &&
+          !!row.timestamp &&
+          row.timestamp >= businessWindow.start &&
+          row.timestamp <= businessWindow.end
+      );
 
     const grossRevenue = classifiedPayu
       .filter((row) => row.financial.kind === "sale")
@@ -330,13 +541,10 @@ export async function GET(request: NextRequest) {
     const totalRefunds = classifiedPayu.filter((row) => row.financial.kind === "refund").length;
     console.log(`PayU: ${totalSales} sales, ₹${totalRevenue.toFixed(2)} revenue`);
 
-    // Build date range params for Meta
-    let dateParams: string;
-    if (customStartDate && customEndDate) {
-      dateParams = `time_range={"since":"${customStartDate}","until":"${customEndDate}"}`;
-    } else {
-      dateParams = `date_preset=${datePreset}`;
-    }
+    // Build date range params for Meta (date-granular, mapped from IST business window)
+    const metaSinceDate = getIstDateTimeParts(businessWindow.start).dayKey;
+    const metaUntilDate = getIstDateTimeParts(businessWindow.end).dayKey;
+    const dateParams = `time_range={"since":"${metaSinceDate}","until":"${metaUntilDate}"}`;
 
     // Fields to fetch for insights
     const insightFields = "spend,impressions,clicks,cpc,cpm,ctr,reach,actions,cost_per_action_type,purchase_roas,website_purchase_roas";
@@ -544,8 +752,18 @@ export async function GET(request: NextRequest) {
       configured: true,
       exchangeRate,
       datePreset,
-      dateRange: { start: actualStartDate, end: actualEndDate },
-      customDateRange: customStartDate && customEndDate ? { start: customStartDate, end: customEndDate } : null,
+      dateRange: {
+        start: formatIstDateTime(businessWindow.start),
+        end: formatIstDateTime(businessWindow.end),
+      },
+      businessDateRange: {
+        start: businessWindow.startDateIso,
+        end: businessWindow.endDateIso,
+      },
+      customDateRange: hasCustomRange
+        ? { start: businessWindow.startDateIso, end: businessWindow.endDateIso }
+        : null,
+      businessRule: "11:30 AM IST business-day boundary",
       campaigns,
       // Revenue data from PayU
       revenue: {
