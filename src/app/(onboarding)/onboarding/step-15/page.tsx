@@ -49,7 +49,7 @@ export default function Step15Page() {
   const { triggerLight } = useHaptic();
   
   const checkPaymentStateByEmail = async (emailToCheck: string): Promise<{
-    hasPaidPayment: boolean;
+    hasPaidBundlePayment: boolean;
     hasRegisteredAccount: boolean;
     latestBundleId: string | null;
   }> => {
@@ -63,18 +63,26 @@ export default function Step15Page() {
       );
 
       if (!response.ok) {
-        return { hasPaidPayment: false, hasRegisteredAccount: false, latestBundleId: null };
+        return {
+          hasPaidBundlePayment: false,
+          hasRegisteredAccount: false,
+          latestBundleId: null,
+        };
       }
 
       const data = await response.json();
       return {
-        hasPaidPayment: !!data?.hasPaidPayment,
+        hasPaidBundlePayment: !!data?.hasPaidBundlePayment,
         hasRegisteredAccount: !!data?.hasRegisteredAccount,
         latestBundleId: data?.latestBundleId || null,
       };
     } catch (err) {
       console.error("Error checking payment state:", err);
-      return { hasPaidPayment: false, hasRegisteredAccount: false, latestBundleId: null };
+      return {
+        hasPaidBundlePayment: false,
+        hasRegisteredAccount: false,
+        latestBundleId: null,
+      };
     }
   };
 
@@ -103,7 +111,7 @@ export default function Step15Page() {
 
     // Recovery path: if user already paid earlier, skip repurchase flow.
     const paymentState = await checkPaymentStateByEmail(trimmed);
-    if (paymentState.hasPaidPayment) {
+    if (paymentState.hasPaidBundlePayment) {
       localStorage.setItem("astrorekha_payment_completed", "true");
       if (paymentState.latestBundleId) {
         localStorage.setItem("astrorekha_bundle_id", paymentState.latestBundleId);
@@ -117,8 +125,11 @@ export default function Step15Page() {
       return;
     }
     
-    // Navigate to next step immediately
-    router.push("/onboarding/step-17");
+    // Navigate to paywall immediately (skip legacy redirect spinner step).
+    const storedFlow = localStorage.getItem("astrorekha_onboarding_flow");
+    const storedVariant = localStorage.getItem("astrorekha_layout_variant");
+    const shouldUseLayoutB = storedFlow === "flow-b" && storedVariant === "B";
+    router.push(shouldUseLayoutB ? "/onboarding/bundle-pricing-b" : "/onboarding/bundle-pricing");
     
     // Save lead data in background (non-blocking)
     const userId = generateUserId();

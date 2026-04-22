@@ -2,10 +2,30 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 // Legacy subscription trial page (variant B) — redirect to bundle pricing
 export default function AStep17Page() {
   const router = useRouter();
-  useEffect(() => { router.replace("/onboarding/bundle-pricing"); }, [router]);
-  return null;
+
+  useEffect(() => {
+    router.replace("/onboarding/bundle-pricing-b");
+
+    const timeoutId = window.setTimeout(() => {
+      window.location.replace("/onboarding/bundle-pricing-b");
+    }, 2500);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [router]);
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 px-6">
+      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      <p className="text-sm text-muted-foreground">Loading checkout...</p>
+      <Button size="sm" variant="outline" onClick={() => window.location.replace("/onboarding/bundle-pricing-b")}>
+        Continue to Paywall
+      </Button>
+    </div>
+  );
 }

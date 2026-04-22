@@ -5,6 +5,7 @@ import { reconcilePaidPaymentsForEmail } from "@/lib/payment-reconciliation";
 export const dynamic = "force-dynamic";
 
 const SUCCESS_STATUSES = ["paid", "success", "captured"];
+const BUNDLE_PAYMENT_TYPES = ["bundle", "bundle_payment"];
 
 export async function GET(request: NextRequest) {
   try {
@@ -98,6 +99,10 @@ export async function GET(request: NextRequest) {
     const pendingPayments = Array.from(pendingMap.values());
 
     const hasPaidPayment = paidPayments.length > 0;
+    const hasPaidBundlePayment = paidPayments.some((payment: any) => {
+      const type = (payment?.type || "").toLowerCase().trim();
+      return BUNDLE_PAYMENT_TYPES.includes(type);
+    });
     const hasPendingPayment = pendingPayments.length > 0;
 
     let latestBundleId: string | null = null;
@@ -128,6 +133,7 @@ export async function GET(request: NextRequest) {
       email: email || null,
       requestedUserId: userId || null,
       hasPaidPayment,
+      hasPaidBundlePayment,
       hasPendingPayment,
       hasRegisteredAccount: !!user?.password_hash,
       latestBundleId,

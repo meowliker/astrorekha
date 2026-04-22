@@ -40,20 +40,66 @@ export default function BundleUpsellBPage() {
   );
 
   useEffect(() => {
-    localStorage.setItem("astrorekha_onboarding_flow", "flow-b");
-    localStorage.setItem("astrorekha_layout_variant", "B");
+    let isCancelled = false;
 
-    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
-    const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
+    const run = async () => {
+      localStorage.setItem("astrorekha_onboarding_flow", "flow-b");
+      localStorage.setItem("astrorekha_layout_variant", "B");
 
-    if (hasCompletedRegistration) {
-      router.replace("/dashboard");
-      return;
-    }
+      const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
+      const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
 
-    if (!hasCompletedPayment) {
-      router.replace("/onboarding/bundle-pricing-b");
-    }
+      if (hasCompletedRegistration) {
+        router.replace("/dashboard");
+        return;
+      }
+
+      if (!hasCompletedPayment) {
+        router.replace("/onboarding/bundle-pricing-b");
+        return;
+      }
+
+      // Validate local payment flag with backend state.
+      const storedEmail = (localStorage.getItem("astrorekha_email") || "").trim();
+      const storedUserId = (localStorage.getItem("astrorekha_user_id") || "").trim();
+      if (!storedEmail && !storedUserId) {
+        localStorage.removeItem("astrorekha_payment_completed");
+        localStorage.removeItem("astrorekha_bundle_id");
+        router.replace("/onboarding/bundle-pricing-b");
+        return;
+      }
+
+      try {
+        const query = new URLSearchParams();
+        if (storedEmail) query.set("email", storedEmail);
+        if (storedUserId) query.set("userId", storedUserId);
+
+        const response = await fetch(`/api/user/payment-state?${query.toString()}`, {
+          cache: "no-store",
+        });
+        const data = response.ok ? await response.json() : null;
+        if (data?.hasPaidBundlePayment) {
+          if (data?.latestBundleId) {
+            localStorage.setItem("astrorekha_bundle_id", data.latestBundleId);
+          }
+          return;
+        }
+      } catch (error) {
+        console.error("Failed to validate bundle payment state:", error);
+      }
+
+      if (!isCancelled) {
+        localStorage.removeItem("astrorekha_payment_completed");
+        localStorage.removeItem("astrorekha_bundle_id");
+        router.replace("/onboarding/bundle-pricing-b");
+      }
+    };
+
+    run();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [router]);
 
   const toggleOffer = (id: string) => {

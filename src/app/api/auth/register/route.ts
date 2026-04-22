@@ -3,6 +3,33 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import bcrypt from "bcryptjs";
 import { reconcilePaidPaymentsForEmail } from "@/lib/payment-reconciliation";
 
+type MigratedData = {
+  coins?: number;
+  unlocked_features?: unknown;
+  onboarding_flow?: string | null;
+  purchase_type?: string | null;
+  bundle_purchased?: string | null;
+  payment_status?: string | null;
+  razorpay_payment_id?: string | null;
+  razorpay_order_id?: string | null;
+  payu_payment_id?: string | null;
+  payu_txn_id?: string | null;
+  scans_used?: number | null;
+  scans_allowed?: number | null;
+  birth_chart_timer_active?: boolean | null;
+  birth_chart_timer_started_at?: string | null;
+};
+
+function validatePassword(password: string): string | null {
+  if (password.length < 8) return "Password must be at least 8 characters.";
+  if (!/[A-Z]/.test(password)) return "Password must contain at least one uppercase letter.";
+  if (!/[a-z]/.test(password)) return "Password must contain at least one lowercase letter.";
+  if (!/[0-9]/.test(password)) return "Password must contain at least one number.";
+  if (!/[!@#$%^&*(),.?\":{}|<>]/.test(password))
+    return "Password must contain at least one special character.";
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { email, password, anonId } = await request.json();
@@ -12,6 +39,14 @@ export async function POST(request: NextRequest) {
     if (!normalizedEmail || !password) {
       return NextResponse.json(
         { success: false, error: "Email and password are required" },
+        { status: 400 }
+      );
+    }
+
+    const passwordValidationError = validatePassword(String(password));
+    if (passwordValidationError) {
+      return NextResponse.json(
+        { success: false, error: "auth/weak-password", message: passwordValidationError },
         { status: 400 }
       );
     }
@@ -44,7 +79,7 @@ export async function POST(request: NextRequest) {
     const now = new Date().toISOString();
 
     // If there's an anonymous user, migrate their data
-    let migratedData: Record<string, any> = {};
+    let migratedData: MigratedData = {};
 
     if (anonId) {
       const { data: anonUser } = await supabase
@@ -87,7 +122,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create user record
-    const userData: Record<string, any> = {
+    const userData: Record<string, unknown> = {
       id: uid,
       email: normalizedEmail,
       password_hash: passwordHash,
@@ -188,10 +223,16 @@ export async function POST(request: NextRequest) {
         unlockedFeatures: migratedData.unlocked_features || {},
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === "string"
+          ? error
+          : "Failed to register";
     console.error("Register error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to register" },
+      { success: false, error: message },
       { status: 500 }
     );
   }

@@ -223,9 +223,11 @@ export default function SoulmateSketchPage() {
       }
       setStatus(json.sketch || { status: "complete" });
       await fetchStatus();
-    } catch (generateError: any) {
+    } catch (generateError: unknown) {
       console.error("[soulmate-sketch] generate failed", generateError);
-      setError(generateError?.message || "Unable to generate sketch right now.");
+      const message =
+        generateError instanceof Error ? generateError.message : "Unable to generate sketch right now.";
+      setError(message);
     } finally {
       setIsGenerating(false);
     }
@@ -282,8 +284,22 @@ export default function SoulmateSketchPage() {
 
           {status?.status === "generating" || isGenerating ? (
             <div className="mt-6 rounded-2xl border border-primary/30 bg-primary/10 p-6 text-center">
-              <Loader2 className="mx-auto h-7 w-7 animate-spin text-primary" />
-              <p className="mt-3 text-sm text-white">Generating your soulmate portrait...</p>
+              <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+              <p className="mt-3 text-base font-medium text-white">Finding your soulmate...</p>
+              <p className="mt-2 text-sm text-white/75">
+                Your portrait is being prepared. Please check back in some time.
+              </p>
+              <p className="mt-2 text-xs text-white/60">
+                You can leave this screen and return later. We keep checking automatically.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-4 border-white/20 bg-white/5 text-white hover:bg-white/10"
+                onClick={() => fetchStatus().catch(() => {})}
+              >
+                Check Status Now
+              </Button>
             </div>
           ) : imageUrl ? (
             <motion.div

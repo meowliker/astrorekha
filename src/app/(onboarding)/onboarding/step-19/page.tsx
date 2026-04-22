@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { Check, Eye, EyeOff, ThumbsUp, Loader2 } from "lucide-react";
 import { useOnboardingStore } from "@/lib/onboarding-store";
-import { saveUserProfile, calculateZodiacSign, generateUserId } from "@/lib/user-profile";
+import { saveUserProfile, calculateZodiacSign } from "@/lib/user-profile";
 import { supabase } from "@/lib/supabase";
 import { useHaptic } from "@/hooks/useHaptic";
 import { pixelEvents } from "@/lib/pixel-events";
@@ -20,23 +20,26 @@ const progressSteps = [
   { label: "Access to the app", completed: false },
 ];
 
-const validatePassword = (password: string): { valid: boolean; message: string } => {
-  if (password.length < 8) {
-    return { valid: false, message: "Password must be at least 8 characters" };
-  }
-  if (!/[A-Z]/.test(password)) {
-    return { valid: false, message: "Password must contain at least one uppercase letter" };
-  }
-  if (!/[a-z]/.test(password)) {
-    return { valid: false, message: "Password must contain at least one lowercase letter" };
-  }
-  if (!/[0-9]/.test(password)) {
-    return { valid: false, message: "Password must contain at least one number" };
-  }
-  if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
-    return { valid: false, message: "Password must contain at least one special character" };
-  }
-  return { valid: true, message: "" };
+const getPasswordRuleState = (password: string) => {
+  const rules = {
+    minLength: password.length >= 8,
+    uppercase: /[A-Z]/.test(password),
+    lowercase: /[a-z]/.test(password),
+    number: /[0-9]/.test(password),
+    special: /[!@#$%^&*(),.?":{}|<>]/.test(password),
+  };
+  const valid = Object.values(rules).every(Boolean);
+  return { valid, rules };
+};
+
+const getPasswordValidationMessage = (password: string): string => {
+  const { rules } = getPasswordRuleState(password);
+  if (!rules.minLength) return "Password must be at least 8 characters.";
+  if (!rules.uppercase) return "Add at least one uppercase letter (A-Z).";
+  if (!rules.lowercase) return "Add at least one lowercase letter (a-z).";
+  if (!rules.number) return "Add at least one number (0-9).";
+  if (!rules.special) return "Add at least one special character (!@#$...).";
+  return "";
 };
 
 function Step19Content() {
@@ -54,12 +57,17 @@ function Step19Content() {
 
   const onboardingData = useOnboardingStore();
   const searchParams = useSearchParams();
+  const passwordRuleState = getPasswordRuleState(password);
+  const confirmPasswordMismatch =
+    confirmPassword.length > 0 && password.length > 0 && password !== confirmPassword;
 
   // Route protection: Check if user has completed payment
   useEffect(() => {
     const run = async () => {
-      const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
       const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
+      const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
+      const storedEmail = (localStorage.getItem("astrorekha_email") || "").trim();
+      const storedUserId = (localStorage.getItem("astrorekha_user_id") || "").trim();
 
       // If user has completed registration, redirect to app
       if (hasCompletedRegistration) {
@@ -67,21 +75,11 @@ function Step19Content() {
         return;
       }
 
-      // Fast path from local state
-      if (hasCompletedPayment) {
-        setIsPaymentEmailLocked(true);
-        setIsAuthorized(true);
-        return;
-      }
-
-      // Recovery path: user may have paid on another attempt/device but never finished registration.
-      const storedEmail = localStorage.getItem("astrorekha_email");
-      const storedUserId = localStorage.getItem("astrorekha_user_id");
-      if (storedEmail) {
+      // Always validate bundle-payment state from backend to avoid stale local flags.
+      if (storedEmail || storedUserId) {
         try {
-          const query = new URLSearchParams({
-            email: storedEmail,
-          });
+          const query = new URLSearchParams();
+          if (storedEmail) query.set("email", storedEmail);
           if (storedUserId) {
             query.set("userId", storedUserId);
           }
@@ -91,7 +89,7 @@ function Step19Content() {
           });
           if (response.ok) {
             const data = await response.json();
-            if (data?.hasPaidPayment) {
+            if (data?.hasPaidBundlePayment) {
               localStorage.setItem("astrorekha_payment_completed", "true");
               if (data?.latestBundleId) {
                 localStorage.setItem("astrorekha_bundle_id", data.latestBundleId);
@@ -104,6 +102,12 @@ function Step19Content() {
         } catch (error) {
           console.error("Payment state restore failed:", error);
         }
+      }
+
+      if (hasCompletedPayment) {
+        // Local flag is stale: clear it so user doesn't get incorrectly unlocked.
+        localStorage.removeItem("astrorekha_payment_completed");
+        localStorage.removeItem("astrorekha_bundle_id");
       }
 
       // No valid paid state found.
@@ -158,13 +162,28 @@ function Step19Content() {
       return;
     }
 
-    if (!email || !password || password !== confirmPassword) {
+    if (!email.trim()) {
+      setPasswordError("Please enter your email.");
       return;
     }
 
-    const passwordValidation = validatePassword(password);
-    if (!passwordValidation.valid) {
-      setPasswordError(passwordValidation.message);
+    if (!password) {
+      setPasswordError("Please create a password.");
+      return;
+    }
+
+    if (!confirmPassword) {
+      setPasswordError("Please confirm your password.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setPasswordError("Passwords do not match.");
+      return;
+    }
+
+    if (!passwordRuleState.valid) {
+      setPasswordError(getPasswordValidationMessage(password));
       return;
     }
     setPasswordError(null);
@@ -298,9 +317,19 @@ function Step19Content() {
             const chartResult = await chartRes.json();
             if (chartResult.success && chartResult.data) {
               const cacheKey = `chart_${birthDate}_${birthTime}_${onboardingData.birthPlace || "unknown"}`.replace(/[^a-zA-Z0-9_]/g, "_") + "_vedic";
+              const nowIso = new Date().toISOString();
               await supabase.from("birth_charts").upsert(
-                { id: cacheKey, data: { ...chartResult.data, cachedAt: new Date().toISOString() }, cached_at: new Date().toISOString() },
+                { id: cacheKey, data: { ...chartResult.data, cachedAt: nowIso }, cached_at: nowIso },
                 { onConflict: "id" }
+              );
+              await supabase.from("birth_chart_user_links").upsert(
+                {
+                  user_id: uid,
+                  birth_chart_id: cacheKey,
+                  updated_at: nowIso,
+                  last_accessed_at: nowIso,
+                },
+                { onConflict: "user_id,birth_chart_id" }
               );
             }
           } catch (err) {
@@ -308,9 +337,10 @@ function Step19Content() {
           }
         })();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Sign up failed:", err);
-      setPasswordError(err.message || "Registration failed. Please try again.");
+      const message = err instanceof Error ? err.message : "Registration failed. Please try again.";
+      setPasswordError(message);
     } finally {
       setIsLoading(false);
     }
@@ -480,6 +510,27 @@ function Step19Content() {
             Password must be 8+ characters with uppercase, lowercase, number, and special character.
           </motion.p>
 
+          <div className="space-y-1 text-xs text-muted-foreground">
+            <p className={passwordRuleState.rules.minLength ? "text-emerald-400" : ""}>
+              {passwordRuleState.rules.minLength ? "✓" : "•"} Minimum 8 characters
+            </p>
+            <p className={passwordRuleState.rules.uppercase ? "text-emerald-400" : ""}>
+              {passwordRuleState.rules.uppercase ? "✓" : "•"} One uppercase letter
+            </p>
+            <p className={passwordRuleState.rules.lowercase ? "text-emerald-400" : ""}>
+              {passwordRuleState.rules.lowercase ? "✓" : "•"} One lowercase letter
+            </p>
+            <p className={passwordRuleState.rules.number ? "text-emerald-400" : ""}>
+              {passwordRuleState.rules.number ? "✓" : "•"} One number
+            </p>
+            <p className={passwordRuleState.rules.special ? "text-emerald-400" : ""}>
+              {passwordRuleState.rules.special ? "✓" : "•"} One special character
+            </p>
+            {confirmPasswordMismatch ? (
+              <p className="text-red-400">✗ Passwords do not match</p>
+            ) : null}
+          </div>
+
           {passwordError && (
             <motion.p
               initial={{ opacity: 0 }}
@@ -494,14 +545,16 @@ function Step19Content() {
 
       {/* Sign up button */}
       <div className="px-6 pb-24">
-        <Button
-          onClick={handleSignUp}
-          disabled={!email || !password || password !== confirmPassword || isLoading}
-          className="w-full h-14 text-lg font-semibold"
-          size="lg"
-        >
-          {isLoading ? "Creating account..." : "Sign up with Email"}
-        </Button>
+        <div className="mx-auto w-full max-w-sm">
+          <Button
+            onClick={handleSignUp}
+            disabled={!email || !password || !confirmPassword || isLoading}
+            className="w-full h-14 text-lg font-semibold"
+            size="lg"
+          >
+            {isLoading ? "Creating account..." : "Sign up with Email"}
+          </Button>
+        </div>
       </div>
 
       {/* Success Modal */}
