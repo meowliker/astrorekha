@@ -61,32 +61,70 @@ export default function Step20Page() {
 
   // Route protection: Check if user has completed registration
   useEffect(() => {
-    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
-    const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
-    const flow = localStorage.getItem("astrorekha_onboarding_flow");
-    const bundle = localStorage.getItem("astrorekha_bundle_id");
-    
-    setIsFlowB(flow === "flow-b");
-    setBundleId(bundle);
-    
-    // Must have completed both payment and registration to access this page
-    if (hasCompletedPayment && hasCompletedRegistration) {
-      setIsAuthorized(true);
-    } else if (hasCompletedPayment && !hasCompletedRegistration) {
-      // Paid but not registered - redirect to registration
-      router.replace("/onboarding/step-19");
-      return;
-    } else {
-      // No payment - redirect to payment page
-      const onboardingFlow = localStorage.getItem("astrorekha_onboarding_flow");
-      if (onboardingFlow === "flow-b") {
-        const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
-        router.replace(layoutVariant === "B" ? "/onboarding/bundle-pricing-b" : "/onboarding/bundle-pricing");
-      } else {
-        router.replace("/onboarding/step-17");
+    const run = async () => {
+      const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
+      const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
+      const flow = localStorage.getItem("astrorekha_onboarding_flow");
+      const bundle = localStorage.getItem("astrorekha_bundle_id");
+      const storedEmail = (localStorage.getItem("astrorekha_email") || "").trim();
+      const storedUserId = (localStorage.getItem("astrorekha_user_id") || "").trim();
+
+      setIsFlowB(flow === "flow-b");
+      setBundleId(bundle);
+
+      if (!hasCompletedRegistration) {
+        if (hasCompletedPayment) {
+          router.replace("/onboarding/step-19");
+          return;
+        }
+
+        const onboardingFlow = localStorage.getItem("astrorekha_onboarding_flow");
+        if (onboardingFlow === "flow-b") {
+          const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
+          router.replace(layoutVariant === "B" ? "/onboarding/bundle-pricing-b" : "/onboarding/bundle-pricing");
+        } else {
+          router.replace("/onboarding/step-17");
+        }
+        return;
       }
-      return;
-    }
+
+      // Normal fast path.
+      if (hasCompletedPayment) {
+        setIsAuthorized(true);
+        return;
+      }
+
+      // Recovery path for cases where payment succeeded but local flag is missing.
+      if (storedEmail || storedUserId) {
+        try {
+          const query = new URLSearchParams();
+          if (storedEmail) query.set("email", storedEmail);
+          if (storedUserId) query.set("userId", storedUserId);
+
+          const response = await fetch(`/api/user/payment-state?${query.toString()}`, {
+            cache: "no-store",
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (data?.hasPaidBundlePayment || data?.hasPaidPayment) {
+              localStorage.setItem("astrorekha_payment_completed", "true");
+              if (data?.latestBundleId) {
+                localStorage.setItem("astrorekha_bundle_id", data.latestBundleId);
+                setBundleId(data.latestBundleId);
+              }
+              setIsAuthorized(true);
+              return;
+            }
+          }
+        } catch (error) {
+          console.error("Failed to restore payment state on step-20:", error);
+        }
+      }
+
+      router.replace("/onboarding/step-19");
+    };
+
+    run();
   }, [router]);
 
   // Get features based on flow
@@ -174,7 +212,7 @@ export default function Step20Page() {
           transition={{ delay: 0.3 }}
           className="text-2xl md:text-3xl font-bold text-center mb-2"
         >
-          You're All Set!
+          You&apos;re All Set!
         </motion.h1>
 
         <motion.p

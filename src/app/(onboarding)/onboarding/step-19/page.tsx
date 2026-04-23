@@ -75,7 +75,14 @@ function Step19Content() {
         return;
       }
 
-      // Always validate bundle-payment state from backend to avoid stale local flags.
+      // Fast path: if local paid flag is present with an identifier, allow registration flow.
+      if (hasCompletedPayment && (storedEmail || storedUserId)) {
+        setIsPaymentEmailLocked(true);
+        setIsAuthorized(true);
+        return;
+      }
+
+      // Recovery path: user may have paid on another attempt/device but local flag is missing.
       if (storedEmail || storedUserId) {
         try {
           const query = new URLSearchParams();
@@ -89,7 +96,7 @@ function Step19Content() {
           });
           if (response.ok) {
             const data = await response.json();
-            if (data?.hasPaidBundlePayment) {
+            if (data?.hasPaidBundlePayment || data?.hasPaidPayment) {
               localStorage.setItem("astrorekha_payment_completed", "true");
               if (data?.latestBundleId) {
                 localStorage.setItem("astrorekha_bundle_id", data.latestBundleId);
@@ -104,13 +111,11 @@ function Step19Content() {
         }
       }
 
+      // No valid paid state found.
       if (hasCompletedPayment) {
-        // Local flag is stale: clear it so user doesn't get incorrectly unlocked.
         localStorage.removeItem("astrorekha_payment_completed");
         localStorage.removeItem("astrorekha_bundle_id");
       }
-
-      // No valid paid state found.
       router.replace("/onboarding/step-17");
     };
 
