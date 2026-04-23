@@ -24,50 +24,19 @@ export default function OnboardingPage() {
 
   // Route protection: Check user status and redirect accordingly
   useEffect(() => {
-    const run = async () => {
-      const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
-      const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
-      const onboardingFlow = localStorage.getItem("astrorekha_onboarding_flow");
-      const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
+    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
+    const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
+    const onboardingFlow = localStorage.getItem("astrorekha_onboarding_flow");
+    const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
 
-      if (hasCompletedRegistration) {
-        router.replace("/dashboard");
-        return;
-      }
-
-      if (!hasCompletedPayment) return;
-
-      const storedEmail = (localStorage.getItem("astrorekha_email") || "").trim();
-      const storedUserId = (localStorage.getItem("astrorekha_user_id") || "").trim();
-      if (!storedEmail && !storedUserId) {
-        localStorage.removeItem("astrorekha_payment_completed");
-        localStorage.removeItem("astrorekha_bundle_id");
-        return;
-      }
-
-      try {
-        const query = new URLSearchParams();
-        if (storedEmail) query.set("email", storedEmail);
-        if (storedUserId) query.set("userId", storedUserId);
-
-        const response = await fetch(`/api/user/payment-state?${query.toString()}`, {
-          cache: "no-store",
-        });
-        const data = response.ok ? await response.json() : null;
-        if (data?.hasPaidBundlePayment) {
-          const shouldUseLayoutB = onboardingFlow === "flow-b" || layoutVariant === "B";
-          router.replace(shouldUseLayoutB ? "/onboarding/bundle-upsell-b" : "/onboarding/bundle-upsell");
-          return;
-        }
-      } catch (error) {
-        console.error("Failed to validate bundle payment state:", error);
-      }
-
-      localStorage.removeItem("astrorekha_payment_completed");
-      localStorage.removeItem("astrorekha_bundle_id");
-    };
-
-    run();
+    if (hasCompletedRegistration) {
+      router.replace("/dashboard");
+      return;
+    } else if (hasCompletedPayment) {
+      const shouldUseLayoutB = onboardingFlow === "flow-b" || layoutVariant === "B";
+      router.replace(shouldUseLayoutB ? "/onboarding/bundle-upsell-b" : "/onboarding/bundle-upsell");
+      return;
+    }
   }, [router]);
 
   const handleGenderSelect = (selectedGender: Gender) => {

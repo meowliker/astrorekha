@@ -236,50 +236,19 @@ export default function BundlePricingPage() {
       setSoulmatePreviewImage("/female.png");
     }
     
-    // Route protection: local flag must be backed by server-confirmed paid bundle.
+    // Route protection: Check if user has already completed payment
+    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
     const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
+    
     if (hasCompletedRegistration) {
       router.replace("/dashboard");
       return;
+    } else if (hasCompletedPayment) {
+      const shouldUseLayoutB = storedFlow === "flow-b" && resolvedVariant === "B";
+      router.replace(shouldUseLayoutB ? "/onboarding/bundle-upsell-b" : "/onboarding/bundle-upsell");
+      return;
     }
-
-    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
-    if (hasCompletedPayment) {
-      const storedEmail = (localStorage.getItem("astrorekha_email") || "").trim();
-      const storedUserId = (localStorage.getItem("astrorekha_user_id") || "").trim();
-
-      if (storedEmail || storedUserId) {
-        const query = new URLSearchParams();
-        if (storedEmail) query.set("email", storedEmail);
-        if (storedUserId) query.set("userId", storedUserId);
-
-        fetch(`/api/user/payment-state?${query.toString()}`, { cache: "no-store" })
-          .then((response) => (response.ok ? response.json() : null))
-          .then((data) => {
-            if (data?.hasPaidBundlePayment) {
-              if (data?.latestBundleId) {
-                localStorage.setItem("astrorekha_bundle_id", data.latestBundleId);
-              }
-              const shouldUseLayoutB = storedFlow === "flow-b" && resolvedVariant === "B";
-              router.replace(shouldUseLayoutB ? "/onboarding/bundle-upsell-b" : "/onboarding/bundle-upsell");
-              return;
-            }
-
-            // Stale local flag – clear and keep user on paywall.
-            localStorage.removeItem("astrorekha_payment_completed");
-            localStorage.removeItem("astrorekha_bundle_id");
-          })
-          .catch(() => {
-            // On network failure, keep user on paywall rather than accidentally unlocking upsell.
-            localStorage.removeItem("astrorekha_payment_completed");
-            localStorage.removeItem("astrorekha_bundle_id");
-          });
-      } else {
-        localStorage.removeItem("astrorekha_payment_completed");
-        localStorage.removeItem("astrorekha_bundle_id");
-      }
-    }
-
+    
     return () => window.removeEventListener("pageshow", handlePageShow);
   }, [router]);
 
