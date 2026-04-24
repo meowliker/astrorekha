@@ -1,4 +1,5 @@
 import { anthropic } from "@/lib/anthropic";
+import { toPartnerInitial } from "@/lib/future-partner-format";
 
 export interface FuturePartnerReportData {
   partnerName: string;
@@ -99,6 +100,14 @@ function parseReportJson(raw: string): FuturePartnerReportData {
     throw new Error("Could not parse future partner report JSON");
   }
 
+  const requireText = (value: unknown, fieldName: string): string => {
+    const normalized = String(value || "").trim();
+    if (!normalized) {
+      throw new Error(`Missing required future partner report field: ${fieldName}`);
+    }
+    return normalized;
+  };
+
   const strengths = Array.isArray(parsed.strengths)
     ? parsed.strengths.map((v: unknown) => String(v).trim()).filter(Boolean)
     : [];
@@ -112,25 +121,33 @@ function parseReportJson(raw: string): FuturePartnerReportData {
     ? Math.max(0, Math.min(100, Math.round(scoreRaw)))
     : 72;
 
-  const partnerName = String(parsed.partnerName || "").trim();
+  const partnerName = toPartnerInitial(requireText(parsed.partnerName, "partnerName"));
+  const marriageYear = requireText(parsed.marriageYear, "marriageYear");
+  const partnerAgeAtMarriage = requireText(parsed.partnerAgeAtMarriage, "partnerAgeAtMarriage");
+  const relationshipTheme = requireText(parsed.relationshipTheme, "relationshipTheme");
+  const compatibilitySummary = requireText(parsed.compatibilitySummary, "compatibilitySummary");
+  const marriageOutlook = requireText(parsed.marriageOutlook, "marriageOutlook");
+  const guidance = requireText(parsed.guidance, "guidance");
+
+  if (strengths.length === 0) {
+    throw new Error("Missing required future partner report field: strengths");
+  }
+
+  if (growthAreas.length === 0) {
+    throw new Error("Missing required future partner report field: growthAreas");
+  }
 
   return {
-    partnerName: partnerName || "Aarav",
-    marriageYear: String(parsed.marriageYear || "2028").trim() || "2028",
-    partnerAgeAtMarriage: String(parsed.partnerAgeAtMarriage || "27").trim() || "27",
-    relationshipTheme: String(parsed.relationshipTheme || "Steady emotional growth").trim() || "Steady emotional growth",
+    partnerName,
+    marriageYear,
+    partnerAgeAtMarriage,
+    relationshipTheme,
     compatibilityScore,
-    compatibilitySummary:
-      String(parsed.compatibilitySummary || "Your match has strong long-term compatibility potential.").trim() ||
-      "Your match has strong long-term compatibility potential.",
-    marriageOutlook:
-      String(parsed.marriageOutlook || "The marriage outlook is stable with good emotional understanding.").trim() ||
-      "The marriage outlook is stable with good emotional understanding.",
-    strengths: strengths.length > 0 ? strengths.slice(0, 4) : ["Mutual respect", "Shared goals"],
-    growthAreas: growthAreas.length > 0 ? growthAreas.slice(0, 4) : ["Communication during stress"],
-    guidance:
-      String(parsed.guidance || "Be consistent, communicate clearly, and move at a stable pace for lasting harmony.").trim() ||
-      "Be consistent, communicate clearly, and move at a stable pace for lasting harmony.",
+    compatibilitySummary,
+    marriageOutlook,
+    strengths: strengths.slice(0, 4),
+    growthAreas: growthAreas.slice(0, 4),
+    guidance,
   };
 }
 
@@ -193,7 +210,7 @@ Strict requirements:
 1. Return VALID JSON only. No markdown, no explanation.
 2. Output keys exactly:
 {
-  "partnerName": "first name only (single given name), no initials, no surname",
+  "partnerName": "single uppercase initial only, formatted like A.",
   "marriageYear": "YYYY",
   "partnerAgeAtMarriage": "number",
   "relationshipTheme": "short phrase",
@@ -204,7 +221,7 @@ Strict requirements:
   "growthAreas": ["point", "point"],
   "guidance": "2-3 sentences"
 }
-3. Use plausible modern Indian first names only (single word).
+3. Use only one plausible initial for the future partner name, formatted like A.
 4. Keep tone warm and practical. This is an entertainment-style astrological insight.
 5. Do not include uncertainty language like "cannot predict".`;
 

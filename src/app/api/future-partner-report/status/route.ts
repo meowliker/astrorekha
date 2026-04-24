@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { toPartnerInitial } from "@/lib/future-partner-format";
 
 function getSessionUserId(request: NextRequest): string | null {
   const accessCookie = request.cookies.get("ar_access")?.value;
@@ -41,9 +42,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ status: "not_started" });
     }
 
+    const report =
+      data.report_data && typeof data.report_data === "object"
+        ? {
+            ...data.report_data,
+            partnerName: toPartnerInitial((data.report_data as Record<string, unknown>).partnerName),
+          }
+        : data.report_data || null;
+
     return NextResponse.json({
       status: data.status,
-      report: data.report_data || null,
+      report,
       generated_at: data.generated_at || null,
       updated_at: data.updated_at || null,
     });
