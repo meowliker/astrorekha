@@ -58,6 +58,7 @@ interface ProfitSheetRow {
   profitPercent?: number; // Net Revenue / Revenue * 100
   roas: number;           // Revenue / Ads Cost INR (if ads cost > 0)
   transactionCount: number;
+  bundlePurchases: number;
 }
 
 // Meta Ads Breakdown interfaces
@@ -98,12 +99,25 @@ interface MetaBreakdownData {
   campaigns: MetaCampaignData[];
   revenue: {
     totalRevenue: number;
+    grossRevenue?: number;
+    refundAmount?: number;
     totalSales: number;
+    totalRefunds?: number;
     gst: number;
     netRevenue: number;
     totalSpendINR: number;
     profit: number;
     roas: number;
+  };
+  sourceBreakdown?: {
+    firstPartySales: number;
+    metaPurchases: number;
+    organicOrUnattributedSales: number;
+  };
+  attribution?: {
+    campaignAttributionSource: string;
+    firstPartyCampaignAttributionAvailable: boolean;
+    note: string;
   };
   totals: {
     spend: number;
@@ -2010,8 +2024,19 @@ function ProfitSheetTab({
       adsCostINR: acc.adsCostINR + row.adsCostINR,
       netRevenue: acc.netRevenue + row.netRevenue,
       transactionCount: acc.transactionCount + row.transactionCount,
+      bundlePurchases: acc.bundlePurchases + row.bundlePurchases,
     }),
-    { revenue: 0, grossRevenue: 0, refundAmount: 0, gst: 0, adsCostUSD: 0, adsCostINR: 0, netRevenue: 0, transactionCount: 0 }
+    {
+      revenue: 0,
+      grossRevenue: 0,
+      refundAmount: 0,
+      gst: 0,
+      adsCostUSD: 0,
+      adsCostINR: 0,
+      netRevenue: 0,
+      transactionCount: 0,
+      bundlePurchases: 0,
+    }
   );
   const overallRoas = totals.adsCostINR > 0 ? totals.revenue / totals.adsCostINR : 0;
   const overallProfitPercent = totals.revenue > 0 ? (totals.netRevenue / totals.revenue) * 100 : 0;
@@ -2180,13 +2205,14 @@ function ProfitSheetTab({
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Net Revenue</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Profit %</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">ROAS</th>
+                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Bundle Purchases</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Orders</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredData.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="text-center text-white/40 py-8">
+                    <td colSpan={13} className="text-center text-white/40 py-8">
                       No data available for the selected filters
                     </td>
                   </tr>
@@ -2217,6 +2243,7 @@ function ProfitSheetTab({
                         }`}>
                           {row.roas > 0 ? row.roas.toFixed(2) : "-"}
                         </td>
+                        <td className="text-white/80 text-sm px-4 py-3 text-right">{row.bundlePurchases}</td>
                         <td className="text-white/60 text-sm px-4 py-3 text-right">{row.transactionCount}</td>
                       </tr>
                     ))}
@@ -2238,6 +2265,7 @@ function ProfitSheetTab({
                       <td className={`text-sm px-4 py-3 text-right ${overallRoas >= 1 ? "text-green-400" : "text-amber-400"}`}>
                         {overallRoas > 0 ? overallRoas.toFixed(2) : "-"}
                       </td>
+                      <td className="text-white text-sm px-4 py-3 text-right">{totals.bundlePurchases}</td>
                       <td className="text-white text-sm px-4 py-3 text-right">{totals.transactionCount}</td>
                     </tr>
                   </>
@@ -2305,6 +2333,9 @@ function MetaBreakdownTab({
   const AVG_ORDER_VALUE = data?.revenue?.totalSales && data?.revenue?.totalRevenue
     ? data.revenue.totalRevenue / data.revenue.totalSales
     : 1500;
+  const firstPartySales = data?.sourceBreakdown?.firstPartySales ?? data?.revenue?.totalSales ?? 0;
+  const metaPurchases = data?.sourceBreakdown?.metaPurchases ?? data?.totals?.purchases ?? 0;
+  const organicOrUnattributedSales = data?.sourceBreakdown?.organicOrUnattributedSales ?? Math.max(firstPartySales - metaPurchases, 0);
 
   const resolveDisplayRoas = (purchases: number, spend: number, roas: number) => {
     if (roas > 0) return roas.toFixed(2);
@@ -2623,8 +2654,8 @@ function MetaBreakdownTab({
               <p className="text-green-400 text-xl font-bold">₹{data.revenue.totalRevenue.toLocaleString()}</p>
             </div>
             <div>
-              <p className="text-white/40 text-xs mb-1">Total Sales</p>
-              <p className="text-white text-xl font-bold">{data.revenue.totalSales}</p>
+              <p className="text-white/40 text-xs mb-1">First-Party Sales</p>
+              <p className="text-white text-xl font-bold">{firstPartySales}</p>
             </div>
             <div>
               <p className="text-white/40 text-xs mb-1">GST (5%)</p>
@@ -2656,19 +2687,27 @@ function MetaBreakdownTab({
 
       {/* Campaign Metrics Summary */}
       {data?.totals && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
           <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
             <p className="text-white/50 text-xs mb-1">Total Spend (USD)</p>
             <p className="text-red-400 text-xl font-bold">{formatUSD(data.totals.spend)}</p>
           </div>
           <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
             <p className="text-white/50 text-xs mb-1">Meta Purchases</p>
-            <p className="text-blue-400 text-xl font-bold">{data.totals.purchases}</p>
+            <p className="text-blue-400 text-xl font-bold">{metaPurchases}</p>
+          </div>
+          <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
+            <p className="text-white/50 text-xs mb-1">Organic / Unattributed</p>
+            <p className="text-emerald-400 text-xl font-bold">{organicOrUnattributedSales}</p>
+          </div>
+          <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
+            <p className="text-white/50 text-xs mb-1">First-Party Sales</p>
+            <p className="text-white text-xl font-bold">{firstPartySales}</p>
           </div>
           <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
             <p className="text-white/50 text-xs mb-1">CPA (Cost/Purchase)</p>
             <p className="text-amber-400 text-xl font-bold">
-              {data.totals.costPerPurchase > 0 ? formatINR(data.totals.costPerPurchase) : "-"}
+              {metaPurchases > 0 ? formatINR(data.totals.costPerPurchase) : "-"}
             </p>
           </div>
           <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
@@ -2679,6 +2718,12 @@ function MetaBreakdownTab({
             <p className="text-white/50 text-xs mb-1">CTR</p>
             <p className="text-blue-400 text-xl font-bold">{formatPercent(data.totals.ctr)}</p>
           </div>
+        </div>
+      )}
+
+      {data?.attribution?.note && (
+        <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
+          <p className="text-blue-200 text-sm">{data.attribution.note}</p>
         </div>
       )}
 
@@ -2704,7 +2749,7 @@ function MetaBreakdownTab({
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Budget</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">ROAS</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Profit</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Purchases</th>
+                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Meta Purchases</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">CPC</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">CPA</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">CPM</th>
@@ -2798,6 +2843,24 @@ function MetaBreakdownTab({
                     ))}
                   </React.Fragment>
                 ))}
+                <tr className="border-t border-white/10 bg-emerald-500/5">
+                  <td className="px-4 py-3"></td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                      <span className="text-emerald-200 font-medium">Organic / Unattributed Sales</span>
+                    </div>
+                  </td>
+                  <td className="text-white/50 px-4 py-3 text-right">₹0.00</td>
+                  <td className="text-white/40 px-4 py-3 text-right">-</td>
+                  <td className="text-white/40 px-4 py-3 text-right">-</td>
+                  <td className="text-white/40 px-4 py-3 text-right">-</td>
+                  <td className="text-emerald-300 px-4 py-3 text-right font-medium">{organicOrUnattributedSales}</td>
+                  <td className="text-white/40 px-4 py-3 text-right">-</td>
+                  <td className="text-white/40 px-4 py-3 text-right">-</td>
+                  <td className="text-white/40 px-4 py-3 text-right">-</td>
+                  <td className="text-white/40 px-4 py-3 text-right">-</td>
+                </tr>
               </tbody>
             </table>
           </div>

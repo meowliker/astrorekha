@@ -397,12 +397,16 @@ interface CampaignData extends AdMetrics {
 }
 
 const PURCHASE_ACTION_PRIORITY = [
-  "offsite_conversion.fb_pixel_purchase",
   "website_purchase",
   "onsite_web_purchase",
+  "offsite_conversion.fb_pixel_purchase",
   "omni_purchase",
   "purchase",
 ];
+
+function clampNonNegative(value: number): number {
+  return value > 0 ? value : 0;
+}
 
 function parseMetricNumber(value: unknown): number {
   const parsed = Number(value);
@@ -769,6 +773,10 @@ export async function GET(request: NextRequest) {
       reach: accountMetrics.reach || aggregatedCampaignTotals.reach,
     };
 
+    const firstPartySales = totalSales;
+    const metaPurchases = totals.purchases;
+    const organicOrUnattributedSales = clampNonNegative(firstPartySales - metaPurchases);
+
     // Calculate spend in INR and profit
     const totalSpendINR = totals.spend * exchangeRate;
     const gst = totalRevenue * 0.05; // 5% GST
@@ -811,6 +819,17 @@ export async function GET(request: NextRequest) {
         totalSpendINR,
         profit,
         roas,
+      },
+      sourceBreakdown: {
+        firstPartySales,
+        metaPurchases,
+        organicOrUnattributedSales,
+      },
+      attribution: {
+        campaignAttributionSource: "meta_reports",
+        firstPartyCampaignAttributionAvailable: false,
+        note:
+          "Campaign rows use Meta-reported website purchases/ROAS. Organic or unattributed sales are computed from first-party PayU sales that are not currently attributable to a Meta campaign in our stored data.",
       },
       totals: {
         ...totals,

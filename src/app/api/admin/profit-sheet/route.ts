@@ -25,8 +25,19 @@ interface ProfitSheetRow {
   profitPercent: number;
   roas: number;
   transactionCount: number;
+  bundlePurchases: number;
   salesCount?: number;
   refundCount?: number;
+}
+
+function normalizePurchaseType(value: string | null | undefined): string {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized || "bundle";
+}
+
+function isBundlePurchaseType(value: string | null | undefined): boolean {
+  const normalized = normalizePurchaseType(value);
+  return normalized === "bundle" || normalized === "bundle_payment";
 }
 
 // Fetch exchange rate
@@ -192,6 +203,7 @@ export async function GET(request: NextRequest) {
       kind: "sale" | "refund";
       amount: number;
       signedAmount: number;
+      type: string;
     };
 
     const payuFetchEnd = addDaysToIsoDate(endDate, 1);
@@ -210,6 +222,7 @@ export async function GET(request: NextRequest) {
           kind: financial.kind,
           amount: financial.amount,
           signedAmount: financial.signedAmount,
+          type: normalizePurchaseType(txn.udf2),
         } as FinancialRow;
       })
       .filter((row): row is FinancialRow => !!row);
@@ -252,6 +265,9 @@ export async function GET(request: NextRequest) {
       const roas = adsCostINR > 0 ? revenue / adsCostINR : 0;
       const salesCount = dayTransactions.filter((event) => event.kind === "sale").length;
       const refundCount = dayTransactions.filter((event) => event.kind === "refund").length;
+      const bundlePurchases = dayTransactions.filter(
+        (event) => event.kind === "sale" && isBundlePurchaseType(event.type)
+      ).length;
 
       return {
         date: costaRicaDate,
@@ -266,6 +282,7 @@ export async function GET(request: NextRequest) {
         profitPercent,
         roas,
         transactionCount: salesCount,
+        bundlePurchases,
         salesCount,
         refundCount,
       };
@@ -282,6 +299,7 @@ export async function GET(request: NextRequest) {
         adsCostINR: acc.adsCostINR + row.adsCostINR,
         netRevenue: acc.netRevenue + row.netRevenue,
         transactionCount: acc.transactionCount + row.transactionCount,
+        bundlePurchases: acc.bundlePurchases + row.bundlePurchases,
         salesCount: acc.salesCount + (row.salesCount || row.transactionCount || 0),
         refundCount: acc.refundCount + (row.refundCount || 0),
       }),
@@ -294,6 +312,7 @@ export async function GET(request: NextRequest) {
         adsCostINR: 0,
         netRevenue: 0,
         transactionCount: 0,
+        bundlePurchases: 0,
         salesCount: 0,
         refundCount: 0,
       }

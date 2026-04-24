@@ -6,9 +6,9 @@ export const dynamic = "force-dynamic";
 const META_API_VERSION = "v21.0";
 const META_BASE_URL = `https://graph.facebook.com/${META_API_VERSION}`;
 const PURCHASE_ACTION_PRIORITY = [
-  "offsite_conversion.fb_pixel_purchase",
   "website_purchase",
   "onsite_web_purchase",
+  "offsite_conversion.fb_pixel_purchase",
   "omni_purchase",
   "purchase",
 ];
