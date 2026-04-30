@@ -6,21 +6,21 @@ import { motion } from "framer-motion";
 import {
   DollarSign,
   BarChart3,
-  Users,
-  Settings,
   LogOut,
   ChevronRight,
   TrendingUp,
   FlaskConical,
   Shield,
   Tag,
+  ShoppingBag,
+  type LucideIcon,
 } from "lucide-react";
 
 interface AdminOption {
   id: string;
   title: string;
   description: string;
-  icon: any;
+  icon: LucideIcon;
   href: string;
   color: string;
   bgColor: string;
@@ -35,6 +35,15 @@ const adminOptions: AdminOption[] = [
     href: "/admin/revenue",
     color: "text-green-400",
     bgColor: "bg-green-500/20",
+  },
+  {
+    id: "orders",
+    title: "Orders",
+    description: "Search payments, customers, purchased items, and order status",
+    icon: ShoppingBag,
+    href: "/admin/orders",
+    color: "text-cyan-400",
+    bgColor: "bg-cyan-500/20",
   },
   {
     id: "pricing",
@@ -174,11 +183,11 @@ export default function AdminDashboardPage() {
               <span className="text-white/70 text-sm">Manage Tests</span>
             </button>
             <button
-              onClick={() => router.push("/admin/revenue")}
+              onClick={() => router.push("/admin/orders")}
               className="p-4 bg-white/5 hover:bg-white/10 rounded-xl text-center transition-colors"
             >
-              <Users className="w-6 h-6 text-blue-400 mx-auto mb-2" />
-              <span className="text-white/70 text-sm">Subscribers</span>
+              <ShoppingBag className="w-6 h-6 text-cyan-400 mx-auto mb-2" />
+              <span className="text-white/70 text-sm">Orders</span>
             </button>
             <button
               onClick={() => router.push("/admin/revenue")}
