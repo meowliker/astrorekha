@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
       }
       amount = bundle.price;
       productInfo = bundle.name;
-      metadata.bundleId = bundleId;
+      metadata.bundleId = bundle.id;
       metadata.features = JSON.stringify(bundle.features);
     } else if (type === "upsell") {
       const selectedUpsellIds = (bundleId || packageId || "")
