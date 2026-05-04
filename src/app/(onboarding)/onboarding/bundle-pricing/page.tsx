@@ -13,6 +13,7 @@ import { useUserStore } from "@/lib/user-store";
 import Link from "next/link";
 import Script from "next/script";
 import { usePricing } from "@/hooks/usePricing";
+import { getPaymentAttributionPayload } from "@/lib/attribution-client";
 
 const predictionLabels = [
   { text: "Children", emoji: "👶", top: "15%", left: "20%", rotation: -15 },
@@ -29,6 +30,13 @@ const sketchPredictionLabels = [
 
 const DEFAULT_LAYOUT_TEST_ID = "onboarding-layout-qa";
 const FLOW_B_BUNDLE_IDS = ["palm-reading", "palm-birth", "palm-birth-sketch"] as const;
+const PAYWALL_DEFAULT_PLAN_TEST_ID = "paywall-default-plan-v1";
+const PAYWALL_DEFAULT_PLAN_VARIANT_STORAGE_KEY = "astrorekha_paywall_default_variant";
+const PAYWALL_ROUTE = "/onboarding/bundle-pricing";
+const PAYWALL_DEFAULT_PLAN_BY_VARIANT = {
+  A: "palm-birth",
+  B: "palm-birth-sketch",
+} as const;
 
 const SOULMATE_ANSWER_KEYS = [
   "attracted_to",
@@ -38,6 +46,35 @@ const SOULMATE_ANSWER_KEYS = [
   "genderPreference",
   "target_gender",
 ] as const;
+
+type PayUBoltResponse = {
+  response: {
+    txnStatus: string;
+    txnid: string;
+    mihpayid?: string;
+    hash?: string;
+  };
+};
+
+type PayUBolt = {
+  launch: (
+    params: Record<string, string>,
+    handlers: {
+      responseHandler: (response: PayUBoltResponse) => void | Promise<void>;
+      catchException: (error: unknown) => void;
+    }
+  ) => void;
+};
+
+type AbVariant = "A" | "B";
+
+function normalizeAbVariant(variant: unknown): AbVariant {
+  return variant === "B" ? "B" : "A";
+}
+
+function getPaywallVariantPageKey(variant: AbVariant): string {
+  return variant === "B" ? "default-1599" : "default-839";
+}
 
 function parseSelectionValues(raw: unknown): string[] {
   if (raw === null || raw === undefined) return [];
@@ -158,20 +195,28 @@ export default function BundlePricingPage() {
   const [agreedToTerms, setAgreedToTerms] = useState(true);
   const [paymentError, setPaymentError] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showCouponInput, setShowCouponInput] = useState(false);
+  const [couponCode, setCouponCode] = useState("");
+  const [isRedeemingCoupon, setIsRedeemingCoupon] = useState(false);
   const [palmImage, setPalmImage] = useState<string | null>(null);
   const [croppedPalmImage, setCroppedPalmImage] = useState<string | null>(null);
   const [readingStats, setReadingStats] = useState<{ label: string; color: string; value: number }[]>([]);
   const [compatibilityStats, setCompatibilityStats] = useState<{ label: string; color: string; value: number }[]>([]);
-  const [onboardingFlow, setOnboardingFlow] = useState<"flow-a" | "flow-b">("flow-a");
-  const [layoutVariant, setLayoutVariant] = useState<"A" | "B">("A");
-  const [layoutTestId, setLayoutTestId] = useState<string>("");
+  const [onboardingFlow, setOnboardingFlow] = useState<"flow-a" | "flow-b">("flow-b");
+  const [layoutVariant, setLayoutVariant] = useState<"A" | "B">("B");
   const [soulmatePreviewImage, setSoulmatePreviewImage] = useState<"/male.png" | "/female.png">("/female.png");
   const paymentSectionRef = useRef<HTMLDivElement>(null);
   const testimonialSectionRef = useRef<HTMLDivElement>(null);
   const birthChartSectionRef = useRef<HTMLDivElement>(null);
   const getFullReportRef = useRef<HTMLButtonElement>(null);
-  const checkoutStartedRef = useRef(false);
   const [showStickyCTA, setShowStickyCTA] = useState(false);
+  const [paywallPlanTestVariant, setPaywallPlanTestVariant] = useState<AbVariant | null>(null);
+  const hasUserTouchedPlanSelectionRef = useRef(false);
+  const hasAppliedVariantDefaultRef = useRef(false);
+  const paywallAbImpressionTrackedRef = useRef(false);
+  const paywallAbConversionTrackedRef = useRef(false);
+  const paywallAbBounceTrackedRef = useRef(false);
+  const paywallAbVisitorIdRef = useRef<string | null>(null);
   
   const { userId } = useUserStore();
   const isLayoutB = onboardingFlow === "flow-b" && layoutVariant === "B";
@@ -184,39 +229,80 @@ export default function BundlePricingPage() {
     return FLOW_B_BUNDLE_IDS.map((id) => byId.get(id)).filter((bundle): bundle is NonNullable<typeof bundle> => Boolean(bundle));
   }, [allBundlePlans, isLayoutB]);
   const heroPredictionLabels = isLayoutB ? sketchPredictionLabels : predictionLabels;
-  const getVisitorId = () =>
-    localStorage.getItem("astrorekha_ab_visitor_id") ||
-    localStorage.getItem("astrorekha_user_id") ||
-    generateUserId();
+
+  const resolvePaywallAbVisitorId = (): string => {
+    if (paywallAbVisitorIdRef.current) return paywallAbVisitorIdRef.current;
+
+    const localUserId = localStorage.getItem("astrorekha_user_id")?.trim() || "";
+    const localAnonId = localStorage.getItem("astrorekha_anon_id")?.trim() || "";
+    const storeUserId = (userId || "").trim();
+    const resolved = localUserId || localAnonId || storeUserId || generateUserId();
+
+    if (!localUserId && resolved) {
+      localStorage.setItem("astrorekha_user_id", resolved);
+    }
+
+    paywallAbVisitorIdRef.current = resolved;
+    return resolved;
+  };
+
+  const trackPaywallAbEvent = (
+    eventType: "impression" | "conversion" | "bounce" | "checkout_started",
+    metadata: Record<string, unknown> = {},
+    useBeacon = false,
+    variantOverride?: AbVariant
+  ) => {
+    const cachedVariant =
+      typeof localStorage !== "undefined" && localStorage.getItem(PAYWALL_DEFAULT_PLAN_VARIANT_STORAGE_KEY) === "B"
+        ? "B"
+        : "A";
+    const resolvedVariant = variantOverride || paywallPlanTestVariant || cachedVariant;
+    if (!resolvedVariant) return;
+    const visitorId = resolvePaywallAbVisitorId();
+    const payload = {
+      testId: PAYWALL_DEFAULT_PLAN_TEST_ID,
+      variant: resolvedVariant,
+      eventType,
+      visitorId,
+      userId: visitorId,
+      metadata: {
+        route: PAYWALL_ROUTE,
+        page: getPaywallVariantPageKey(resolvedVariant),
+        ...metadata,
+      },
+    };
+
+    if (useBeacon && typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+      try {
+        const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+        navigator.sendBeacon("/api/ab-test/event", blob);
+        return;
+      } catch (error) {
+        console.error("Paywall AB beacon failed, falling back to fetch:", error);
+      }
+    }
+
+    fetch("/api/ab-test/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      keepalive: useBeacon,
+    }).catch((error) => {
+      console.error("Failed to track paywall AB event:", error);
+    });
+  };
 
   useEffect(() => {
     const handlePageShow = () => setIsProcessing(false);
     window.addEventListener("pageshow", handlePageShow);
 
-    const storedFlow = localStorage.getItem("astrorekha_onboarding_flow") === "flow-b" ? "flow-b" : "flow-a";
-    const storedVariant = localStorage.getItem("astrorekha_layout_variant") === "B" ? "B" : "A";
-    const storedTestId = (localStorage.getItem("astrorekha_ab_test_id") || "").trim();
-    const resolvedVariant = storedFlow === "flow-b" ? storedVariant : "A";
-
-    setOnboardingFlow(storedFlow);
-    setLayoutVariant(resolvedVariant);
-    if (storedTestId) {
-      setLayoutTestId(storedTestId);
+    localStorage.setItem("astrorekha_onboarding_flow", "flow-b");
+    localStorage.setItem("astrorekha_layout_variant", "B");
+    if (!localStorage.getItem("astrorekha_ab_test_id")) {
+      localStorage.setItem("astrorekha_ab_test_id", DEFAULT_LAYOUT_TEST_ID);
     }
-
-    fetch("/api/ab-test/layout-config", { cache: "no-store" })
-      .then((response) => response.json().catch(() => ({})))
-      .then((json) => {
-        const resolvedTestId = json?.config?.testId || storedTestId || DEFAULT_LAYOUT_TEST_ID;
-        localStorage.setItem("astrorekha_ab_test_id", resolvedTestId);
-        setLayoutTestId(resolvedTestId);
-      })
-      .catch(() => {
-        if (!storedTestId) {
-          localStorage.setItem("astrorekha_ab_test_id", DEFAULT_LAYOUT_TEST_ID);
-          setLayoutTestId(DEFAULT_LAYOUT_TEST_ID);
-        }
-      });
+    setOnboardingFlow("flow-b");
+    setLayoutVariant("B");
 
     // Resolve preview image for layout-b sketch card.
     try {
@@ -244,45 +330,12 @@ export default function BundlePricingPage() {
       router.replace("/dashboard");
       return;
     } else if (hasCompletedPayment) {
-      const shouldUseLayoutB = storedFlow === "flow-b" && resolvedVariant === "B";
-      router.replace(shouldUseLayoutB ? "/onboarding/bundle-upsell-b" : "/onboarding/bundle-upsell");
+      router.replace("/onboarding/bundle-upsell-b");
       return;
     }
     
     return () => window.removeEventListener("pageshow", handlePageShow);
   }, [router]);
-
-  useEffect(() => {
-    if (!layoutTestId) return;
-    const variant = isLayoutB ? "B" : "A";
-
-    fetch("/api/ab-test/event", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        testId: layoutTestId,
-        variant,
-        eventType: "impression",
-        visitorId: getVisitorId(),
-      }),
-    }).catch(() => {});
-
-    return () => {
-      if (checkoutStartedRef.current) return;
-      if (localStorage.getItem("astrorekha_payment_completed") === "true") return;
-      fetch("/api/ab-test/event", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          testId: layoutTestId,
-          variant,
-          eventType: "bounce",
-          visitorId: getVisitorId(),
-        }),
-        keepalive: true,
-      }).catch(() => {});
-    };
-  }, [isLayoutB, layoutTestId]);
 
   // Load saved palm image and generate stats
   useEffect(() => {
@@ -296,10 +349,111 @@ export default function BundlePricingPage() {
 
   useEffect(() => {
     if (bundlePlans.length === 0) return;
-    setSelectedPlan((current) =>
-      bundlePlans.some((plan) => plan.id === current) ? current : bundlePlans[0].id
-    );
-  }, [bundlePlans]);
+    setSelectedPlan((current) => {
+      if (bundlePlans.some((plan) => plan.id === current)) return current;
+      if (paywallPlanTestVariant) {
+        const variantDefault = PAYWALL_DEFAULT_PLAN_BY_VARIANT[paywallPlanTestVariant];
+        if (bundlePlans.some((plan) => plan.id === variantDefault)) {
+          return variantDefault;
+        }
+      }
+      return bundlePlans[0].id;
+    });
+  }, [bundlePlans, paywallPlanTestVariant]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const assignPaywallVariant = async () => {
+      if (bundlePlans.length === 0) return;
+
+      const cachedVariantRaw = localStorage.getItem(PAYWALL_DEFAULT_PLAN_VARIANT_STORAGE_KEY);
+      if (cachedVariantRaw === "A" || cachedVariantRaw === "B") {
+        setPaywallPlanTestVariant(cachedVariantRaw);
+      }
+
+      let resolvedVariant: AbVariant = cachedVariantRaw === "B" ? "B" : "A";
+      try {
+        const visitorId = resolvePaywallAbVisitorId();
+        const params = new URLSearchParams({
+          testId: PAYWALL_DEFAULT_PLAN_TEST_ID,
+          visitorId,
+          userId: visitorId,
+        });
+
+        const response = await fetch(`/api/ab-test?${params.toString()}`, {
+          cache: "no-store",
+        });
+        const data = await response.json().catch(() => ({}));
+        if (response.ok) {
+          resolvedVariant = normalizeAbVariant(data?.variant);
+        }
+      } catch (error) {
+        console.error("Failed to fetch paywall AB assignment. Falling back to cached/default variant.", error);
+      }
+
+      if (cancelled) return;
+      setPaywallPlanTestVariant(resolvedVariant);
+      localStorage.setItem(PAYWALL_DEFAULT_PLAN_VARIANT_STORAGE_KEY, resolvedVariant);
+
+      if (!hasAppliedVariantDefaultRef.current && !hasUserTouchedPlanSelectionRef.current) {
+        const variantDefault = PAYWALL_DEFAULT_PLAN_BY_VARIANT[resolvedVariant];
+        if (bundlePlans.some((plan) => plan.id === variantDefault)) {
+          setSelectedPlan(variantDefault);
+          hasAppliedVariantDefaultRef.current = true;
+        }
+      }
+
+      if (!paywallAbImpressionTrackedRef.current) {
+        trackPaywallAbEvent(
+          "impression",
+          {
+            defaultPlanId: PAYWALL_DEFAULT_PLAN_BY_VARIANT[resolvedVariant],
+            selectedPlanId: PAYWALL_DEFAULT_PLAN_BY_VARIANT[resolvedVariant],
+          },
+          false,
+          resolvedVariant
+        );
+        paywallAbImpressionTrackedRef.current = true;
+      }
+    };
+
+    assignPaywallVariant();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bundlePlans, userId]);
+
+  useEffect(() => {
+    const sendBounceIfNeeded = () => {
+      if (paywallAbBounceTrackedRef.current || paywallAbConversionTrackedRef.current || !paywallPlanTestVariant) {
+        return;
+      }
+      paywallAbBounceTrackedRef.current = true;
+      trackPaywallAbEvent(
+        "bounce",
+        {
+          selectedPlanId: selectedPlan,
+          converted: false,
+        },
+        true
+      );
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        sendBounceIfNeeded();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", sendBounceIfNeeded);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", sendBounceIfNeeded);
+    };
+  }, [paywallPlanTestVariant, selectedPlan]);
 
   // Sticky CTA visibility
   useEffect(() => {
@@ -401,7 +555,6 @@ export default function BundlePricingPage() {
   const handlePurchase = async () => {
     setPaymentError("");
     setIsProcessing(true);
-    checkoutStartedRef.current = true;
     
     const plan = bundlePlans.find(p => p.id === selectedPlan);
     if (!plan) {
@@ -415,18 +568,13 @@ export default function BundlePricingPage() {
     
     // Track AddToCart
     pixelEvents.addToCart(plan.price, plan.name);
-    const variant = isLayoutB ? "B" : "A";
-    fetch("/api/ab-test/event", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        testId: layoutTestId,
-        variant,
-        eventType: "checkout_started",
-        visitorId: getVisitorId(),
-        metadata: { plan: selectedPlan, amount: plan.price },
-      }),
-    }).catch(() => {});
+
+    trackPaywallAbEvent("checkout_started", {
+      selectedPlanId: selectedPlan,
+      selectedPlanName: plan.name,
+      selectedPlanPriceInr: plan.price,
+      defaultPlanId: paywallPlanTestVariant ? PAYWALL_DEFAULT_PLAN_BY_VARIANT[paywallPlanTestVariant] : null,
+    });
 
     // Track Brevo checkout_started for abandoned checkout automation (30-min email)
     const userEmail = localStorage.getItem("astrorekha_email");
@@ -457,6 +605,7 @@ export default function BundlePricingPage() {
           userId: userId || generateUserId(),
           email: localStorage.getItem("astrorekha_email") || "",
           firstName: localStorage.getItem("astrorekha_name") || "Customer",
+          attribution: getPaymentAttributionPayload(),
         }),
       });
 
@@ -467,7 +616,12 @@ export default function BundlePricingPage() {
         pixelEvents.addPaymentInfo(plan.price, plan.name);
         
         // Open PayU Bolt checkout
-        const bolt = (window as any).bolt;
+        const bolt = (window as Window & { bolt?: PayUBolt }).bolt;
+        if (!bolt) {
+          setPaymentError("Payment checkout is still loading. Please try again.");
+          setIsProcessing(false);
+          return;
+        }
         bolt.launch({
           key: data.key,
           txnid: data.txnId,
@@ -485,7 +639,7 @@ export default function BundlePricingPage() {
           surl: `${window.location.origin}/api/payu/success`,
           furl: `${window.location.origin}/api/payu/failure`,
         }, {
-          responseHandler: async (response: any) => {
+          responseHandler: async (response: PayUBoltResponse) => {
             if (response.response.txnStatus === "SUCCESS") {
               // Verify payment on server
               const verifyRes = await fetch("/api/payu/verify-payment", {
@@ -510,22 +664,20 @@ export default function BundlePricingPage() {
               });
               const verifyData = await verifyRes.json();
               if (verifyData.success) {
+                paywallAbConversionTrackedRef.current = true;
+                trackPaywallAbEvent("conversion", {
+                  selectedPlanId: selectedPlan,
+                  selectedPlanName: plan.name,
+                  selectedPlanPriceInr: plan.price,
+                  amount: plan.price,
+                  paymentMethod: "payu",
+                  defaultPlanId: paywallPlanTestVariant ? PAYWALL_DEFAULT_PLAN_BY_VARIANT[paywallPlanTestVariant] : null,
+                }, true);
                 localStorage.setItem("astrorekha_payment_completed", "true");
                 localStorage.setItem("astrorekha_purchase_type", "one-time");
                 localStorage.setItem("astrorekha_bundle_id", selectedPlan);
                 pixelEvents.purchase(plan.price, selectedPlan, plan.name);
-                fetch("/api/ab-test/event", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    testId: layoutTestId,
-                    variant,
-                    eventType: "conversion",
-                    visitorId: getVisitorId(),
-                    metadata: { plan: selectedPlan, amount: plan.price },
-                  }),
-                }).catch(() => {});
-                router.push(variant === "B" ? "/onboarding/bundle-upsell-b" : "/onboarding/bundle-upsell");
+                router.push("/onboarding/bundle-upsell-b");
               } else {
                 setPaymentError("Payment verification failed. Please contact support.");
                 setIsProcessing(false);
@@ -535,7 +687,7 @@ export default function BundlePricingPage() {
               setIsProcessing(false);
             }
           },
-          catchException: (error: any) => {
+          catchException: (error: unknown) => {
             console.error("PayU Bolt error:", error);
             setPaymentError("Payment was cancelled or failed.");
             setIsProcessing(false);
@@ -552,6 +704,69 @@ export default function BundlePricingPage() {
       console.error("Checkout error:", error);
       setPaymentError("Something went wrong. Please try again.");
       setIsProcessing(false);
+    }
+  };
+
+  const handleCouponUnlock = async () => {
+    setPaymentError("");
+
+    const code = couponCode.trim();
+    if (!code) {
+      setPaymentError("Please enter a coupon code");
+      return;
+    }
+
+    if (!agreedToTerms) {
+      setPaymentError("Please accept the Terms of Service and Privacy Policy first.");
+      return;
+    }
+
+    setIsRedeemingCoupon(true);
+
+    try {
+      const couponUserId = userId || generateUserId();
+      const response = await fetch("/api/coupons/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code,
+          userId: couponUserId,
+          email: localStorage.getItem("astrorekha_email") || "",
+          firstName: localStorage.getItem("astrorekha_name") || "Customer",
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Invalid coupon code");
+      }
+
+      const redeemedPlan = bundlePlans.find((plan) => plan.id === data.bundleId);
+      paywallAbConversionTrackedRef.current = true;
+      trackPaywallAbEvent("conversion", {
+        selectedPlanId: data.bundleId || selectedPlan,
+        selectedPlanName: redeemedPlan?.name || "Coupon Unlock",
+        selectedPlanPriceInr: redeemedPlan?.price ?? 0,
+        amount: redeemedPlan?.price ?? 0,
+        paymentMethod: "coupon_unlock",
+        couponCode: data.code,
+        defaultPlanId: paywallPlanTestVariant ? PAYWALL_DEFAULT_PLAN_BY_VARIANT[paywallPlanTestVariant] : null,
+      }, true);
+
+      localStorage.setItem("astrorekha_payment_completed", "true");
+      localStorage.setItem("astrorekha_purchase_type", "coupon_unlock");
+      localStorage.setItem("astrorekha_bundle_id", data.bundleId);
+      localStorage.setItem("astrorekha_selected_plan", data.bundleId);
+      localStorage.setItem("astrorekha_coupon_code", data.code);
+      if (data.userId) {
+        localStorage.setItem("astrorekha_user_id", data.userId);
+      }
+
+      router.push("/onboarding/bundle-upsell-b");
+    } catch (error) {
+      console.error("Coupon unlock error:", error);
+      setPaymentError(error instanceof Error ? error.message : "Unable to redeem coupon code");
+      setIsRedeemingCoupon(false);
     }
   };
 
@@ -688,7 +903,10 @@ export default function BundlePricingPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 + index * 0.1 }}
-              onClick={() => setSelectedPlan(plan.id)}
+              onClick={() => {
+                hasUserTouchedPlanSelectionRef.current = true;
+                setSelectedPlan(plan.id);
+              }}
               className={`relative rounded-2xl border-2 p-4 cursor-pointer transition-all ${
                 selectedPlan === plan.id
                   ? "border-primary bg-primary/5"
@@ -786,7 +1004,7 @@ export default function BundlePricingPage() {
           <Button
             ref={getFullReportRef}
             onClick={handlePurchase}
-            disabled={!agreedToTerms || isProcessing}
+            disabled={!agreedToTerms || isProcessing || isRedeemingCoupon}
             className="w-full h-14 text-lg font-semibold"
             size="lg"
           >
@@ -799,6 +1017,55 @@ export default function BundlePricingPage() {
               `Get My Reading - ₹${selectedPlanData?.displayPrice || selectedPlanData?.price}`
             )}
           </Button>
+        </motion.div>
+
+        {/* Coupon unlock for internal testing */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.65 }}
+          className="w-full max-w-sm mb-6"
+        >
+          {!showCouponInput ? (
+            <button
+              type="button"
+              onClick={() => setShowCouponInput(true)}
+              className="mx-auto block text-sm font-medium text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline"
+            >
+              Have a coupon code?
+            </button>
+          ) : (
+            <div className="rounded-2xl border border-primary/25 bg-primary/5 p-3">
+              <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                Coupon code
+              </label>
+              <div className="flex gap-2">
+                <input
+                  value={couponCode}
+                  onChange={(event) => setCouponCode(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      handleCouponUnlock();
+                    }
+                  }}
+                  placeholder="Enter coupon code"
+                  className="min-w-0 flex-1 rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                />
+                <Button
+                  type="button"
+                  onClick={handleCouponUnlock}
+                  disabled={isRedeemingCoupon || isProcessing}
+                  className="shrink-0"
+                >
+                  {isRedeemingCoupon ? "Applying..." : "Apply"}
+                </Button>
+              </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Valid test coupons unlock their mapped bundle directly without opening PayU.
+              </p>
+            </div>
+          )}
         </motion.div>
 
         {/* Safe checkout */}

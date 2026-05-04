@@ -5,15 +5,22 @@ import { DEFAULT_LAYOUT_B_CONFIG, normalizeLayoutBConfig } from "@/lib/layout-b-
 // A/B Test configuration API
 // Handles getting assigned variant for a user and managing test configs
 const SETTINGS_KEY = "funnel_layout_b_config";
+const PAYWALL_DEFAULT_PLAN_TEST_ID_PREFIX = "paywall-default-plan";
 
 function clampPercent(value: number): number {
   if (!Number.isFinite(value)) return 50;
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function getNormalizedVariants(testData: any, isOnboardingLayoutTest: boolean) {
+function getNormalizedVariants(
+  testData: any,
+  isOnboardingLayoutTest: boolean,
+  isPaywallDefaultPlanTest: boolean
+) {
   const defaults = isOnboardingLayoutTest
-    ? { pageA: "bundle-pricing", pageB: "bundle-pricing-b" }
+    ? { pageA: "bundle-pricing", pageB: "bundle-pricing" }
+    : isPaywallDefaultPlanTest
+    ? { pageA: "default-839", pageB: "default-1599" }
     : { pageA: "step-17", pageB: "a-step-17" };
 
   const configA = Number(testData?.variants?.A?.weight);
@@ -37,6 +44,11 @@ function getNormalizedVariants(testData: any, isOnboardingLayoutTest: boolean) {
     A: { weight: aWeight, page: testData?.variants?.A?.page || defaults.pageA },
     B: { weight: bWeight, page: testData?.variants?.B?.page || defaults.pageB },
   };
+}
+
+function normalizeVariant(variant: unknown, isOnboardingLayoutTest: boolean): "A" | "B" {
+  if (isOnboardingLayoutTest) return "B";
+  return variant === "B" ? "B" : "A";
 }
 
 async function resolveDefaultTestId(supabase: ReturnType<typeof getSupabaseAdmin>) {
@@ -90,16 +102,26 @@ export async function GET(request: NextRequest) {
     const supabase = getSupabaseAdmin();
     const testId = requestedTestId || await resolveDefaultTestId(supabase);
     const isOnboardingLayoutTest = testId.startsWith("onboarding-layout");
+    const isPaywallDefaultPlanTest = testId.startsWith(PAYWALL_DEFAULT_PLAN_TEST_ID_PREFIX);
 
     const defaultTest = {
       id: testId,
-      name: isOnboardingLayoutTest ? "Onboarding Layout A/B (QA)" : "Pricing Page A/B Test",
+      name: isOnboardingLayoutTest
+        ? "Onboarding Layout A/B (QA)"
+        : isPaywallDefaultPlanTest
+        ? "Paywall Default Plan A/B (₹839 vs ₹1599)"
+        : "Pricing Page A/B Test",
       status: "active",
       traffic_split: 0.5,
       variants: isOnboardingLayoutTest
         ? {
-            A: { weight: 50, page: "bundle-pricing" },
-            B: { weight: 50, page: "bundle-pricing-b" },
+            A: { weight: 0, page: "bundle-pricing" },
+            B: { weight: 100, page: "bundle-pricing" },
+          }
+        : isPaywallDefaultPlanTest
+        ? {
+            A: { weight: 50, page: "default-839" },
+            B: { weight: 50, page: "default-1599" },
           }
         : {
             A: { weight: 50, page: "step-17" },
@@ -118,12 +140,19 @@ export async function GET(request: NextRequest) {
     };
 
     const pageForVariant = (variant: string, test: any): string => {
+      if (isOnboardingLayoutTest) {
+        return "bundle-pricing";
+      }
+      if (isPaywallDefaultPlanTest) {
+        const configured = test?.variants?.[variant]?.page;
+        if (configured && typeof configured === "string") {
+          return configured;
+        }
+        return variant === "B" ? "default-1599" : "default-839";
+      }
       const configured = test?.variants?.[variant]?.page;
       if (configured && typeof configured === "string") {
         return configured;
-      }
-      if (isOnboardingLayoutTest) {
-        return variant === "A" ? "bundle-pricing" : "bundle-pricing-b";
       }
       return variant === "A" ? "step-17" : "a-step-17";
     };
@@ -148,7 +177,7 @@ export async function GET(request: NextRequest) {
         });
       }
       
-      const variant = Math.random() < 0.5 ? "A" : "B";
+      const variant = isOnboardingLayoutTest ? "B" : Math.random() < 0.5 ? "A" : "B";
       
       return NextResponse.json({
         testId,
@@ -160,12 +189,13 @@ export async function GET(request: NextRequest) {
 
     // Check if test is active
     if (testData.status !== "active") {
+      const fallbackVariant = normalizeVariant("A", isOnboardingLayoutTest);
       return NextResponse.json({
         testId,
-        variant: "A",
-        page: pageForVariant("A", testData),
+        variant: fallbackVariant,
+        page: pageForVariant(fallbackVariant, testData),
         test: testData,
-        message: "Test is not active, defaulting to variant A",
+        message: `Test is not active, defaulting to variant ${fallbackVariant}`,
       });
     }
 
@@ -185,17 +215,40 @@ export async function GET(request: NextRequest) {
       }
       
       if (assignment) {
+        const assignmentVariant = normalizeVariant(assignment.variant, isOnboardingLayoutTest);
+
+        if (assignmentVariant !== assignment.variant && visitorId) {
+          const forcedAssignmentPayload = {
+            id: `${testId}_${visitorId}`,
+            test_id: testId,
+            visitor_id: visitorId,
+            variant: assignmentVariant,
+            created_at: new Date().toISOString(),
+          };
+          const { error: forcedAssignmentError } = await supabase
+            .from("ab_test_assignments")
+            .upsert(forcedAssignmentPayload, { onConflict: "id" });
+          if (forcedAssignmentError) {
+            console.error("[ab-test] failed to force assignment variant", {
+              testId,
+              visitorId,
+              variant: assignmentVariant,
+              error: forcedAssignmentError,
+            });
+          }
+        }
+
         await persistUserFlowVariant({
           supabase,
           userId: userIdFromQuery || visitorId,
-          variant: assignment.variant,
+          variant: assignmentVariant,
           isOnboardingLayoutTest,
         });
 
         return NextResponse.json({
           testId,
-          variant: assignment.variant,
-          page: pageForVariant(assignment.variant, testData),
+          variant: assignmentVariant,
+          page: pageForVariant(assignmentVariant, testData),
           test: testData,
           cached: true,
         });
@@ -203,20 +256,22 @@ export async function GET(request: NextRequest) {
     }
 
     // Assign variant based on weights
-    const variants = getNormalizedVariants(testData, isOnboardingLayoutTest);
-    const totalWeight = Object.values(variants).reduce(
-      (sum: number, v: any) => sum + (v.weight || 0),
-      0
-    );
-    
-    let random = Math.random() * totalWeight;
-    let assignedVariant = "A";
-    
-    for (const [key, value] of Object.entries(variants)) {
-      random -= (value as any).weight || 0;
-      if (random <= 0) {
-        assignedVariant = key;
-        break;
+    let assignedVariant = normalizeVariant("A", isOnboardingLayoutTest);
+    if (!isOnboardingLayoutTest) {
+      const variants = getNormalizedVariants(testData, isOnboardingLayoutTest, isPaywallDefaultPlanTest);
+      const totalWeight = Object.values(variants).reduce(
+        (sum: number, v: any) => sum + (v.weight || 0),
+        0
+      );
+      
+      let random = Math.random() * totalWeight;
+      
+      for (const [key, value] of Object.entries(variants)) {
+        random -= (value as any).weight || 0;
+        if (random <= 0) {
+          assignedVariant = normalizeVariant(key, isOnboardingLayoutTest);
+          break;
+        }
       }
     }
 
@@ -259,7 +314,7 @@ export async function GET(request: NextRequest) {
     console.error("A/B test error:", error);
     return NextResponse.json({
       testId: DEFAULT_LAYOUT_B_CONFIG.testId,
-      variant: "A",
+      variant: "B",
       page: "bundle-pricing",
       error: "Failed to get A/B test assignment",
     });
