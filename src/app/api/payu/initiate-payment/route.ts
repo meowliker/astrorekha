@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
       amount = report.price;
       productInfo = report.name;
       metadata.feature = report.feature;
-      metadata.reportId = packageId;
+      metadata.reportId = report.id;
     } else {
       return NextResponse.json({ error: "Invalid purchase type" }, { status: 400 });
     }
