@@ -25,6 +25,7 @@ import {
   type LayoutBFunnelConfig,
 } from "@/lib/layout-b-funnel";
 const DEFAULT_ONBOARDING_TEST_ID = DEFAULT_LAYOUT_B_CONFIG.testId;
+const PAYWALL_DEFAULT_PLAN_TEST_ID_PREFIX = "paywall-default-plan";
 
 interface ABTest {
   id: string;
@@ -179,6 +180,90 @@ type DateRangePreset =
   | "last_month"
   | "test_window";
 
+type TestCopy = {
+  variantAInputLabel: string;
+  variantBInputLabel: string;
+  variantARouteLabel: string;
+  variantBRouteLabel: string;
+  variantARouteFallback: string;
+  variantBRouteFallback: string;
+  variantADescription: string;
+  variantBDescription: string;
+  variantAStatsTitle: string;
+  variantBStatsTitle: string;
+  summaryATitle: string;
+  summaryBTitle: string;
+};
+
+function isOnboardingLayoutTestId(testId: string): boolean {
+  return testId.startsWith("onboarding-layout");
+}
+
+function isPaywallDefaultPlanTestId(testId: string): boolean {
+  return testId.startsWith(PAYWALL_DEFAULT_PLAN_TEST_ID_PREFIX);
+}
+
+function getVariantPageKeysForTest(testId: string): { A: string; B: string } {
+  if (isOnboardingLayoutTestId(testId)) {
+    return { A: "bundle-pricing", B: "bundle-pricing-b" };
+  }
+  if (isPaywallDefaultPlanTestId(testId)) {
+    return { A: "default-839", B: "default-1599" };
+  }
+  return { A: "step-17", B: "a-step-17" };
+}
+
+function getTestCopy(testId: string): TestCopy {
+  if (isOnboardingLayoutTestId(testId)) {
+    return {
+      variantAInputLabel: "Variant A (Layout A)",
+      variantBInputLabel: "Variant B (Layout B)",
+      variantARouteLabel: "Layout A route:",
+      variantBRouteLabel: "Layout B route:",
+      variantARouteFallback: "bundle-pricing",
+      variantBRouteFallback: "bundle-pricing-b",
+      variantADescription: "Current baseline onboarding/paywall experience",
+      variantBDescription: "Sketch-focused onboarding + compatibility on upsell",
+      variantAStatsTitle: "Variant A - Layout A",
+      variantBStatsTitle: "Variant B - Layout B",
+      summaryATitle: "Variant A (Layout A)",
+      summaryBTitle: "Variant B (Layout B)",
+    };
+  }
+
+  if (isPaywallDefaultPlanTestId(testId)) {
+    return {
+      variantAInputLabel: "Variant A (Default ₹839)",
+      variantBInputLabel: "Variant B (Default ₹1599)",
+      variantARouteLabel: "Variant A key:",
+      variantBRouteLabel: "Variant B key:",
+      variantARouteFallback: "default-839",
+      variantBRouteFallback: "default-1599",
+      variantADescription: "Default preselected plan: Palm + Birth Chart (₹839)",
+      variantBDescription: "Default preselected plan: Full bundle (₹1599)",
+      variantAStatsTitle: "Variant A - ₹839 Default",
+      variantBStatsTitle: "Variant B - ₹1599 Default",
+      summaryATitle: "Variant A (₹839 Default)",
+      summaryBTitle: "Variant B (₹1599 Default)",
+    };
+  }
+
+  return {
+    variantAInputLabel: "Variant A (Control)",
+    variantBInputLabel: "Variant B (Experiment)",
+    variantARouteLabel: "Variant A key:",
+    variantBRouteLabel: "Variant B key:",
+    variantARouteFallback: "step-17",
+    variantBRouteFallback: "a-step-17",
+    variantADescription: "Control experience",
+    variantBDescription: "Experiment experience",
+    variantAStatsTitle: "Variant A - Control",
+    variantBStatsTitle: "Variant B - Experiment",
+    summaryATitle: "Variant A (Control)",
+    summaryBTitle: "Variant B (Experiment)",
+  };
+}
+
 function addDaysToIsoDate(isoDate: string, days: number): string {
   const [year, month, day] = isoDate.split("-").map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
@@ -294,16 +379,7 @@ export default function ABTestsPage() {
       setLoading(true);
       const response = await fetch("/api/admin/ab-tests");
       const data = await response.json();
-      const nextTests = data.tests || [];
-      setTests(nextTests);
-      if (nextTests.length > 0) {
-        const onboardingTest =
-          nextTests.find((test: ABTest) => test.id === funnelConfig.testId) ||
-          nextTests.find((test: ABTest) => test.id === DEFAULT_ONBOARDING_TEST_ID);
-        if (onboardingTest && (!selectedTest || selectedTest.test.id !== onboardingTest.id)) {
-          fetchTestDetails(onboardingTest.id);
-        }
-      }
+      setTests(data.tests || []);
     } catch (error) {
       console.error("Failed to fetch tests:", error);
     } finally {
@@ -388,15 +464,15 @@ export default function ABTestsPage() {
     try {
       setSaving(true);
       const testId = selectedTest.test?.id || funnelConfig.testId || DEFAULT_ONBOARDING_TEST_ID;
-      const isOnboardingLayoutTest = testId.startsWith("onboarding-layout");
+      const routeKeys = getVariantPageKeysForTest(testId);
       await fetch("/api/admin/ab-tests", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           testId,
           variants: {
-            A: { weight: weightA, page: isOnboardingLayoutTest ? "bundle-pricing" : "step-17" },
-            B: { weight: weightB, page: isOnboardingLayoutTest ? "bundle-pricing-b" : "a-step-17" },
+            A: { weight: weightA, page: routeKeys.A },
+            B: { weight: weightB, page: routeKeys.B },
           },
         }),
       });
@@ -569,6 +645,7 @@ export default function ABTestsPage() {
       totalRevenueInr: bStats.totalRevenue,
       avgRevenuePerBundleBuyerInr: bStats.avgRevenuePerUser,
     };
+    const testCopy = getTestCopy(test.id || DEFAULT_ONBOARDING_TEST_ID);
 
     const formatDateTime = (value: string) => {
       if (!value) return "—";
@@ -1204,7 +1281,7 @@ export default function ABTestsPage() {
               <div className="space-y-4">
                 <div className="flex items-center gap-4">
                   <div className="flex-1">
-                    <label className="text-sm text-muted-foreground mb-1 block">Variant A (Current)</label>
+                    <label className="text-sm text-muted-foreground mb-1 block">{testCopy.variantAInputLabel}</label>
                     <input
                       type="number"
                       min="0"
@@ -1219,7 +1296,7 @@ export default function ABTestsPage() {
                     />
                   </div>
                   <div className="flex-1">
-                    <label className="text-sm text-muted-foreground mb-1 block">Variant B (New Plans)</label>
+                    <label className="text-sm text-muted-foreground mb-1 block">{testCopy.variantBInputLabel}</label>
                     <input
                       type="number"
                       min="0"
@@ -1246,9 +1323,9 @@ export default function ABTestsPage() {
                     <span className="text-2xl font-bold text-blue-400">{test.variants?.A?.weight ?? 50}%</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Layout A route: {test.variants?.A?.page || "bundle-pricing"}
+                    {testCopy.variantARouteLabel} {test.variants?.A?.page || testCopy.variantARouteFallback}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">Current baseline onboarding/paywall experience</p>
+                  <p className="text-xs text-muted-foreground mt-1">{testCopy.variantADescription}</p>
                 </div>
                 <div className="flex-1 bg-purple-500/10 border border-purple-500/30 rounded-lg p-4">
                   <div className="flex items-center justify-between mb-2">
@@ -1256,9 +1333,9 @@ export default function ABTestsPage() {
                     <span className="text-2xl font-bold text-purple-400">{test.variants?.B?.weight ?? 50}%</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Layout B route: {test.variants?.B?.page || "bundle-pricing-b"}
+                    {testCopy.variantBRouteLabel} {test.variants?.B?.page || testCopy.variantBRouteFallback}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">Sketch-focused onboarding + compatibility on upsell</p>
+                  <p className="text-xs text-muted-foreground mt-1">{testCopy.variantBDescription}</p>
                 </div>
               </div>
             )}
@@ -1268,7 +1345,7 @@ export default function ABTestsPage() {
           <div className="mb-6">
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-blue-500" />
-              Variant A - Current Plans
+              {testCopy.variantAStatsTitle}
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <StatCard
@@ -1308,7 +1385,7 @@ export default function ABTestsPage() {
           <div className="mb-6">
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-purple-500" />
-              Variant B - New Plans
+              {testCopy.variantBStatsTitle}
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <StatCard
@@ -1406,7 +1483,7 @@ export default function ABTestsPage() {
             <h2 className="text-lg font-semibold mb-4">Funnel Decision Summary</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
-                <p className="text-sm font-semibold text-blue-300 mb-3">Variant A (Layout A)</p>
+                <p className="text-sm font-semibold text-blue-300 mb-3">{testCopy.summaryATitle}</p>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <p className="text-muted-foreground">Assigned</p>
@@ -1436,7 +1513,7 @@ export default function ABTestsPage() {
               </div>
 
               <div className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-4">
-                <p className="text-sm font-semibold text-purple-300 mb-3">Variant B (Layout B)</p>
+                <p className="text-sm font-semibold text-purple-300 mb-3">{testCopy.summaryBTitle}</p>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <p className="text-muted-foreground">Assigned</p>
