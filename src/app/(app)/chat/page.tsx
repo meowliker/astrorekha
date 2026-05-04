@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { generateUserId } from "@/lib/user-profile";
 import Script from "next/script";
 import { usePricing } from "@/hooks/usePricing";
+import { getPaymentAttributionPayload } from "@/lib/attribution-client";
 
 interface Message {
   role: "user" | "assistant";
@@ -102,6 +103,7 @@ export default function ChatPage() {
           type: "coins",
           email: localStorage.getItem("astrorekha_email") || "",
           firstName: localStorage.getItem("astrorekha_name") || "Customer",
+          attribution: getPaymentAttributionPayload(),
         }),
       });
 

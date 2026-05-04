@@ -10,6 +10,7 @@ import { generateUserId } from "@/lib/user-profile";
 import { fadeUp } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { pixelEvents } from "@/lib/pixel-events";
+import { getPaymentAttributionPayload } from "@/lib/attribution-client";
 
 const offers = [
   {
@@ -91,6 +92,7 @@ export default function BundleUpsellBPage() {
           type: "upsell",
           email: localStorage.getItem("astrorekha_email") || "",
           firstName: localStorage.getItem("astrorekha_name") || "Customer",
+          attribution: getPaymentAttributionPayload(),
         }),
       });
 

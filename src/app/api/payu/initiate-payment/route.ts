@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing, type PricingConfig } from "@/lib/pricing";
+import { sanitizePaymentAttribution, type PaymentAttributionPayload } from "@/lib/attribution";
 
 // Fetch dynamic pricing from database
 async function getPricingConfig(): Promise<PricingConfig> {
@@ -25,10 +26,58 @@ function generateHash(params: Record<string, string>, salt: string): string {
   return crypto.createHash("sha512").update(hashString).digest("hex");
 }
 
+function extractAttributionFromReferer(referer: string | undefined): PaymentAttributionPayload {
+  if (!referer) return {};
+  try {
+    const url = new URL(referer);
+    const get = (key: string) => url.searchParams.get(key)?.trim() || undefined;
+    return sanitizePaymentAttribution({
+      fbclid: get("fbclid"),
+      utm_source: get("utm_source"),
+      utm_medium: get("utm_medium"),
+      utm_campaign: get("utm_campaign"),
+      utm_term: get("utm_term"),
+      utm_content: get("utm_content"),
+      utm_id: get("utm_id"),
+      meta_campaign_id:
+        get("meta_campaign_id") ||
+        get("campaign_id") ||
+        get("campaignid") ||
+        get("utm_campaign_id") ||
+        get("cid"),
+      meta_adset_id: get("meta_adset_id") || get("adset_id") || get("adsetid"),
+      meta_ad_id: get("meta_ad_id") || get("ad_id") || get("adid"),
+      click_id: get("gclid") || get("gbraid") || get("wbraid"),
+      landing_path: `${url.pathname}${url.search}`,
+      landing_url: url.toString(),
+      referrer_url: referer,
+      captured_at: new Date().toISOString(),
+    });
+  } catch {
+    return {};
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { type, bundleId, packageId, userId, email, firstName } = await request.json();
+    const body = (await request.json()) as {
+      type?: string;
+      bundleId?: string;
+      packageId?: string;
+      userId?: string;
+      email?: string;
+      firstName?: string;
+      attribution?: PaymentAttributionPayload;
+    };
+    const { type, bundleId, packageId, userId, email, firstName, attribution } = body;
     const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+    const sanitizedAttribution = sanitizePaymentAttribution(attribution);
+    const requestReferrer = request.headers.get("referer") || undefined;
+    const refererAttribution = extractAttributionFromReferer(requestReferrer);
+    const finalAttribution: PaymentAttributionPayload = {
+      ...refererAttribution,
+      ...sanitizedAttribution,
+    };
 
     const merchantKey = process.env.PAYU_MERCHANT_KEY;
     const merchantSalt = process.env.PAYU_MERCHANT_SALT;
@@ -45,7 +94,7 @@ export async function POST(request: NextRequest) {
 
     let amount: number;
     let productInfo: string;
-    let metadata: Record<string, string> = {
+    const metadata: Record<string, string> = {
       userId: userId || "",
       type: type || "",
     };
@@ -139,11 +188,28 @@ export async function POST(request: NextRequest) {
       type,
       bundle_id: (bundleId || packageId || null),
       feature: metadata.feature || null,
-      coins: metadata.coins ? parseInt(metadata.coins) : null,
+      coins: metadata.coins ? parseInt(metadata.coins, 10) : null,
       customer_email: normalizedEmail || null,
       amount: Math.round(amount * 100), // Store in paise for consistency
       currency: "INR",
       payment_status: "created",
+      fbclid: finalAttribution.fbclid || null,
+      fbc: finalAttribution.fbc || null,
+      fbp: finalAttribution.fbp || null,
+      utm_source: finalAttribution.utm_source || null,
+      utm_medium: finalAttribution.utm_medium || null,
+      utm_campaign: finalAttribution.utm_campaign || null,
+      utm_term: finalAttribution.utm_term || null,
+      utm_content: finalAttribution.utm_content || null,
+      utm_id: finalAttribution.utm_id || null,
+      click_id: finalAttribution.click_id || null,
+      meta_campaign_id: finalAttribution.meta_campaign_id || null,
+      meta_adset_id: finalAttribution.meta_adset_id || null,
+      meta_ad_id: finalAttribution.meta_ad_id || null,
+      landing_path: finalAttribution.landing_path || null,
+      landing_url: finalAttribution.landing_url || null,
+      referrer_url: finalAttribution.referrer_url || requestReferrer || null,
+      attribution_captured_at: finalAttribution.captured_at || new Date().toISOString(),
       created_at: new Date().toISOString(),
     });
     
@@ -166,10 +232,11 @@ export async function POST(request: NextRequest) {
       udf4: payuParams.udf4,
       udf5: payuParams.udf5,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("PayU initiate payment error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to initiate payment";
     return NextResponse.json(
-      { error: error.message || "Failed to initiate payment" },
+      { error: errorMessage },
       { status: 500 }
     );
   }

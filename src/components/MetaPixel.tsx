@@ -3,6 +3,7 @@
 import Script from "next/script";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, Suspense } from "react";
+import { captureAttributionFromPage } from "@/lib/attribution-client";
 
 const PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID;
 
@@ -12,6 +13,7 @@ function PageViewTracker() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
+    captureAttributionFromPage();
     // Track page view on route change
     if (typeof window !== "undefined" && (window as any).fbq) {
       (window as any).fbq("track", "PageView");

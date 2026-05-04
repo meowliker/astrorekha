@@ -684,7 +684,7 @@ export async function GET(request: NextRequest) {
 
     const { data: paymentRows } = await supabase
       .from("payments")
-      .select("id, amount, payment_status, created_at, type, bundle_id, currency, user_id")
+      .select("id, amount, payment_status, created_at, type, bundle_id, currency, user_id, customer_email, payu_txn_id")
       .gte("created_at", startIso)
       .lte("created_at", endIso)
       .order("created_at", { ascending: false })
@@ -887,11 +887,40 @@ export async function GET(request: NextRequest) {
     };
 
     const paymentStarts = paymentRows?.length || 0;
+    const conversionBundleIds = new Set(["palm-reading", "palm-birth", "palm-birth-compat"]);
+    const successfulStatuses = new Set(["paid", "success", "captured"]);
+    const uniqueBundleBuyers = new Set<string>();
+
+    const getSafeId = (value: unknown): string => {
+      if (value === null || value === undefined) return "";
+      const normalized = String(value).trim().toLowerCase();
+      return normalized && normalized !== "0" ? normalized : "";
+    };
+
+    for (const row of paymentRows || []) {
+      const status = normalizeStatus(row.payment_status);
+      if (!successfulStatuses.has(status)) continue;
+
+      const paymentType = String((row as { type?: string | null }).type || "").trim().toLowerCase();
+      const bundleId = String((row as { bundle_id?: string | null }).bundle_id || "").trim();
+      if ((paymentType !== "bundle" && paymentType !== "bundle_payment") || !conversionBundleIds.has(bundleId)) {
+        continue;
+      }
+
+      const userId = getSafeId(row.user_id);
+      const email = getSafeId((row as { customer_email?: string | null }).customer_email || "");
+      const txnId = getSafeId((row as { payu_txn_id?: string | null }).payu_txn_id || "");
+      const paymentId = getSafeId(row.id);
+      const dedupeKey = userId || email || txnId || paymentId;
+      if (dedupeKey) uniqueBundleBuyers.add(dedupeKey);
+    }
+
+    const uniqueBundleBuyerCount = uniqueBundleBuyers.size;
     const paywallSignal = inferPaywallVisitors(selectedRouteData.routeMetrics);
     const totalVisitors = selectedRouteData.totalSessions > 0 ? selectedRouteData.totalSessions : paymentStarts;
     const paywallVisitors = paywallSignal.visitors > 0 ? paywallSignal.visitors : paymentStarts;
-    const exitedWithoutPaying = Math.max(totalVisitors - paidOrders, 0);
-    const conversionRateRaw = totalVisitors > 0 ? (paidOrders / totalVisitors) * 100 : 0;
+    const exitedWithoutPaying = Math.max(totalVisitors - uniqueBundleBuyerCount, 0);
+    const conversionRateRaw = totalVisitors > 0 ? (uniqueBundleBuyerCount / totalVisitors) * 100 : 0;
     const conversionRate = Math.min(conversionRateRaw, 100);
     const dropOffRate = totalVisitors > 0 ? (exitedWithoutPaying / totalVisitors) * 100 : 0;
 
@@ -914,7 +943,7 @@ export async function GET(request: NextRequest) {
       funnel: {
         totalVisitors,
         paywallVisitors,
-        paidOrders,
+        paidOrders: uniqueBundleBuyerCount,
         exitedWithoutPaying,
         conversionRate: Number(conversionRate.toFixed(2)),
         dropOffRate: Number(dropOffRate.toFixed(2)),
@@ -989,7 +1018,7 @@ export async function GET(request: NextRequest) {
         paywallSignal.matchedRoute
           ? `Paywall audience inferred from route: ${paywallSignal.matchedRoute}.`
           : "Paywall audience inferred from payment starts because paywall route traffic was unavailable.",
-        "Checkout funnel conversion is calculated using total visitors (not only paywall visitors).",
+        "Checkout funnel conversion is calculated using unique site viewers and unique buyers of these bundles: palm-reading, palm-birth, palm-birth-compat.",
         hasLivePayUSalesData
           ? "Sales metrics are sourced from PayU live with refund/chargeback events subtracted."
           : "PayU live did not return sales rows for this range.",

@@ -353,9 +353,17 @@ function resolveCustomBusinessWindow(
 
 function parsePayUTimestamp(value: unknown): Date | null {
   if (typeof value !== "string" || !value.trim()) return null;
-  const parsed = new Date(value.replace(" ", "T") + "+05:30");
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed;
+  const raw = value.trim();
+
+  const direct = new Date(raw);
+  if (!Number.isNaN(direct.getTime())) return direct;
+
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized);
+  const parsed = new Date(hasTimezone ? normalized : `${normalized}+05:30`);
+  if (!Number.isNaN(parsed.getTime())) return parsed;
+
+  return null;
 }
 
 function formatIstDateTime(date: Date): string {
@@ -383,6 +391,8 @@ interface AdMetrics {
   cpm: number;
   ctr: number;
   purchases: number;
+  firstPartySales?: number;
+  firstPartyRevenue?: number;
   costPerPurchase: number;
   reach: number;
   roas: number;
@@ -411,6 +421,10 @@ function clampNonNegative(value: number): number {
 function parseMetricNumber(value: unknown): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeMetaEntityId(value: string | null | undefined): string {
+  return String(value || "").replace(/^act_/i, "").trim();
 }
 
 function normalizeAdAccountId(value: string): string {
@@ -583,9 +597,61 @@ export async function GET(request: NextRequest) {
     const totalRefunds = classifiedPayu.filter((row) => row.financial.kind === "refund").length;
     console.log(`PayU: ${totalSales} sales, ₹${totalRevenue.toFixed(2)} revenue`);
 
+    type PaymentAttributionRow = {
+      id: string;
+      amount: number | null;
+      created_at: string | null;
+      fulfilled_at: string | null;
+      meta_campaign_id: string | null;
+      utm_campaign: string | null;
+    };
+
+    const paidStatuses = ["paid", "success", "captured"];
+    const attributionFetchStart = new Date(
+      businessWindow.start.getTime() - 48 * 60 * 60 * 1000
+    ).toISOString();
+    const attributionFetchEnd = new Date(
+      businessWindow.end.getTime() + 24 * 60 * 60 * 1000
+    ).toISOString();
+
+    let firstPartyCampaignAttributionAvailable = true;
+    const liveAttributionEvents: Array<{
+      amountInr: number;
+      campaignId: string;
+      utmCampaign: string;
+    }> = [];
+
+    const { data: attributedPayments, error: attributedPaymentsError } = await supabase
+      .from("payments")
+      .select("id, amount, created_at, fulfilled_at, meta_campaign_id, utm_campaign")
+      .in("payment_status", paidStatuses)
+      .gte("created_at", attributionFetchStart)
+      .lte("created_at", attributionFetchEnd);
+
+    if (attributedPaymentsError) {
+      firstPartyCampaignAttributionAvailable = false;
+      console.warn("First-party campaign attribution unavailable:", attributedPaymentsError.message);
+    } else {
+      for (const payment of (attributedPayments || []) as PaymentAttributionRow[]) {
+        const eventTime = parsePayUTimestamp(payment.fulfilled_at || payment.created_at);
+        if (!eventTime) continue;
+        if (eventTime < businessWindow.start || eventTime > businessWindow.end) continue;
+
+        const campaignId = normalizeMetaEntityId(payment.meta_campaign_id);
+        const amountInr = parseMetricNumber(payment.amount) / 100;
+        const utmCampaign = String(payment.utm_campaign || "").trim().toLowerCase();
+
+        liveAttributionEvents.push({
+          amountInr,
+          campaignId,
+          utmCampaign,
+        });
+      }
+    }
+
     // Build date range params for Meta (date-granular, mapped from IST business window)
-    const metaSinceDate = getIstDateTimeParts(businessWindow.start).dayKey;
-    const metaUntilDate = getIstDateTimeParts(businessWindow.end).dayKey;
+    const metaSinceDate = businessWindow.startDateIso;
+    const metaUntilDate = businessWindow.endDateIso;
     const dateParams = `time_range={"since":"${metaSinceDate}","until":"${metaUntilDate}"}`;
 
     // Fields to fetch for insights
@@ -691,10 +757,47 @@ export async function GET(request: NextRequest) {
       adsByAdset.get(adsetId)!.push(ad);
     });
 
+    const campaignIds = new Set(campaignsData.map((campaign: any) => String(campaign.id)));
+    const campaignNameToId = new Map<string, string>();
+    campaignsData.forEach((campaign: any) => {
+      const key = String(campaign.name || "").trim().toLowerCase();
+      if (key) campaignNameToId.set(key, String(campaign.id));
+    });
+
+    let firstPartyAttributedSales = 0;
+    let firstPartyAttributedRevenue = 0;
+    const firstPartyCampaignAttribution = new Map<string, { sales: number; revenue: number }>();
+    if (firstPartyCampaignAttributionAvailable) {
+      for (const event of liveAttributionEvents) {
+        let resolvedCampaignId = "";
+        if (event.campaignId && campaignIds.has(event.campaignId)) {
+          resolvedCampaignId = event.campaignId;
+        } else if (event.utmCampaign) {
+          const normalizedUtm = event.utmCampaign.toLowerCase();
+          resolvedCampaignId =
+            campaignNameToId.get(normalizedUtm) ||
+            (campaignIds.has(normalizedUtm) ? normalizedUtm : "");
+        }
+
+        if (!resolvedCampaignId) continue;
+
+        firstPartyAttributedSales += 1;
+        firstPartyAttributedRevenue += event.amountInr;
+        const current = firstPartyCampaignAttribution.get(resolvedCampaignId) || { sales: 0, revenue: 0 };
+        current.sales += 1;
+        current.revenue += event.amountInr;
+        firstPartyCampaignAttribution.set(resolvedCampaignId, current);
+      }
+    }
+
     // Build hierarchical structure
     const campaigns: CampaignData[] = campaignsData.map((campaign: any) => {
       const campaignInsight = campaignInsightsMap.get(campaign.id);
       const metrics = extractMetrics(campaignInsight);
+      const campaignAttribution = firstPartyCampaignAttribution.get(String(campaign.id)) || {
+        sales: 0,
+        revenue: 0,
+      };
       
       const budget = campaign.daily_budget 
         ? parseFloat(campaign.daily_budget) / 100 
@@ -742,6 +845,8 @@ export async function GET(request: NextRequest) {
         name: campaign.name,
         status: campaign.status,
         budget,
+        firstPartySales: campaignAttribution.sales,
+        firstPartyRevenue: campaignAttribution.revenue,
         ...metrics,
         adsets,
       };
@@ -775,7 +880,10 @@ export async function GET(request: NextRequest) {
 
     const firstPartySales = totalSales;
     const metaPurchases = totals.purchases;
-    const organicOrUnattributedSales = clampNonNegative(firstPartySales - metaPurchases);
+    const attributionBaseline = firstPartyCampaignAttributionAvailable
+      ? firstPartyAttributedSales
+      : metaPurchases;
+    const organicOrUnattributedSales = clampNonNegative(firstPartySales - attributionBaseline);
 
     // Calculate spend in INR and profit
     const totalSpendINR = totals.spend * exchangeRate;
@@ -822,14 +930,20 @@ export async function GET(request: NextRequest) {
       },
       sourceBreakdown: {
         firstPartySales,
+        firstPartyAttributedSales,
+        firstPartyAttributedRevenue,
         metaPurchases,
         organicOrUnattributedSales,
       },
       attribution: {
-        campaignAttributionSource: "meta_reports",
-        firstPartyCampaignAttributionAvailable: false,
+        campaignAttributionSource: firstPartyCampaignAttributionAvailable
+          ? "first_party_payment_tracking"
+          : "meta_reports",
+        firstPartyCampaignAttributionAvailable,
         note:
-          "Campaign rows use Meta-reported website purchases/ROAS. Organic or unattributed sales are computed from first-party PayU sales that are not currently attributable to a Meta campaign in our stored data.",
+          firstPartyCampaignAttributionAvailable
+            ? "Campaign rows include Meta-reported website purchases plus live first-party sales attribution from captured click IDs/UTMs on payments. Organic or unattributed reflects first-party sales not mapped to a campaign ID."
+            : "Campaign rows use Meta-reported website purchases/ROAS. First-party campaign attribution columns become available after payment attribution migration is applied.",
       },
       totals: {
         ...totals,

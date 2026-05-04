@@ -74,6 +74,8 @@ interface MetaAdMetrics {
   cpm: number;
   ctr: number;
   purchases: number;
+  firstPartySales?: number;
+  firstPartyRevenue?: number;
   costPerPurchase: number;
   reach: number;
   roas: number;
@@ -111,6 +113,8 @@ interface MetaBreakdownData {
   };
   sourceBreakdown?: {
     firstPartySales: number;
+    firstPartyAttributedSales?: number;
+    firstPartyAttributedRevenue?: number;
     metaPurchases: number;
     organicOrUnattributedSales: number;
   };
@@ -2334,6 +2338,7 @@ function MetaBreakdownTab({
     ? data.revenue.totalRevenue / data.revenue.totalSales
     : 1500;
   const firstPartySales = data?.sourceBreakdown?.firstPartySales ?? data?.revenue?.totalSales ?? 0;
+  const firstPartyAttributedSales = data?.sourceBreakdown?.firstPartyAttributedSales ?? 0;
   const metaPurchases = data?.sourceBreakdown?.metaPurchases ?? data?.totals?.purchases ?? 0;
   const organicOrUnattributedSales = data?.sourceBreakdown?.organicOrUnattributedSales ?? Math.max(firstPartySales - metaPurchases, 0);
 
@@ -2687,7 +2692,7 @@ function MetaBreakdownTab({
 
       {/* Campaign Metrics Summary */}
       {data?.totals && (
-        <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-8 gap-3">
           <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
             <p className="text-white/50 text-xs mb-1">Total Spend (USD)</p>
             <p className="text-red-400 text-xl font-bold">{formatUSD(data.totals.spend)}</p>
@@ -2695,6 +2700,10 @@ function MetaBreakdownTab({
           <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
             <p className="text-white/50 text-xs mb-1">Meta Purchases</p>
             <p className="text-blue-400 text-xl font-bold">{metaPurchases}</p>
+          </div>
+          <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
+            <p className="text-white/50 text-xs mb-1">Live Attributed Sales</p>
+            <p className="text-cyan-300 text-xl font-bold">{firstPartyAttributedSales}</p>
           </div>
           <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
             <p className="text-white/50 text-xs mb-1">Organic / Unattributed</p>
@@ -2750,6 +2759,7 @@ function MetaBreakdownTab({
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">ROAS</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Profit</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Meta Purchases</th>
+                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Live Sales</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">CPC</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">CPA</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">CPM</th>
@@ -2780,6 +2790,7 @@ function MetaBreakdownTab({
                         {calculateEstimatedProfit(campaign.purchases, campaign.spend, campaign.roas) >= 0 ? "" : "-"}₹{Math.abs(calculateEstimatedProfit(campaign.purchases, campaign.spend, campaign.roas)).toFixed(2)}
                       </td>
                       <td className="text-white px-4 py-3 text-right">{campaign.purchases}</td>
+                      <td className="text-cyan-300 px-4 py-3 text-right">{campaign.firstPartySales ?? 0}</td>
                       <td className="text-white/60 px-4 py-3 text-right">{formatINR(campaign.cpc)}</td>
                       <td className="text-amber-400 px-4 py-3 text-right">{campaign.costPerPurchase > 0 ? formatINR(campaign.costPerPurchase) : "-"}</td>
                       <td className="text-white/60 px-4 py-3 text-right">{formatINR(campaign.cpm)}</td>
@@ -2810,6 +2821,7 @@ function MetaBreakdownTab({
                             {calculateEstimatedProfit(adset.purchases, adset.spend, adset.roas) >= 0 ? "" : "-"}₹{Math.abs(calculateEstimatedProfit(adset.purchases, adset.spend, adset.roas)).toFixed(2)}
                           </td>
                           <td className="text-white/80 px-4 py-3 text-right">{adset.purchases}</td>
+                          <td className="text-cyan-300/70 px-4 py-3 text-right">-</td>
                           <td className="text-white/50 px-4 py-3 text-right">{formatINR(adset.cpc)}</td>
                           <td className="text-amber-400/80 px-4 py-3 text-right">{adset.costPerPurchase > 0 ? formatINR(adset.costPerPurchase) : "-"}</td>
                           <td className="text-white/50 px-4 py-3 text-right">{formatINR(adset.cpm)}</td>
@@ -2833,6 +2845,7 @@ function MetaBreakdownTab({
                               {calculateEstimatedProfit(ad.purchases, ad.spend, ad.roas) >= 0 ? "" : "-"}₹{Math.abs(calculateEstimatedProfit(ad.purchases, ad.spend, ad.roas)).toFixed(2)}
                             </td>
                             <td className="text-white/60 px-4 py-3 text-right text-xs">{ad.purchases}</td>
+                            <td className="text-cyan-300/50 px-4 py-3 text-right text-xs">-</td>
                             <td className="text-white/40 px-4 py-3 text-right text-xs">{formatINR(ad.cpc)}</td>
                             <td className="text-amber-400/60 px-4 py-3 text-right text-xs">{ad.costPerPurchase > 0 ? formatINR(ad.costPerPurchase) : "-"}</td>
                             <td className="text-white/40 px-4 py-3 text-right text-xs">{formatINR(ad.cpm)}</td>
@@ -2856,6 +2869,7 @@ function MetaBreakdownTab({
                   <td className="text-white/40 px-4 py-3 text-right">-</td>
                   <td className="text-white/40 px-4 py-3 text-right">-</td>
                   <td className="text-emerald-300 px-4 py-3 text-right font-medium">{organicOrUnattributedSales}</td>
+                  <td className="text-white/40 px-4 py-3 text-right">-</td>
                   <td className="text-white/40 px-4 py-3 text-right">-</td>
                   <td className="text-white/40 px-4 py-3 text-right">-</td>
                   <td className="text-white/40 px-4 py-3 text-right">-</td>

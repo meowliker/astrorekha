@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { generateUserId } from "@/lib/user-profile";
 import { pixelEvents } from "@/lib/pixel-events";
 import Script from "next/script";
+import { getPaymentAttributionPayload } from "@/lib/attribution-client";
 
 const progressSteps = [
   { label: "Order submitted", completed: true },
@@ -118,6 +119,7 @@ function BundleUpsellContent() {
           type: "upsell",
           email: localStorage.getItem("astrorekha_email") || "",
           firstName: localStorage.getItem("astrorekha_name") || "Customer",
+          attribution: getPaymentAttributionPayload(),
         }),
       });
 

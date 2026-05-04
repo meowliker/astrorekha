@@ -6,6 +6,7 @@ import { X, Lock, Sparkles, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUserStore, featureNames, featurePrices, UnlockedFeatures } from "@/lib/user-store";
 import { generateUserId } from "@/lib/user-profile";
+import { getPaymentAttributionPayload } from "@/lib/attribution-client";
 
 // Map feature keys to report IDs for Razorpay checkout
 const featureToReportId: Record<keyof UnlockedFeatures, string> = {
@@ -50,6 +51,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
           type: "report",
           email: localStorage.getItem("astrorekha_email") || "",
           firstName: localStorage.getItem("astrorekha_name") || "Customer",
+          attribution: getPaymentAttributionPayload(),
         }),
       });
 
