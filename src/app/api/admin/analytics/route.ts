@@ -3,6 +3,7 @@ import { google } from "googleapis";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { classifyPayUEvent } from "@/lib/finance-events";
 import { getPayUTransactions } from "@/lib/payu-api";
+import { getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -166,26 +167,27 @@ async function fetchExchangeRate(): Promise<number> {
 }
 
 async function fetchMetaAdsDailySpend(startDate: string, endDate: string): Promise<Map<string, number>> {
-  const metaAccessToken = process.env.META_ACCESS_TOKEN;
-  const adAccountId = process.env.META_AD_ACCOUNT_ID;
+  const credentials = getMetaAccountCredentialsFromEnv();
 
-  if (!metaAccessToken || !adAccountId) {
+  if (credentials.length === 0) {
     return new Map();
   }
 
   try {
     const dateParams = `time_range={"since":"${startDate}","until":"${endDate}"}`;
-    const dailyUrl = `https://graph.facebook.com/v21.0/act_${adAccountId}/insights?fields=spend&time_increment=1&${dateParams}&limit=90&access_token=${metaAccessToken}`;
-    const response = await fetch(dailyUrl);
-    const data = await response.json();
-
     const spendMap = new Map<string, number>();
-    if (Array.isArray(data?.data)) {
-      for (const day of data.data) {
-        const date = String(day?.date_start || "");
-        const spend = Number(day?.spend || 0);
-        if (date) {
-          spendMap.set(date, Number.isFinite(spend) ? spend : 0);
+    for (const { accountId: adAccountId, accessToken } of credentials) {
+      const dailyUrl = `https://graph.facebook.com/v21.0/act_${adAccountId}/insights?fields=spend&time_increment=1&${dateParams}&limit=90&access_token=${accessToken}`;
+      const response = await fetch(dailyUrl);
+      const data = await response.json();
+      if (Array.isArray(data?.data)) {
+        for (const day of data.data) {
+          const date = String(day?.date_start || "");
+          const spend = Number(day?.spend || 0);
+          if (date) {
+            const current = spendMap.get(date) || 0;
+            spendMap.set(date, current + (Number.isFinite(spend) ? spend : 0));
+          }
         }
       }
     }

@@ -64,6 +64,9 @@ interface ProfitSheetRow {
 // Meta Ads Breakdown interfaces
 interface MetaAdMetrics {
   id: string;
+  metaId?: string;
+  accountId?: string;
+  accountName?: string;
   name: string;
   status: string;
   spend: number;
@@ -91,8 +94,47 @@ interface MetaCampaignData extends MetaAdMetrics {
   adsets: MetaAdSetData[];
 }
 
+interface MetaTotals {
+  spend: number;
+  spendINR: number;
+  impressions: number;
+  clicks: number;
+  purchases: number;
+  reach: number;
+  cpc: number;
+  cpm: number;
+  ctr: number;
+  costPerPurchase: number;
+  roas: number;
+}
+
+interface MetaSourceBreakdown {
+  firstPartySales: number;
+  firstPartyAttributedSales?: number;
+  firstPartyAttributedRevenue?: number;
+  metaPurchases: number;
+  organicOrUnattributedSales: number;
+}
+
 interface MetaBreakdownData {
   configured: boolean;
+  account?: {
+    id: string;
+    name: string;
+    currency: string;
+    timezone: string;
+  };
+  accounts?: Array<{
+    account: {
+      id: string;
+      name: string;
+      currency: string;
+      timezone: string;
+    };
+    campaigns: MetaCampaignData[];
+    totals: MetaTotals;
+    sourceBreakdown?: MetaSourceBreakdown;
+  }>;
   exchangeRate: number;
   datePreset: string;
   dateRange: { start: string; end: string };
@@ -111,31 +153,13 @@ interface MetaBreakdownData {
     profit: number;
     roas: number;
   };
-  sourceBreakdown?: {
-    firstPartySales: number;
-    firstPartyAttributedSales?: number;
-    firstPartyAttributedRevenue?: number;
-    metaPurchases: number;
-    organicOrUnattributedSales: number;
-  };
+  sourceBreakdown?: MetaSourceBreakdown;
   attribution?: {
     campaignAttributionSource: string;
     firstPartyCampaignAttributionAvailable: boolean;
     note: string;
   };
-  totals: {
-    spend: number;
-    spendINR: number;
-    impressions: number;
-    clicks: number;
-    purchases: number;
-    reach: number;
-    cpc: number;
-    cpm: number;
-    ctr: number;
-    costPerPurchase: number;
-    roas: number;
-  };
+  totals: MetaTotals;
 }
 
 interface AnalyticsPeakSalesMetric {
@@ -1990,6 +2014,94 @@ function ProfitSheetTab({
     });
   };
 
+  const profitMinRangeStart = "2026-03-13";
+  const [pickerStartDate, setPickerStartDate] = useState<string>(startDate);
+  const [pickerEndDate, setPickerEndDate] = useState<string>(endDate);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const calendarDropdownRef = useRef<HTMLDivElement | null>(null);
+  const [calendarMonthStart, setCalendarMonthStart] = useState<Date>(() => {
+    const focusDate = endDate || startDate || getCurrentBusinessDateIso();
+    return getMonthStartUtcDate(focusDate);
+  });
+
+  useEffect(() => {
+    setPickerStartDate(startDate);
+    setPickerEndDate(endDate);
+  }, [startDate, endDate]);
+
+  useEffect(() => {
+    if (!isCalendarOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (calendarDropdownRef.current && target && !calendarDropdownRef.current.contains(target)) {
+        setIsCalendarOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsCalendarOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isCalendarOpen]);
+
+  const maxSelectableBusinessDate = getCurrentBusinessDateIso();
+  const maxMonthStart = getMonthStartUtcDate(maxSelectableBusinessDate);
+  const calendarCells = useMemo(() => buildMonthGrid(calendarMonthStart), [calendarMonthStart]);
+  const monthLabel = new Intl.DateTimeFormat("en-IN", {
+    timeZone: META_IST_TIMEZONE,
+    month: "long",
+    year: "numeric",
+  }).format(calendarMonthStart);
+
+  const handleCalendarDateSelect = (isoDate: string) => {
+    if (isoDate < profitMinRangeStart || isoDate > maxSelectableBusinessDate) {
+      return;
+    }
+    if (!pickerStartDate || (pickerStartDate && pickerEndDate)) {
+      setPickerStartDate(isoDate);
+      setPickerEndDate("");
+      return;
+    }
+    if (isoDate < pickerStartDate) {
+      setPickerStartDate(isoDate);
+      setPickerEndDate("");
+      return;
+    }
+    setPickerEndDate(isoDate);
+  };
+
+  const applyCustomRange = () => {
+    if (!pickerStartDate) return;
+    const finalEndDate = pickerEndDate || pickerStartDate;
+    setStartDate(pickerStartDate);
+    setEndDate(finalEndDate);
+    setIsCalendarOpen(false);
+  };
+
+  const selectedRangeLabel = pickerStartDate
+    ? `${formatCalendarDateLabel(pickerStartDate)}${
+        pickerEndDate ? ` → ${formatCalendarDateLabel(pickerEndDate)}` : ""
+      }`
+    : "No date selected";
+
+  const activeRangeStart = startDate || pickerStartDate;
+  const activeRangeEnd = endDate || pickerEndDate || activeRangeStart;
+  const activeRangeButtonLabel =
+    activeRangeStart && activeRangeEnd
+      ? activeRangeStart === activeRangeEnd
+        ? formatCalendarDateShort(activeRangeStart)
+        : `${formatCalendarDateShort(activeRangeStart)} - ${formatCalendarDateShort(activeRangeEnd)}`
+      : "Select Range";
+
   // Filter data based on filters
   let filteredData = [...data];
 
@@ -2050,23 +2162,116 @@ function ProfitSheetTab({
       {/* Filters */}
       <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
         <div className="flex flex-wrap items-end gap-4">
-          <div>
-            <label className="text-white/50 text-xs mb-1 block">Start Date</label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50"
-            />
-          </div>
-          <div>
-            <label className="text-white/50 text-xs mb-1 block">End Date</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50"
-            />
+          <div ref={calendarDropdownRef} className="relative">
+            <label className="text-white/50 text-xs mb-1 block">Custom Range</label>
+            <button
+              onClick={() => setIsCalendarOpen((prev) => !prev)}
+              className="px-3 py-2 rounded-lg text-sm border bg-white/5 border-white/10 text-white/70 hover:bg-white/10 transition-colors"
+            >
+              {activeRangeButtonLabel}
+            </button>
+            {isCalendarOpen && (
+              <div className="absolute left-0 top-[calc(100%+8px)] z-50 w-[92vw] sm:w-[680px] max-w-[92vw] rounded-2xl border border-white/15 bg-[#1A2235] shadow-2xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-white/80 text-sm font-medium">Custom Range</p>
+                  <button
+                    onClick={() => setIsCalendarOpen(false)}
+                    className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
+                    aria-label="Close custom range picker"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between mb-3">
+                  <button
+                    onClick={() =>
+                      setCalendarMonthStart(
+                        (prev) => new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() - 1, 1))
+                      )
+                    }
+                    className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
+                    aria-label="Previous month"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <p className="text-white text-sm font-medium">{monthLabel}</p>
+                  <button
+                    onClick={() =>
+                      setCalendarMonthStart(
+                        (prev) => new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() + 1, 1))
+                      )
+                    }
+                    disabled={calendarMonthStart.getTime() >= maxMonthStart.getTime()}
+                    className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    aria-label="Next month"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-7 gap-1 text-[11px] text-white/50 mb-2">
+                  {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((weekday) => (
+                    <div key={weekday} className="text-center py-1">
+                      {weekday}
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-1">
+                  {calendarCells.map((cell) => {
+                    const isDisabled =
+                      cell.isoDate < profitMinRangeStart || cell.isoDate > maxSelectableBusinessDate;
+                    const isStart = pickerStartDate === cell.isoDate;
+                    const isEnd = pickerEndDate === cell.isoDate;
+                    const isInRange =
+                      !!pickerStartDate &&
+                      !!pickerEndDate &&
+                      cell.isoDate >= pickerStartDate &&
+                      cell.isoDate <= pickerEndDate;
+                    return (
+                      <button
+                        key={cell.isoDate}
+                        onClick={() => handleCalendarDateSelect(cell.isoDate)}
+                        disabled={isDisabled}
+                        className={`h-9 rounded-md text-sm transition-colors ${
+                          isStart || isEnd
+                            ? "bg-primary text-white"
+                            : isInRange
+                            ? "bg-primary/25 text-white"
+                            : cell.inCurrentMonth
+                            ? "bg-white/5 text-white hover:bg-white/15"
+                            : "bg-white/[0.02] text-white/45 hover:bg-white/10"
+                        } ${isDisabled ? "opacity-30 cursor-not-allowed" : ""}`}
+                        title={formatCalendarDateLabel(cell.isoDate)}
+                      >
+                        {cell.day}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-white/60">
+                    Selected: <span className="text-white/90">{selectedRangeLabel}</span>
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setPickerStartDate(startDate);
+                        setPickerEndDate(endDate);
+                      }}
+                      className="px-3 py-1.5 text-xs rounded-md bg-white/10 hover:bg-white/20 text-white/80 transition-colors"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      onClick={applyCustomRange}
+                      disabled={loading || !pickerStartDate}
+                      className="px-3 py-1.5 text-xs rounded-md bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 transition-colors disabled:opacity-50"
+                    >
+                      Apply Range
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <div>
             <label className="text-white/50 text-xs mb-1 block">Period</label>
@@ -2326,36 +2531,108 @@ function MetaBreakdownTab({
   onCustomDateRefresh: (start: string, end: string) => void;
 }) {
   const formatUSD = (value: number) => `$${value.toFixed(2)}`;
-  const formatINR = (value: number) => {
-    const rate = exchangeRate ? parseFloat(exchangeRate) : 85;
-    return `₹${(value * rate).toFixed(2)}`;
-  };
+  const parsedExchangeRate = exchangeRate ? parseFloat(exchangeRate) : 85;
+  const exchangeRateValue = Number.isFinite(parsedExchangeRate) && parsedExchangeRate > 0 ? parsedExchangeRate : 85;
+  const formatINR = (value: number) => `₹${(value * exchangeRateValue).toFixed(2)}`;
+  const normalizeAccountKey = (value: string | undefined) => String(value || "").replace(/^act_/i, "");
+  const toInrValue = (value: number, currency?: string) =>
+    String(currency || "USD").toUpperCase() === "INR" ? value : value * exchangeRateValue;
+  const formatInrValue = (value: number, currency?: string) => `₹${toInrValue(value, currency).toFixed(2)}`;
   const formatPercent = (value: number) => `${value.toFixed(2)}%`;
+
+  type BreakdownSection = {
+    key: string;
+    title: string;
+    subtitle: string;
+    campaigns: MetaCampaignData[];
+    totals: MetaTotals | null;
+    sourceBreakdown: MetaSourceBreakdown | undefined;
+    showCampaignAccountName: boolean;
+    defaultCollapsed: boolean;
+  };
+
+  const breakdownSections = useMemo<BreakdownSection[]>(() => {
+    const accountSections = (data?.accounts || []).map((account, index) => ({
+      key: account.account.id,
+      title: `Ad Account ${index + 1}`,
+      subtitle: account.account.name || account.account.id,
+      campaigns: account.campaigns || [],
+      totals: account.totals || null,
+      sourceBreakdown: account.sourceBreakdown,
+      showCampaignAccountName: false,
+      defaultCollapsed: true,
+    }));
+
+    const mergedSection: BreakdownSection = {
+      key: "merged",
+      title: "Merged Both Ad Accounts",
+      subtitle:
+        data?.account?.name ||
+        (accountSections.length > 1 ? "Combined performance across all mapped ad accounts" : "Combined view"),
+      campaigns: data?.campaigns || [],
+      totals: data?.totals || null,
+      sourceBreakdown: data?.sourceBreakdown,
+      showCampaignAccountName: true,
+      defaultCollapsed: false,
+    };
+
+    return [...accountSections, mergedSection];
+  }, [data]);
+
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+
+  const accountCurrencyById = useMemo(() => {
+    const map = new Map<string, string>();
+    (data?.accounts || []).forEach((account) => {
+      map.set(normalizeAccountKey(account.account.id), String(account.account.currency || "USD").toUpperCase());
+    });
+    return map;
+  }, [data]);
+
+  const isCampaignActive = (status: string | undefined) => String(status || "").toUpperCase() === "ACTIVE";
+
+  useEffect(() => {
+    setCollapsedSections((prev) => {
+      const next: Record<string, boolean> = {};
+      breakdownSections.forEach((section) => {
+        if (Object.prototype.hasOwnProperty.call(prev, section.key)) {
+          next[section.key] = prev[section.key];
+        } else {
+          next[section.key] = section.defaultCollapsed;
+        }
+      });
+      return next;
+    });
+  }, [breakdownSections]);
 
   // For per-campaign breakdown, prefer Meta ROAS (matches Ads Manager),
   // fallback to estimated AOV model when ROAS is unavailable.
   const AVG_ORDER_VALUE = data?.revenue?.totalSales && data?.revenue?.totalRevenue
     ? data.revenue.totalRevenue / data.revenue.totalSales
     : 1500;
-  const firstPartySales = data?.sourceBreakdown?.firstPartySales ?? data?.revenue?.totalSales ?? 0;
-  const firstPartyAttributedSales = data?.sourceBreakdown?.firstPartyAttributedSales ?? 0;
-  const metaPurchases = data?.sourceBreakdown?.metaPurchases ?? data?.totals?.purchases ?? 0;
-  const organicOrUnattributedSales = data?.sourceBreakdown?.organicOrUnattributedSales ?? Math.max(firstPartySales - metaPurchases, 0);
+  const mergedFirstPartySales = data?.sourceBreakdown?.firstPartySales ?? data?.revenue?.totalSales ?? 0;
 
-  const resolveDisplayRoas = (purchases: number, spend: number, roas: number) => {
+  const mergedSection = breakdownSections.find((section) => section.key === "merged");
+  const mergedActiveCampaigns = (mergedSection?.campaigns || []).filter((campaign) => isCampaignActive(campaign.status));
+  const mergedActiveSpendINR = mergedActiveCampaigns.reduce((sum, campaign) => {
+    const currency = accountCurrencyById.get(normalizeAccountKey(campaign.accountId));
+    return sum + toInrValue(campaign.spend, currency);
+  }, 0);
+  const mergedProfit = (data?.revenue?.netRevenue || 0) - mergedActiveSpendINR;
+  const mergedRoas = mergedActiveSpendINR > 0 ? (data?.revenue?.totalRevenue || 0) / mergedActiveSpendINR : 0;
+
+  const resolveDisplayRoas = (purchases: number, spend: number, roas: number, currency?: string) => {
     if (roas > 0) return roas.toFixed(2);
     if (spend === 0 || purchases === 0) return "-";
-    const rate = exchangeRate ? parseFloat(exchangeRate) : 85;
     const estimatedRevenue = purchases * AVG_ORDER_VALUE;
-    const spendINR = spend * rate;
+    const spendINR = toInrValue(spend, currency);
     if (spendINR === 0) return "-";
     return (estimatedRevenue / spendINR).toFixed(2);
   };
 
   // Calculate estimated profit per campaign
-  const calculateEstimatedProfit = (purchases: number, spend: number, roas: number) => {
-    const rate = exchangeRate ? parseFloat(exchangeRate) : 85;
-    const spendINR = spend * rate;
+  const calculateEstimatedProfit = (purchases: number, spend: number, roas: number, currency?: string) => {
+    const spendINR = toInrValue(spend, currency);
     if (spendINR <= 0) return 0;
     if (roas > 0) {
       const metaRevenueInr = roas * spendINR;
@@ -2465,6 +2742,417 @@ function MetaBreakdownTab({
         ? formatCalendarDateShort(activeRangeStart)
         : `${formatCalendarDateShort(activeRangeStart)} - ${formatCalendarDateShort(activeRangeEnd)}`
       : "Select Range";
+
+  const toggleSectionCollapse = (key: string) => {
+    setCollapsedSections((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
+  const renderBreakdownSection = (section: BreakdownSection) => {
+    const isCollapsed = collapsedSections[section.key] ?? section.defaultCollapsed;
+    const sectionCampaigns = section.campaigns || [];
+    const activeCampaigns = sectionCampaigns.filter((campaign) => isCampaignActive(campaign.status));
+    const sectionTotals = section.totals;
+    const sectionSourceBreakdown = section.sourceBreakdown;
+    const sectionFirstPartySales = sectionSourceBreakdown?.firstPartySales ?? data?.revenue?.totalSales ?? 0;
+    const sectionFirstPartyAttributedSales = activeCampaigns.reduce(
+      (sum, campaign) => sum + (campaign.firstPartySales || 0),
+      0
+    );
+    const sectionMetaPurchases = activeCampaigns.reduce((sum, campaign) => sum + (campaign.purchases || 0), 0);
+    const sectionOrganicOrUnattributedSales = Math.max(sectionFirstPartySales - sectionFirstPartyAttributedSales, 0);
+    const sectionSpendInr = activeCampaigns.reduce((sum, campaign) => {
+      const currency = accountCurrencyById.get(normalizeAccountKey(campaign.accountId));
+      return sum + toInrValue(campaign.spend, currency);
+    }, 0);
+    const sectionClicks = activeCampaigns.reduce((sum, campaign) => sum + (campaign.clicks || 0), 0);
+    const sectionImpressions = activeCampaigns.reduce((sum, campaign) => sum + (campaign.impressions || 0), 0);
+    const sectionCpmInr = sectionImpressions > 0 ? (sectionSpendInr / sectionImpressions) * 1000 : 0;
+    const sectionCtr = sectionImpressions > 0 ? (sectionClicks / sectionImpressions) * 100 : 0;
+    const sectionCpaInr = sectionMetaPurchases > 0 ? sectionSpendInr / sectionMetaPurchases : 0;
+
+    return (
+      <div key={section.key} className="bg-[#1A2235] rounded-xl border border-white/10 overflow-hidden">
+        <button
+          onClick={() => toggleSectionCollapse(section.key)}
+          className="w-full px-4 py-3 flex items-center justify-between hover:bg-white/5 transition-colors"
+        >
+          <div className="text-left">
+            <p className="text-white text-sm font-semibold">{section.title}</p>
+            <p className="text-white/45 text-xs">{section.subtitle}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-white/50 text-xs">{activeCampaigns.length} active campaigns</span>
+            <ChevronRight
+              className={`w-4 h-4 text-white/50 transition-transform ${isCollapsed ? "" : "rotate-90"}`}
+            />
+          </div>
+        </button>
+
+        {!isCollapsed && (
+          <div className="border-t border-white/10 p-4 space-y-4">
+            {sectionTotals && (
+              <div className="grid grid-cols-2 md:grid-cols-8 gap-3">
+                <div className="bg-[#162136] rounded-xl p-4 border border-white/10">
+                  <p className="text-white/50 text-xs mb-1">Ad Spend (INR)</p>
+                  <p className="text-red-400 text-xl font-bold">
+                    ₹{sectionSpendInr.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div className="bg-[#162136] rounded-xl p-4 border border-white/10">
+                  <p className="text-white/50 text-xs mb-1">Meta Purchases</p>
+                  <p className="text-blue-400 text-xl font-bold">{sectionMetaPurchases}</p>
+                </div>
+                <div className="bg-[#162136] rounded-xl p-4 border border-white/10">
+                  <p className="text-white/50 text-xs mb-1">Live Attributed Sales</p>
+                  <p className="text-cyan-300 text-xl font-bold">{sectionFirstPartyAttributedSales}</p>
+                </div>
+                <div className="bg-[#162136] rounded-xl p-4 border border-white/10">
+                  <p className="text-white/50 text-xs mb-1">Organic / Unattributed</p>
+                  <p className="text-emerald-400 text-xl font-bold">{sectionOrganicOrUnattributedSales}</p>
+                </div>
+                <div className="bg-[#162136] rounded-xl p-4 border border-white/10">
+                  <p className="text-white/50 text-xs mb-1">First-Party Sales</p>
+                  <p className="text-white text-xl font-bold">{sectionFirstPartySales}</p>
+                </div>
+                <div className="bg-[#162136] rounded-xl p-4 border border-white/10">
+                  <p className="text-white/50 text-xs mb-1">CPA (Cost/Purchase)</p>
+                  <p className="text-amber-400 text-xl font-bold">
+                    {sectionMetaPurchases > 0 ? `₹${sectionCpaInr.toFixed(2)}` : "-"}
+                  </p>
+                </div>
+                <div className="bg-[#162136] rounded-xl p-4 border border-white/10">
+                  <p className="text-white/50 text-xs mb-1">CPM</p>
+                  <p className="text-white/70 text-xl font-bold">₹{sectionCpmInr.toFixed(2)}</p>
+                </div>
+                <div className="bg-[#162136] rounded-xl p-4 border border-white/10">
+                  <p className="text-white/50 text-xs mb-1">CTR</p>
+                  <p className="text-blue-400 text-xl font-bold">{formatPercent(sectionCtr)}</p>
+                </div>
+              </div>
+            )}
+
+            <div className="bg-[#1A2235] rounded-xl border border-white/10 overflow-hidden">
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 text-primary animate-spin" />
+                  <span className="ml-2 text-white/60">Loading campaigns...</span>
+                </div>
+              ) : !activeCampaigns.length ? (
+                <div className="text-center text-white/40 py-12">No campaign data available</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-white/10 bg-white/5">
+                        <th className="text-left text-white/70 text-xs font-semibold px-4 py-3 w-8"></th>
+                        <th className="text-left text-white/70 text-xs font-semibold px-4 py-3">Name</th>
+                        <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Spend</th>
+                        <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Budget</th>
+                        <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">ROAS</th>
+                        <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Profit</th>
+                        <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Meta Purchases</th>
+                        <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Live Sales</th>
+                        <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">CPC</th>
+                        <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">CPA</th>
+                        <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">CPM</th>
+                        <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">CTR</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeCampaigns.map((campaign) => (
+                        <React.Fragment key={campaign.id}>
+                          <tr
+                            className="border-b border-white/5 hover:bg-white/5 cursor-pointer"
+                            onClick={() => toggleCampaign(campaign.id)}
+                          >
+                            <td className="px-4 py-3">
+                              <ChevronRight
+                                className={`w-4 h-4 text-white/40 transition-transform ${
+                                  expandedCampaigns.has(campaign.id) ? "rotate-90" : ""
+                                }`}
+                              />
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`w-2 h-2 rounded-full ${
+                                    campaign.status === "ACTIVE" ? "bg-green-400" : "bg-gray-400"
+                                  }`}
+                                />
+                                <div>
+                                  <span className="text-white font-medium">{campaign.name}</span>
+                                  {campaign.accountName && section.showCampaignAccountName && (
+                                    <p className="text-[11px] text-white/45 mt-0.5">{campaign.accountName}</p>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="text-red-400 px-4 py-3 text-right">
+                              {formatInrValue(campaign.spend, accountCurrencyById.get(normalizeAccountKey(campaign.accountId)))}
+                            </td>
+                            <td className="text-white/60 px-4 py-3 text-right">
+                              {campaign.budget
+                                ? formatInrValue(campaign.budget, accountCurrencyById.get(normalizeAccountKey(campaign.accountId)))
+                                : "-"}
+                            </td>
+                            <td className="text-green-400 px-4 py-3 text-right">
+                              {resolveDisplayRoas(
+                                campaign.purchases,
+                                campaign.spend,
+                                campaign.roas,
+                                accountCurrencyById.get(normalizeAccountKey(campaign.accountId))
+                              )}
+                            </td>
+                            <td
+                              className={`px-4 py-3 text-right ${
+                                calculateEstimatedProfit(
+                                  campaign.purchases,
+                                  campaign.spend,
+                                  campaign.roas,
+                                  accountCurrencyById.get(normalizeAccountKey(campaign.accountId))
+                                ) >= 0
+                                  ? "text-green-400"
+                                  : "text-red-400"
+                              }`}
+                            >
+                              {calculateEstimatedProfit(
+                                campaign.purchases,
+                                campaign.spend,
+                                campaign.roas,
+                                accountCurrencyById.get(normalizeAccountKey(campaign.accountId))
+                              ) >= 0
+                                ? ""
+                                : "-"}
+                              ₹
+                              {Math.abs(
+                                calculateEstimatedProfit(
+                                  campaign.purchases,
+                                  campaign.spend,
+                                  campaign.roas,
+                                  accountCurrencyById.get(normalizeAccountKey(campaign.accountId))
+                                )
+                              ).toFixed(2)}
+                            </td>
+                            <td className="text-white px-4 py-3 text-right">{campaign.purchases}</td>
+                            <td className="text-cyan-300 px-4 py-3 text-right">{campaign.firstPartySales ?? 0}</td>
+                            <td className="text-white/60 px-4 py-3 text-right">
+                              {formatInrValue(campaign.cpc, accountCurrencyById.get(normalizeAccountKey(campaign.accountId)))}
+                            </td>
+                            <td className="text-amber-400 px-4 py-3 text-right">
+                              {campaign.costPerPurchase > 0
+                                ? formatInrValue(campaign.costPerPurchase, accountCurrencyById.get(normalizeAccountKey(campaign.accountId)))
+                                : "-"}
+                            </td>
+                            <td className="text-white/60 px-4 py-3 text-right">
+                              {formatInrValue(campaign.cpm, accountCurrencyById.get(normalizeAccountKey(campaign.accountId)))}
+                            </td>
+                            <td className="text-blue-400 px-4 py-3 text-right">{formatPercent(campaign.ctr)}</td>
+                          </tr>
+
+                          {expandedCampaigns.has(campaign.id) &&
+                            campaign.adsets?.map((adset) => (
+                              <React.Fragment key={adset.id}>
+                                <tr
+                                  className="border-b border-white/5 bg-white/[0.02] hover:bg-white/5 cursor-pointer"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleAdset(adset.id);
+                                  }}
+                                >
+                                  <td className="px-4 py-3 pl-8">
+                                    <ChevronRight
+                                      className={`w-4 h-4 text-white/30 transition-transform ${
+                                        expandedAdsets.has(adset.id) ? "rotate-90" : ""
+                                      }`}
+                                    />
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <div className="flex items-center gap-2 pl-4">
+                                      <span
+                                        className={`w-1.5 h-1.5 rounded-full ${
+                                          adset.status === "ACTIVE" ? "bg-green-400" : "bg-gray-400"
+                                        }`}
+                                      />
+                                      <span className="text-white/80">{adset.name}</span>
+                                    </div>
+                                  </td>
+                                  <td className="text-red-400/80 px-4 py-3 text-right">
+                                    {formatInrValue(adset.spend, accountCurrencyById.get(normalizeAccountKey(campaign.accountId)))}
+                                  </td>
+                                  <td className="text-white/50 px-4 py-3 text-right">
+                                    {adset.budget
+                                      ? formatInrValue(adset.budget, accountCurrencyById.get(normalizeAccountKey(campaign.accountId)))
+                                      : "-"}
+                                  </td>
+                                  <td className="text-green-400/80 px-4 py-3 text-right">
+                                    {resolveDisplayRoas(
+                                      adset.purchases,
+                                      adset.spend,
+                                      adset.roas,
+                                      accountCurrencyById.get(normalizeAccountKey(campaign.accountId))
+                                    )}
+                                  </td>
+                                  <td
+                                    className={`px-4 py-3 text-right ${
+                                      calculateEstimatedProfit(
+                                        adset.purchases,
+                                        adset.spend,
+                                        adset.roas,
+                                        accountCurrencyById.get(normalizeAccountKey(campaign.accountId))
+                                      ) >= 0
+                                        ? "text-green-400/80"
+                                        : "text-red-400/80"
+                                    }`}
+                                  >
+                                    {calculateEstimatedProfit(
+                                      adset.purchases,
+                                      adset.spend,
+                                      adset.roas,
+                                      accountCurrencyById.get(normalizeAccountKey(campaign.accountId))
+                                    ) >= 0
+                                      ? ""
+                                      : "-"}
+                                    ₹
+                                    {Math.abs(
+                                      calculateEstimatedProfit(
+                                        adset.purchases,
+                                        adset.spend,
+                                        adset.roas,
+                                        accountCurrencyById.get(normalizeAccountKey(campaign.accountId))
+                                      )
+                                    ).toFixed(2)}
+                                  </td>
+                                  <td className="text-white/80 px-4 py-3 text-right">{adset.purchases}</td>
+                                  <td className="text-cyan-300/70 px-4 py-3 text-right">-</td>
+                                  <td className="text-white/50 px-4 py-3 text-right">
+                                    {formatInrValue(adset.cpc, accountCurrencyById.get(normalizeAccountKey(campaign.accountId)))}
+                                  </td>
+                                  <td className="text-amber-400/80 px-4 py-3 text-right">
+                                    {adset.costPerPurchase > 0
+                                      ? formatInrValue(adset.costPerPurchase, accountCurrencyById.get(normalizeAccountKey(campaign.accountId)))
+                                      : "-"}
+                                  </td>
+                                  <td className="text-white/50 px-4 py-3 text-right">
+                                    {formatInrValue(adset.cpm, accountCurrencyById.get(normalizeAccountKey(campaign.accountId)))}
+                                  </td>
+                                  <td className="text-blue-400/80 px-4 py-3 text-right">
+                                    {formatPercent(adset.ctr)}
+                                  </td>
+                                </tr>
+
+                                {expandedAdsets.has(adset.id) &&
+                                  adset.ads?.map((ad) => (
+                                    <tr key={ad.id} className="border-b border-white/5 bg-white/[0.01]">
+                                      <td className="px-4 py-3 pl-12"></td>
+                                      <td className="px-4 py-3">
+                                        <div className="flex items-center gap-2 pl-8">
+                                          <span
+                                            className={`w-1 h-1 rounded-full ${
+                                              ad.status === "ACTIVE" ? "bg-green-400" : "bg-gray-400"
+                                            }`}
+                                          />
+                                          <span className="text-white/60 text-xs">{ad.name}</span>
+                                        </div>
+                                      </td>
+                                      <td className="text-red-400/60 px-4 py-3 text-right text-xs">
+                                        {formatInrValue(ad.spend, accountCurrencyById.get(normalizeAccountKey(campaign.accountId)))}
+                                      </td>
+                                      <td className="text-white/40 px-4 py-3 text-right text-xs">-</td>
+                                      <td className="text-green-400/60 px-4 py-3 text-right text-xs">
+                                        {resolveDisplayRoas(
+                                          ad.purchases,
+                                          ad.spend,
+                                          ad.roas,
+                                          accountCurrencyById.get(normalizeAccountKey(campaign.accountId))
+                                        )}
+                                      </td>
+                                      <td
+                                        className={`px-4 py-3 text-right text-xs ${
+                                          calculateEstimatedProfit(
+                                            ad.purchases,
+                                            ad.spend,
+                                            ad.roas,
+                                            accountCurrencyById.get(normalizeAccountKey(campaign.accountId))
+                                          ) >= 0
+                                            ? "text-green-400/60"
+                                            : "text-red-400/60"
+                                        }`}
+                                      >
+                                        {calculateEstimatedProfit(
+                                          ad.purchases,
+                                          ad.spend,
+                                          ad.roas,
+                                          accountCurrencyById.get(normalizeAccountKey(campaign.accountId))
+                                        ) >= 0
+                                          ? ""
+                                          : "-"}₹
+                                        {Math.abs(
+                                          calculateEstimatedProfit(
+                                            ad.purchases,
+                                            ad.spend,
+                                            ad.roas,
+                                            accountCurrencyById.get(normalizeAccountKey(campaign.accountId))
+                                          )
+                                        ).toFixed(2)}
+                                      </td>
+                                      <td className="text-white/60 px-4 py-3 text-right text-xs">
+                                        {ad.purchases}
+                                      </td>
+                                      <td className="text-cyan-300/50 px-4 py-3 text-right text-xs">-</td>
+                                      <td className="text-white/40 px-4 py-3 text-right text-xs">
+                                        {formatInrValue(ad.cpc, accountCurrencyById.get(normalizeAccountKey(campaign.accountId)))}
+                                      </td>
+                                      <td className="text-amber-400/60 px-4 py-3 text-right text-xs">
+                                        {ad.costPerPurchase > 0
+                                          ? formatInrValue(ad.costPerPurchase, accountCurrencyById.get(normalizeAccountKey(campaign.accountId)))
+                                          : "-"}
+                                      </td>
+                                      <td className="text-white/40 px-4 py-3 text-right text-xs">
+                                        {formatInrValue(ad.cpm, accountCurrencyById.get(normalizeAccountKey(campaign.accountId)))}
+                                      </td>
+                                      <td className="text-blue-400/60 px-4 py-3 text-right text-xs">
+                                        {formatPercent(ad.ctr)}
+                                      </td>
+                                    </tr>
+                                  ))}
+                              </React.Fragment>
+                            ))}
+                        </React.Fragment>
+                      ))}
+                      <tr className="border-t border-white/10 bg-emerald-500/5">
+                        <td className="px-4 py-3"></td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                            <span className="text-emerald-200 font-medium">Organic / Unattributed Sales</span>
+                          </div>
+                        </td>
+                        <td className="text-white/50 px-4 py-3 text-right">₹0.00</td>
+                        <td className="text-white/40 px-4 py-3 text-right">-</td>
+                        <td className="text-white/40 px-4 py-3 text-right">-</td>
+                        <td className="text-white/40 px-4 py-3 text-right">-</td>
+                        <td className="text-emerald-300 px-4 py-3 text-right font-medium">
+                          {sectionOrganicOrUnattributedSales}
+                        </td>
+                        <td className="text-white/40 px-4 py-3 text-right">-</td>
+                        <td className="text-white/40 px-4 py-3 text-right">-</td>
+                        <td className="text-white/40 px-4 py-3 text-right">-</td>
+                        <td className="text-white/40 px-4 py-3 text-right">-</td>
+                        <td className="text-white/40 px-4 py-3 text-right">-</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -2652,7 +3340,7 @@ function MetaBreakdownTab({
       {/* Revenue & Profit Summary */}
       {data?.revenue && (
         <div className="bg-gradient-to-r from-[#1A2235] to-[#1E2942] rounded-xl p-5 border border-white/10">
-          <h3 className="text-white/70 text-sm font-semibold mb-4">Revenue & Profit Summary</h3>
+          <h3 className="text-white/70 text-sm font-semibold mb-4">Selected Days Summary (Combined Accounts)</h3>
           <div className="grid grid-cols-2 md:grid-cols-7 gap-4">
             <div>
               <p className="text-white/40 text-xs mb-1">Total Revenue</p>
@@ -2660,7 +3348,7 @@ function MetaBreakdownTab({
             </div>
             <div>
               <p className="text-white/40 text-xs mb-1">First-Party Sales</p>
-              <p className="text-white text-xl font-bold">{firstPartySales}</p>
+              <p className="text-white text-xl font-bold">{mergedFirstPartySales}</p>
             </div>
             <div>
               <p className="text-white/40 text-xs mb-1">GST (5%)</p>
@@ -2672,60 +3360,20 @@ function MetaBreakdownTab({
             </div>
             <div>
               <p className="text-white/40 text-xs mb-1">Ad Spend (INR)</p>
-              <p className="text-red-400 text-xl font-bold">₹{data.revenue.totalSpendINR.toLocaleString()}</p>
+              <p className="text-red-400 text-xl font-bold">₹{mergedActiveSpendINR.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
             </div>
             <div>
               <p className="text-white/40 text-xs mb-1">Profit</p>
-              <p className={`text-xl font-bold ${data.revenue.profit >= 0 ? "text-green-400" : "text-red-400"}`}>
-                {data.revenue.profit >= 0 ? "" : "-"}₹{Math.abs(data.revenue.profit).toLocaleString()}
+              <p className={`text-xl font-bold ${mergedProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                {mergedProfit >= 0 ? "" : "-"}₹{Math.abs(mergedProfit).toLocaleString(undefined, { maximumFractionDigits: 2 })}
               </p>
             </div>
             <div>
               <p className="text-white/40 text-xs mb-1">ROAS</p>
-              <p className={`text-xl font-bold ${data.revenue.roas >= 1 ? "text-green-400" : data.revenue.roas > 0 ? "text-amber-400" : "text-white/40"}`}>
-                {data.revenue.roas > 0 ? data.revenue.roas.toFixed(2) : "-"}
+              <p className={`text-xl font-bold ${mergedRoas >= 1 ? "text-green-400" : mergedRoas > 0 ? "text-amber-400" : "text-white/40"}`}>
+                {mergedRoas > 0 ? mergedRoas.toFixed(2) : "-"}
               </p>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Campaign Metrics Summary */}
-      {data?.totals && (
-        <div className="grid grid-cols-2 md:grid-cols-8 gap-3">
-          <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
-            <p className="text-white/50 text-xs mb-1">Total Spend (USD)</p>
-            <p className="text-red-400 text-xl font-bold">{formatUSD(data.totals.spend)}</p>
-          </div>
-          <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
-            <p className="text-white/50 text-xs mb-1">Meta Purchases</p>
-            <p className="text-blue-400 text-xl font-bold">{metaPurchases}</p>
-          </div>
-          <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
-            <p className="text-white/50 text-xs mb-1">Live Attributed Sales</p>
-            <p className="text-cyan-300 text-xl font-bold">{firstPartyAttributedSales}</p>
-          </div>
-          <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
-            <p className="text-white/50 text-xs mb-1">Organic / Unattributed</p>
-            <p className="text-emerald-400 text-xl font-bold">{organicOrUnattributedSales}</p>
-          </div>
-          <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
-            <p className="text-white/50 text-xs mb-1">First-Party Sales</p>
-            <p className="text-white text-xl font-bold">{firstPartySales}</p>
-          </div>
-          <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
-            <p className="text-white/50 text-xs mb-1">CPA (Cost/Purchase)</p>
-            <p className="text-amber-400 text-xl font-bold">
-              {metaPurchases > 0 ? formatINR(data.totals.costPerPurchase) : "-"}
-            </p>
-          </div>
-          <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
-            <p className="text-white/50 text-xs mb-1">CPM</p>
-            <p className="text-white/70 text-xl font-bold">{formatINR(data.totals.cpm)}</p>
-          </div>
-          <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
-            <p className="text-white/50 text-xs mb-1">CTR</p>
-            <p className="text-blue-400 text-xl font-bold">{formatPercent(data.totals.ctr)}</p>
           </div>
         </div>
       )}
@@ -2736,149 +3384,8 @@ function MetaBreakdownTab({
         </div>
       )}
 
-      {/* Campaigns Table */}
-      <div className="bg-[#1A2235] rounded-xl border border-white/10 overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-6 h-6 text-primary animate-spin" />
-            <span className="ml-2 text-white/60">Loading campaigns...</span>
-          </div>
-        ) : !data?.campaigns?.length ? (
-          <div className="text-center text-white/40 py-12">
-            No campaign data available
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-white/10 bg-white/5">
-                  <th className="text-left text-white/70 text-xs font-semibold px-4 py-3 w-8"></th>
-                  <th className="text-left text-white/70 text-xs font-semibold px-4 py-3">Name</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Spend</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Budget</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">ROAS</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Profit</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Meta Purchases</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Live Sales</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">CPC</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">CPA</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">CPM</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">CTR</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.campaigns.map((campaign) => (
-                  <React.Fragment key={campaign.id}>
-                    {/* Campaign Row */}
-                    <tr 
-                      className="border-b border-white/5 hover:bg-white/5 cursor-pointer"
-                      onClick={() => toggleCampaign(campaign.id)}
-                    >
-                      <td className="px-4 py-3">
-                        <ChevronRight className={`w-4 h-4 text-white/40 transition-transform ${expandedCampaigns.has(campaign.id) ? "rotate-90" : ""}`} />
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <span className={`w-2 h-2 rounded-full ${campaign.status === "ACTIVE" ? "bg-green-400" : "bg-gray-400"}`} />
-                          <span className="text-white font-medium">{campaign.name}</span>
-                        </div>
-                      </td>
-                      <td className="text-red-400 px-4 py-3 text-right">{formatINR(campaign.spend)}</td>
-                      <td className="text-white/60 px-4 py-3 text-right">{campaign.budget ? formatINR(campaign.budget) : "-"}</td>
-                      <td className="text-green-400 px-4 py-3 text-right">{resolveDisplayRoas(campaign.purchases, campaign.spend, campaign.roas)}</td>
-                      <td className={`px-4 py-3 text-right ${calculateEstimatedProfit(campaign.purchases, campaign.spend, campaign.roas) >= 0 ? "text-green-400" : "text-red-400"}`}>
-                        {calculateEstimatedProfit(campaign.purchases, campaign.spend, campaign.roas) >= 0 ? "" : "-"}₹{Math.abs(calculateEstimatedProfit(campaign.purchases, campaign.spend, campaign.roas)).toFixed(2)}
-                      </td>
-                      <td className="text-white px-4 py-3 text-right">{campaign.purchases}</td>
-                      <td className="text-cyan-300 px-4 py-3 text-right">{campaign.firstPartySales ?? 0}</td>
-                      <td className="text-white/60 px-4 py-3 text-right">{formatINR(campaign.cpc)}</td>
-                      <td className="text-amber-400 px-4 py-3 text-right">{campaign.costPerPurchase > 0 ? formatINR(campaign.costPerPurchase) : "-"}</td>
-                      <td className="text-white/60 px-4 py-3 text-right">{formatINR(campaign.cpm)}</td>
-                      <td className="text-blue-400 px-4 py-3 text-right">{formatPercent(campaign.ctr)}</td>
-                    </tr>
-
-                    {/* Adsets (expanded) */}
-                    {expandedCampaigns.has(campaign.id) && campaign.adsets?.map((adset) => (
-                      <React.Fragment key={adset.id}>
-                        {/* Adset Row */}
-                        <tr 
-                          className="border-b border-white/5 bg-white/[0.02] hover:bg-white/5 cursor-pointer"
-                          onClick={(e) => { e.stopPropagation(); toggleAdset(adset.id); }}
-                        >
-                          <td className="px-4 py-3 pl-8">
-                            <ChevronRight className={`w-4 h-4 text-white/30 transition-transform ${expandedAdsets.has(adset.id) ? "rotate-90" : ""}`} />
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2 pl-4">
-                              <span className={`w-1.5 h-1.5 rounded-full ${adset.status === "ACTIVE" ? "bg-green-400" : "bg-gray-400"}`} />
-                              <span className="text-white/80">{adset.name}</span>
-                            </div>
-                          </td>
-                          <td className="text-red-400/80 px-4 py-3 text-right">{formatINR(adset.spend)}</td>
-                          <td className="text-white/50 px-4 py-3 text-right">{adset.budget ? formatINR(adset.budget) : "-"}</td>
-                          <td className="text-green-400/80 px-4 py-3 text-right">{resolveDisplayRoas(adset.purchases, adset.spend, adset.roas)}</td>
-                          <td className={`px-4 py-3 text-right ${calculateEstimatedProfit(adset.purchases, adset.spend, adset.roas) >= 0 ? "text-green-400/80" : "text-red-400/80"}`}>
-                            {calculateEstimatedProfit(adset.purchases, adset.spend, adset.roas) >= 0 ? "" : "-"}₹{Math.abs(calculateEstimatedProfit(adset.purchases, adset.spend, adset.roas)).toFixed(2)}
-                          </td>
-                          <td className="text-white/80 px-4 py-3 text-right">{adset.purchases}</td>
-                          <td className="text-cyan-300/70 px-4 py-3 text-right">-</td>
-                          <td className="text-white/50 px-4 py-3 text-right">{formatINR(adset.cpc)}</td>
-                          <td className="text-amber-400/80 px-4 py-3 text-right">{adset.costPerPurchase > 0 ? formatINR(adset.costPerPurchase) : "-"}</td>
-                          <td className="text-white/50 px-4 py-3 text-right">{formatINR(adset.cpm)}</td>
-                          <td className="text-blue-400/80 px-4 py-3 text-right">{formatPercent(adset.ctr)}</td>
-                        </tr>
-
-                        {/* Ads (expanded) */}
-                        {expandedAdsets.has(adset.id) && adset.ads?.map((ad) => (
-                          <tr key={ad.id} className="border-b border-white/5 bg-white/[0.01]">
-                            <td className="px-4 py-3 pl-12"></td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-2 pl-8">
-                                <span className={`w-1 h-1 rounded-full ${ad.status === "ACTIVE" ? "bg-green-400" : "bg-gray-400"}`} />
-                                <span className="text-white/60 text-xs">{ad.name}</span>
-                              </div>
-                            </td>
-                            <td className="text-red-400/60 px-4 py-3 text-right text-xs">{formatINR(ad.spend)}</td>
-                            <td className="text-white/40 px-4 py-3 text-right text-xs">-</td>
-                            <td className="text-green-400/60 px-4 py-3 text-right text-xs">{resolveDisplayRoas(ad.purchases, ad.spend, ad.roas)}</td>
-                            <td className={`px-4 py-3 text-right text-xs ${calculateEstimatedProfit(ad.purchases, ad.spend, ad.roas) >= 0 ? "text-green-400/60" : "text-red-400/60"}`}>
-                              {calculateEstimatedProfit(ad.purchases, ad.spend, ad.roas) >= 0 ? "" : "-"}₹{Math.abs(calculateEstimatedProfit(ad.purchases, ad.spend, ad.roas)).toFixed(2)}
-                            </td>
-                            <td className="text-white/60 px-4 py-3 text-right text-xs">{ad.purchases}</td>
-                            <td className="text-cyan-300/50 px-4 py-3 text-right text-xs">-</td>
-                            <td className="text-white/40 px-4 py-3 text-right text-xs">{formatINR(ad.cpc)}</td>
-                            <td className="text-amber-400/60 px-4 py-3 text-right text-xs">{ad.costPerPurchase > 0 ? formatINR(ad.costPerPurchase) : "-"}</td>
-                            <td className="text-white/40 px-4 py-3 text-right text-xs">{formatINR(ad.cpm)}</td>
-                            <td className="text-blue-400/60 px-4 py-3 text-right text-xs">{formatPercent(ad.ctr)}</td>
-                          </tr>
-                        ))}
-                      </React.Fragment>
-                    ))}
-                  </React.Fragment>
-                ))}
-                <tr className="border-t border-white/10 bg-emerald-500/5">
-                  <td className="px-4 py-3"></td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                      <span className="text-emerald-200 font-medium">Organic / Unattributed Sales</span>
-                    </div>
-                  </td>
-                  <td className="text-white/50 px-4 py-3 text-right">₹0.00</td>
-                  <td className="text-white/40 px-4 py-3 text-right">-</td>
-                  <td className="text-white/40 px-4 py-3 text-right">-</td>
-                  <td className="text-white/40 px-4 py-3 text-right">-</td>
-                  <td className="text-emerald-300 px-4 py-3 text-right font-medium">{organicOrUnattributedSales}</td>
-                  <td className="text-white/40 px-4 py-3 text-right">-</td>
-                  <td className="text-white/40 px-4 py-3 text-right">-</td>
-                  <td className="text-white/40 px-4 py-3 text-right">-</td>
-                  <td className="text-white/40 px-4 py-3 text-right">-</td>
-                  <td className="text-white/40 px-4 py-3 text-right">-</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
+      <div className="space-y-4">
+        {breakdownSections.map((section) => renderBreakdownSection(section))}
       </div>
     </div>
   );
@@ -5147,7 +5654,7 @@ function MetaAdsSection({
           <p className="text-white/60 text-sm mb-2">Meta Ads not configured</p>
           <p className="text-white/40 text-xs">
             Add <code className="bg-white/10 px-1.5 py-0.5 rounded text-blue-300">META_ACCESS_TOKEN</code> and{" "}
-            <code className="bg-white/10 px-1.5 py-0.5 rounded text-blue-300">META_AD_ACCOUNT_ID</code> to your environment variables.
+            <code className="bg-white/10 px-1.5 py-0.5 rounded text-blue-300">META_AD_ACCOUNT_IDS</code> (comma-separated), and optionally <code className="bg-white/10 px-1.5 py-0.5 rounded text-blue-300">META_ACCESS_TOKENS_BY_ACCOUNT</code> for per-account tokens.
           </p>
         </div>
       )}

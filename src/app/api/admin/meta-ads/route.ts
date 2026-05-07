@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,27 @@ const PURCHASE_ACTION_PRIORITY = [
   "omni_purchase",
   "purchase",
 ];
+
+type AccountMetrics = {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  cpc: number;
+  cpm: number;
+  ctr: number;
+  reach: number;
+  frequency: number;
+  linkClicks: number;
+  leads: number;
+  purchases: number;
+  addToCart: number;
+  initiateCheckout: number;
+  pageViews: number;
+  costPerLead: number;
+  costPerPurchase: number;
+  costPerLinkClick: number;
+  roas: number;
+};
 
 function parseMetricNumber(value: unknown): number {
   const parsed = Number(value);
@@ -45,6 +67,95 @@ function getRoasValue(insight: any): number {
   return 0;
 }
 
+async function fetchMetaJson(url: string) {
+  const res = await fetch(url);
+  const data = await res.json().catch(() => null);
+  if (!res.ok || data?.error) {
+    throw new Error(data?.error?.message || `Meta API HTTP ${res.status}`);
+  }
+  return data;
+}
+
+function parseAccountMetrics(insight: any): AccountMetrics {
+  const actions = insight?.actions || [];
+  const costPerAction = insight?.cost_per_action_type || [];
+
+  return {
+    spend: parseMetricNumber(insight?.spend),
+    impressions: parseMetricNumber(insight?.impressions),
+    clicks: parseMetricNumber(insight?.clicks),
+    cpc: parseMetricNumber(insight?.cpc),
+    cpm: parseMetricNumber(insight?.cpm),
+    ctr: parseMetricNumber(insight?.ctr),
+    reach: parseMetricNumber(insight?.reach),
+    frequency: parseMetricNumber(insight?.frequency),
+    linkClicks: getActionMetricValue(actions, ["link_click"]),
+    leads: getActionMetricValue(actions, ["lead"]),
+    purchases: getActionMetricValue(actions, PURCHASE_ACTION_PRIORITY),
+    addToCart: getActionMetricValue(actions, ["offsite_conversion.fb_pixel_add_to_cart"]),
+    initiateCheckout: getActionMetricValue(actions, ["offsite_conversion.fb_pixel_initiate_checkout"]),
+    pageViews: getActionMetricValue(actions, ["landing_page_view"]),
+    costPerLead: getActionMetricValue(costPerAction, ["lead"]),
+    costPerPurchase: getActionMetricValue(costPerAction, PURCHASE_ACTION_PRIORITY),
+    costPerLinkClick: getActionMetricValue(costPerAction, ["link_click"]),
+    roas: getRoasValue(insight),
+  };
+}
+
+function mergeAccountMetrics(items: AccountMetrics[]): AccountMetrics {
+  const total = items.reduce(
+    (acc, item) => ({
+      spend: acc.spend + item.spend,
+      impressions: acc.impressions + item.impressions,
+      clicks: acc.clicks + item.clicks,
+      reach: acc.reach + item.reach,
+      linkClicks: acc.linkClicks + item.linkClicks,
+      leads: acc.leads + item.leads,
+      purchases: acc.purchases + item.purchases,
+      addToCart: acc.addToCart + item.addToCart,
+      initiateCheckout: acc.initiateCheckout + item.initiateCheckout,
+      pageViews: acc.pageViews + item.pageViews,
+      weightedRoasSpend: acc.weightedRoasSpend + item.roas * item.spend,
+      weightedFrequencyImpressions: acc.weightedFrequencyImpressions + item.frequency * item.impressions,
+    }),
+    {
+      spend: 0,
+      impressions: 0,
+      clicks: 0,
+      reach: 0,
+      linkClicks: 0,
+      leads: 0,
+      purchases: 0,
+      addToCart: 0,
+      initiateCheckout: 0,
+      pageViews: 0,
+      weightedRoasSpend: 0,
+      weightedFrequencyImpressions: 0,
+    }
+  );
+
+  return {
+    spend: total.spend,
+    impressions: total.impressions,
+    clicks: total.clicks,
+    cpc: total.clicks > 0 ? total.spend / total.clicks : 0,
+    cpm: total.impressions > 0 ? (total.spend / total.impressions) * 1000 : 0,
+    ctr: total.impressions > 0 ? (total.clicks / total.impressions) * 100 : 0,
+    reach: total.reach,
+    frequency: total.impressions > 0 ? total.weightedFrequencyImpressions / total.impressions : 0,
+    linkClicks: total.linkClicks,
+    leads: total.leads,
+    purchases: total.purchases,
+    addToCart: total.addToCart,
+    initiateCheckout: total.initiateCheckout,
+    pageViews: total.pageViews,
+    costPerLead: total.leads > 0 ? total.spend / total.leads : 0,
+    costPerPurchase: total.purchases > 0 ? total.spend / total.purchases : 0,
+    costPerLinkClick: total.linkClicks > 0 ? total.spend / total.linkClicks : 0,
+    roas: total.spend > 0 ? total.weightedRoasSpend / total.spend : 0,
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = getSupabaseAdmin();
@@ -52,14 +163,13 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const token = searchParams.get("token");
     const datePreset = searchParams.get("datePreset") || "last_30d";
-    const customStartDate = searchParams.get("startDate"); // YYYY-MM-DD
-    const customEndDate = searchParams.get("endDate");     // YYYY-MM-DD
+    const customStartDate = searchParams.get("startDate");
+    const customEndDate = searchParams.get("endDate");
 
     if (!token) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Verify admin session
     const { data: sessionData } = await supabase
       .from("admin_sessions")
       .select("*")
@@ -70,157 +180,154 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Session expired" }, { status: 401 });
     }
 
-    const metaAccessToken = process.env.META_ACCESS_TOKEN;
-    const adAccountId = process.env.META_AD_ACCOUNT_ID;
+    const credentials = getMetaAccountCredentialsFromEnv();
 
-    if (!metaAccessToken || !adAccountId) {
+    if (credentials.length === 0) {
       return NextResponse.json({
         configured: false,
-        error: "Meta Ads not configured. Add META_ACCESS_TOKEN and META_AD_ACCOUNT_ID to environment variables.",
+        error: "Meta Ads not configured. Add META_AD_ACCOUNT_IDS and either META_ACCESS_TOKENS_BY_ACCOUNT or shared META_ACCESS_TOKEN.",
       });
     }
 
-    // Build date range params - use custom dates if provided, otherwise use preset
-    let dateParams: string;
-    if (customStartDate && customEndDate) {
-      dateParams = `time_range={"since":"${customStartDate}","until":"${customEndDate}"}`;
-    } else {
-      dateParams = `date_preset=${datePreset}`;
-    }
+    const dateParams =
+      customStartDate && customEndDate
+        ? `time_range={"since":"${customStartDate}","until":"${customEndDate}"}`
+        : `date_preset=${datePreset}`;
 
-    // Fetch account-level insights
-    const insightsUrl = `${META_BASE_URL}/act_${adAccountId}/insights?fields=spend,impressions,clicks,cpc,cpm,ctr,reach,frequency,actions,cost_per_action_type,conversions,cost_per_conversion,purchase_roas,website_purchase_roas&${dateParams}&access_token=${metaAccessToken}`;
-    
-    const insightsRes = await fetch(insightsUrl);
-    const insightsData = await insightsRes.json();
+    const accountResponses = await Promise.all(
+      credentials.map(async ({ accountId: adAccountId, accessToken }) => {
+        const accountBase = `${META_BASE_URL}/act_${adAccountId}`;
+        const [insightsData, campaignsData, dailyData, activeCampaignsData, accountMeta] = await Promise.all([
+          fetchMetaJson(
+            `${accountBase}/insights?fields=spend,impressions,clicks,cpc,cpm,ctr,reach,frequency,actions,cost_per_action_type,conversions,cost_per_conversion,purchase_roas,website_purchase_roas&${dateParams}&access_token=${accessToken}`
+          ),
+          fetchMetaJson(
+            `${accountBase}/insights?fields=campaign_name,campaign_id,spend,impressions,clicks,cpc,cpm,ctr,reach,actions,cost_per_action_type,purchase_roas,website_purchase_roas&level=campaign&${dateParams}&limit=200&access_token=${accessToken}`
+          ),
+          fetchMetaJson(
+            `${accountBase}/insights?fields=spend,impressions,clicks,reach,actions&time_increment=1&${dateParams}&limit=90&access_token=${accessToken}`
+          ),
+          fetchMetaJson(
+            `${accountBase}/campaigns?fields=name,status,objective,daily_budget,lifetime_budget&filtering=[{"field":"effective_status","operator":"IN","value":["ACTIVE"]}]&limit=200&access_token=${accessToken}`
+          ),
+          fetchMetaJson(`${accountBase}?fields=id,name,currency,timezone_name&access_token=${accessToken}`),
+        ]);
 
-    if (insightsData.error) {
-      return NextResponse.json({
-        configured: true,
-        error: `Meta API Error: ${insightsData.error.message}`,
-        errorType: insightsData.error.type,
-        errorCode: insightsData.error.code,
+        const accountInsights = insightsData?.data?.[0] || {};
+        const metrics = parseAccountMetrics(accountInsights);
+
+        const campaigns = (campaignsData?.data || []).map((c: any) => {
+          const cActions = c.actions || [];
+          const cCostPerAction = c.cost_per_action_type || [];
+          return {
+            name: c.campaign_name,
+            id: `${adAccountId}:${c.campaign_id}`,
+            campaignId: c.campaign_id,
+            accountId: adAccountId,
+            accountName: accountMeta?.name || `act_${adAccountId}`,
+            spend: parseMetricNumber(c.spend),
+            impressions: parseMetricNumber(c.impressions),
+            clicks: parseMetricNumber(c.clicks),
+            cpc: parseMetricNumber(c.cpc),
+            ctr: parseMetricNumber(c.ctr),
+            reach: parseMetricNumber(c.reach),
+            leads: getActionMetricValue(cActions, ["lead"]),
+            purchases: getActionMetricValue(cActions, PURCHASE_ACTION_PRIORITY),
+            linkClicks: getActionMetricValue(cActions, ["link_click"]),
+            costPerLead: getActionMetricValue(cCostPerAction, ["lead"]),
+            costPerPurchase: getActionMetricValue(cCostPerAction, PURCHASE_ACTION_PRIORITY),
+            roas: getRoasValue(c),
+          };
+        });
+
+        const dailyBreakdown = (dailyData?.data || []).map((d: any) => {
+          const dActions = d.actions || [];
+          return {
+            date: d.date_start,
+            spend: parseMetricNumber(d.spend),
+            impressions: parseMetricNumber(d.impressions),
+            clicks: parseMetricNumber(d.clicks),
+            reach: parseMetricNumber(d.reach),
+            linkClicks: getActionMetricValue(dActions, ["link_click"]),
+          };
+        });
+
+        const activeCampaigns = (activeCampaignsData?.data || []).map((c: any) => ({
+          name: c.name,
+          status: c.status,
+          objective: c.objective,
+          dailyBudget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : null,
+          lifetimeBudget: c.lifetime_budget ? parseFloat(c.lifetime_budget) / 100 : null,
+          accountId: adAccountId,
+          accountName: accountMeta?.name || `act_${adAccountId}`,
+        }));
+
+        return {
+          accountId: adAccountId,
+          accountName: accountMeta?.name || `act_${adAccountId}`,
+          accountMeta,
+          metrics,
+          campaigns,
+          dailyBreakdown,
+          activeCampaigns,
+        };
+      })
+    );
+
+    const mergedMetrics = mergeAccountMetrics(accountResponses.map((item) => item.metrics));
+    const campaigns = accountResponses
+      .flatMap((item) => item.campaigns)
+      .sort((a, b) => b.spend - a.spend);
+
+    const dailyByDate = new Map<
+      string,
+      { date: string; spend: number; impressions: number; clicks: number; reach: number; linkClicks: number }
+    >();
+    accountResponses.forEach((item) => {
+      item.dailyBreakdown.forEach((row: {
+        date: string;
+        spend: number;
+        impressions: number;
+        clicks: number;
+        reach: number;
+        linkClicks: number;
+      }) => {
+        const current = dailyByDate.get(row.date) || {
+          date: row.date,
+          spend: 0,
+          impressions: 0,
+          clicks: 0,
+          reach: 0,
+          linkClicks: 0,
+        };
+        current.spend += row.spend;
+        current.impressions += row.impressions;
+        current.clicks += row.clicks;
+        current.reach += row.reach;
+        current.linkClicks += row.linkClicks;
+        dailyByDate.set(row.date, current);
       });
-    }
-
-    // Fetch campaign-level breakdown
-    const campaignsUrl = `${META_BASE_URL}/act_${adAccountId}/insights?fields=campaign_name,campaign_id,spend,impressions,clicks,cpc,cpm,ctr,reach,actions,cost_per_action_type,purchase_roas,website_purchase_roas&level=campaign&${dateParams}&limit=50&access_token=${metaAccessToken}`;
-
-    const campaignsRes = await fetch(campaignsUrl);
-    const campaignsData = await campaignsRes.json();
-
-    // Fetch daily breakdown for chart
-    const dailyUrl = `${META_BASE_URL}/act_${adAccountId}/insights?fields=spend,impressions,clicks,reach,actions&time_increment=1&${dateParams}&limit=90&access_token=${metaAccessToken}`;
-
-    const dailyRes = await fetch(dailyUrl);
-    const dailyData = await dailyRes.json();
-
-    // Fetch active campaigns count
-    const activeCampaignsUrl = `${META_BASE_URL}/act_${adAccountId}/campaigns?fields=name,status,objective,daily_budget,lifetime_budget&filtering=[{"field":"effective_status","operator":"IN","value":["ACTIVE"]}]&limit=50&access_token=${metaAccessToken}`;
-
-    const activeCampaignsRes = await fetch(activeCampaignsUrl);
-    const activeCampaignsData = await activeCampaignsRes.json();
-
-    // Parse account insights
-    const accountInsights = insightsData.data?.[0] || {};
-    
-    // Extract key actions (purchases, leads, etc.)
-    const actions = accountInsights.actions || [];
-    const costPerAction = accountInsights.cost_per_action_type || [];
-
-    const getActionValue = (actionTypes: string[]) => {
-      return getActionMetricValue(actions, actionTypes);
-    };
-
-    const getCostPerAction = (actionTypes: string[]) => {
-      return getActionMetricValue(costPerAction, actionTypes);
-    };
-
-    // Parse campaign insights
-    const campaigns = (campaignsData.data || []).map((c: any) => {
-      const cActions = c.actions || [];
-      const cCostPerAction = c.cost_per_action_type || [];
-      
-      const getCampaignAction = (actionTypes: string[]) => {
-        return getActionMetricValue(cActions, actionTypes);
-      };
-
-      const getCampaignCPA = (actionTypes: string[]) => {
-        return getActionMetricValue(cCostPerAction, actionTypes);
-      };
-
-      return {
-        name: c.campaign_name,
-        id: c.campaign_id,
-        spend: parseFloat(c.spend || "0"),
-        impressions: parseInt(c.impressions || "0"),
-        clicks: parseInt(c.clicks || "0"),
-        cpc: parseFloat(c.cpc || "0"),
-        ctr: parseFloat(c.ctr || "0"),
-        reach: parseInt(c.reach || "0"),
-        leads: getCampaignAction(["lead"]),
-        purchases: getCampaignAction(PURCHASE_ACTION_PRIORITY),
-        linkClicks: getCampaignAction(["link_click"]),
-        costPerLead: getCampaignCPA(["lead"]),
-        costPerPurchase: getCampaignCPA(PURCHASE_ACTION_PRIORITY),
-        roas: getRoasValue(c),
-      };
     });
 
-    // Parse daily data for chart
-    const dailyBreakdown = (dailyData.data || []).map((d: any) => {
-      const dActions = d.actions || [];
-      const getLinkClicks = () => {
-        const action = dActions.find((a: any) => a.action_type === "link_click");
-        return action ? parseInt(action.value) : 0;
-      };
-
-      return {
-        date: d.date_start,
-        spend: parseFloat(d.spend || "0"),
-        impressions: parseInt(d.impressions || "0"),
-        clicks: parseInt(d.clicks || "0"),
-        reach: parseInt(d.reach || "0"),
-        linkClicks: getLinkClicks(),
-      };
-    });
-
-    // Active campaigns
-    const activeCampaigns = (activeCampaignsData.data || []).map((c: any) => ({
-      name: c.name,
-      status: c.status,
-      objective: c.objective,
-      dailyBudget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : null,
-      lifetimeBudget: c.lifetime_budget ? parseFloat(c.lifetime_budget) / 100 : null,
-    }));
+    const dailyBreakdown = Array.from(dailyByDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+    const activeCampaigns = accountResponses.flatMap((item) => item.activeCampaigns);
 
     return NextResponse.json({
       configured: true,
       datePreset,
       customDateRange: customStartDate && customEndDate ? { start: customStartDate, end: customEndDate } : null,
       timezone: "Ad Account Timezone (typically IST for India accounts)",
-      account: {
-        spend: parseFloat(accountInsights.spend || "0"),
-        impressions: parseInt(accountInsights.impressions || "0"),
-        clicks: parseInt(accountInsights.clicks || "0"),
-        cpc: parseFloat(accountInsights.cpc || "0"),
-        cpm: parseFloat(accountInsights.cpm || "0"),
-        ctr: parseFloat(accountInsights.ctr || "0"),
-        reach: parseInt(accountInsights.reach || "0"),
-        frequency: parseFloat(accountInsights.frequency || "0"),
-        // Key conversion actions
-        linkClicks: getActionValue(["link_click"]),
-        leads: getActionValue(["lead"]),
-        purchases: getActionValue(PURCHASE_ACTION_PRIORITY),
-        addToCart: getActionValue(["offsite_conversion.fb_pixel_add_to_cart"]),
-        initiateCheckout: getActionValue(["offsite_conversion.fb_pixel_initiate_checkout"]),
-        pageViews: getActionValue(["landing_page_view"]),
-        // Cost per action
-        costPerLead: getCostPerAction(["lead"]),
-        costPerPurchase: getCostPerAction(PURCHASE_ACTION_PRIORITY),
-        costPerLinkClick: getCostPerAction(["link_click"]),
-        roas: getRoasValue(accountInsights),
-      },
+      accountCount: credentials.length,
+      accountIds: credentials.map((entry) => entry.accountId),
+      account: mergedMetrics,
+      accounts: accountResponses.map((item) => ({
+        id: item.accountId,
+        name: item.accountName,
+        metrics: item.metrics,
+        campaigns: item.campaigns,
+        dailyBreakdown: item.dailyBreakdown,
+        activeCampaigns: item.activeCampaigns,
+      })),
       campaigns,
       dailyBreakdown,
       activeCampaigns,

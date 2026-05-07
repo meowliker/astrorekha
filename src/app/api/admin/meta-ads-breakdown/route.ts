@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import crypto from "crypto";
 import { classifyPayUEvent } from "@/lib/finance-events";
+import { getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
 
 export const dynamic = "force-dynamic";
 
@@ -381,6 +382,9 @@ function formatIstDateTime(date: Date): string {
 
 interface AdMetrics {
   id: string;
+  metaId?: string;
+  accountId?: string;
+  accountName?: string;
   name: string;
   status: string;
   spend: number;
@@ -496,6 +500,31 @@ async function fetchExchangeRate(): Promise<number> {
   }
 }
 
+function mergeAccountLevelMetrics(
+  items: Array<{ spend: number; impressions: number; clicks: number; purchases: number; reach: number; roas: number }>
+) {
+  const totals = items.reduce(
+    (acc, item) => ({
+      spend: acc.spend + item.spend,
+      impressions: acc.impressions + item.impressions,
+      clicks: acc.clicks + item.clicks,
+      purchases: acc.purchases + item.purchases,
+      reach: acc.reach + item.reach,
+      weightedRoasSpend: acc.weightedRoasSpend + item.roas * item.spend,
+    }),
+    { spend: 0, impressions: 0, clicks: 0, purchases: 0, reach: 0, weightedRoasSpend: 0 }
+  );
+
+  return {
+    spend: totals.spend,
+    impressions: totals.impressions,
+    clicks: totals.clicks,
+    purchases: totals.purchases,
+    reach: totals.reach,
+    roas: totals.spend > 0 ? totals.weightedRoasSpend / totals.spend : 0,
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = getSupabaseAdmin();
@@ -522,20 +551,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Session expired" }, { status: 401 });
     }
 
-    const metaAccessToken = process.env.META_ACCESS_TOKEN;
-    const adAccountId = process.env.META_AD_ACCOUNT_ID;
+    const credentials = getMetaAccountCredentialsFromEnv();
 
-    if (!metaAccessToken || !adAccountId) {
+    if (credentials.length === 0) {
       return NextResponse.json({
         configured: false,
         error: "Meta Ads not configured",
-      });
-    }
-    const normalizedAdAccountId = normalizeAdAccountId(adAccountId);
-    if (!normalizedAdAccountId) {
-      return NextResponse.json({
-        configured: false,
-        error: "Meta Ads account ID is invalid",
       });
     }
 
@@ -657,38 +678,6 @@ export async function GET(request: NextRequest) {
     // Fields to fetch for insights
     const insightFields = "spend,impressions,clicks,cpc,cpm,ctr,reach,actions,cost_per_action_type,purchase_roas,website_purchase_roas";
 
-    // 0. Fetch account-level insights for exact top-line parity with Ads Manager
-    const accountInsightsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/insights?fields=${insightFields}&${dateParams}&limit=1&access_token=${metaAccessToken}`;
-    const accountInsightsData = await fetchMetaJson(accountInsightsUrl);
-
-    // 1. Fetch account metadata
-    const accountUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}?fields=id,name,currency,timezone_name&access_token=${metaAccessToken}`;
-    const accountData = await fetchMetaJson(accountUrl);
-
-    // 2. Fetch all campaigns with pagination
-    const campaignsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget&limit=200&access_token=${metaAccessToken}`;
-    const campaignsData = await fetchAllMetaPages(campaignsUrl);
-
-    // 3. Fetch campaign-level insights (paginated)
-    const campaignInsightsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/insights?fields=campaign_id,campaign_name,${insightFields}&level=campaign&${dateParams}&limit=500&access_token=${metaAccessToken}`;
-    const campaignInsightsData = await fetchAllMetaPages(campaignInsightsUrl);
-
-    // 4. Fetch adset-level insights (paginated)
-    const adsetInsightsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/insights?fields=adset_id,adset_name,campaign_id,${insightFields}&level=adset&${dateParams}&limit=500&access_token=${metaAccessToken}`;
-    const adsetInsightsData = await fetchAllMetaPages(adsetInsightsUrl);
-
-    // 5. Fetch ad-level insights (paginated)
-    const adInsightsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/insights?fields=ad_id,ad_name,adset_id,campaign_id,${insightFields}&level=ad&${dateParams}&limit=500&access_token=${metaAccessToken}`;
-    const adInsightsData = await fetchAllMetaPages(adInsightsUrl);
-
-    // 6. Fetch adsets with budget info (paginated)
-    const adsetsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/adsets?fields=id,name,status,campaign_id,daily_budget,lifetime_budget&limit=500&access_token=${metaAccessToken}`;
-    const adsetsData = await fetchAllMetaPages(adsetsUrl);
-
-    // 7. Fetch ads with status (paginated)
-    const adsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/ads?fields=id,name,status,adset_id&limit=500&access_token=${metaAccessToken}`;
-    const adsData = await fetchAllMetaPages(adsUrl);
-
     // Helper to extract metrics from insights
     const extractMetrics = (insight: any) => {
       const actions = insight?.actions || [];
@@ -710,196 +699,318 @@ export async function GET(request: NextRequest) {
         roas,
       };
     };
+    const accountBreakdowns = (
+      await Promise.all(
+        credentials.map(async ({ accountId: adAccountId, accessToken }) => {
+          const normalizedAdAccountId = normalizeAdAccountId(adAccountId);
+          if (!normalizedAdAccountId) return null;
 
-    // Create lookup maps
-    const campaignInsightsMap = new Map();
-    campaignInsightsData.forEach((c: any) => {
-      campaignInsightsMap.set(c.campaign_id, c);
-    });
+          const accountInsightsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/insights?fields=${insightFields}&${dateParams}&limit=1&access_token=${accessToken}`;
+          const accountUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}?fields=id,name,currency,timezone_name&access_token=${accessToken}`;
+          const campaignsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget&limit=200&access_token=${accessToken}`;
+          const campaignInsightsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/insights?fields=campaign_id,campaign_name,${insightFields}&level=campaign&${dateParams}&limit=500&access_token=${accessToken}`;
+          const adsetInsightsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/insights?fields=adset_id,adset_name,campaign_id,${insightFields}&level=adset&${dateParams}&limit=500&access_token=${accessToken}`;
+          const adInsightsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/insights?fields=ad_id,ad_name,adset_id,campaign_id,${insightFields}&level=ad&${dateParams}&limit=500&access_token=${accessToken}`;
+          const adsetsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/adsets?fields=id,name,status,campaign_id,daily_budget,lifetime_budget&limit=500&access_token=${accessToken}`;
+          const adsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/ads?fields=id,name,status,adset_id&limit=500&access_token=${accessToken}`;
 
-    const adsetInsightsMap = new Map();
-    adsetInsightsData.forEach((a: any) => {
-      adsetInsightsMap.set(a.adset_id, a);
-    });
+          const [
+            accountInsightsData,
+            accountData,
+            campaignsData,
+            campaignInsightsData,
+            adsetInsightsData,
+            adInsightsData,
+            adsetsData,
+            adsData,
+          ] = await Promise.all([
+            fetchMetaJson(accountInsightsUrl),
+            fetchMetaJson(accountUrl),
+            fetchAllMetaPages(campaignsUrl),
+            fetchAllMetaPages(campaignInsightsUrl),
+            fetchAllMetaPages(adsetInsightsUrl),
+            fetchAllMetaPages(adInsightsUrl),
+            fetchAllMetaPages(adsetsUrl),
+            fetchAllMetaPages(adsUrl),
+          ]);
 
-    const adInsightsMap = new Map();
-    adInsightsData.forEach((a: any) => {
-      adInsightsMap.set(a.ad_id, a);
-    });
+          const campaignInsightsMap = new Map();
+          campaignInsightsData.forEach((c: any) => {
+            campaignInsightsMap.set(c.campaign_id, c);
+          });
 
-    const adsetInfoMap = new Map();
-    adsetsData.forEach((a: any) => {
-      adsetInfoMap.set(a.id, a);
-    });
+          const adsetInsightsMap = new Map();
+          adsetInsightsData.forEach((a: any) => {
+            adsetInsightsMap.set(a.adset_id, a);
+          });
 
-    const adInfoMap = new Map();
-    adsData.forEach((a: any) => {
-      adInfoMap.set(a.id, a);
-    });
+          const adInsightsMap = new Map();
+          adInsightsData.forEach((a: any) => {
+            adInsightsMap.set(a.ad_id, a);
+          });
 
-    // Group adsets by campaign
-    const adsetsByCampaign = new Map<string, any[]>();
-    adsetsData.forEach((adset: any) => {
-      const campaignId = adset.campaign_id;
-      if (!adsetsByCampaign.has(campaignId)) {
-        adsetsByCampaign.set(campaignId, []);
+          const adsetsByCampaign = new Map<string, any[]>();
+          adsetsData.forEach((adset: any) => {
+            const campaignId = adset.campaign_id;
+            if (!adsetsByCampaign.has(campaignId)) {
+              adsetsByCampaign.set(campaignId, []);
+            }
+            adsetsByCampaign.get(campaignId)!.push(adset);
+          });
+
+          const adsByAdset = new Map<string, any[]>();
+          adsData.forEach((ad: any) => {
+            const adsetId = ad.adset_id;
+            if (!adsByAdset.has(adsetId)) {
+              adsByAdset.set(adsetId, []);
+            }
+            adsByAdset.get(adsetId)!.push(ad);
+          });
+
+          const campaigns: CampaignData[] = campaignsData.map((campaign: any) => {
+            const campaignInsight = campaignInsightsMap.get(campaign.id);
+            const metrics = extractMetrics(campaignInsight);
+            const budget = campaign.daily_budget
+              ? parseFloat(campaign.daily_budget) / 100
+              : (campaign.lifetime_budget ? parseFloat(campaign.lifetime_budget) / 100 : null);
+
+            const campaignAdsets = adsetsByCampaign.get(campaign.id) || [];
+            const adsets: AdSetData[] = campaignAdsets.map((adset: any) => {
+              const adsetInsight = adsetInsightsMap.get(adset.id);
+              const adsetMetrics = extractMetrics(adsetInsight);
+              const adsetBudget = adset.daily_budget
+                ? parseFloat(adset.daily_budget) / 100
+                : (adset.lifetime_budget ? parseFloat(adset.lifetime_budget) / 100 : null);
+
+              const adsetAds = adsByAdset.get(adset.id) || [];
+              const ads: AdMetrics[] = adsetAds.map((ad: any) => {
+                const adInsight = adInsightsMap.get(ad.id);
+                const adMetrics = extractMetrics(adInsight);
+                return {
+                  id: `${normalizedAdAccountId}:${ad.id}`,
+                  metaId: String(ad.id),
+                  accountId: normalizedAdAccountId,
+                  accountName: accountData?.name || `act_${normalizedAdAccountId}`,
+                  name: ad.name,
+                  status: ad.status,
+                  budget: null,
+                  ...adMetrics,
+                };
+              });
+
+              return {
+                id: `${normalizedAdAccountId}:${adset.id}`,
+                metaId: String(adset.id),
+                accountId: normalizedAdAccountId,
+                accountName: accountData?.name || `act_${normalizedAdAccountId}`,
+                name: adset.name,
+                status: adset.status,
+                budget: adsetBudget,
+                ...adsetMetrics,
+                ads,
+              };
+            });
+
+            return {
+              id: `${normalizedAdAccountId}:${campaign.id}`,
+              metaId: String(campaign.id),
+              accountId: normalizedAdAccountId,
+              accountName: accountData?.name || `act_${normalizedAdAccountId}`,
+              name: campaign.name,
+              status: campaign.status,
+              budget,
+              firstPartySales: 0,
+              firstPartyRevenue: 0,
+              ...metrics,
+              adsets,
+            };
+          });
+
+          campaigns.sort((a, b) => b.spend - a.spend);
+
+          const accountInsight = accountInsightsData?.data?.[0] || null;
+          const accountMetrics = extractMetrics(accountInsight);
+
+          const aggregatedCampaignTotals = campaigns.reduce(
+            (acc, c) => ({
+              spend: acc.spend + c.spend,
+              impressions: acc.impressions + c.impressions,
+              clicks: acc.clicks + c.clicks,
+              purchases: acc.purchases + c.purchases,
+              reach: acc.reach + c.reach,
+            }),
+            { spend: 0, impressions: 0, clicks: 0, purchases: 0, reach: 0 }
+          );
+
+          const totals = {
+            spend: accountMetrics.spend || aggregatedCampaignTotals.spend,
+            impressions: accountMetrics.impressions || aggregatedCampaignTotals.impressions,
+            clicks: accountMetrics.clicks || aggregatedCampaignTotals.clicks,
+            purchases: accountMetrics.purchases || aggregatedCampaignTotals.purchases,
+            reach: accountMetrics.reach || aggregatedCampaignTotals.reach,
+            roas: accountMetrics.roas || 0,
+          };
+
+          return {
+            account: {
+              id: accountData?.id || `act_${normalizedAdAccountId}`,
+              name: accountData?.name || "Unknown",
+              currency: accountData?.currency || "USD",
+              timezone: accountData?.timezone_name || "Unknown",
+            },
+            normalizedAdAccountId,
+            campaigns,
+            totals,
+          };
+        })
+      )
+    ).filter(
+      (
+        account
+      ): account is {
+        account: { id: string; name: string; currency: string; timezone: string };
+        normalizedAdAccountId: string;
+        campaigns: CampaignData[];
+        totals: { spend: number; impressions: number; clicks: number; purchases: number; reach: number; roas: number };
+      } => !!account
+    );
+
+    if (accountBreakdowns.length === 0) {
+      return NextResponse.json({
+        configured: false,
+        error: "Meta Ads account ID is invalid",
+      });
+    }
+
+    const campaigns = accountBreakdowns.flatMap((account) => account.campaigns).sort((a, b) => b.spend - a.spend);
+
+    const campaignByKey = new Map<string, CampaignData>();
+    const campaignIdToKeys = new Map<string, string[]>();
+    const campaignNameToKeys = new Map<string, string[]>();
+
+    campaigns.forEach((campaign) => {
+      campaignByKey.set(campaign.id, campaign);
+      if (campaign.metaId) {
+        const ids = campaignIdToKeys.get(campaign.metaId) || [];
+        ids.push(campaign.id);
+        campaignIdToKeys.set(campaign.metaId, ids);
       }
-      adsetsByCampaign.get(campaignId)!.push(adset);
-    });
-
-    // Group ads by adset
-    const adsByAdset = new Map<string, any[]>();
-    adsData.forEach((ad: any) => {
-      const adsetId = ad.adset_id;
-      if (!adsByAdset.has(adsetId)) {
-        adsByAdset.set(adsetId, []);
+      const normalizedName = String(campaign.name || "").trim().toLowerCase();
+      if (normalizedName) {
+        const ids = campaignNameToKeys.get(normalizedName) || [];
+        ids.push(campaign.id);
+        campaignNameToKeys.set(normalizedName, ids);
       }
-      adsByAdset.get(adsetId)!.push(ad);
-    });
-
-    const campaignIds = new Set(campaignsData.map((campaign: any) => String(campaign.id)));
-    const campaignNameToId = new Map<string, string>();
-    campaignsData.forEach((campaign: any) => {
-      const key = String(campaign.name || "").trim().toLowerCase();
-      if (key) campaignNameToId.set(key, String(campaign.id));
     });
 
     let firstPartyAttributedSales = 0;
     let firstPartyAttributedRevenue = 0;
     const firstPartyCampaignAttribution = new Map<string, { sales: number; revenue: number }>();
+    const firstPartyAttributedByAccount = new Map<string, { sales: number; revenue: number }>();
+
     if (firstPartyCampaignAttributionAvailable) {
       for (const event of liveAttributionEvents) {
-        let resolvedCampaignId = "";
-        if (event.campaignId && campaignIds.has(event.campaignId)) {
-          resolvedCampaignId = event.campaignId;
-        } else if (event.utmCampaign) {
-          const normalizedUtm = event.utmCampaign.toLowerCase();
-          resolvedCampaignId =
-            campaignNameToId.get(normalizedUtm) ||
-            (campaignIds.has(normalizedUtm) ? normalizedUtm : "");
+        let resolvedCampaignKey = "";
+        if (event.campaignId) {
+          const matches = campaignIdToKeys.get(event.campaignId) || [];
+          resolvedCampaignKey = matches[0] || "";
         }
-
-        if (!resolvedCampaignId) continue;
+        if (!resolvedCampaignKey && event.utmCampaign) {
+          const normalizedUtm = event.utmCampaign.toLowerCase();
+          const matches = campaignNameToKeys.get(normalizedUtm) || [];
+          resolvedCampaignKey = matches[0] || "";
+        }
+        if (!resolvedCampaignKey) continue;
 
         firstPartyAttributedSales += 1;
         firstPartyAttributedRevenue += event.amountInr;
-        const current = firstPartyCampaignAttribution.get(resolvedCampaignId) || { sales: 0, revenue: 0 };
-        current.sales += 1;
-        current.revenue += event.amountInr;
-        firstPartyCampaignAttribution.set(resolvedCampaignId, current);
+
+        const currentCampaign = firstPartyCampaignAttribution.get(resolvedCampaignKey) || { sales: 0, revenue: 0 };
+        currentCampaign.sales += 1;
+        currentCampaign.revenue += event.amountInr;
+        firstPartyCampaignAttribution.set(resolvedCampaignKey, currentCampaign);
+
+        const accountKey = resolvedCampaignKey.split(":")[0];
+        const currentAccount = firstPartyAttributedByAccount.get(accountKey) || { sales: 0, revenue: 0 };
+        currentAccount.sales += 1;
+        currentAccount.revenue += event.amountInr;
+        firstPartyAttributedByAccount.set(accountKey, currentAccount);
       }
     }
 
-    // Build hierarchical structure
-    const campaigns: CampaignData[] = campaignsData.map((campaign: any) => {
-      const campaignInsight = campaignInsightsMap.get(campaign.id);
-      const metrics = extractMetrics(campaignInsight);
-      const campaignAttribution = firstPartyCampaignAttribution.get(String(campaign.id)) || {
-        sales: 0,
-        revenue: 0,
-      };
-      
-      const budget = campaign.daily_budget 
-        ? parseFloat(campaign.daily_budget) / 100 
-        : (campaign.lifetime_budget ? parseFloat(campaign.lifetime_budget) / 100 : null);
-
-      // Get adsets for this campaign
-      const campaignAdsets = adsetsByCampaign.get(campaign.id) || [];
-      
-      const adsets: AdSetData[] = campaignAdsets.map((adset: any) => {
-        const adsetInsight = adsetInsightsMap.get(adset.id);
-        const adsetMetrics = extractMetrics(adsetInsight);
-        
-        const adsetBudget = adset.daily_budget 
-          ? parseFloat(adset.daily_budget) / 100 
-          : (adset.lifetime_budget ? parseFloat(adset.lifetime_budget) / 100 : null);
-
-        // Get ads for this adset
-        const adsetAds = adsByAdset.get(adset.id) || [];
-        
-        const ads: AdMetrics[] = adsetAds.map((ad: any) => {
-          const adInsight = adInsightsMap.get(ad.id);
-          const adMetrics = extractMetrics(adInsight);
-          
-          return {
-            id: ad.id,
-            name: ad.name,
-            status: ad.status,
-            budget: null,
-            ...adMetrics,
-          };
-        });
-
-        return {
-          id: adset.id,
-          name: adset.name,
-          status: adset.status,
-          budget: adsetBudget,
-          ...adsetMetrics,
-          ads,
-        };
-      });
-
-      return {
-        id: campaign.id,
-        name: campaign.name,
-        status: campaign.status,
-        budget,
-        firstPartySales: campaignAttribution.sales,
-        firstPartyRevenue: campaignAttribution.revenue,
-        ...metrics,
-        adsets,
-      };
+    firstPartyCampaignAttribution.forEach((value, campaignKey) => {
+      const campaign = campaignByKey.get(campaignKey);
+      if (!campaign) return;
+      campaign.firstPartySales = value.sales;
+      campaign.firstPartyRevenue = value.revenue;
     });
 
-    // Sort campaigns by spend (highest first)
-    campaigns.sort((a, b) => b.spend - a.spend);
-
-    const accountInsight = accountInsightsData?.data?.[0] || null;
-    const accountMetrics = extractMetrics(accountInsight);
-
-    // Calculate totals: prefer account-level for parity with Ads Manager UI.
-    const aggregatedCampaignTotals = campaigns.reduce(
-      (acc, c) => ({
-        spend: acc.spend + c.spend,
-        impressions: acc.impressions + c.impressions,
-        clicks: acc.clicks + c.clicks,
-        purchases: acc.purchases + c.purchases,
-        reach: acc.reach + c.reach,
-      }),
-      { spend: 0, impressions: 0, clicks: 0, purchases: 0, reach: 0 }
+    const mergedTotals = mergeAccountLevelMetrics(
+      accountBreakdowns.map((account) => ({
+        spend: account.totals.spend,
+        impressions: account.totals.impressions,
+        clicks: account.totals.clicks,
+        purchases: account.totals.purchases,
+        reach: account.totals.reach,
+        roas: account.totals.roas,
+      }))
     );
 
-    const totals = {
-      spend: accountMetrics.spend || aggregatedCampaignTotals.spend,
-      impressions: accountMetrics.impressions || aggregatedCampaignTotals.impressions,
-      clicks: accountMetrics.clicks || aggregatedCampaignTotals.clicks,
-      purchases: accountMetrics.purchases || aggregatedCampaignTotals.purchases,
-      reach: accountMetrics.reach || aggregatedCampaignTotals.reach,
-    };
-
     const firstPartySales = totalSales;
-    const metaPurchases = totals.purchases;
+    const metaPurchases = mergedTotals.purchases;
     const attributionBaseline = firstPartyCampaignAttributionAvailable
       ? firstPartyAttributedSales
       : metaPurchases;
     const organicOrUnattributedSales = clampNonNegative(firstPartySales - attributionBaseline);
 
-    // Calculate spend in INR and profit
-    const totalSpendINR = totals.spend * exchangeRate;
-    const gst = totalRevenue * 0.05; // 5% GST
+    const totalSpendINR = mergedTotals.spend * exchangeRate;
+    const gst = totalRevenue * 0.05;
     const netRevenue = totalRevenue - gst;
     const profit = netRevenue - totalSpendINR;
     const roas = totalSpendINR > 0 ? totalRevenue / totalSpendINR : 0;
 
+    const accounts = accountBreakdowns.map((account) => {
+      const accountSpendInr = account.totals.spend * exchangeRate;
+      const accountAttributed = firstPartyAttributedByAccount.get(account.normalizedAdAccountId) || {
+        sales: 0,
+        revenue: 0,
+      };
+      return {
+        account: account.account,
+        campaigns: account.campaigns,
+        totals: {
+          ...account.totals,
+          spendINR: accountSpendInr,
+          cpc: account.totals.clicks > 0 ? account.totals.spend / account.totals.clicks : 0,
+          cpm: account.totals.impressions > 0 ? (account.totals.spend / account.totals.impressions) * 1000 : 0,
+          ctr: account.totals.impressions > 0 ? (account.totals.clicks / account.totals.impressions) * 100 : 0,
+          costPerPurchase: account.totals.purchases > 0 ? account.totals.spend / account.totals.purchases : 0,
+          roas: account.totals.roas,
+        },
+        sourceBreakdown: {
+          firstPartySales,
+          firstPartyAttributedSales: accountAttributed.sales,
+          firstPartyAttributedRevenue: accountAttributed.revenue,
+          metaPurchases: account.totals.purchases,
+          organicOrUnattributedSales: clampNonNegative(
+            firstPartySales - (firstPartyCampaignAttributionAvailable ? accountAttributed.sales : account.totals.purchases)
+          ),
+        },
+      };
+    });
+
+    const mergedAccountLabel =
+      accountBreakdowns.length > 1 ? `Combined (${accountBreakdowns.length} Accounts)` : accountBreakdowns[0].account.name;
+
     return NextResponse.json({
       configured: true,
       account: {
-        id: accountData?.id || `act_${normalizedAdAccountId}`,
-        name: accountData?.name || "Unknown",
-        currency: accountData?.currency || "USD",
-        timezone: accountData?.timezone_name || "Unknown",
+        id: "combined",
+        name: mergedAccountLabel,
+        currency: accountBreakdowns[0].account.currency,
+        timezone: accountBreakdowns.length > 1 ? "Mixed" : accountBreakdowns[0].account.timezone,
       },
+      accounts,
       exchangeRate,
       datePreset,
       dateRange: {
@@ -915,7 +1026,6 @@ export async function GET(request: NextRequest) {
         : null,
       businessRule: "11:30 AM IST business-day boundary",
       campaigns,
-      // Revenue data from PayU
       revenue: {
         totalRevenue,
         grossRevenue,
@@ -946,13 +1056,13 @@ export async function GET(request: NextRequest) {
             : "Campaign rows use Meta-reported website purchases/ROAS. First-party campaign attribution columns become available after payment attribution migration is applied.",
       },
       totals: {
-        ...totals,
+        ...mergedTotals,
         spendINR: totalSpendINR,
-        cpc: totals.clicks > 0 ? totals.spend / totals.clicks : 0,
-        cpm: totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0,
-        ctr: totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0,
-        costPerPurchase: totals.purchases > 0 ? totals.spend / totals.purchases : 0,
-        roas: accountMetrics.roas || 0,
+        cpc: mergedTotals.clicks > 0 ? mergedTotals.spend / mergedTotals.clicks : 0,
+        cpm: mergedTotals.impressions > 0 ? (mergedTotals.spend / mergedTotals.impressions) * 1000 : 0,
+        ctr: mergedTotals.impressions > 0 ? (mergedTotals.clicks / mergedTotals.impressions) * 100 : 0,
+        costPerPurchase: mergedTotals.purchases > 0 ? mergedTotals.spend / mergedTotals.purchases : 0,
+        roas: mergedTotals.roas,
       },
     });
   } catch (error: any) {

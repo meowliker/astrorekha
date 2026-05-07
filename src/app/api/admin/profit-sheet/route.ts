@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { classifyPayUEvent } from "@/lib/finance-events";
 import { getPayUTransactions } from "@/lib/payu-api";
+import { getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -30,6 +31,11 @@ interface ProfitSheetRow {
   refundCount?: number;
 }
 
+interface DailyMetaSpend {
+  usd: number;
+  inr: number;
+}
+
 function normalizePurchaseType(value: string | null | undefined): string {
   const normalized = String(value || "").trim().toLowerCase();
   return normalized || "bundle";
@@ -52,28 +58,193 @@ async function fetchExchangeRate(): Promise<number> {
 }
 
 
-// Fetch Meta Ads daily spend for a date range
-async function fetchMetaAdsDailySpend(startDate: string, endDate: string): Promise<Map<string, number>> {
-  const metaAccessToken = process.env.META_ACCESS_TOKEN;
-  const adAccountId = process.env.META_AD_ACCOUNT_ID;
+function parseHourBucketStart(raw: unknown): number | null {
+  const text = String(raw || "").trim();
+  const match = text.match(/^(\d{1,2}):\d{2}:\d{2}/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  return Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : null;
+}
 
-  if (!metaAccessToken || !adAccountId) {
+function parseIsoDateParts(isoDate: string): { year: number; month: number; day: number } | null {
+  const match = String(isoDate || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+  };
+}
+
+function toUtcFromAccountLocalHour(dateStart: string, hour: number, timezoneOffsetHoursUtc: number): Date | null {
+  const parsed = parseIsoDateParts(dateStart);
+  if (!parsed) return null;
+  const utcMillis =
+    Date.UTC(parsed.year, parsed.month - 1, parsed.day, hour, 0, 0, 0) -
+    timezoneOffsetHoursUtc * 60 * 60 * 1000;
+  return new Date(utcMillis);
+}
+
+function isWithinRequestedRange(dayKey: string, startDate: string, endDate: string): boolean {
+  return dayKey >= startDate && dayKey <= endDate;
+}
+
+function addConvertedMetaSpend(
+  spendMap: Map<string, DailyMetaSpend>,
+  dayKey: string,
+  spend: number,
+  currency: string,
+  exchangeRate: number
+) {
+  const current = spendMap.get(dayKey) || { usd: 0, inr: 0 };
+  if (currency === "INR") {
+    current.inr += spend;
+    current.usd += exchangeRate > 0 ? spend / exchangeRate : 0;
+  } else {
+    // Default to USD semantics for unknown currencies.
+    current.usd += spend;
+    current.inr += spend * exchangeRate;
+  }
+  spendMap.set(dayKey, current);
+}
+
+function addHourlySpendToBusinessWindow(
+  spendMap: Map<string, DailyMetaSpend>,
+  row: {
+    date_start?: string;
+    spend?: string;
+    hourly_stats_aggregated_by_advertiser_time_zone?: string;
+  },
+  timezoneOffsetHoursUtc: number,
+  currency: string,
+  exchangeRate: number,
+  startDate: string,
+  endDate: string
+) {
+  const spend = parseFloat(String(row.spend || "0"));
+  if (!Number.isFinite(spend) || spend <= 0) return;
+
+  const hour = parseHourBucketStart(row.hourly_stats_aggregated_by_advertiser_time_zone);
+  if (hour === null) return;
+  const dateStart = String(row.date_start || "");
+  const bucketStart = toUtcFromAccountLocalHour(dateStart, hour, timezoneOffsetHoursUtc);
+  if (!bucketStart || Number.isNaN(bucketStart.getTime())) return;
+
+  const bucketEnd = new Date(bucketStart.getTime() + 60 * 60 * 1000);
+  const startDay = getCostaRicaBusinessDayKeyFromDate(bucketStart);
+  const endDay = getCostaRicaBusinessDayKeyFromDate(new Date(bucketEnd.getTime() - 1));
+
+  if (startDay === endDay) {
+    if (isWithinRequestedRange(startDay, startDate, endDate)) {
+      addConvertedMetaSpend(spendMap, startDay, spend, currency, exchangeRate);
+    }
+    return;
+  }
+
+  // Only the 11:30 IST boundary can split one hourly bucket into two business days.
+  const splitBoundary = new Date(`${endDay}T11:30:00+05:30`);
+  const splitMillis = splitBoundary.getTime();
+  const startMillis = bucketStart.getTime();
+  const endMillis = bucketEnd.getTime();
+  const leftMillis = Math.max(0, Math.min(endMillis, splitMillis) - startMillis);
+  const rightMillis = Math.max(0, endMillis - Math.max(startMillis, splitMillis));
+  const totalMillis = leftMillis + rightMillis;
+  if (totalMillis <= 0) return;
+
+  const leftSpend = spend * (leftMillis / totalMillis);
+  const rightSpend = spend - leftSpend;
+
+  if (leftSpend > 0 && isWithinRequestedRange(startDay, startDate, endDate)) {
+    addConvertedMetaSpend(spendMap, startDay, leftSpend, currency, exchangeRate);
+  }
+  if (rightSpend > 0 && isWithinRequestedRange(endDay, startDate, endDate)) {
+    addConvertedMetaSpend(spendMap, endDay, rightSpend, currency, exchangeRate);
+  }
+}
+
+// Fetch Meta Ads daily spend for a date range, normalized to 11:30 AM IST business-day windows.
+async function fetchMetaAdsDailySpend(
+  startDate: string,
+  endDate: string,
+  exchangeRate: number
+): Promise<Map<string, DailyMetaSpend>> {
+  const credentials = getMetaAccountCredentialsFromEnv();
+
+  if (credentials.length === 0) {
     return new Map();
   }
 
   try {
-    const dateParams = `time_range={"since":"${startDate}","until":"${endDate}"}`;
-    const dailyUrl = `${META_BASE_URL}/act_${adAccountId}/insights?fields=spend&time_increment=1&${dateParams}&limit=90&access_token=${metaAccessToken}`;
+    // Pull a small safety buffer around requested range so hour-splits near boundaries are captured.
+    const queryStartDate = addDaysToIsoDate(startDate, -2);
+    const queryEndDate = addDaysToIsoDate(endDate, 2);
+    const dateParams = `time_range={"since":"${queryStartDate}","until":"${queryEndDate}"}`;
+    const spendMap = new Map<string, DailyMetaSpend>();
 
-    const response = await fetch(dailyUrl);
-    const data = await response.json();
+    for (const { accountId: adAccountId, accessToken } of credentials) {
+      const accountUrl = `${META_BASE_URL}/act_${adAccountId}?fields=id,name,currency,timezone_name,timezone_offset_hours_utc&access_token=${accessToken}`;
+      const hourlyUrl =
+        `${META_BASE_URL}/act_${adAccountId}/insights` +
+        `?fields=date_start,date_stop,spend` +
+        `&time_increment=1&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone` +
+        `&${dateParams}&limit=5000&access_token=${accessToken}`;
+      const dailyFallbackUrl =
+        `${META_BASE_URL}/act_${adAccountId}/insights` +
+        `?fields=date_start,spend&time_increment=1&${dateParams}&limit=500&access_token=${accessToken}`;
 
-    const spendMap = new Map<string, number>();
-    if (data.data) {
-      data.data.forEach((day: { date_start: string; spend: string }) => {
-        spendMap.set(day.date_start, parseFloat(day.spend || "0"));
+      const [accountResponse, hourlyResponse] = await Promise.all([fetch(accountUrl), fetch(hourlyUrl)]);
+      const accountData = await accountResponse.json().catch(() => null);
+      const hourlyData = await hourlyResponse.json().catch(() => null);
+
+      if (!accountResponse.ok || accountData?.error) {
+        console.error(`Meta account fetch failed for act_${adAccountId}:`, accountData?.error || accountResponse.status);
+        continue;
+      }
+
+      const currency = String(accountData?.currency || "USD").toUpperCase();
+      const timezoneOffsetHoursUtcRaw = Number(accountData?.timezone_offset_hours_utc);
+      const timezoneOffsetHoursUtc = Number.isFinite(timezoneOffsetHoursUtcRaw) ? timezoneOffsetHoursUtcRaw : -6;
+
+      const hourlyRows: Array<{
+        date_start?: string;
+        spend?: string;
+        hourly_stats_aggregated_by_advertiser_time_zone?: string;
+      }> = Array.isArray(hourlyData?.data) ? hourlyData.data : [];
+
+      if (hourlyRows.length > 0) {
+        hourlyRows.forEach((row) =>
+          addHourlySpendToBusinessWindow(
+            spendMap,
+            row,
+            timezoneOffsetHoursUtc,
+            currency,
+            exchangeRate,
+            startDate,
+            endDate
+          )
+        );
+        continue;
+      }
+
+      // Fallback in case hourly breakdown is unavailable for an account.
+      const fallbackResponse = await fetch(dailyFallbackUrl);
+      const fallbackData = await fallbackResponse.json().catch(() => null);
+      const dailyRows: Array<{ date_start?: string; spend?: string }> = Array.isArray(fallbackData?.data)
+        ? fallbackData.data
+        : [];
+      dailyRows.forEach((day) => {
+        const spend = parseFloat(String(day.spend || "0"));
+        if (!Number.isFinite(spend) || spend <= 0) return;
+        const dayKey = String(day.date_start || "");
+        if (!isWithinRequestedRange(dayKey, startDate, endDate)) return;
+        addConvertedMetaSpend(spendMap, dayKey, spend, currency, exchangeRate);
       });
+
+      if (!Array.isArray(fallbackData?.data)) {
+        console.error(`Meta fallback fetch returned no data for act_${adAccountId}`, fallbackData?.error || fallbackData);
+      }
     }
+
     return spendMap;
   } catch (error) {
     console.error("Meta Ads fetch error:", error);
@@ -184,8 +355,8 @@ export async function GET(request: NextRequest) {
     const exchangeRate = customExchangeRate ? parseFloat(customExchangeRate) : await fetchExchangeRate();
     console.log(`Using exchange rate: ${exchangeRate}`);
 
-    // Fetch Meta Ads daily spend (in USD)
-    const metaSpendMap = await fetchMetaAdsDailySpend(startDate, endDate);
+    // Fetch Meta Ads daily spend normalized to business-day windows (11:30 IST boundary).
+    const metaSpendMap = await fetchMetaAdsDailySpend(startDate, endDate, exchangeRate);
     console.log(`Fetched Meta Ads spend for ${metaSpendMap.size} days`);
 
     // Generate date range
@@ -258,8 +429,9 @@ export async function GET(request: NextRequest) {
       const revenue = grossRevenue - refundAmount;
 
       const gst = revenue * 0.05; // 5% GST on net revenue
-      const adsCostUSD = metaSpendMap.get(costaRicaDate) || 0;
-      const adsCostINR = adsCostUSD * exchangeRate; // Convert USD to INR
+      const dailyMetaSpend = metaSpendMap.get(costaRicaDate) || { usd: 0, inr: 0 };
+      const adsCostUSD = dailyMetaSpend.usd;
+      const adsCostINR = dailyMetaSpend.inr;
       const netRevenue = revenue - gst - adsCostINR;
       const profitPercent = revenue > 0 ? (netRevenue / revenue) * 100 : 0;
       const roas = adsCostINR > 0 ? revenue / adsCostINR : 0;
