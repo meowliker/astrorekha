@@ -560,6 +560,10 @@ function getMonthStartUtcDate(isoDate: string): Date {
   return new Date(Date.UTC(year, month - 1, 1));
 }
 
+function shiftMonthStartUtcDate(monthStart: Date, months: number): Date {
+  return new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + months, 1));
+}
+
 function buildMonthGrid(viewMonthStart: Date): CalendarCell[] {
   const firstDayIso = viewMonthStart.toISOString().split("T")[0];
   const weekdayIndex = (viewMonthStart.getUTCDay() + 6) % 7;
@@ -655,6 +659,7 @@ export default function AdminRevenuePage() {
   const [profitSheetRoasFilter, setProfitSheetRoasFilter] = useState<string>("all");
   const [profitSheetExchangeRate, setProfitSheetExchangeRate] = useState<number>(85);
   const [profitSheetCustomExchangeRate, setProfitSheetCustomExchangeRate] = useState<string>("");
+  const profitSheetRequestIdRef = useRef(0);
 
   // Meta Breakdown state
   const [metaBreakdown, setMetaBreakdown] = useState<MetaBreakdownData | null>(null);
@@ -796,6 +801,7 @@ export default function AdminRevenuePage() {
 
   // Fetch Profit Sheet data
   const fetchProfitSheet = async (customRate?: number) => {
+    const requestId = ++profitSheetRequestIdRef.current;
     try {
       setProfitSheetLoading(true);
       setProfitSheetError(null);
@@ -811,6 +817,7 @@ export default function AdminRevenuePage() {
       }
       
       const res = await fetch(url);
+      if (requestId !== profitSheetRequestIdRef.current) return;
       if (res.status === 401) {
         localStorage.removeItem("admin_session_token");
         localStorage.removeItem("admin_session_expiry");
@@ -824,6 +831,7 @@ export default function AdminRevenuePage() {
       }
 
       const result = await res.json();
+      if (requestId !== profitSheetRequestIdRef.current) return;
       setProfitSheetData(result.rows || []);
       if (result.exchangeRate) {
         setProfitSheetExchangeRate(result.exchangeRate);
@@ -832,11 +840,14 @@ export default function AdminRevenuePage() {
         }
       }
     } catch (err) {
+      if (requestId !== profitSheetRequestIdRef.current) return;
       console.error("Profit sheet fetch error:", err);
       setProfitSheetError(err instanceof Error ? err.message : "Failed to fetch profit sheet");
       setProfitSheetData([]);
     } finally {
-      setProfitSheetLoading(false);
+      if (requestId === profitSheetRequestIdRef.current) {
+        setProfitSheetLoading(false);
+      }
     }
   };
 
@@ -2055,12 +2066,31 @@ function ProfitSheetTab({
 
   const maxSelectableBusinessDate = getCurrentBusinessDateIso();
   const maxMonthStart = getMonthStartUtcDate(maxSelectableBusinessDate);
-  const calendarCells = useMemo(() => buildMonthGrid(calendarMonthStart), [calendarMonthStart]);
-  const monthLabel = new Intl.DateTimeFormat("en-IN", {
+  const secondCalendarMonthStart = useMemo(
+    () => shiftMonthStartUtcDate(calendarMonthStart, 1),
+    [calendarMonthStart]
+  );
+  const primaryCalendarCells = useMemo(() => buildMonthGrid(calendarMonthStart), [calendarMonthStart]);
+  const secondaryCalendarCells = useMemo(
+    () => buildMonthGrid(secondCalendarMonthStart),
+    [secondCalendarMonthStart]
+  );
+  const primaryMonthLabel = new Intl.DateTimeFormat("en-IN", {
     timeZone: META_IST_TIMEZONE,
     month: "long",
     year: "numeric",
   }).format(calendarMonthStart);
+  const secondaryMonthLabel = new Intl.DateTimeFormat("en-IN", {
+    timeZone: META_IST_TIMEZONE,
+    month: "long",
+    year: "numeric",
+  }).format(secondCalendarMonthStart);
+
+  const clampToAllowedDate = (isoDate: string): string => {
+    if (isoDate < profitMinRangeStart) return profitMinRangeStart;
+    if (isoDate > maxSelectableBusinessDate) return maxSelectableBusinessDate;
+    return isoDate;
+  };
 
   const handleCalendarDateSelect = (isoDate: string) => {
     if (isoDate < profitMinRangeStart || isoDate > maxSelectableBusinessDate) {
@@ -2081,8 +2111,11 @@ function ProfitSheetTab({
 
   const applyCustomRange = () => {
     if (!pickerStartDate) return;
-    const finalEndDate = pickerEndDate || pickerStartDate;
-    setStartDate(pickerStartDate);
+    const normalizedStart = clampToAllowedDate(pickerStartDate);
+    const normalizedEnd = clampToAllowedDate(pickerEndDate || pickerStartDate);
+    const finalStartDate = normalizedStart <= normalizedEnd ? normalizedStart : normalizedEnd;
+    const finalEndDate = normalizedStart <= normalizedEnd ? normalizedEnd : normalizedStart;
+    setStartDate(finalStartDate);
     setEndDate(finalEndDate);
     setIsCalendarOpen(false);
   };
@@ -2102,23 +2135,67 @@ function ProfitSheetTab({
         : `${formatCalendarDateShort(activeRangeStart)} - ${formatCalendarDateShort(activeRangeEnd)}`
       : "Select Range";
 
+  const applyPeriodRange = (period: string) => {
+    let periodRange: CalendarRange;
+    if (period === "last7") periodRange = getPresetCalendarRange("last_7d");
+    else if (period === "last14") periodRange = getPresetCalendarRange("last_14d");
+    else if (period === "last30") periodRange = getPresetCalendarRange("last_30d");
+    else periodRange = { startDate: profitMinRangeStart, endDate: maxSelectableBusinessDate };
+
+    setPeriodFilter(period);
+    setStartDate(periodRange.startDate);
+    setEndDate(periodRange.endDate);
+    setPickerStartDate(periodRange.startDate);
+    setPickerEndDate(periodRange.endDate);
+    setCalendarMonthStart(getMonthStartUtcDate(periodRange.endDate));
+    setIsCalendarOpen(false);
+  };
+
+  const renderCalendarGrid = (cells: CalendarCell[]) => (
+    <>
+      <div className="grid grid-cols-7 gap-1 text-[11px] text-white/50 mb-2">
+        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((weekday) => (
+          <div key={weekday} className="text-center py-1">
+            {weekday}
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((cell) => {
+          const isDisabled = cell.isoDate < profitMinRangeStart || cell.isoDate > maxSelectableBusinessDate;
+          const isStart = pickerStartDate === cell.isoDate;
+          const isEnd = pickerEndDate === cell.isoDate;
+          const isInRange =
+            !!pickerStartDate &&
+            !!pickerEndDate &&
+            cell.isoDate >= pickerStartDate &&
+            cell.isoDate <= pickerEndDate;
+          return (
+            <button
+              key={cell.isoDate}
+              onClick={() => handleCalendarDateSelect(cell.isoDate)}
+              disabled={isDisabled}
+              className={`h-9 rounded-md text-sm transition-colors ${
+                isStart || isEnd
+                  ? "bg-primary text-white"
+                  : isInRange
+                  ? "bg-primary/25 text-white"
+                  : cell.inCurrentMonth
+                  ? "bg-white/5 text-white hover:bg-white/15"
+                  : "bg-white/[0.02] text-white/45 hover:bg-white/10"
+              } ${isDisabled ? "opacity-30 cursor-not-allowed" : ""}`}
+              title={formatCalendarDateLabel(cell.isoDate)}
+            >
+              {cell.day}
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+
   // Filter data based on filters
   let filteredData = [...data];
-
-  // Period filter
-  if (periodFilter === "last7") {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 7);
-    filteredData = filteredData.filter(row => new Date(row.date) >= cutoff);
-  } else if (periodFilter === "last14") {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 14);
-    filteredData = filteredData.filter(row => new Date(row.date) >= cutoff);
-  } else if (periodFilter === "last30") {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 30);
-    filteredData = filteredData.filter(row => new Date(row.date) >= cutoff);
-  }
 
   // ROAS filter
   if (roasFilter === "positive") {
@@ -2185,67 +2262,83 @@ function ProfitSheetTab({
                 <div className="flex items-center justify-between mb-3">
                   <button
                     onClick={() =>
-                      setCalendarMonthStart(
-                        (prev) => new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() - 1, 1))
-                      )
+                      setCalendarMonthStart((prev) => shiftMonthStartUtcDate(prev, -1))
                     }
                     className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
                     aria-label="Previous month"
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
-                  <p className="text-white text-sm font-medium">{monthLabel}</p>
+                  <p className="text-white text-sm font-medium">Select Date Range</p>
                   <button
                     onClick={() =>
-                      setCalendarMonthStart(
-                        (prev) => new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() + 1, 1))
-                      )
+                      setCalendarMonthStart((prev) => shiftMonthStartUtcDate(prev, 1))
                     }
-                    disabled={calendarMonthStart.getTime() >= maxMonthStart.getTime()}
+                    disabled={secondCalendarMonthStart.getTime() >= maxMonthStart.getTime()}
                     className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     aria-label="Next month"
                   >
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
-                <div className="grid grid-cols-7 gap-1 text-[11px] text-white/50 mb-2">
-                  {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((weekday) => (
-                    <div key={weekday} className="text-center py-1">
-                      {weekday}
-                    </div>
-                  ))}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <p className="text-white/75 text-sm font-medium mb-2">{primaryMonthLabel}</p>
+                    {renderCalendarGrid(primaryCalendarCells)}
+                  </div>
+                  <div>
+                    <p className="text-white/75 text-sm font-medium mb-2">{secondaryMonthLabel}</p>
+                    {renderCalendarGrid(secondaryCalendarCells)}
+                  </div>
                 </div>
-                <div className="grid grid-cols-7 gap-1">
-                  {calendarCells.map((cell) => {
-                    const isDisabled =
-                      cell.isoDate < profitMinRangeStart || cell.isoDate > maxSelectableBusinessDate;
-                    const isStart = pickerStartDate === cell.isoDate;
-                    const isEnd = pickerEndDate === cell.isoDate;
-                    const isInRange =
-                      !!pickerStartDate &&
-                      !!pickerEndDate &&
-                      cell.isoDate >= pickerStartDate &&
-                      cell.isoDate <= pickerEndDate;
-                    return (
-                      <button
-                        key={cell.isoDate}
-                        onClick={() => handleCalendarDateSelect(cell.isoDate)}
-                        disabled={isDisabled}
-                        className={`h-9 rounded-md text-sm transition-colors ${
-                          isStart || isEnd
-                            ? "bg-primary text-white"
-                            : isInRange
-                            ? "bg-primary/25 text-white"
-                            : cell.inCurrentMonth
-                            ? "bg-white/5 text-white hover:bg-white/15"
-                            : "bg-white/[0.02] text-white/45 hover:bg-white/10"
-                        } ${isDisabled ? "opacity-30 cursor-not-allowed" : ""}`}
-                        title={formatCalendarDateLabel(cell.isoDate)}
-                      >
-                        {cell.day}
-                      </button>
-                    );
-                  })}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-white/50 text-xs mb-1 block">Start Date (type)</label>
+                    <input
+                      type="date"
+                      value={pickerStartDate}
+                      min={profitMinRangeStart}
+                      max={maxSelectableBusinessDate}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        if (!raw) {
+                          setPickerStartDate("");
+                          setPickerEndDate("");
+                          return;
+                        }
+                        const nextStart = clampToAllowedDate(raw);
+                        setPickerStartDate(nextStart);
+                        if (pickerEndDate && pickerEndDate < nextStart) {
+                          setPickerEndDate("");
+                        }
+                        setCalendarMonthStart(getMonthStartUtcDate(nextStart));
+                      }}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-white/50 text-xs mb-1 block">End Date (type)</label>
+                    <input
+                      type="date"
+                      value={pickerEndDate}
+                      min={profitMinRangeStart}
+                      max={maxSelectableBusinessDate}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        if (!raw) {
+                          setPickerEndDate("");
+                          return;
+                        }
+                        const nextEnd = clampToAllowedDate(raw);
+                        setPickerEndDate(nextEnd);
+                        if (!pickerStartDate) {
+                          setPickerStartDate(nextEnd);
+                        }
+                        setCalendarMonthStart(getMonthStartUtcDate(nextEnd));
+                      }}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50"
+                    />
+                  </div>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs text-white/60">
@@ -2263,7 +2356,7 @@ function ProfitSheetTab({
                     </button>
                     <button
                       onClick={applyCustomRange}
-                      disabled={loading || !pickerStartDate}
+                      disabled={!pickerStartDate}
                       className="px-3 py-1.5 text-xs rounded-md bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 transition-colors disabled:opacity-50"
                     >
                       Apply Range
@@ -2277,7 +2370,7 @@ function ProfitSheetTab({
             <label className="text-white/50 text-xs mb-1 block">Period</label>
             <select
               value={periodFilter}
-              onChange={(e) => setPeriodFilter(e.target.value)}
+              onChange={(e) => applyPeriodRange(e.target.value)}
               className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50"
             >
               <option value="all">All Time</option>
@@ -3290,7 +3383,7 @@ function MetaBreakdownTab({
                     </button>
                     <button
                       onClick={applyCustomRange}
-                      disabled={loading || !pickerStartDate}
+                      disabled={!pickerStartDate}
                       className="px-3 py-1.5 text-xs rounded-md bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 transition-colors disabled:opacity-50"
                     >
                       Apply Range
