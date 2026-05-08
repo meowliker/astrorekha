@@ -29,6 +29,47 @@ const offers = [
   },
 ];
 
+type PayUBoltResponse = {
+  response: {
+    txnStatus: string;
+    txnid: string;
+    mihpayid?: string;
+    hash?: string;
+  };
+};
+
+type PayUBolt = {
+  launch: (
+    params: Record<string, string>,
+    handlers: {
+      responseHandler: (response: PayUBoltResponse) => void | Promise<void>;
+      catchException: (error: unknown) => void | Promise<void>;
+    }
+  ) => void;
+};
+
+async function waitForPayUConfirmation(txnId: string, attempts = 8): Promise<boolean> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) {
+      await new Promise((resolve) => window.setTimeout(resolve, 4000));
+    }
+
+    try {
+      const response = await fetch(`/api/payu/status?txnid=${encodeURIComponent(txnId)}`, {
+        cache: "no-store",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data?.status === "paid") {
+        return true;
+      }
+    } catch {
+      // UPI callbacks can lag behind the browser response.
+    }
+  }
+
+  return false;
+}
+
 export default function BundleUpsellBPage() {
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -105,7 +146,30 @@ export default function BundleUpsellBPage() {
       pixelEvents.initiateCheckout(totalInr, selectedOfferNames);
       pixelEvents.addPaymentInfo(totalInr, combinedOfferLabel);
 
-      const bolt = (window as any).bolt;
+      const bolt = (window as Window & { bolt?: PayUBolt }).bolt;
+      if (!bolt) {
+        setError("Payment checkout is still loading. Please try again.");
+        setIsProcessing(false);
+        return;
+      }
+
+      const completeUpsellCheckout = () => {
+        pixelEvents.purchase(totalInr, `upsell-${offerIds}`, combinedOfferLabel);
+        setIsProcessing(false);
+        router.push("/onboarding/step-19");
+      };
+
+      const recoverAmbiguousPayment = async () => {
+        setError("Confirming your payment. This can take a few moments.");
+        const confirmed = await waitForPayUConfirmation(data.txnId);
+        if (confirmed) {
+          completeUpsellCheckout();
+          return;
+        }
+        setError("We are still confirming this payment. Please check back in a few moments.");
+        setIsProcessing(false);
+      };
+
       bolt.launch(
         {
           key: data.key,
@@ -125,10 +189,9 @@ export default function BundleUpsellBPage() {
           furl: `${window.location.origin}/api/payu/failure`,
         },
         {
-          responseHandler: async (responsePayload: any) => {
+          responseHandler: async (responsePayload: PayUBoltResponse) => {
             if (responsePayload.response.txnStatus !== "SUCCESS") {
-              setError("Payment failed. Please try again.");
-              setIsProcessing(false);
+              await recoverAmbiguousPayment();
               return;
             }
 
@@ -155,17 +218,13 @@ export default function BundleUpsellBPage() {
 
             const verifyData = await verifyRes.json().catch(() => ({ success: false }));
             if (verifyRes.ok && verifyData?.success) {
-              pixelEvents.purchase(totalInr, `upsell-${offerIds}`, combinedOfferLabel);
-              setIsProcessing(false);
-              router.push("/onboarding/step-19");
+              completeUpsellCheckout();
             } else {
-              setError("Payment verification failed. Please contact support.");
-              setIsProcessing(false);
+              await recoverAmbiguousPayment();
             }
           },
-          catchException: () => {
-            setError("Payment was cancelled or failed.");
-            setIsProcessing(false);
+          catchException: async () => {
+            await recoverAmbiguousPayment();
           },
         }
       );

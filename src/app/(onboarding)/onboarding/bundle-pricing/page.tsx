@@ -68,6 +68,28 @@ type PayUBolt = {
 
 type AbVariant = "A" | "B";
 
+async function waitForPayUConfirmation(txnId: string, attempts = 8): Promise<boolean> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) {
+      await new Promise((resolve) => window.setTimeout(resolve, 4000));
+    }
+
+    try {
+      const response = await fetch(`/api/payu/status?txnid=${encodeURIComponent(txnId)}`, {
+        cache: "no-store",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data?.status === "paid") {
+        return true;
+      }
+    } catch {
+      // UPI callbacks can lag behind the browser response.
+    }
+  }
+
+  return false;
+}
+
 function normalizeAbVariant(variant: unknown): AbVariant {
   return variant === "B" ? "B" : "A";
 }
@@ -622,6 +644,34 @@ export default function BundlePricingPage() {
           setIsProcessing(false);
           return;
         }
+        const completeBundleCheckout = () => {
+          paywallAbConversionTrackedRef.current = true;
+          trackPaywallAbEvent("conversion", {
+            selectedPlanId: selectedPlan,
+            selectedPlanName: plan.name,
+            selectedPlanPriceInr: plan.price,
+            amount: plan.price,
+            paymentMethod: "payu",
+            defaultPlanId: paywallPlanTestVariant ? PAYWALL_DEFAULT_PLAN_BY_VARIANT[paywallPlanTestVariant] : null,
+          }, true);
+          localStorage.setItem("astrorekha_payment_completed", "true");
+          localStorage.setItem("astrorekha_purchase_type", "one-time");
+          localStorage.setItem("astrorekha_bundle_id", selectedPlan);
+          pixelEvents.purchase(plan.price, selectedPlan, plan.name);
+          router.push("/onboarding/bundle-upsell-b");
+        };
+
+        const recoverAmbiguousPayment = async () => {
+          setPaymentError("Confirming your payment. This can take a few moments.");
+          const confirmed = await waitForPayUConfirmation(data.txnId);
+          if (confirmed) {
+            completeBundleCheckout();
+            return;
+          }
+          setPaymentError("We are still confirming this payment. Please check back in a few moments.");
+          setIsProcessing(false);
+        };
+
         bolt.launch({
           key: data.key,
           txnid: data.txnId,
@@ -664,33 +714,17 @@ export default function BundlePricingPage() {
               });
               const verifyData = await verifyRes.json();
               if (verifyData.success) {
-                paywallAbConversionTrackedRef.current = true;
-                trackPaywallAbEvent("conversion", {
-                  selectedPlanId: selectedPlan,
-                  selectedPlanName: plan.name,
-                  selectedPlanPriceInr: plan.price,
-                  amount: plan.price,
-                  paymentMethod: "payu",
-                  defaultPlanId: paywallPlanTestVariant ? PAYWALL_DEFAULT_PLAN_BY_VARIANT[paywallPlanTestVariant] : null,
-                }, true);
-                localStorage.setItem("astrorekha_payment_completed", "true");
-                localStorage.setItem("astrorekha_purchase_type", "one-time");
-                localStorage.setItem("astrorekha_bundle_id", selectedPlan);
-                pixelEvents.purchase(plan.price, selectedPlan, plan.name);
-                router.push("/onboarding/bundle-upsell-b");
+                completeBundleCheckout();
               } else {
-                setPaymentError("Payment verification failed. Please contact support.");
-                setIsProcessing(false);
+                await recoverAmbiguousPayment();
               }
             } else {
-              setPaymentError("Payment failed. Please try again.");
-              setIsProcessing(false);
+              await recoverAmbiguousPayment();
             }
           },
-          catchException: (error: unknown) => {
+          catchException: async (error: unknown) => {
             console.error("PayU Bolt error:", error);
-            setPaymentError("Payment was cancelled or failed.");
-            setIsProcessing(false);
+            await recoverAmbiguousPayment();
           }
         });
       } else if (data.error) {

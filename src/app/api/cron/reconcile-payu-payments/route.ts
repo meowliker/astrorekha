@@ -5,6 +5,22 @@ import { fulfillPayUPayment } from "@/lib/payu-fulfillment";
 
 export const dynamic = "force-dynamic";
 
+type PayUTransaction = {
+  txnid?: string;
+  mihpayid?: string;
+  id?: string;
+  status?: string;
+  amount?: string | number;
+  productinfo?: string;
+  firstname?: string;
+  email?: string;
+  udf1?: string;
+  udf2?: string;
+  udf3?: string;
+  udf4?: string;
+  udf5?: string;
+};
+
 function toYMD(date: Date): string {
   const y = date.getUTCFullYear();
   const m = String(date.getUTCMonth() + 1).padStart(2, "0");
@@ -20,7 +36,7 @@ async function runReconciliation(lookbackDays: number, maxRows: number) {
     const { data: pendingRows, error: pendingError } = await supabase
       .from("payments")
       .select("id, payu_txn_id, user_id, type, bundle_id, feature, coins, customer_email, payment_status, created_at")
-      .eq("payment_status", "created")
+      .in("payment_status", ["created", "pending", "failed"])
       .not("payu_txn_id", "is", null)
       .gte("created_at", since)
       .order("created_at", { ascending: true })
@@ -35,7 +51,7 @@ async function runReconciliation(lookbackDays: number, maxRows: number) {
         success: true,
         scanned: 0,
         reconciled: 0,
-        message: "No pending created payments in lookback window",
+        message: "No unresolved PayU payments in lookback window",
       });
     }
 
@@ -43,8 +59,8 @@ async function runReconciliation(lookbackDays: number, maxRows: number) {
     const fromDate = toYMD(new Date(minCreatedAt.getTime() - 24 * 60 * 60 * 1000));
     const toDate = toYMD(new Date(Date.now() + 24 * 60 * 60 * 1000));
 
-    const payuTxns: any[] = await getPayUTransactions(fromDate, toDate);
-    const txnMap = new Map<string, any>();
+    const payuTxns = (await getPayUTransactions(fromDate, toDate)) as PayUTransaction[];
+    const txnMap = new Map<string, PayUTransaction>();
     payuTxns.forEach((txn) => {
       if (txn?.txnid) txnMap.set(txn.txnid, txn);
     });
@@ -101,10 +117,11 @@ async function runReconciliation(lookbackDays: number, maxRows: number) {
       toDate,
       sampleReconciledIds: reconciledIds.slice(0, 50),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to reconcile pending PayU payments";
     console.error("[reconcile-payu-payments] error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to reconcile pending PayU payments" },
+      { success: false, error: message },
       { status: 500 }
     );
   }
