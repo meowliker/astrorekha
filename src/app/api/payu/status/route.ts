@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
       txnid: payuTxn.txnid,
       mihpayid: payuTxn.mihpayid || payuTxn.id,
       status: payuTxn.status || payuTxn.unmappedstatus || "pending",
-      amount: payuTxn.amount,
+      amount: String(payuTxn.amount ?? ""),
       productinfo: payuTxn.productinfo,
       firstname: payuTxn.firstname,
       email: payuTxn.email || payment?.customer_email || undefined,

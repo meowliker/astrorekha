@@ -84,7 +84,7 @@ async function runReconciliation(lookbackDays: number, maxRows: number) {
           txnid: payuTxn.txnid,
           mihpayid: payuTxn.mihpayid || payuTxn.id,
           status: payuTxn.status || "success",
-          amount: payuTxn.amount,
+          amount: String(payuTxn.amount ?? ""),
           productinfo: payuTxn.productinfo,
           firstname: payuTxn.firstname,
           email: payuTxn.email || row.customer_email || undefined,
