@@ -13,6 +13,7 @@ export default function WelcomePage() {
   const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isResolvingVariant, setIsResolvingVariant] = useState(true);
 
   const seedFlowVariant = (variant: "A" | "B") => {
     try {
@@ -112,6 +113,8 @@ export default function WelcomePage() {
       if (window.location.search) {
         router.replace("/welcome");
       }
+
+      setIsResolvingVariant(false);
     };
 
     assignVariant();
@@ -296,6 +299,12 @@ export default function WelcomePage() {
       cancelAnimationFrame(animationId);
     };
   }, []);
+
+  if (isResolvingVariant) {
+    return (
+      <div className="min-h-screen bg-[#0A0E1A]" aria-label="Loading AstroRekha" />
+    );
+  }
 
   return (
     <>

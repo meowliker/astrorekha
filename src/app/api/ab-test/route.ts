@@ -51,6 +51,26 @@ function normalizeVariant(variant: unknown, isOnboardingLayoutTest: boolean): "A
   return variant === "B" ? "B" : "A";
 }
 
+function chooseWeightedVariant(variants: ReturnType<typeof getNormalizedVariants>): "A" | "B" {
+  const entries = Object.entries(variants) as Array<["A" | "B", { weight: number; page: string }]>;
+  const positiveEntries = entries.filter(([, value]) => value.weight > 0);
+
+  if (positiveEntries.length === 1) {
+    return positiveEntries[0][0];
+  }
+
+  const totalWeight = positiveEntries.reduce((sum, [, value]) => sum + value.weight, 0);
+  if (totalWeight <= 0) return "A";
+
+  let random = Math.random() * totalWeight;
+  for (const [key, value] of positiveEntries) {
+    random -= value.weight;
+    if (random <= 0) return key;
+  }
+
+  return positiveEntries[positiveEntries.length - 1]?.[0] || "A";
+}
+
 async function resolveDefaultTestId(supabase: ReturnType<typeof getSupabaseAdmin>) {
   const { data } = await supabase
     .from("settings")
@@ -215,7 +235,12 @@ export async function GET(request: NextRequest) {
       }
       
       if (assignment) {
-        const assignmentVariant = normalizeVariant(assignment.variant, isOnboardingLayoutTest);
+        const variants = getNormalizedVariants(testData, isOnboardingLayoutTest, isPaywallDefaultPlanTest);
+        const normalizedStoredVariant = normalizeVariant(assignment.variant, isOnboardingLayoutTest);
+        const assignmentVariant =
+          variants[normalizedStoredVariant]?.weight > 0
+            ? normalizedStoredVariant
+            : normalizeVariant(chooseWeightedVariant(variants), isOnboardingLayoutTest);
 
         if (assignmentVariant !== assignment.variant && visitorId) {
           const forcedAssignmentPayload = {
@@ -259,20 +284,7 @@ export async function GET(request: NextRequest) {
     let assignedVariant = normalizeVariant("A", isOnboardingLayoutTest);
     if (!isOnboardingLayoutTest) {
       const variants = getNormalizedVariants(testData, isOnboardingLayoutTest, isPaywallDefaultPlanTest);
-      const totalWeight = Object.values(variants).reduce(
-        (sum: number, v: any) => sum + (v.weight || 0),
-        0
-      );
-      
-      let random = Math.random() * totalWeight;
-      
-      for (const [key, value] of Object.entries(variants)) {
-        random -= (value as any).weight || 0;
-        if (random <= 0) {
-          assignedVariant = normalizeVariant(key, isOnboardingLayoutTest);
-          break;
-        }
-      }
+      assignedVariant = normalizeVariant(chooseWeightedVariant(variants), isOnboardingLayoutTest);
     }
 
     // Save assignment if visitor ID provided

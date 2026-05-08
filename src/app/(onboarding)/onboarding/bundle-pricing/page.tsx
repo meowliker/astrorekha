@@ -213,7 +213,7 @@ export default function BundlePricingPage() {
   const { pricing } = usePricing();
   const allBundlePlans = pricing.bundles;
   
-  const [selectedPlan, setSelectedPlan] = useState<string>("palm-birth");
+  const [selectedPlan, setSelectedPlan] = useState<string>("");
   const [agreedToTerms, setAgreedToTerms] = useState(true);
   const [paymentError, setPaymentError] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -233,6 +233,7 @@ export default function BundlePricingPage() {
   const getFullReportRef = useRef<HTMLButtonElement>(null);
   const [showStickyCTA, setShowStickyCTA] = useState(false);
   const [paywallPlanTestVariant, setPaywallPlanTestVariant] = useState<AbVariant | null>(null);
+  const [hasResolvedPaywallPlanVariant, setHasResolvedPaywallPlanVariant] = useState(false);
   const hasUserTouchedPlanSelectionRef = useRef(false);
   const hasAppliedVariantDefaultRef = useRef(false);
   const paywallAbImpressionTrackedRef = useRef(false);
@@ -392,6 +393,10 @@ export default function BundlePricingPage() {
       const cachedVariantRaw = localStorage.getItem(PAYWALL_DEFAULT_PLAN_VARIANT_STORAGE_KEY);
       if (cachedVariantRaw === "A" || cachedVariantRaw === "B") {
         setPaywallPlanTestVariant(cachedVariantRaw);
+        const cachedDefault = PAYWALL_DEFAULT_PLAN_BY_VARIANT[cachedVariantRaw];
+        if (!hasUserTouchedPlanSelectionRef.current && bundlePlans.some((plan) => plan.id === cachedDefault)) {
+          setSelectedPlan(cachedDefault);
+        }
       }
 
       let resolvedVariant: AbVariant = cachedVariantRaw === "B" ? "B" : "A";
@@ -416,6 +421,7 @@ export default function BundlePricingPage() {
 
       if (cancelled) return;
       setPaywallPlanTestVariant(resolvedVariant);
+      setHasResolvedPaywallPlanVariant(true);
       localStorage.setItem(PAYWALL_DEFAULT_PLAN_VARIANT_STORAGE_KEY, resolvedVariant);
 
       if (!hasAppliedVariantDefaultRef.current && !hasUserTouchedPlanSelectionRef.current) {
@@ -805,6 +811,7 @@ export default function BundlePricingPage() {
   };
 
   const selectedPlanData = bundlePlans.find(p => p.id === selectedPlan);
+  const isPlanSelectionReady = hasResolvedPaywallPlanVariant && Boolean(selectedPlanData);
 
   return (
     <motion.div
@@ -931,7 +938,11 @@ export default function BundlePricingPage() {
 
         {/* Pricing Cards */}
         <div className="w-full max-w-sm space-y-4 mb-6">
-          {bundlePlans.map((plan, index) => (
+          {!isPlanSelectionReady ? (
+            <div className="rounded-2xl border border-border/50 bg-card/50 p-6 text-center text-sm text-muted-foreground">
+              Loading your offer...
+            </div>
+          ) : bundlePlans.map((plan, index) => (
             <motion.div
               key={plan.id}
               initial={{ opacity: 0, y: 20 }}
@@ -945,7 +956,7 @@ export default function BundlePricingPage() {
                 selectedPlan === plan.id
                   ? "border-primary bg-primary/5"
                   : "border-border/50 bg-card/50"
-              } ${plan.popular ? "ring-2 ring-primary/50" : ""}`}
+              }`}
             >
               {/* Badge */}
               {plan.popular && (
@@ -1038,7 +1049,7 @@ export default function BundlePricingPage() {
           <Button
             ref={getFullReportRef}
             onClick={handlePurchase}
-            disabled={!agreedToTerms || isProcessing || isRedeemingCoupon}
+            disabled={!isPlanSelectionReady || !agreedToTerms || isProcessing || isRedeemingCoupon}
             className="w-full h-14 text-lg font-semibold"
             size="lg"
           >
@@ -1048,7 +1059,9 @@ export default function BundlePricingPage() {
                 Processing...
               </span>
             ) : (
-              `Get My Reading - ₹${selectedPlanData?.displayPrice || selectedPlanData?.price}`
+              isPlanSelectionReady
+                ? `Get My Reading - ₹${selectedPlanData?.displayPrice || selectedPlanData?.price}`
+                : "Loading your offer..."
             )}
           </Button>
         </motion.div>
