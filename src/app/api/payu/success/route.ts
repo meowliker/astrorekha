@@ -44,7 +44,11 @@ export async function POST(request: NextRequest) {
       status: payload.status || "success",
     });
 
-    return NextResponse.json({ success: true });
+    const txnid = payload.txnid || "";
+    const redirectUrl = new URL("/payment/processing", request.url);
+    if (txnid) redirectUrl.searchParams.set("txnid", txnid);
+    redirectUrl.searchParams.set("source", "payu_success");
+    return NextResponse.redirect(redirectUrl, { status: 303 });
   } catch (error: any) {
     console.error("PayU success callback error:", error);
     return NextResponse.json(

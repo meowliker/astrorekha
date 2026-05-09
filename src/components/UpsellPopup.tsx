@@ -18,6 +18,39 @@ const featureToReportId: Record<keyof UnlockedFeatures, string> = {
   futurePartnerReport: "report-future-partner",
 };
 
+const PENDING_PAYMENT_KEY = "astrorekha_pending_payu_payment";
+
+function savePendingPayUPayment(payment: {
+  txnid: string;
+  type: string;
+  bundleId?: string;
+  returnTo: string;
+}) {
+  localStorage.setItem(
+    PENDING_PAYMENT_KEY,
+    JSON.stringify({
+      ...payment,
+      createdAt: new Date().toISOString(),
+    })
+  );
+}
+
+function normalizePayUStatus(value: unknown): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isPayUCancelOrFailure(value: unknown): boolean {
+  const status = normalizePayUStatus(value);
+  return (
+    !status ||
+    status.includes("cancel") ||
+    status.includes("fail") ||
+    status.includes("bounce") ||
+    status.includes("drop") ||
+    status === "usercancelled"
+  );
+}
+
 interface UpsellPopupProps {
   isOpen: boolean;
   onClose: () => void;
@@ -58,6 +91,12 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
       const data = await response.json();
 
       if (data.txnId) {
+        savePendingPayUPayment({
+          txnid: data.txnId,
+          type: "report",
+          bundleId: reportId,
+          returnTo: window.location.pathname,
+        });
         const bolt = (window as any).bolt;
         bolt.launch({
           key: data.key,
@@ -98,20 +137,25 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
                   key: data.key,
                 }),
               });
+              localStorage.removeItem(PENDING_PAYMENT_KEY);
               setIsProcessing(false);
               onPurchase?.();
               onClose();
               if (!onPurchase) {
                 window.location.reload();
               }
-            } else {
-              setError("Payment failed. Please try again.");
+            } else if (isPayUCancelOrFailure(response.response.txnStatus)) {
+              localStorage.removeItem(PENDING_PAYMENT_KEY);
+              setError("Payment was cancelled. You can try again whenever you're ready.");
               setIsProcessing(false);
+            } else {
+              window.location.href = `/payment/processing?txnid=${encodeURIComponent(data.txnId)}&source=report_popup`;
             }
           },
           catchException: (error: any) => {
             console.error("PayU Bolt error:", error);
-            setError("Payment was cancelled or failed.");
+            localStorage.removeItem(PENDING_PAYMENT_KEY);
+            setError("Payment was cancelled. You can try again whenever you're ready.");
             setIsProcessing(false);
           }
         });

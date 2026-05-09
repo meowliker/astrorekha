@@ -21,6 +21,39 @@ const progressSteps = [
   { label: "Access to the app", completed: false },
 ];
 
+const PENDING_PAYMENT_KEY = "astrorekha_pending_payu_payment";
+
+function savePendingPayUPayment(payment: {
+  txnid: string;
+  type: string;
+  bundleId?: string;
+  returnTo: string;
+}) {
+  localStorage.setItem(
+    PENDING_PAYMENT_KEY,
+    JSON.stringify({
+      ...payment,
+      createdAt: new Date().toISOString(),
+    })
+  );
+}
+
+function normalizePayUStatus(value: unknown): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isPayUCancelOrFailure(value: unknown): boolean {
+  const status = normalizePayUStatus(value);
+  return (
+    !status ||
+    status.includes("cancel") ||
+    status.includes("fail") ||
+    status.includes("bounce") ||
+    status.includes("drop") ||
+    status === "usercancelled"
+  );
+}
+
 // Preview features for 2026 predictions
 const predictionFeatures = [
   { icon: Calendar, label: "Month-by-month forecasts", description: "Detailed predictions for all 12 months" },
@@ -126,6 +159,12 @@ function BundleUpsellContent() {
       const data = await response.json();
 
       if (data.txnId) {
+        savePendingPayUPayment({
+          txnid: data.txnId,
+          type: "upsell",
+          bundleId: "2026-predictions",
+          returnTo: "/onboarding/step-19",
+        });
         pixelEvents.initiateCheckout(upsellPriceINR, ["2026 Future Predictions"]);
         pixelEvents.addPaymentInfo(upsellPriceINR, "2026 Future Predictions");
 
@@ -171,6 +210,7 @@ function BundleUpsellContent() {
               });
               const verifyData = await verifyRes.json().catch(() => ({ success: false }));
               if (verifyRes.ok && verifyData?.success) {
+                localStorage.removeItem(PENDING_PAYMENT_KEY);
                 pixelEvents.purchase(upsellPriceINR, "2026-predictions", "2026 Future Predictions");
                 setIsProcessing(false);
                 router.push("/onboarding/step-19");
@@ -178,14 +218,18 @@ function BundleUpsellContent() {
                 setPaymentError("Payment verification failed. Please contact support.");
                 setIsProcessing(false);
               }
-            } else {
-              setPaymentError("Payment failed. Please try again.");
+            } else if (isPayUCancelOrFailure(response.response.txnStatus)) {
+              localStorage.removeItem(PENDING_PAYMENT_KEY);
+              setPaymentError("Payment was cancelled. You can try again whenever you're ready.");
               setIsProcessing(false);
+            } else {
+              router.push(`/payment/processing?txnid=${encodeURIComponent(data.txnId)}&source=upsell_legacy`);
             }
           },
           catchException: (error: any) => {
             console.error("PayU Bolt error:", error);
-            setPaymentError("Payment was cancelled or failed.");
+            localStorage.removeItem(PENDING_PAYMENT_KEY);
+            setPaymentError("Payment was cancelled. You can try again whenever you're ready.");
             setIsProcessing(false);
           }
         });

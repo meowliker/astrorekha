@@ -396,9 +396,15 @@ const META_IST_TIMEZONE = "Asia/Kolkata";
 const META_BUSINESS_BOUNDARY_HOUR = 11;
 const META_BUSINESS_BOUNDARY_MINUTE = 30;
 const META_MIN_RANGE_START = "2024-01-01";
+const ANALYTICS_RANGE_STORAGE_KEY = "analytics_date_range_v1";
 
 type CalendarRange = { startDate: string; endDate: string };
 type CalendarCell = { isoDate: string; day: number; inCurrentMonth: boolean };
+type AnalyticsDateRangeSettings = {
+  startDate: string;
+  endDate: string;
+  dayMode: "calendar_ist" | "business_1130_ist";
+};
 
 function pad2(value: number): string {
   return String(value).padStart(2, "0");
@@ -599,6 +605,26 @@ function formatCalendarDateShort(isoDate: string): string {
   }).format(new Date(`${isoDate}T12:00:00.000Z`));
 }
 
+function getStoredAnalyticsRange(): AnalyticsDateRangeSettings | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(ANALYTICS_RANGE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      parsed &&
+      typeof parsed.startDate === "string" &&
+      typeof parsed.endDate === "string" &&
+      (parsed.dayMode === "calendar_ist" || parsed.dayMode === "business_1130_ist")
+    ) {
+      return parsed;
+    }
+  } catch {
+    // ignore corrupt saved date range
+  }
+  return null;
+}
+
 export default function AdminRevenuePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -643,11 +669,15 @@ export default function AdminRevenuePage() {
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
-  const [analyticsStartDate, setAnalyticsStartDate] = useState<string>("2026-03-13");
-  const [analyticsEndDate, setAnalyticsEndDate] = useState<string>(
-    new Date().toISOString().split("T")[0]
+  const [analyticsStartDate, setAnalyticsStartDate] = useState<string>(
+    () => getStoredAnalyticsRange()?.startDate || "2026-03-13"
   );
-  const [analyticsDayMode, setAnalyticsDayMode] = useState<"calendar_ist" | "business_1130_ist">("calendar_ist");
+  const [analyticsEndDate, setAnalyticsEndDate] = useState<string>(
+    () => getStoredAnalyticsRange()?.endDate || new Date().toISOString().split("T")[0]
+  );
+  const [analyticsDayMode, setAnalyticsDayMode] = useState<"calendar_ist" | "business_1130_ist">(
+    () => getStoredAnalyticsRange()?.dayMode || "calendar_ist"
+  );
   
   // Profit Sheet state
   const [profitSheetData, setProfitSheetData] = useState<ProfitSheetRow[]>([]);
@@ -980,6 +1010,18 @@ export default function AdminRevenuePage() {
       fetchAnalytics();
     }
   }, [activeTab, analyticsStartDate, analyticsEndDate, analyticsDayMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      ANALYTICS_RANGE_STORAGE_KEY,
+      JSON.stringify({
+        startDate: analyticsStartDate,
+        endDate: analyticsEndDate,
+        dayMode: analyticsDayMode,
+      })
+    );
+  }, [analyticsStartDate, analyticsEndDate, analyticsDayMode]);
 
   if (loading) {
     return (
@@ -3601,10 +3643,53 @@ function AnalyticsTab({
   const [customViews, setCustomViews] = useState<CustomRouteView[]>([]);
   const [activeCustomViewName, setActiveCustomViewName] = useState("");
   const [customViewNameInput, setCustomViewNameInput] = useState("My Custom View");
+  const customViewsHydratedRef = useRef(false);
   const [draggedRoute, setDraggedRoute] = useState<string | null>(null);
   const [dragOverRoute, setDragOverRoute] = useState<string | null>(null);
   const [routeSortBy, setRouteSortBy] = useState<"route" | "viewers" | "pageViews" | "bounceRate" | "avgSessionDurationSec" | "bounces">("viewers");
   const [routeSortDir, setRouteSortDir] = useState<"asc" | "desc">("desc");
+  const analyticsMinRangeStart = "2026-03-13";
+  const [pickerStartDate, setPickerStartDate] = useState<string>(startDate);
+  const [pickerEndDate, setPickerEndDate] = useState<string>(endDate);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const analyticsCalendarDropdownRef = useRef<HTMLDivElement | null>(null);
+  const [calendarMonthStart, setCalendarMonthStart] = useState<Date>(() => {
+    const focusDate = endDate || startDate || getCurrentBusinessDateIso();
+    return getMonthStartUtcDate(focusDate);
+  });
+
+  useEffect(() => {
+    setPickerStartDate(startDate);
+    setPickerEndDate(endDate);
+  }, [startDate, endDate]);
+
+  useEffect(() => {
+    if (!isCalendarOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (
+        analyticsCalendarDropdownRef.current &&
+        target &&
+        !analyticsCalendarDropdownRef.current.contains(target)
+      ) {
+        setIsCalendarOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsCalendarOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isCalendarOpen]);
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("en-IN", {
@@ -4364,6 +4449,9 @@ function AnalyticsTab({
     const savedViews = window.localStorage.getItem("analytics_route_custom_views_v1");
     const savedActiveView = window.localStorage.getItem("analytics_route_custom_active_view_v1");
     const saved = window.localStorage.getItem("analytics_route_custom_order_v1");
+    let nextViews: CustomRouteView[] = [];
+    let nextActiveView = "";
+    let nextOrder: string[] = [];
 
     if (savedViews) {
       try {
@@ -4382,16 +4470,14 @@ function AnalyticsTab({
             }))
             .filter((item) => item.name.trim() && item.order.length > 0);
           if (sanitized.length) {
-            setCustomViews(sanitized);
+            nextViews = sanitized;
             if (savedActiveView && sanitized.some((item) => item.name === savedActiveView)) {
-              setActiveCustomViewName(savedActiveView);
-              setCustomViewNameInput(savedActiveView);
+              nextActiveView = savedActiveView;
               const activeView = sanitized.find((item) => item.name === savedActiveView);
-              if (activeView) setCustomRouteOrder(activeView.order);
+              if (activeView) nextOrder = activeView.order;
             } else {
-              setActiveCustomViewName(sanitized[0].name);
-              setCustomViewNameInput(sanitized[0].name);
-              setCustomRouteOrder(sanitized[0].order);
+              nextActiveView = sanitized[0].name;
+              nextOrder = sanitized[0].order;
             }
           }
         }
@@ -4400,40 +4486,65 @@ function AnalyticsTab({
       }
     }
 
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        const order = parsed.filter((item): item is string => typeof item === "string");
-        setCustomRouteOrder(order);
-        setCustomViews((prev) => {
-          if (prev.length > 0) return prev;
-          return [{ name: "Default View", order }];
-        });
-        setActiveCustomViewName((prev) => prev || "Default View");
-        setCustomViewNameInput((prev) => prev || "Default View");
+    if (nextViews.length === 0 && saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const order = parsed.filter((item): item is string => typeof item === "string");
+          if (order.length > 0) {
+            nextViews = [{ name: "Default View", order }];
+            nextActiveView = "Default View";
+            nextOrder = order;
+          }
+        }
+      } catch {
+        // ignore corrupt local storage
       }
-    } catch {
-      // ignore corrupt local storage
     }
+
+    if (nextViews.length > 0) {
+      setCustomViews(nextViews);
+      setActiveCustomViewName(nextActiveView);
+      setCustomViewNameInput(nextActiveView || "My Custom View");
+      setCustomRouteOrder(nextOrder);
+      setRouteViewMode("custom");
+    }
+    customViewsHydratedRef.current = true;
   }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!customViewsHydratedRef.current) return;
     if (!customRouteOrder.length) return;
     window.localStorage.setItem("analytics_route_custom_order_v1", JSON.stringify(customRouteOrder));
   }, [customRouteOrder]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!customViewsHydratedRef.current) return;
     window.localStorage.setItem("analytics_route_custom_views_v1", JSON.stringify(customViews));
   }, [customViews]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!customViewsHydratedRef.current) return;
     if (!activeCustomViewName) return;
     window.localStorage.setItem("analytics_route_custom_active_view_v1", activeCustomViewName);
   }, [activeCustomViewName]);
+
+  useEffect(() => {
+    if (!customViewsHydratedRef.current) return;
+    if (routeViewMode !== "custom" || !activeCustomViewName || customRouteOrder.length === 0) return;
+    setCustomViews((prev) =>
+      prev.map((view) => {
+        if (view.name !== activeCustomViewName) return view;
+        const isSameOrder =
+          view.order.length === customRouteOrder.length &&
+          view.order.every((route, idx) => route === customRouteOrder[idx]);
+        return isSameOrder ? view : { ...view, order: customRouteOrder };
+      })
+    );
+  }, [activeCustomViewName, customRouteOrder, routeViewMode]);
 
   useEffect(() => {
     if (!routeOptions.length || !customViews.length) return;
@@ -4588,6 +4699,120 @@ function AnalyticsTab({
     fetchProfitabilityMatrix(matrixStartDate, matrixEndDate, mode);
   };
 
+  const maxSelectableBusinessDate = getCurrentBusinessDateIso();
+  const maxMonthStart = getMonthStartUtcDate(maxSelectableBusinessDate);
+  const secondCalendarMonthStart = useMemo(
+    () => shiftMonthStartUtcDate(calendarMonthStart, 1),
+    [calendarMonthStart]
+  );
+  const primaryCalendarCells = useMemo(() => buildMonthGrid(calendarMonthStart), [calendarMonthStart]);
+  const secondaryCalendarCells = useMemo(
+    () => buildMonthGrid(secondCalendarMonthStart),
+    [secondCalendarMonthStart]
+  );
+  const primaryMonthLabel = new Intl.DateTimeFormat("en-IN", {
+    timeZone: META_IST_TIMEZONE,
+    month: "long",
+    year: "numeric",
+  }).format(calendarMonthStart);
+  const secondaryMonthLabel = new Intl.DateTimeFormat("en-IN", {
+    timeZone: META_IST_TIMEZONE,
+    month: "long",
+    year: "numeric",
+  }).format(secondCalendarMonthStart);
+
+  const clampAnalyticsDate = (isoDate: string): string => {
+    if (isoDate < analyticsMinRangeStart) return analyticsMinRangeStart;
+    if (isoDate > maxSelectableBusinessDate) return maxSelectableBusinessDate;
+    return isoDate;
+  };
+
+  const handleCalendarDateSelect = (isoDate: string) => {
+    if (isoDate < analyticsMinRangeStart || isoDate > maxSelectableBusinessDate) {
+      return;
+    }
+    if (!pickerStartDate || (pickerStartDate && pickerEndDate)) {
+      setPickerStartDate(isoDate);
+      setPickerEndDate("");
+      return;
+    }
+    if (isoDate < pickerStartDate) {
+      setPickerStartDate(isoDate);
+      setPickerEndDate("");
+      return;
+    }
+    setPickerEndDate(isoDate);
+  };
+
+  const applyAnalyticsRange = () => {
+    if (!pickerStartDate) return;
+    const normalizedStart = clampAnalyticsDate(pickerStartDate);
+    const normalizedEnd = clampAnalyticsDate(pickerEndDate || pickerStartDate);
+    const finalStartDate = normalizedStart <= normalizedEnd ? normalizedStart : normalizedEnd;
+    const finalEndDate = normalizedStart <= normalizedEnd ? normalizedEnd : normalizedStart;
+    setStartDate(finalStartDate);
+    setEndDate(finalEndDate);
+    setIsCalendarOpen(false);
+  };
+
+  const selectedRangeLabel = pickerStartDate
+    ? `${formatCalendarDateLabel(pickerStartDate)}${
+        pickerEndDate ? ` → ${formatCalendarDateLabel(pickerEndDate)}` : ""
+      }`
+    : "No date selected";
+
+  const activeRangeStart = startDate || pickerStartDate;
+  const activeRangeEnd = endDate || pickerEndDate || activeRangeStart;
+  const activeRangeButtonLabel =
+    activeRangeStart && activeRangeEnd
+      ? activeRangeStart === activeRangeEnd
+        ? formatCalendarDateShort(activeRangeStart)
+        : `${formatCalendarDateShort(activeRangeStart)} - ${formatCalendarDateShort(activeRangeEnd)}`
+      : "Select Range";
+
+  const renderCalendarGrid = (cells: CalendarCell[]) => (
+    <>
+      <div className="grid grid-cols-7 gap-1 text-[11px] text-white/50 mb-2">
+        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((weekday) => (
+          <div key={weekday} className="text-center py-1">
+            {weekday}
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((cell) => {
+          const isDisabled = cell.isoDate < analyticsMinRangeStart || cell.isoDate > maxSelectableBusinessDate;
+          const isStart = pickerStartDate === cell.isoDate;
+          const isEnd = pickerEndDate === cell.isoDate;
+          const isInRange =
+            !!pickerStartDate &&
+            !!pickerEndDate &&
+            cell.isoDate >= pickerStartDate &&
+            cell.isoDate <= pickerEndDate;
+          return (
+            <button
+              key={cell.isoDate}
+              onClick={() => handleCalendarDateSelect(cell.isoDate)}
+              disabled={isDisabled}
+              className={`h-9 rounded-md text-sm transition-colors ${
+                isStart || isEnd
+                  ? "bg-primary text-white"
+                  : isInRange
+                  ? "bg-primary/25 text-white"
+                  : cell.inCurrentMonth
+                  ? "bg-white/5 text-white hover:bg-white/15"
+                  : "bg-white/[0.02] text-white/45 hover:bg-white/10"
+              } ${isDisabled ? "opacity-30 cursor-not-allowed" : ""}`}
+              title={formatCalendarDateLabel(cell.isoDate)}
+            >
+              {cell.day}
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+
   useEffect(() => {
     if (data?.hourlyProfitability?.rows?.length && matrixRows.length === 0) {
       setMatrixRows(data.hourlyProfitability.rows);
@@ -4704,23 +4929,132 @@ function AnalyticsTab({
     <div className="space-y-4">
       <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
         <div className="flex flex-wrap items-end gap-4">
-          <div>
-            <label className="text-white/50 text-xs mb-1 block">Start Date</label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50 [color-scheme:dark]"
-            />
-          </div>
-          <div>
-            <label className="text-white/50 text-xs mb-1 block">End Date</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50 [color-scheme:dark]"
-            />
+          <div ref={analyticsCalendarDropdownRef} className="relative">
+            <label className="text-white/50 text-xs mb-1 block">Custom Range</label>
+            <button
+              onClick={() => setIsCalendarOpen((prev) => !prev)}
+              className="px-3 py-2 rounded-lg text-sm border bg-white/5 border-white/10 text-white/70 hover:bg-white/10 transition-colors flex items-center gap-2"
+            >
+              <Calendar className="w-4 h-4" />
+              {activeRangeButtonLabel}
+            </button>
+            {isCalendarOpen && (
+              <div className="absolute left-0 top-[calc(100%+8px)] z-50 w-[92vw] sm:w-[680px] max-w-[92vw] rounded-2xl border border-white/15 bg-[#1A2235] shadow-2xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-white/80 text-sm font-medium">Custom Range</p>
+                  <button
+                    onClick={() => setIsCalendarOpen(false)}
+                    className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
+                    aria-label="Close custom range picker"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between mb-3">
+                  <button
+                    onClick={() => setCalendarMonthStart((prev) => shiftMonthStartUtcDate(prev, -1))}
+                    className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
+                    aria-label="Previous month"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <p className="text-white text-sm font-medium">Select Date Range</p>
+                  <button
+                    onClick={() => setCalendarMonthStart((prev) => shiftMonthStartUtcDate(prev, 1))}
+                    disabled={secondCalendarMonthStart.getTime() >= maxMonthStart.getTime()}
+                    className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    aria-label="Next month"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <p className="text-white/75 text-sm font-medium mb-2">{primaryMonthLabel}</p>
+                    {renderCalendarGrid(primaryCalendarCells)}
+                  </div>
+                  <div>
+                    <p className="text-white/75 text-sm font-medium mb-2">{secondaryMonthLabel}</p>
+                    {renderCalendarGrid(secondaryCalendarCells)}
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-white/50 text-xs mb-1 block">Start Date (type)</label>
+                    <input
+                      type="date"
+                      value={pickerStartDate}
+                      min={analyticsMinRangeStart}
+                      max={maxSelectableBusinessDate}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        if (!raw) {
+                          setPickerStartDate("");
+                          setPickerEndDate("");
+                          return;
+                        }
+                        const nextStart = clampAnalyticsDate(raw);
+                        setPickerStartDate(nextStart);
+                        if (pickerEndDate && pickerEndDate < nextStart) {
+                          setPickerEndDate("");
+                        }
+                        setCalendarMonthStart(getMonthStartUtcDate(nextStart));
+                      }}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50 [color-scheme:dark]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-white/50 text-xs mb-1 block">End Date (type)</label>
+                    <input
+                      type="date"
+                      value={pickerEndDate}
+                      min={analyticsMinRangeStart}
+                      max={maxSelectableBusinessDate}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        if (!raw) {
+                          setPickerEndDate("");
+                          return;
+                        }
+                        const nextEnd = clampAnalyticsDate(raw);
+                        setPickerEndDate(nextEnd);
+                        if (!pickerStartDate) {
+                          setPickerStartDate(nextEnd);
+                        }
+                        setCalendarMonthStart(getMonthStartUtcDate(nextEnd));
+                      }}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50 [color-scheme:dark]"
+                    />
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-white/60">
+                    Selected: <span className="text-white/90">{selectedRangeLabel}</span>
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setPickerStartDate(startDate);
+                        setPickerEndDate(endDate);
+                        if (endDate || startDate) {
+                          setCalendarMonthStart(getMonthStartUtcDate(endDate || startDate));
+                        }
+                      }}
+                      className="px-3 py-1.5 text-xs rounded-md bg-white/10 hover:bg-white/20 text-white/80 transition-colors"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      onClick={applyAnalyticsRange}
+                      disabled={!pickerStartDate}
+                      className="px-3 py-1.5 text-xs rounded-md bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 transition-colors disabled:opacity-50"
+                    >
+                      Apply Range
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <div>
             <label className="text-white/50 text-xs mb-1 block">Day Mode</label>

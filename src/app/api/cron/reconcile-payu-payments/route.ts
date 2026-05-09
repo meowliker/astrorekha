@@ -10,6 +10,7 @@ type PayUTransaction = {
   mihpayid?: string;
   id?: string;
   status?: string;
+  unmappedstatus?: string;
   amount?: string | number;
   productinfo?: string;
   firstname?: string;
@@ -28,6 +29,10 @@ function toYMD(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+function normalizeStatus(status: unknown): string {
+  return String(status || "").trim().toLowerCase();
+}
+
 async function runReconciliation(lookbackDays: number, maxRows: number) {
   try {
     const supabase = getSupabaseAdmin();
@@ -39,7 +44,7 @@ async function runReconciliation(lookbackDays: number, maxRows: number) {
       .in("payment_status", ["created", "pending", "failed"])
       .not("payu_txn_id", "is", null)
       .gte("created_at", since)
-      .order("created_at", { ascending: true })
+      .order("created_at", { ascending: false })
       .limit(maxRows);
 
     if (pendingError) {
@@ -55,9 +60,17 @@ async function runReconciliation(lookbackDays: number, maxRows: number) {
       });
     }
 
-    const minCreatedAt = pendingRows[0]?.created_at ? new Date(pendingRows[0].created_at) : new Date();
+    const rowTimestamps = pendingRows
+      .map((row) => (row.created_at ? new Date(row.created_at).getTime() : Number.NaN))
+      .filter(Number.isFinite);
+    const minCreatedAt = rowTimestamps.length
+      ? new Date(Math.min(...rowTimestamps))
+      : new Date();
+    const maxCreatedAt = rowTimestamps.length
+      ? new Date(Math.max(...rowTimestamps))
+      : new Date();
     const fromDate = toYMD(new Date(minCreatedAt.getTime() - 24 * 60 * 60 * 1000));
-    const toDate = toYMD(new Date(Date.now() + 24 * 60 * 60 * 1000));
+    const toDate = toYMD(new Date(Math.max(Date.now(), maxCreatedAt.getTime()) + 24 * 60 * 60 * 1000));
 
     const payuTxns = (await getPayUTransactions(fromDate, toDate)) as PayUTransaction[];
     const txnMap = new Map<string, PayUTransaction>();
@@ -66,9 +79,13 @@ async function runReconciliation(lookbackDays: number, maxRows: number) {
     });
 
     let reconciled = 0;
+    let alreadyPaid = 0;
+    let markedFailed = 0;
+    let stillPending = 0;
     let notFoundInPayU = 0;
     let errors = 0;
     const reconciledIds: string[] = [];
+    const failedIds: string[] = [];
 
     for (const row of pendingRows) {
       const txnid = row.payu_txn_id;
@@ -79,11 +96,17 @@ async function runReconciliation(lookbackDays: number, maxRows: number) {
         continue;
       }
 
+      const payuStatus = normalizeStatus(payuTxn.status || payuTxn.unmappedstatus);
+      if (!payuStatus || payuStatus === "pending" || payuStatus === "in progress") {
+        stillPending += 1;
+        continue;
+      }
+
       try {
         const result = await fulfillPayUPayment({
           txnid: payuTxn.txnid,
           mihpayid: payuTxn.mihpayid || payuTxn.id,
-          status: payuTxn.status || "success",
+          status: payuTxn.status || payuTxn.unmappedstatus,
           amount: String(payuTxn.amount ?? ""),
           productinfo: payuTxn.productinfo,
           firstname: payuTxn.firstname,
@@ -97,8 +120,15 @@ async function runReconciliation(lookbackDays: number, maxRows: number) {
         });
 
         if (result.success) {
-          reconciled += 1;
+          if (result.alreadyPaid) {
+            alreadyPaid += 1;
+          } else {
+            reconciled += 1;
+          }
           reconciledIds.push(row.id);
+        } else {
+          markedFailed += 1;
+          failedIds.push(row.id);
         }
       } catch (error) {
         errors += 1;
@@ -111,11 +141,15 @@ async function runReconciliation(lookbackDays: number, maxRows: number) {
       scanned: pendingRows.length,
       payuMatched: txnMap.size,
       reconciled,
+      alreadyPaid,
+      markedFailed,
+      stillPending,
       notFoundInPayU,
       errors,
       fromDate,
       toDate,
       sampleReconciledIds: reconciledIds.slice(0, 50),
+      sampleFailedIds: failedIds.slice(0, 50),
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to reconcile pending PayU payments";

@@ -33,6 +33,7 @@ const FLOW_B_BUNDLE_IDS = ["palm-reading", "palm-birth", "palm-birth-sketch"] as
 const PAYWALL_DEFAULT_PLAN_TEST_ID = "paywall-default-plan-v1";
 const PAYWALL_DEFAULT_PLAN_VARIANT_STORAGE_KEY = "astrorekha_paywall_default_variant";
 const PAYWALL_ROUTE = "/onboarding/bundle-pricing";
+const PENDING_PAYMENT_KEY = "astrorekha_pending_payu_payment";
 const PAYWALL_DEFAULT_PLAN_BY_VARIANT = {
   A: "palm-birth",
   B: "palm-birth-sketch",
@@ -88,6 +89,37 @@ async function waitForPayUConfirmation(txnId: string, attempts = 8): Promise<boo
   }
 
   return false;
+}
+
+function savePendingPayUPayment(payment: {
+  txnid: string;
+  type: string;
+  bundleId?: string;
+  returnTo: string;
+}) {
+  localStorage.setItem(
+    PENDING_PAYMENT_KEY,
+    JSON.stringify({
+      ...payment,
+      createdAt: new Date().toISOString(),
+    })
+  );
+}
+
+function normalizePayUStatus(value: unknown): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isPayUCancelOrFailure(value: unknown): boolean {
+  const status = normalizePayUStatus(value);
+  return (
+    !status ||
+    status.includes("cancel") ||
+    status.includes("fail") ||
+    status.includes("bounce") ||
+    status.includes("drop") ||
+    status === "usercancelled"
+  );
 }
 
 function normalizeAbVariant(variant: unknown): AbVariant {
@@ -316,7 +348,21 @@ export default function BundlePricingPage() {
   };
 
   useEffect(() => {
-    const handlePageShow = () => setIsProcessing(false);
+    const handlePageShow = () => {
+      const pendingRaw = localStorage.getItem(PENDING_PAYMENT_KEY);
+      if (pendingRaw) {
+        try {
+          const pending = JSON.parse(pendingRaw);
+          if (pending?.txnid && pending?.type === "bundle") {
+            router.replace(`/payment/processing?txnid=${encodeURIComponent(pending.txnid)}&source=pageshow`);
+            return;
+          }
+        } catch {
+          // ignore corrupt pending payment state
+        }
+      }
+      setIsProcessing(false);
+    };
     window.addEventListener("pageshow", handlePageShow);
 
     localStorage.setItem("astrorekha_onboarding_flow", "flow-b");
@@ -640,6 +686,12 @@ export default function BundlePricingPage() {
       const data = await response.json();
 
       if (data.txnId) {
+        savePendingPayUPayment({
+          txnid: data.txnId,
+          type: "bundle",
+          bundleId: selectedPlan,
+          returnTo: "/onboarding/bundle-upsell-b",
+        });
         pixelEvents.initiateCheckout(plan.price, [plan.name]);
         pixelEvents.addPaymentInfo(plan.price, plan.name);
         
@@ -651,6 +703,7 @@ export default function BundlePricingPage() {
           return;
         }
         const completeBundleCheckout = () => {
+          localStorage.removeItem(PENDING_PAYMENT_KEY);
           paywallAbConversionTrackedRef.current = true;
           trackPaywallAbEvent("conversion", {
             selectedPlanId: selectedPlan,
@@ -675,7 +728,7 @@ export default function BundlePricingPage() {
             return;
           }
           setPaymentError("We are still confirming this payment. Please check back in a few moments.");
-          setIsProcessing(false);
+          router.push(`/payment/processing?txnid=${encodeURIComponent(data.txnId)}&source=paywall_recovery`);
         };
 
         bolt.launch({
@@ -696,7 +749,8 @@ export default function BundlePricingPage() {
           furl: `${window.location.origin}/api/payu/failure`,
         }, {
           responseHandler: async (response: PayUBoltResponse) => {
-            if (response.response.txnStatus === "SUCCESS") {
+            const txnStatus = response.response.txnStatus;
+            if (txnStatus === "SUCCESS") {
               // Verify payment on server
               const verifyRes = await fetch("/api/payu/verify-payment", {
                 method: "POST",
@@ -724,13 +778,19 @@ export default function BundlePricingPage() {
               } else {
                 await recoverAmbiguousPayment();
               }
+            } else if (isPayUCancelOrFailure(txnStatus)) {
+              localStorage.removeItem(PENDING_PAYMENT_KEY);
+              setPaymentError("Payment was cancelled. You can try again whenever you're ready.");
+              setIsProcessing(false);
             } else {
               await recoverAmbiguousPayment();
             }
           },
           catchException: async (error: unknown) => {
             console.error("PayU Bolt error:", error);
-            await recoverAmbiguousPayment();
+            localStorage.removeItem(PENDING_PAYMENT_KEY);
+            setPaymentError("Payment was cancelled. You can try again whenever you're ready.");
+            setIsProcessing(false);
           }
         });
       } else if (data.error) {

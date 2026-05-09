@@ -29,6 +29,8 @@ const offers = [
   },
 ];
 
+const PENDING_PAYMENT_KEY = "astrorekha_pending_payu_payment";
+
 type PayUBoltResponse = {
   response: {
     txnStatus: string;
@@ -68,6 +70,37 @@ async function waitForPayUConfirmation(txnId: string, attempts = 8): Promise<boo
   }
 
   return false;
+}
+
+function savePendingPayUPayment(payment: {
+  txnid: string;
+  type: string;
+  bundleId?: string;
+  returnTo: string;
+}) {
+  localStorage.setItem(
+    PENDING_PAYMENT_KEY,
+    JSON.stringify({
+      ...payment,
+      createdAt: new Date().toISOString(),
+    })
+  );
+}
+
+function normalizePayUStatus(value: unknown): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isPayUCancelOrFailure(value: unknown): boolean {
+  const status = normalizePayUStatus(value);
+  return (
+    !status ||
+    status.includes("cancel") ||
+    status.includes("fail") ||
+    status.includes("bounce") ||
+    status.includes("drop") ||
+    status === "usercancelled"
+  );
 }
 
 export default function BundleUpsellBPage() {
@@ -143,6 +176,12 @@ export default function BundleUpsellBPage() {
         setIsProcessing(false);
         return;
       }
+      savePendingPayUPayment({
+        txnid: data.txnId,
+        type: "upsell",
+        bundleId: offerIds,
+        returnTo: "/onboarding/step-19",
+      });
       pixelEvents.initiateCheckout(totalInr, selectedOfferNames);
       pixelEvents.addPaymentInfo(totalInr, combinedOfferLabel);
 
@@ -154,6 +193,7 @@ export default function BundleUpsellBPage() {
       }
 
       const completeUpsellCheckout = () => {
+        localStorage.removeItem(PENDING_PAYMENT_KEY);
         pixelEvents.purchase(totalInr, `upsell-${offerIds}`, combinedOfferLabel);
         setIsProcessing(false);
         router.push("/onboarding/step-19");
@@ -166,8 +206,7 @@ export default function BundleUpsellBPage() {
           completeUpsellCheckout();
           return;
         }
-        setError("We are still confirming this payment. Please check back in a few moments.");
-        setIsProcessing(false);
+        router.push(`/payment/processing?txnid=${encodeURIComponent(data.txnId)}&source=upsell_recovery`);
       };
 
       bolt.launch(
@@ -190,7 +229,15 @@ export default function BundleUpsellBPage() {
         },
         {
           responseHandler: async (responsePayload: PayUBoltResponse) => {
-            if (responsePayload.response.txnStatus !== "SUCCESS") {
+            const txnStatus = responsePayload.response.txnStatus;
+            if (isPayUCancelOrFailure(txnStatus)) {
+              localStorage.removeItem(PENDING_PAYMENT_KEY);
+              setError("Payment was cancelled. You can try again whenever you're ready.");
+              setIsProcessing(false);
+              return;
+            }
+
+            if (txnStatus !== "SUCCESS") {
               await recoverAmbiguousPayment();
               return;
             }
@@ -224,7 +271,9 @@ export default function BundleUpsellBPage() {
             }
           },
           catchException: async () => {
-            await recoverAmbiguousPayment();
+            localStorage.removeItem(PENDING_PAYMENT_KEY);
+            setError("Payment was cancelled. You can try again whenever you're ready.");
+            setIsProcessing(false);
           },
         }
       );

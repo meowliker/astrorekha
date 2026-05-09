@@ -44,6 +44,39 @@ const defaultCoinPackages = [
   { id: 4, coins: 500, price: 1199, discount: 40, popular: false },
 ];
 
+const PENDING_PAYMENT_KEY = "astrorekha_pending_payu_payment";
+
+function savePendingPayUPayment(payment: {
+  txnid: string;
+  type: string;
+  bundleId?: string;
+  returnTo: string;
+}) {
+  localStorage.setItem(
+    PENDING_PAYMENT_KEY,
+    JSON.stringify({
+      ...payment,
+      createdAt: new Date().toISOString(),
+    })
+  );
+}
+
+function normalizePayUStatus(value: unknown): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isPayUCancelOrFailure(value: unknown): boolean {
+  const status = normalizePayUStatus(value);
+  return (
+    !status ||
+    status.includes("cancel") ||
+    status.includes("fail") ||
+    status.includes("bounce") ||
+    status.includes("drop") ||
+    status === "usercancelled"
+  );
+}
+
 function formatMessage(text: string): React.ReactNode[] {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return parts.map((part, i) => {
@@ -110,6 +143,12 @@ export default function ChatPage() {
       const data = await response.json();
 
       if (data.txnId) {
+        savePendingPayUPayment({
+          txnid: data.txnId,
+          type: "coins",
+          bundleId: pkg.packageId,
+          returnTo: "/chat",
+        });
         const bolt = (window as any).bolt;
         bolt.launch({
           key: data.key,
@@ -150,16 +189,21 @@ export default function ChatPage() {
                   key: data.key,
                 }),
               });
+              localStorage.removeItem(PENDING_PAYMENT_KEY);
               setPurchasingPackage(null);
               window.location.reload();
-            } else {
-              setPurchaseError("Payment failed. Please try again.");
+            } else if (isPayUCancelOrFailure(response.response.txnStatus)) {
+              localStorage.removeItem(PENDING_PAYMENT_KEY);
+              setPurchaseError("Payment was cancelled. You can try again whenever you're ready.");
               setPurchasingPackage(null);
+            } else {
+              window.location.href = `/payment/processing?txnid=${encodeURIComponent(data.txnId)}&source=coins`;
             }
           },
           catchException: (error: any) => {
             console.error("PayU Bolt error:", error);
-            setPurchaseError("Payment was cancelled or failed.");
+            localStorage.removeItem(PENDING_PAYMENT_KEY);
+            setPurchaseError("Payment was cancelled. You can try again whenever you're ready.");
             setPurchasingPackage(null);
           }
         });

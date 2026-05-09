@@ -6,6 +6,7 @@ import { fulfillPayUPayment } from "@/lib/payu-fulfillment";
 export const dynamic = "force-dynamic";
 
 const SUCCESS_STATUSES = new Set(["paid", "success", "captured"]);
+const PENDING_STATUSES = new Set(["pending", "in progress", "initiated", "queued"]);
 
 type PayUTransaction = {
   txnid?: string;
@@ -54,6 +55,9 @@ export async function GET(request: NextRequest) {
         success: true,
         status: "paid",
         userId: payment?.user_id || null,
+        type: payment?.type || null,
+        bundleId: payment?.bundle_id || null,
+        feature: payment?.feature || null,
         payuPaymentId: payment?.payu_payment_id || null,
       });
     }
@@ -69,6 +73,20 @@ export async function GET(request: NextRequest) {
         success: true,
         status: "pending",
         userId: payment?.user_id || null,
+        type: payment?.type || null,
+        bundleId: payment?.bundle_id || null,
+      });
+    }
+
+    const payuStatus = normalizeStatus(payuTxn.status || payuTxn.unmappedstatus || "pending");
+    if (PENDING_STATUSES.has(payuStatus)) {
+      return NextResponse.json({
+        success: true,
+        status: "pending",
+        userId: payment?.user_id || null,
+        type: payment?.type || null,
+        bundleId: payment?.bundle_id || null,
+        payuPaymentId: payuTxn.mihpayid || payuTxn.id || null,
       });
     }
 
@@ -90,8 +108,11 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      status: result.success ? "paid" : normalizeStatus(payuTxn.status || payuTxn.unmappedstatus || "failed"),
+      status: result.success ? "paid" : payuStatus,
       userId: result.userId || payment?.user_id || null,
+      type: payment?.type || payuTxn.udf2 || null,
+      bundleId: payment?.bundle_id || payuTxn.udf3 || null,
+      feature: payment?.feature || payuTxn.udf4 || null,
       payuPaymentId: payuTxn.mihpayid || payuTxn.id || null,
     });
   } catch (error: unknown) {
