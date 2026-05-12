@@ -14,12 +14,12 @@ import { Flashlight, FlashlightOff } from "lucide-react";
 type PageState = "intro" | "camera" | "preview" | "analysis";
 
 const fakeEmails = [
-  { name: "Brian", email: "Brian***@aol.com" },
-  { name: "Kevin", email: "Kevin***@protonmail.com" },
-  { name: "Alice", email: "Alice***@zoho.com" },
-  { name: "Sarah", email: "Sarah***@gmail.com" },
-  { name: "Emily", email: "Emily***@yahoo.com" },
-  { name: "Emma", email: "Emma***@yahoo.com" },
+  { name: "Rohan", email: "Roh***@gmail.com" },
+  { name: "Priya", email: "Pri***@yahoo.com" },
+  { name: "Ananya", email: "Anay***@gmail.com" },
+  { name: "Karthik", email: "Kapi***@outlook.com" },
+  { name: "Sneha", email: "Sneh***@rediffmail.com" },
+  { name: "Aarav", email: "Aaru***@gmail.com" },
 ];
 
 export default function Step13Page() {

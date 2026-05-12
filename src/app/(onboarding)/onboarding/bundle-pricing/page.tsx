@@ -230,12 +230,12 @@ const testimonials = [
 
 // Scrolling emails for social proof
 const scrollingEmails = [
-  "Kev***@protonmail.com",
-  "Ali***@zoho.com",
-  "Sar***@gmail.com",
-  "Mik***@outlook.com",
-  "Emm***@yahoo.com",
-  "Dav***@icloud.com",
+  "Roh***@gmail.com",
+  "Pri***@yahoo.com",
+  "Anay***@gmail.com",
+  "Kapi***@outlook.com",
+  "Sneh***@rediffmail.com",
+  "Aaru***@gmail.com",
 ];
 
 // Bundle pricing plans are now fetched dynamically via usePricing hook
