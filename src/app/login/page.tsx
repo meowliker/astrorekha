@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -42,6 +42,17 @@ export default function LoginPage() {
 
   // Sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    const queryEmail = new URLSearchParams(window.location.search).get("email") || "";
+    const storedEmail = localStorage.getItem("astrorekha_email") || "";
+    const initialEmail = (queryEmail || storedEmail).trim().toLowerCase();
+    if (initialEmail) {
+      setEmail(initialEmail);
+      setOtpEmail(initialEmail);
+      setForgotEmail(initialEmail);
+    }
+  }, []);
 
   const handleEmailPasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();

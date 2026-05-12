@@ -54,6 +54,7 @@ function Step19Content() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [isPaymentEmailLocked, setIsPaymentEmailLocked] = useState(false);
+  const [accountAlreadyExists, setAccountAlreadyExists] = useState(false);
 
   const onboardingData = useOnboardingStore();
   const searchParams = useSearchParams();
@@ -73,6 +74,23 @@ function Step19Content() {
       if (hasCompletedRegistration) {
         router.replace("/dashboard");
         return;
+      }
+
+      if (hasCompletedPayment && storedEmail) {
+        try {
+          const response = await fetch(`/api/user/payment-state?email=${encodeURIComponent(storedEmail)}`, {
+            cache: "no-store",
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (data?.hasRegisteredAccount) {
+              router.replace(`/login?email=${encodeURIComponent(storedEmail)}`);
+              return;
+            }
+          }
+        } catch (error) {
+          console.error("Registered account check failed:", error);
+        }
       }
 
       // Fast path: if local paid flag is present with an identifier, allow registration flow.
@@ -159,6 +177,7 @@ function Step19Content() {
   }, [searchParams]);
 
   const handleSignUp = async () => {
+    setAccountAlreadyExists(false);
     const checkoutEmail = (localStorage.getItem("astrorekha_checkout_email") || "").trim().toLowerCase();
     const enteredEmail = email.trim().toLowerCase();
 
@@ -208,6 +227,9 @@ function Step19Content() {
       const registerData = await registerResponse.json();
 
       if (!registerResponse.ok) {
+        if (registerData.error === "auth/email-already-in-use") {
+          setAccountAlreadyExists(true);
+        }
         throw new Error(registerData.message || "Registration failed");
       }
 
@@ -352,6 +374,15 @@ function Step19Content() {
   };
 
   const { triggerLight } = useHaptic();
+  const goToLogin = () => {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (normalizedEmail) {
+      localStorage.setItem("astrorekha_email", normalizedEmail);
+      localStorage.setItem("astrorekha_checkout_email", normalizedEmail);
+    }
+    router.push(normalizedEmail ? `/login?email=${encodeURIComponent(normalizedEmail)}` : "/login");
+  };
+
   const handleContinue = () => {
     triggerLight();
     // Mark registration as completed
@@ -544,6 +575,26 @@ function Step19Content() {
             >
               {passwordError}
             </motion.p>
+          )}
+
+          {accountAlreadyExists && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-xl border border-primary/30 bg-primary/10 p-3"
+            >
+              <p className="text-xs text-muted-foreground mb-3">
+                This email already has an AstroRekha account. Log in with this email to access your purchase.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={goToLogin}
+                className="w-full"
+              >
+                Log in to existing account
+              </Button>
+            </motion.div>
           )}
         </div>
       </div>
