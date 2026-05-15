@@ -198,9 +198,10 @@ export default function BundlePricingPage() {
   const [readingStats, setReadingStats] = useState<{ label: string; color: string; value: number }[]>([]);
   const [compatibilityStats, setCompatibilityStats] = useState<{ label: string; color: string; value: number }[]>([]);
   const paymentSectionRef = useRef<HTMLDivElement>(null);
+  const pricingCardsRef = useRef<HTMLDivElement>(null);
   const testimonialSectionRef = useRef<HTMLDivElement>(null);
   const birthChartSectionRef = useRef<HTMLDivElement>(null);
-  const getFullReportRef = useRef<HTMLButtonElement>(null);
+  const checkoutCtaRef = useRef<HTMLDivElement>(null);
   const [showPaymentStickyCTA, setShowPaymentStickyCTA] = useState(false);
   const [showStickyCTA, setShowStickyCTA] = useState(false);
   const [paywallPlanTestVariant, setPaywallPlanTestVariant] = useState<AbVariant | null>(null);
@@ -215,6 +216,8 @@ export default function BundlePricingPage() {
   const { userId } = useUserStore();
   const bundlePlans = allBundlePlans.filter((bundle) => bundle.active);
   const heroPredictionLabels = predictionLabels;
+  const selectedPlanData = bundlePlans.find(p => p.id === selectedPlan);
+  const isPlanSelectionReady = hasResolvedPaywallPlanVariant && Boolean(selectedPlanData);
 
   const resolvePaywallAbVisitorId = (): string => {
     if (paywallAbVisitorIdRef.current) return paywallAbVisitorIdRef.current;
@@ -439,37 +442,48 @@ export default function BundlePricingPage() {
 
   // Keep the checkout CTA visible while the user is selecting bundles.
   useEffect(() => {
-    let isPaymentSectionVisible = false;
-    let isGetFullReportVisible = false;
+    let frameId = 0;
+    let timeoutId = 0;
+    let intervalId = 0;
 
     const updateStickyState = () => {
-      setShowPaymentStickyCTA(isPaymentSectionVisible && !isGetFullReportVisible);
+      if (!paymentSectionRef.current || !pricingCardsRef.current || !checkoutCtaRef.current) {
+        setShowPaymentStickyCTA(false);
+        return;
+      }
+
+      const scrollY = window.scrollY || window.pageYOffset;
+      const viewportBottom = scrollY + window.innerHeight;
+      const sectionTop = paymentSectionRef.current.getBoundingClientRect().top + scrollY;
+      const sectionBottom = sectionTop + paymentSectionRef.current.offsetHeight;
+      const cardsTop = pricingCardsRef.current.getBoundingClientRect().top + scrollY;
+      const buttonTop = checkoutCtaRef.current.getBoundingClientRect().top + scrollY;
+      const hasReachedBundleCards = viewportBottom >= cardsTop + 80;
+      const isBeforeRealButton = viewportBottom < buttonTop + 8;
+      const isWithinPaymentSection = scrollY < sectionBottom;
+
+      setShowPaymentStickyCTA(hasReachedBundleCards && isBeforeRealButton && isWithinPaymentSection);
     };
 
-    const sectionObserver = new IntersectionObserver(
-      ([entry]) => {
-        isPaymentSectionVisible = entry.isIntersecting;
-        updateStickyState();
-      },
-      { threshold: 0.05 }
-    );
+    const scheduleUpdate = () => {
+      window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(updateStickyState);
+    };
 
-    const buttonObserver = new IntersectionObserver(
-      ([entry]) => {
-        isGetFullReportVisible = entry.isIntersecting;
-        updateStickyState();
-      },
-      { threshold: 0.5 }
-    );
-
-    if (paymentSectionRef.current) sectionObserver.observe(paymentSectionRef.current);
-    if (getFullReportRef.current) buttonObserver.observe(getFullReportRef.current);
+    updateStickyState();
+    timeoutId = window.setTimeout(updateStickyState, 150);
+    intervalId = window.setInterval(updateStickyState, 300);
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
 
     return () => {
-      sectionObserver.disconnect();
-      buttonObserver.disconnect();
+      window.cancelAnimationFrame(frameId);
+      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
     };
-  }, []);
+  }, [isPlanSelectionReady]);
 
   // Sticky CTA visibility for content sections after the paywall.
   useEffect(() => {
@@ -498,7 +512,7 @@ export default function BundlePricingPage() {
 
     if (testimonialSectionRef.current) sectionObserver.observe(testimonialSectionRef.current);
     if (birthChartSectionRef.current) sectionObserver.observe(birthChartSectionRef.current);
-    if (getFullReportRef.current) buttonObserver.observe(getFullReportRef.current);
+    if (checkoutCtaRef.current) buttonObserver.observe(checkoutCtaRef.current);
 
     return () => {
       sectionObserver.disconnect();
@@ -813,9 +827,6 @@ export default function BundlePricingPage() {
     }
   };
 
-  const selectedPlanData = bundlePlans.find(p => p.id === selectedPlan);
-  const isPlanSelectionReady = hasResolvedPaywallPlanVariant && Boolean(selectedPlanData);
-
   return (
     <motion.div
       initial="hidden"
@@ -934,7 +945,7 @@ export default function BundlePricingPage() {
         </motion.p>
 
         {/* Pricing Cards */}
-        <div className="w-full max-w-sm space-y-4 mb-6">
+        <div ref={pricingCardsRef} className="w-full max-w-sm space-y-4 mb-6">
           {!isPlanSelectionReady ? (
             <div className="rounded-2xl border border-border/50 bg-card/50 p-6 text-center text-sm text-muted-foreground">
               Loading your offer...
@@ -1038,13 +1049,13 @@ export default function BundlePricingPage() {
 
         {/* CTA Button */}
         <motion.div
+          ref={checkoutCtaRef}
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6 }}
           className="w-full max-w-sm mb-6"
         >
           <Button
-            ref={getFullReportRef}
             onClick={handlePurchase}
             disabled={!isPlanSelectionReady || !agreedToTerms || isProcessing || isRedeemingCoupon}
             className="w-full h-14 text-lg font-semibold"
