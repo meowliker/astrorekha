@@ -201,6 +201,7 @@ export default function BundlePricingPage() {
   const testimonialSectionRef = useRef<HTMLDivElement>(null);
   const birthChartSectionRef = useRef<HTMLDivElement>(null);
   const getFullReportRef = useRef<HTMLButtonElement>(null);
+  const [showPaymentStickyCTA, setShowPaymentStickyCTA] = useState(false);
   const [showStickyCTA, setShowStickyCTA] = useState(false);
   const [paywallPlanTestVariant, setPaywallPlanTestVariant] = useState<AbVariant | null>(null);
   const [hasResolvedPaywallPlanVariant, setHasResolvedPaywallPlanVariant] = useState(false);
@@ -436,7 +437,41 @@ export default function BundlePricingPage() {
     };
   }, [paywallPlanTestVariant, selectedPlan]);
 
-  // Sticky CTA visibility
+  // Keep the checkout CTA visible while the user is selecting bundles.
+  useEffect(() => {
+    let isPaymentSectionVisible = false;
+    let isGetFullReportVisible = false;
+
+    const updateStickyState = () => {
+      setShowPaymentStickyCTA(isPaymentSectionVisible && !isGetFullReportVisible);
+    };
+
+    const sectionObserver = new IntersectionObserver(
+      ([entry]) => {
+        isPaymentSectionVisible = entry.isIntersecting;
+        updateStickyState();
+      },
+      { threshold: 0.05 }
+    );
+
+    const buttonObserver = new IntersectionObserver(
+      ([entry]) => {
+        isGetFullReportVisible = entry.isIntersecting;
+        updateStickyState();
+      },
+      { threshold: 0.5 }
+    );
+
+    if (paymentSectionRef.current) sectionObserver.observe(paymentSectionRef.current);
+    if (getFullReportRef.current) buttonObserver.observe(getFullReportRef.current);
+
+    return () => {
+      sectionObserver.disconnect();
+      buttonObserver.disconnect();
+    };
+  }, []);
+
+  // Sticky CTA visibility for content sections after the paywall.
   useEffect(() => {
     let isInContentSection = false;
     let isGetFullReportVisible = false;
@@ -1564,6 +1599,35 @@ export default function BundlePricingPage() {
               size="lg"
             >
               Get personal prediction
+            </Button>
+          </div>
+        </motion.div>
+      )}
+
+      {showPaymentStickyCTA && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 20 }}
+          className="fixed bottom-0 left-0 right-0 z-50 p-4 bg-gradient-to-t from-background via-background to-transparent"
+        >
+          <div className="max-w-sm mx-auto">
+            <Button
+              onClick={handlePurchase}
+              disabled={!isPlanSelectionReady || !agreedToTerms || isProcessing || isRedeemingCoupon}
+              className="w-full h-14 text-lg font-semibold"
+              size="lg"
+            >
+              {isProcessing ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Processing...
+                </span>
+              ) : (
+                isPlanSelectionReady
+                  ? `Get My Reading - ₹${selectedPlanData?.displayPrice || selectedPlanData?.price}`
+                  : "Loading your offer..."
+              )}
             </Button>
           </div>
         </motion.div>
