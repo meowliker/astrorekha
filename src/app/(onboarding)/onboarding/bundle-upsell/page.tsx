@@ -23,6 +23,17 @@ const progressSteps = [
 
 const PENDING_PAYMENT_KEY = "astrorekha_pending_payu_payment";
 
+function appendUpsellTxnId(txnId: string) {
+  const existing = localStorage
+    .getItem("astrorekha_upsell_txn_ids")
+    ?.split(",")
+    .map((value) => value.trim())
+    .filter(Boolean) || [];
+  if (!existing.includes(txnId)) {
+    localStorage.setItem("astrorekha_upsell_txn_ids", [...existing, txnId].join(","));
+  }
+}
+
 function savePendingPayUPayment(payment: {
   txnid: string;
   type: string;
@@ -211,6 +222,7 @@ function BundleUpsellContent() {
               const verifyData = await verifyRes.json().catch(() => ({ success: false }));
               if (verifyRes.ok && verifyData?.success) {
                 localStorage.removeItem(PENDING_PAYMENT_KEY);
+                appendUpsellTxnId(data.txnId);
                 pixelEvents.purchase(upsellPriceINR, "2026-predictions", "2026 Future Predictions");
                 setIsProcessing(false);
                 router.push("/onboarding/step-19");

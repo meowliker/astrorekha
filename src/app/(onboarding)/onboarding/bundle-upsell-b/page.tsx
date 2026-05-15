@@ -31,6 +31,17 @@ const offers = [
 
 const PENDING_PAYMENT_KEY = "astrorekha_pending_payu_payment";
 
+function appendUpsellTxnId(txnId: string) {
+  const existing = localStorage
+    .getItem("astrorekha_upsell_txn_ids")
+    ?.split(",")
+    .map((value) => value.trim())
+    .filter(Boolean) || [];
+  if (!existing.includes(txnId)) {
+    localStorage.setItem("astrorekha_upsell_txn_ids", [...existing, txnId].join(","));
+  }
+}
+
 type PayUBoltResponse = {
   response: {
     txnStatus: string;
@@ -194,6 +205,7 @@ export default function BundleUpsellBPage() {
 
       const completeUpsellCheckout = () => {
         localStorage.removeItem(PENDING_PAYMENT_KEY);
+        appendUpsellTxnId(data.txnId);
         pixelEvents.purchase(totalInr, `upsell-${offerIds}`, combinedOfferLabel);
         setIsProcessing(false);
         router.push("/onboarding/step-19");

@@ -62,6 +62,17 @@ function resolveReturnTo(status: PaymentStatusResponse, pending: PendingPayment 
   return pending?.returnTo || "/reports";
 }
 
+function appendUpsellTxnId(txnid: string) {
+  const existing = window.localStorage
+    .getItem("astrorekha_upsell_txn_ids")
+    ?.split(",")
+    .map((value) => value.trim())
+    .filter(Boolean) || [];
+  if (!existing.includes(txnid)) {
+    window.localStorage.setItem("astrorekha_upsell_txn_ids", [...existing, txnid].join(","));
+  }
+}
+
 function PaymentProcessingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -104,10 +115,17 @@ function PaymentProcessingContent() {
 
         if (response.ok && SUCCESS_STATUSES.has(normalized)) {
           const pending = getStoredPendingPayment() || storedPending;
+          const paymentType = normalizeStatus(data.type || pending?.type || "");
           const bundleId = data.bundleId || pending?.bundleId || "";
           if (bundleId) {
             window.localStorage.setItem("astrorekha_bundle_id", bundleId);
             window.localStorage.setItem("astrorekha_selected_plan", bundleId);
+          }
+          if (paymentType === "bundle" || paymentType === "bundle_payment") {
+            window.localStorage.setItem("astrorekha_main_txn_id", txnid);
+          }
+          if (paymentType === "upsell") {
+            appendUpsellTxnId(txnid);
           }
           if (data.userId) {
             window.localStorage.setItem("astrorekha_user_id", data.userId);

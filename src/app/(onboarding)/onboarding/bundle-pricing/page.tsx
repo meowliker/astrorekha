@@ -716,6 +716,7 @@ export default function BundlePricingPage() {
           localStorage.setItem("astrorekha_payment_completed", "true");
           localStorage.setItem("astrorekha_purchase_type", "one-time");
           localStorage.setItem("astrorekha_bundle_id", selectedPlan);
+          localStorage.setItem("astrorekha_main_txn_id", data.txnId);
           pixelEvents.purchase(plan.price, selectedPlan, plan.name);
           router.push("/onboarding/bundle-upsell-b");
         };

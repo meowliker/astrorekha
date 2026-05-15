@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useRef } from "react";
 import { fadeUp } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
@@ -55,6 +55,7 @@ function Step19Content() {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [isPaymentEmailLocked, setIsPaymentEmailLocked] = useState(false);
   const [accountAlreadyExists, setAccountAlreadyExists] = useState(false);
+  const invoiceSendStartedRef = useRef(false);
 
   const onboardingData = useOnboardingStore();
   const searchParams = useSearchParams();
@@ -147,6 +148,53 @@ function Step19Content() {
       setEmail(storedEmail);
       localStorage.setItem("astrorekha_checkout_email", storedEmail);
     }
+  }, []);
+
+  useEffect(() => {
+    if (invoiceSendStartedRef.current) return;
+
+    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
+    const mainTxnId = (localStorage.getItem("astrorekha_main_txn_id") || "").trim();
+    if (!hasCompletedPayment || !mainTxnId) return;
+
+    const dedupeKey = `astrorekha_invoice_sent_for_${mainTxnId}`;
+    if (localStorage.getItem(dedupeKey) === "true") return;
+
+    const checkoutEmail = (
+      localStorage.getItem("astrorekha_checkout_email") ||
+      localStorage.getItem("astrorekha_email") ||
+      ""
+    ).trim().toLowerCase();
+    const userId = (localStorage.getItem("astrorekha_user_id") || "").trim();
+    const upsellTxnIds = (localStorage.getItem("astrorekha_upsell_txn_ids") || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    if (!checkoutEmail && !userId) return;
+
+    invoiceSendStartedRef.current = true;
+    fetch("/api/invoice/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mainTxnId,
+        upsellTxnIds,
+        email: checkoutEmail,
+        userId,
+      }),
+    })
+      .then((response) => {
+        if (response.ok) {
+          localStorage.setItem(dedupeKey, "true");
+        } else {
+          invoiceSendStartedRef.current = false;
+        }
+      })
+      .catch((error) => {
+        invoiceSendStartedRef.current = false;
+        console.error("Invoice email send failed:", error);
+      });
   }, []);
 
   // Track Purchase event for upsell purchases

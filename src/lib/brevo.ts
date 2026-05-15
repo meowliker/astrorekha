@@ -6,6 +6,8 @@ import * as SibApiV3Sdk from "@getbrevo/brevo";
 //   2. Daily horoscope/tips emails to active subscribers
 
 const BREVO_API_KEY = process.env.BREVO_API_KEY || "";
+const BREVO_SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || "team@astrorekha.com";
+const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || "AstroRekha";
 
 // ── API instances ───────────────────────────────────────────────────
 
@@ -194,11 +196,38 @@ export async function sendEmail(
   email.to = [{ email: to.email, name: to.name || to.email }];
   email.subject = subject;
   email.htmlContent = htmlContent;
-  email.sender = { email: "weatastrorekha@gmail.com", name: "AstroRekha" };
+  email.sender = { email: BREVO_SENDER_EMAIL, name: BREVO_SENDER_NAME };
 
   try {
     await api.sendTransacEmail(email);
   } catch (err: any) {
     console.error("[Brevo] sendEmail error:", err?.body || err?.message || err);
+  }
+}
+
+export async function sendEmailWithAttachments(
+  to: { email: string; name?: string },
+  subject: string,
+  htmlContent: string,
+  attachments: Array<{ name: string; content: string }>
+) {
+  if (!BREVO_API_KEY) {
+    console.warn("[Brevo] API key not configured, skipping sendEmailWithAttachments");
+    return;
+  }
+
+  const api = getTransactionalApi();
+
+  const email = new SibApiV3Sdk.SendSmtpEmail();
+  email.to = [{ email: to.email, name: to.name || to.email }];
+  email.subject = subject;
+  email.htmlContent = htmlContent;
+  email.sender = { email: BREVO_SENDER_EMAIL, name: BREVO_SENDER_NAME };
+  (email as any).attachment = attachments;
+
+  try {
+    await api.sendTransacEmail(email);
+  } catch (err: any) {
+    console.error("[Brevo] sendEmailWithAttachments error:", err?.body || err?.message || err);
   }
 }
