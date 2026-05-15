@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fadeUp } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
@@ -28,25 +28,14 @@ const sketchPredictionLabels = [
   { text: "Big change", emoji: "🚀", top: "60%", left: "52%", rotation: 8 },
 ];
 
-const DEFAULT_LAYOUT_TEST_ID = "onboarding-layout-qa";
-const FLOW_B_BUNDLE_IDS = ["palm-reading", "palm-birth", "palm-birth-sketch"] as const;
 const PAYWALL_DEFAULT_PLAN_TEST_ID = "paywall-default-plan-v1";
 const PAYWALL_DEFAULT_PLAN_VARIANT_STORAGE_KEY = "astrorekha_paywall_default_variant";
 const PAYWALL_ROUTE = "/onboarding/bundle-pricing";
 const PENDING_PAYMENT_KEY = "astrorekha_pending_payu_payment";
 const PAYWALL_DEFAULT_PLAN_BY_VARIANT = {
-  A: "palm-birth",
+  A: "palm-birth-sketch",
   B: "palm-birth-sketch",
 } as const;
-
-const SOULMATE_ANSWER_KEYS = [
-  "attracted_to",
-  "attractedTo",
-  "attracted",
-  "gender_preference",
-  "genderPreference",
-  "target_gender",
-] as const;
 
 type PayUBoltResponse = {
   response: {
@@ -130,54 +119,6 @@ function getPaywallVariantPageKey(variant: AbVariant): string {
   return variant === "B" ? "default-1599" : "default-839";
 }
 
-function parseSelectionValues(raw: unknown): string[] {
-  if (raw === null || raw === undefined) return [];
-  if (Array.isArray(raw)) {
-    return raw.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
-  }
-  if (typeof raw === "string") {
-    const trimmed = raw.trim();
-    if (!trimmed) return [];
-    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed)) {
-          return parsed.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
-        }
-      } catch {
-        // fallback to comma split below
-      }
-    }
-    return trimmed
-      .split(",")
-      .map((item) => item.trim().toLowerCase())
-      .filter(Boolean);
-  }
-  const asText = String(raw).trim().toLowerCase();
-  return asText ? [asText] : [];
-}
-
-function resolveSoulmatePreviewImage(attractedToRaw: unknown, userGenderRaw: unknown): "/male.png" | "/female.png" {
-  const selections = parseSelectionValues(attractedToRaw);
-  const attractedTo =
-    selections.find((item) => item === "male" || item === "female" || item === "any") || "";
-  const gender = String(userGenderRaw || "").trim().toLowerCase();
-
-  if (attractedTo === "female") return "/female.png";
-  if (attractedTo === "male") return "/male.png";
-
-  if (attractedTo === "any") {
-    if (gender === "male") return "/female.png";
-    if (gender === "female") return "/male.png";
-    return "/female.png";
-  }
-
-  // Safe fallback if selection is missing: infer opposite of user gender.
-  if (gender === "male") return "/female.png";
-  if (gender === "female") return "/male.png";
-  return "/female.png";
-}
-
 // Generate random stats with some variation for authenticity
 function generateRandomStats() {
   const baseStats = [
@@ -256,9 +197,6 @@ export default function BundlePricingPage() {
   const [croppedPalmImage, setCroppedPalmImage] = useState<string | null>(null);
   const [readingStats, setReadingStats] = useState<{ label: string; color: string; value: number }[]>([]);
   const [compatibilityStats, setCompatibilityStats] = useState<{ label: string; color: string; value: number }[]>([]);
-  const [onboardingFlow, setOnboardingFlow] = useState<"flow-a" | "flow-b">("flow-b");
-  const [layoutVariant, setLayoutVariant] = useState<"A" | "B">("B");
-  const [soulmatePreviewImage, setSoulmatePreviewImage] = useState<"/male.png" | "/female.png">("/female.png");
   const paymentSectionRef = useRef<HTMLDivElement>(null);
   const testimonialSectionRef = useRef<HTMLDivElement>(null);
   const birthChartSectionRef = useRef<HTMLDivElement>(null);
@@ -274,16 +212,8 @@ export default function BundlePricingPage() {
   const paywallAbVisitorIdRef = useRef<string | null>(null);
   
   const { userId } = useUserStore();
-  const isLayoutB = onboardingFlow === "flow-b" && layoutVariant === "B";
-  const bundlePlans = useMemo(() => {
-    if (!isLayoutB) {
-      return allBundlePlans.filter((bundle) => bundle.active);
-    }
-
-    const byId = new Map(allBundlePlans.map((bundle) => [bundle.id, bundle]));
-    return FLOW_B_BUNDLE_IDS.map((id) => byId.get(id)).filter((bundle): bundle is NonNullable<typeof bundle> => Boolean(bundle));
-  }, [allBundlePlans, isLayoutB]);
-  const heroPredictionLabels = isLayoutB ? sketchPredictionLabels : predictionLabels;
+  const bundlePlans = allBundlePlans.filter((bundle) => bundle.active);
+  const heroPredictionLabels = predictionLabels;
 
   const resolvePaywallAbVisitorId = (): string => {
     if (paywallAbVisitorIdRef.current) return paywallAbVisitorIdRef.current;
@@ -365,31 +295,8 @@ export default function BundlePricingPage() {
     };
     window.addEventListener("pageshow", handlePageShow);
 
-    localStorage.setItem("astrorekha_onboarding_flow", "flow-b");
-    localStorage.setItem("astrorekha_layout_variant", "B");
-    if (!localStorage.getItem("astrorekha_ab_test_id")) {
-      localStorage.setItem("astrorekha_ab_test_id", DEFAULT_LAYOUT_TEST_ID);
-    }
-    setOnboardingFlow("flow-b");
-    setLayoutVariant("B");
-
-    // Resolve preview image for layout-b sketch card.
-    try {
-      const answersRaw = localStorage.getItem("astrorekha_soulmate_answers");
-      const answers = answersRaw ? JSON.parse(answersRaw) : {};
-      const answerValue =
-        SOULMATE_ANSWER_KEYS.map((key) => answers?.[key]).find(
-          (value) => parseSelectionValues(value).length > 0
-        ) ?? null;
-
-      const onboardingStoreRaw = localStorage.getItem("astrorekha-onboarding");
-      const parsedOnboarding = onboardingStoreRaw ? JSON.parse(onboardingStoreRaw) : {};
-      const userGender = parsedOnboarding?.state?.gender ?? parsedOnboarding?.gender ?? null;
-
-      setSoulmatePreviewImage(resolveSoulmatePreviewImage(answerValue, userGender));
-    } catch {
-      setSoulmatePreviewImage("/female.png");
-    }
+    localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
+    localStorage.setItem("astrorekha_layout_variant", "A");
     
     // Route protection: Check if user has already completed payment
     const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
@@ -399,7 +306,7 @@ export default function BundlePricingPage() {
       router.replace("/dashboard");
       return;
     } else if (hasCompletedPayment) {
-      router.replace("/onboarding/bundle-upsell-b");
+      router.replace("/onboarding/bundle-upsell");
       return;
     }
     
@@ -690,7 +597,7 @@ export default function BundlePricingPage() {
           txnid: data.txnId,
           type: "bundle",
           bundleId: selectedPlan,
-          returnTo: "/onboarding/bundle-upsell-b",
+          returnTo: "/onboarding/bundle-upsell",
         });
         pixelEvents.initiateCheckout(plan.price, [plan.name]);
         pixelEvents.addPaymentInfo(plan.price, plan.name);
@@ -718,7 +625,7 @@ export default function BundlePricingPage() {
           localStorage.setItem("astrorekha_bundle_id", selectedPlan);
           localStorage.setItem("astrorekha_main_txn_id", data.txnId);
           pixelEvents.purchase(plan.price, selectedPlan, plan.name);
-          router.push("/onboarding/bundle-upsell-b");
+          router.push("/onboarding/bundle-upsell");
         };
 
         const recoverAmbiguousPayment = async () => {
@@ -863,7 +770,7 @@ export default function BundlePricingPage() {
         localStorage.setItem("astrorekha_user_id", data.userId);
       }
 
-      router.push("/onboarding/bundle-upsell-b");
+      router.push("/onboarding/bundle-upsell");
     } catch (error) {
       console.error("Coupon unlock error:", error);
       setPaymentError(error instanceof Error ? error.message : "Unable to redeem coupon code");
@@ -899,7 +806,7 @@ export default function BundlePricingPage() {
           transition={{ delay: 0.1 }}
           className="text-2xl md:text-3xl font-bold text-center mb-1"
         >
-          {isLayoutB ? "Your Soulmate Sketch" : "Your Palm Reading"}
+          Your Palm Reading
         </motion.h1>
 
         <motion.p
@@ -923,13 +830,7 @@ export default function BundlePricingPage() {
           
           {/* Dark circle container */}
           <div className="absolute inset-4 rounded-full bg-card/80 border border-border/50 overflow-hidden flex items-center justify-center">
-            {isLayoutB ? (
-              <img
-                src={soulmatePreviewImage}
-                alt="Your soulmate sketch preview"
-                className="h-[78%] w-[68%] rounded-3xl object-cover border border-white/10"
-              />
-            ) : croppedPalmImage ? (
+            {croppedPalmImage ? (
               <img src={croppedPalmImage} alt="Your palm" className="w-full h-full object-cover opacity-80" />
             ) : (
               <img
@@ -1217,15 +1118,7 @@ export default function BundlePricingPage() {
         >
           {/* Palm image with stats overlay */}
           <div className="relative w-full h-48 rounded-xl overflow-hidden mb-4 bg-gradient-to-b from-muted/50 to-muted">
-            {isLayoutB ? (
-              <div className="flex h-full w-full items-center justify-center">
-                <img
-                  src={soulmatePreviewImage}
-                  alt="Your soulmate sketch preview"
-                  className="h-[86%] w-[52%] rounded-2xl object-cover border border-white/10"
-                />
-              </div>
-            ) : palmImage ? (
+            {palmImage ? (
               <img
                 src={palmImage}
                 alt="Your palm"
@@ -1243,7 +1136,7 @@ export default function BundlePricingPage() {
           </div>
 
           <h3 className="text-lg font-semibold text-center mb-4">
-            {isLayoutB ? "Your soulmate sketch preview" : "Your palm reading"}
+            Your palm reading
           </h3>
 
           {/* Stats bars */}

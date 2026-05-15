@@ -1,59 +1,61 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { Menu } from "lucide-react";
-import { OnboardingSidebar } from "@/components/OnboardingSidebar";
 import Image from "next/image";
+import { trackABEvent, getABVisitorId, shouldTrackRouteImpressionOnce } from "@/lib/ab-test-tracking";
 
-export default function WelcomePage() {
+export default function WelcomeBPage() {
   const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [isResolvingVariant, setIsResolvingVariant] = useState(true);
 
-  const seedSingleFunnel = () => {
+  const seedFlowB = () => {
     try {
-      localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
-      localStorage.setItem("astrorekha_layout_variant", "A");
+      localStorage.setItem("astrorekha_onboarding_flow", "flow-b");
+      localStorage.setItem("astrorekha_layout_variant", "B");
     } catch (error) {
-      console.error("Failed to seed onboarding flow localStorage:", error);
+      console.error("Failed to seed flow-b localStorage:", error);
     }
   };
 
   // Route protection: Check user status and redirect accordingly
   useEffect(() => {
-    let cancelled = false;
+    seedFlowB();
+    const testId = localStorage.getItem("astrorekha_ab_test_id") || "onboarding-layout-qa";
+    const visitorId = getABVisitorId();
+    if (
+      shouldTrackRouteImpressionOnce({
+        testId,
+        variant: "B",
+        visitorId,
+        route: "/welcome-b",
+      })
+    ) {
+      trackABEvent({
+        eventType: "impression",
+        testId,
+        visitorId,
+        variant: "B",
+        route: "/welcome-b",
+        metadata: {
+          source: "welcome-entry",
+          page: "/welcome-b",
+        },
+      }).catch(() => {});
+    }
 
-    const resolveEntry = async () => {
-      const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
-      const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
-      seedSingleFunnel();
-      if (cancelled) return;
+    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
+    const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
 
-      if (hasCompletedRegistration) {
-        router.replace("/dashboard");
-        return;
-      }
+    if (hasCompletedRegistration) {
+      router.replace("/dashboard");
+      return;
+    }
 
-      if (hasCompletedPayment) {
-        router.replace("/onboarding/bundle-upsell");
-        return;
-      }
-
-      if (window.location.search) {
-        router.replace("/welcome");
-      }
-
-      setIsResolvingVariant(false);
-    };
-
-    resolveEntry();
-
-    return () => {
-      cancelled = true;
-    };
+    if (hasCompletedPayment) {
+      router.replace("/onboarding/bundle-upsell-b");
+    }
   }, [router]);
 
   useEffect(() => {
@@ -232,14 +234,7 @@ export default function WelcomePage() {
     };
   }, []);
 
-  if (isResolvingVariant) {
-    return (
-      <div className="min-h-screen bg-[#0A0E1A]" aria-label="Loading AstroRekha" />
-    );
-  }
-
   return (
-    <>
     <div className="min-h-screen bg-[#0A0E1A] flex items-center justify-center relative overflow-hidden">
       {/* Animated starry background */}
       <canvas
@@ -252,16 +247,6 @@ export default function WelcomePage() {
 
       {/* Content Container - matching other pages */}
       <div className="relative z-10 w-full max-w-md h-screen bg-[#0A0E1A] overflow-hidden shadow-2xl shadow-black/50 flex flex-col">
-        {/* Menu Button - inside app container */}
-        <header className="flex items-center justify-end px-4 py-4">
-          <button 
-            onClick={() => setSidebarOpen(true)}
-            className="p-2 -mr-2 text-white/70 hover:text-white transition-colors"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-        </header>
-
         <div className="flex-1 flex flex-col items-center justify-center px-6">
         {/* Logo and App Name */}
         <motion.div
@@ -273,7 +258,7 @@ export default function WelcomePage() {
           {/* Logo with glow effect */}
           <div className="relative mb-6">
             <div className="absolute inset-0 blur-2xl bg-primary/30 rounded-full scale-150" />
-            <div className="relative w-28 h-28 ">
+            <div className="relative w-28 h-28 rounded-3xl overflow-hidden border-2 border-primary/30 shadow-2xl shadow-primary/20">
               <Image
                 src="/logo.png"
                 alt="AstroRekha"
@@ -313,6 +298,7 @@ export default function WelcomePage() {
           {/* Begin Journey Button */}
           <button
             onClick={() => {
+              seedFlowB();
               router.push("/onboarding");
             }}
             className="w-full py-4 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-500 text-white font-semibold text-lg rounded-2xl transition-all duration-300 shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.98]"
@@ -348,7 +334,5 @@ export default function WelcomePage() {
         </div>
       </div>
     </div>
-    <OnboardingSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-    </>
   );
 }

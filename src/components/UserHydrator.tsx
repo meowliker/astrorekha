@@ -80,17 +80,26 @@ export default function UserHydrator() {
       // User not found in database - clear localStorage and redirect to login
       if (error || !data) {
         console.warn("User not found in database, clearing session");
-        localStorage.removeItem("astrorekha_user_id");
-        localStorage.removeItem("astrorekha_email");
-        localStorage.removeItem("astrorekha_password");
-        localStorage.removeItem("astrorekha_onboarding_flow");
-        localStorage.removeItem("astrorekha_purchase_type");
+        [
+          "astrorekha_user_id",
+          "astrorekha_email",
+          "astrorekha_checkout_email",
+          "astrorekha_password",
+          "astrorekha_onboarding_flow",
+          "astrorekha_layout_variant",
+          "astrorekha_purchase_type",
+          "astrorekha_payment_completed",
+          "astrorekha_registration_completed",
+          "astrorekha_bundle_id",
+          "astrorekha_selected_plan",
+          "astrorekha_pending_payu_payment",
+        ].forEach((key) => localStorage.removeItem(key));
         
         // Clear session cookie
         await fetch("/api/session/clear", { method: "POST" });
         
         // Redirect to welcome
-        router.push("/welcome");
+        router.replace("/welcome");
         return;
       }
 

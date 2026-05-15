@@ -26,15 +26,14 @@ export default function OnboardingPage() {
   useEffect(() => {
     const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
     const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
-    const onboardingFlow = localStorage.getItem("astrorekha_onboarding_flow");
-    const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
+    localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
+    localStorage.setItem("astrorekha_layout_variant", "A");
 
     if (hasCompletedRegistration) {
       router.replace("/dashboard");
       return;
     } else if (hasCompletedPayment) {
-      const shouldUseLayoutB = onboardingFlow === "flow-b" || layoutVariant === "B";
-      router.replace(shouldUseLayoutB ? "/onboarding/bundle-upsell-b" : "/onboarding/bundle-upsell");
+      router.replace("/onboarding/bundle-upsell");
       return;
     }
   }, [router]);

@@ -6,8 +6,6 @@ import { OnboardingHeader, ProgressBar } from "@/components/onboarding/Onboardin
 import { useOnboardingStore, ColorPreference } from "@/lib/onboarding-store";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { useEffect, useState } from "react";
-import { LayoutBQuestionStep } from "@/components/onboarding/LayoutBQuestionStep";
 
 const colorOptions: { value: ColorPreference; label: string; color: string }[] = [
   { value: "red", label: "Red", color: "#EF6B6B" },
@@ -21,23 +19,11 @@ const colorOptions: { value: ColorPreference; label: string; color: string }[] =
 export default function Step9Page() {
   const router = useRouter();
   const { colorPreference, setColorPreference } = useOnboardingStore();
-  const [isLayoutB, setIsLayoutB] = useState(false);
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    const onboardingFlow = localStorage.getItem("astrorekha_onboarding_flow");
-    const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
-    setIsLayoutB(onboardingFlow === "flow-b" && layoutVariant === "B");
-    setReady(true);
-  }, []);
 
   const handleSelect = (color: ColorPreference) => {
     setColorPreference(color);
     router.push("/onboarding/step-10");
   };
-
-  if (!ready) return null;
-  if (isLayoutB) return <LayoutBQuestionStep routeStep={9} />;
 
   return (
     <motion.div

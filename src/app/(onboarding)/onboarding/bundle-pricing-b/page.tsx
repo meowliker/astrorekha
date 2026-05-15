@@ -9,8 +9,8 @@ export default function BundlePricingBPage() {
   const router = useRouter();
 
   useEffect(() => {
-    localStorage.setItem("astrorekha_onboarding_flow", "flow-b");
-    localStorage.setItem("astrorekha_layout_variant", "B");
+    localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
+    localStorage.setItem("astrorekha_layout_variant", "A");
     router.replace("/onboarding/bundle-pricing");
 
     const timeoutId = window.setTimeout(() => {

@@ -7,7 +7,6 @@ import { detectHandLandmarks } from "@/lib/palm-detection";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { pixelEvents } from "@/lib/pixel-events";
-import { generateUserId } from "@/lib/user-profile";
 
 const predictionLabels = [
   { text: "Children", emoji: "👶", top: "15%", left: "20%", rotation: -15 },
@@ -87,66 +86,12 @@ export default function Step16Page() {
     })();
   }, [palmImage]);
 
-  const handleGetPrediction = async () => {
+  const handleGetPrediction = () => {
     // Track AddToWishlist when user clicks "Get My Prediction"
     pixelEvents.addToWishlist("Full Prediction Access");
-    
-    // Check if user is in Flow B (bundle flow)
-    const flow = localStorage.getItem("astrorekha_onboarding_flow");
-    if (flow === "flow-b") {
-      const existingVariant = localStorage.getItem("astrorekha_layout_variant");
-      if (existingVariant === "B") {
-        router.push("/onboarding/bundle-pricing-b");
-        return;
-      }
-      if (existingVariant === "A") {
-        router.push("/onboarding/bundle-pricing");
-        return;
-      }
-
-      try {
-        const userId = localStorage.getItem("astrorekha_user_id") || generateUserId();
-        const visitorId =
-          localStorage.getItem("astrorekha_ab_visitor_id") ||
-          userId;
-        localStorage.setItem("astrorekha_ab_visitor_id", visitorId);
-
-        const cfgRes = await fetch("/api/ab-test/layout-config", { cache: "no-store" });
-        const cfgJson = await cfgRes.json().catch(() => ({}));
-        const testId = cfgJson?.config?.testId || "onboarding-layout-qa";
-        const enabled = cfgJson?.config?.enabled !== false;
-        localStorage.setItem("astrorekha_ab_test_id", testId);
-
-        if (!enabled) {
-          localStorage.setItem("astrorekha_layout_variant", "A");
-          router.push("/onboarding/bundle-pricing");
-          return;
-        }
-
-        const variantParams = new URLSearchParams({
-          testId,
-          visitorId,
-          userId,
-        });
-        const variantRes = await fetch(`/api/ab-test?${variantParams.toString()}`, { cache: "no-store" });
-        const variantJson = await variantRes.json().catch(() => ({}));
-        const variant = variantJson?.variant === "B" ? "B" : "A";
-        const page = variantJson?.page;
-        const resolvedTestId = variantJson?.testId || testId;
-        localStorage.setItem("astrorekha_ab_test_id", resolvedTestId);
-
-        localStorage.setItem("astrorekha_layout_variant", variant);
-        if (variant === "B" || page === "bundle-pricing-b") {
-          router.push("/onboarding/bundle-pricing-b");
-          return;
-        }
-      } catch (error) {
-        console.error("Failed to assign A/B variant, falling back to Layout A:", error);
-      }
-      router.push("/onboarding/bundle-pricing");
-    } else {
-      router.push("/onboarding/step-17");
-    }
+    localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
+    localStorage.setItem("astrorekha_layout_variant", "A");
+    router.push("/onboarding/bundle-pricing");
   };
 
   return (

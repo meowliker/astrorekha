@@ -18,6 +18,10 @@ type MigratedData = {
   scans_allowed?: number | null;
   birth_chart_timer_active?: boolean | null;
   birth_chart_timer_started_at?: string | null;
+  whatsapp_number?: string | null;
+  whatsapp_opt_in?: boolean | null;
+  whatsapp_opt_in_at?: string | null;
+  whatsapp_opt_in_source?: string | null;
 };
 
 function validatePassword(password: string): string | null {
@@ -104,6 +108,10 @@ export async function POST(request: NextRequest) {
           scans_allowed: anonUser.scans_allowed,
           birth_chart_timer_active: anonUser.birth_chart_timer_active,
           birth_chart_timer_started_at: anonUser.birth_chart_timer_started_at,
+          whatsapp_number: anonUser.whatsapp_number,
+          whatsapp_opt_in: anonUser.whatsapp_opt_in,
+          whatsapp_opt_in_at: anonUser.whatsapp_opt_in_at,
+          whatsapp_opt_in_source: anonUser.whatsapp_opt_in_source,
         };
       }
 
