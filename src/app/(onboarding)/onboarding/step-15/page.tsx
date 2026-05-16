@@ -20,6 +20,8 @@ const READING_STATS = [
   { label: "Career", color: "#8B5CF6", value: 65 },
 ];
 
+const SHOW_WHATSAPP_CAPTURE = false;
+
 export default function Step15Page() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -331,40 +333,44 @@ export default function Step15Page() {
             <p className="text-red-400 text-sm mb-4 text-center">{emailError}</p>
           )}
 
-          <div className="flex h-12 overflow-hidden rounded-lg border border-primary/30 bg-white/10 focus-within:ring-2 focus-within:ring-primary/50 mb-3">
-            <div className="flex items-center px-3 border-r border-primary/20 text-sm text-muted-foreground">
-              +91
-            </div>
-            <input
-              type="tel"
-              inputMode="numeric"
-              placeholder="WhatsApp number"
-              value={whatsappNumber}
-              onChange={(e) => {
-                setWhatsappNumber(e.target.value.replace(/[^\d\s-]/g, ""));
-                if (whatsappError) setWhatsappError(null);
-              }}
-              className="min-w-0 flex-1 px-4 bg-transparent text-white placeholder:text-muted-foreground focus:outline-none"
-            />
-          </div>
+          {SHOW_WHATSAPP_CAPTURE && (
+            <>
+              <div className="flex h-12 overflow-hidden rounded-lg border border-primary/30 bg-white/10 focus-within:ring-2 focus-within:ring-primary/50 mb-3">
+                <div className="flex items-center px-3 border-r border-primary/20 text-sm text-muted-foreground">
+                  +91
+                </div>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  placeholder="WhatsApp number"
+                  value={whatsappNumber}
+                  onChange={(e) => {
+                    setWhatsappNumber(e.target.value.replace(/[^\d\s-]/g, ""));
+                    if (whatsappError) setWhatsappError(null);
+                  }}
+                  className="min-w-0 flex-1 px-4 bg-transparent text-white placeholder:text-muted-foreground focus:outline-none"
+                />
+              </div>
 
-          <label className="flex items-start gap-3 text-xs text-muted-foreground mb-3">
-            <input
-              type="checkbox"
-              checked={whatsappOptIn}
-              onChange={(e) => {
-                setWhatsappOptIn(e.target.checked);
-                if (whatsappError) setWhatsappError(null);
-              }}
-              className="mt-0.5 h-4 w-4 rounded border-primary/40 accent-primary"
-            />
-            <span>
-              Send me my reading updates, reminders, and offers from AstroRekha on WhatsApp. I can opt out anytime.
-            </span>
-          </label>
+              <label className="flex items-start gap-3 text-xs text-muted-foreground mb-3">
+                <input
+                  type="checkbox"
+                  checked={whatsappOptIn}
+                  onChange={(e) => {
+                    setWhatsappOptIn(e.target.checked);
+                    if (whatsappError) setWhatsappError(null);
+                  }}
+                  className="mt-0.5 h-4 w-4 rounded border-primary/40 accent-primary"
+                />
+                <span>
+                  Send me my reading updates, reminders, and offers from AstroRekha on WhatsApp. I can opt out anytime.
+                </span>
+              </label>
 
-          {whatsappError && (
-            <p className="text-red-400 text-sm mb-4 text-center">{whatsappError}</p>
+              {whatsappError && (
+                <p className="text-red-400 text-sm mb-4 text-center">{whatsappError}</p>
+              )}
+            </>
           )}
 
           <div className="flex items-start gap-2 text-xs text-muted-foreground mb-6">
