@@ -1653,6 +1653,11 @@ export default function BundlePricingPage() {
               Money-Back Policy
             </Link>
           </div>
+
+          <div className="mt-6 text-center text-sm text-foreground space-y-1">
+            <p>VisionaryEra</p>
+            <p>team.astrorekha@gmail.com</p>
+          </div>
         </motion.div>
       </div>
 
