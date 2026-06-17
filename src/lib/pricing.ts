@@ -96,6 +96,7 @@ function applyBundleOverrides(bundles: BundlePlan[]): BundlePlan[] {
           "Full compatibility analysis",
           "Future partner report",
         ],
+        active: false,
       };
     }
 
@@ -110,6 +111,7 @@ function applyBundleOverrides(bundles: BundlePlan[]): BundlePlan[] {
           "One AI soulmate sketch",
           "Future partner report",
         ],
+        active: true,
       };
     }
 
@@ -190,7 +192,7 @@ export const DEFAULT_PRICING: PricingConfig = {
       ],
       popular: false,
       limitedOffer: true,
-      active: true,
+      active: false,
     },
     {
       id: "palm-birth-sketch",
@@ -208,7 +210,7 @@ export const DEFAULT_PRICING: PricingConfig = {
       ],
       popular: false,
       limitedOffer: true,
-      active: false,
+      active: true,
     },
   ],
   upsells: [

@@ -1,13 +1,12 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState, useEffect, Suspense } from "react";
+import { useMemo, useState, useEffect, Suspense } from "react";
 import { fadeUp } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, Loader2, Star, Sparkles, Calendar, Heart, Briefcase, Activity } from "lucide-react";
+import { Check, Loader2, Star, Sparkles, Calendar, Heart, Briefcase, Activity, Users } from "lucide-react";
 import { useUserStore } from "@/lib/user-store";
-import { useOnboardingStore } from "@/lib/onboarding-store";
 import { supabase } from "@/lib/supabase";
 import { generateUserId } from "@/lib/user-profile";
 import { pixelEvents } from "@/lib/pixel-events";
@@ -65,12 +64,75 @@ function isPayUCancelOrFailure(value: unknown): boolean {
   );
 }
 
-// Preview features for 2026 predictions
-const predictionFeatures = [
-  { icon: Calendar, label: "Month-by-month forecasts", description: "Detailed predictions for all 12 months" },
-  { icon: Heart, label: "Love & relationships", description: "When romance will bloom in your life" },
-  { icon: Briefcase, label: "Career milestones", description: "Key opportunities and timing" },
-  { icon: Activity, label: "Health guidance", description: "Best times for wellness focus" },
+type PayUBoltResponse = {
+  response: {
+    txnStatus: string;
+    txnid: string;
+    mihpayid?: string;
+    hash?: string;
+  };
+};
+
+type PayUBolt = {
+  launch: (
+    params: Record<string, string>,
+    handlers: {
+      responseHandler: (response: PayUBoltResponse) => void | Promise<void>;
+      catchException: (error: unknown) => void | Promise<void>;
+    }
+  ) => void;
+};
+
+async function waitForPayUConfirmation(txnId: string, attempts = 8): Promise<boolean> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) {
+      await new Promise((resolve) => window.setTimeout(resolve, 4000));
+    }
+
+    try {
+      const response = await fetch(`/api/payu/status?txnid=${encodeURIComponent(txnId)}`, {
+        cache: "no-store",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data?.status === "paid") {
+        return true;
+      }
+    } catch {
+      // UPI callbacks can lag behind the browser response.
+    }
+  }
+
+  return false;
+}
+
+const upsellOffers = [
+  {
+    id: "compatibility",
+    name: "Compatibility Report",
+    description: "Know how your relationship energy aligns.",
+    price: 499,
+    originalPrice: 999,
+    icon: Users,
+    emoji: "💕",
+    features: [
+      { icon: Users, label: "Relationship chemistry", description: "Love match insights and emotional alignment" },
+      { icon: Heart, label: "Romantic strengths", description: "Where your connection naturally works best" },
+    ],
+  },
+  {
+    id: "2026-predictions",
+    name: "2026 Future Predictions",
+    description: "Month-wise timeline of your next big year.",
+    price: 499,
+    originalPrice: 999,
+    icon: Calendar,
+    emoji: "🔮",
+    features: [
+      { icon: Calendar, label: "Month-by-month forecasts", description: "Detailed predictions for all 12 months" },
+      { icon: Briefcase, label: "Career and life timing", description: "Key opportunities, changes, and windows" },
+      { icon: Activity, label: "Health guidance", description: "Best times for wellness focus" },
+    ],
+  },
 ];
 
 function BundleUpsellContent() {
@@ -79,10 +141,18 @@ function BundleUpsellContent() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const [isAuthorized, setIsAuthorized] = useState(false);
-  const [selectedOffer, setSelectedOffer] = useState(true);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   
   const { userId: storeUserId } = useUserStore();
-  const { birthMonth, birthDay, birthYear } = useOnboardingStore();
+
+  const selectedOffers = useMemo(
+    () => upsellOffers.filter((offer) => selectedIds.has(offer.id)),
+    [selectedIds]
+  );
+  const selectedOfferIds = selectedOffers.map((offer) => offer.id).join(",");
+  const selectedOfferNames = selectedOffers.map((offer) => offer.name);
+  const selectedOfferLabel = selectedOfferNames.join(" + ");
+  const selectedOfferPrice = selectedOffers.reduce((sum, offer) => sum + offer.price, 0);
 
   // Fulfill checkout to unlock features in Supabase
   const fulfillCheckout = async (bundleId: string) => {
@@ -102,13 +172,8 @@ function BundleUpsellContent() {
     const sessionId = searchParams.get("session_id");
     const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
     const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
-    const flow = localStorage.getItem("astrorekha_onboarding_flow");
-    const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
-
-    if (flow === "flow-b" || layoutVariant === "B") {
-      router.replace("/onboarding/bundle-upsell-b");
-      return;
-    }
+    localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
+    localStorage.setItem("astrorekha_layout_variant", "A");
     
     if (hasCompletedRegistration) {
       router.replace("/dashboard");
@@ -124,7 +189,7 @@ function BundleUpsellContent() {
         localStorage.setItem("astrorekha_purchase_type", "one-time");
         
         // Save the bundle ID for later use
-        const selectedPlan = localStorage.getItem("astrorekha_selected_plan") || "palm-birth";
+        const selectedPlan = localStorage.getItem("astrorekha_selected_plan") || "palm-birth-sketch";
         localStorage.setItem("astrorekha_bundle_id", selectedPlan);
         
         // Track Purchase pixel
@@ -145,13 +210,26 @@ function BundleUpsellContent() {
     }
   }, [searchParams, router]);
 
-  const handleAddUpsell = async () => {
+  const toggleOffer = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleCheckout = async () => {
+    if (selectedOffers.length === 0) {
+      router.push("/onboarding/step-19");
+      return;
+    }
+
     setPaymentError("");
     setIsProcessing(true);
-    
-    const upsellPriceINR = 499;
+
     // Track AddToCart for upsell
-    pixelEvents.addToCart(upsellPriceINR, "2026 Future Predictions");
+    pixelEvents.addToCart(selectedOfferPrice, selectedOfferLabel);
 
     try {
       const response = await fetch("/api/payu/initiate-payment", {
@@ -159,7 +237,7 @@ function BundleUpsellContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId: storeUserId || localStorage.getItem("astrorekha_user_id") || generateUserId(),
-          bundleId: "2026-predictions",
+          bundleId: selectedOfferIds,
           type: "upsell",
           email: localStorage.getItem("astrorekha_email") || "",
           firstName: localStorage.getItem("astrorekha_name") || "Customer",
@@ -173,40 +251,78 @@ function BundleUpsellContent() {
         savePendingPayUPayment({
           txnid: data.txnId,
           type: "upsell",
-          bundleId: "2026-predictions",
+          bundleId: selectedOfferIds,
           returnTo: "/onboarding/step-19",
         });
-        pixelEvents.initiateCheckout(upsellPriceINR, ["2026 Future Predictions"]);
-        pixelEvents.addPaymentInfo(upsellPriceINR, "2026 Future Predictions");
+        pixelEvents.initiateCheckout(selectedOfferPrice, selectedOfferNames);
+        pixelEvents.addPaymentInfo(selectedOfferPrice, selectedOfferLabel);
 
-        const bolt = (window as any).bolt;
-        bolt.launch({
-          key: data.key,
-          txnid: data.txnId,
-          hash: data.hash,
-          amount: data.amount,
-          firstname: data.firstName,
-          email: data.email,
-          phone: "",
-          productinfo: data.productInfo,
-          udf1: data.udf1,
-          udf2: data.udf2,
-          udf3: data.udf3,
-          udf4: data.udf4,
-          udf5: data.udf5,
-          surl: `${window.location.origin}/api/payu/success`,
-          furl: `${window.location.origin}/api/payu/failure`,
-        }, {
-          responseHandler: async (response: any) => {
-            if (response.response.txnStatus === "SUCCESS") {
+        const bolt = (window as Window & { bolt?: PayUBolt }).bolt;
+        if (!bolt) {
+          setPaymentError("Payment checkout is still loading. Please try again.");
+          setIsProcessing(false);
+          return;
+        }
+
+        const completeUpsellCheckout = () => {
+          localStorage.removeItem(PENDING_PAYMENT_KEY);
+          appendUpsellTxnId(data.txnId);
+          pixelEvents.purchase(selectedOfferPrice, `upsell-${selectedOfferIds}`, selectedOfferLabel);
+          setIsProcessing(false);
+          router.push("/onboarding/step-19");
+        };
+
+        const recoverAmbiguousPayment = async () => {
+          setPaymentError("Confirming your payment. This can take a few moments.");
+          const confirmed = await waitForPayUConfirmation(data.txnId);
+          if (confirmed) {
+            completeUpsellCheckout();
+            return;
+          }
+          router.push(`/payment/processing?txnid=${encodeURIComponent(data.txnId)}&source=upsell_recovery`);
+        };
+
+        bolt.launch(
+          {
+            key: data.key,
+            txnid: data.txnId,
+            hash: data.hash,
+            amount: data.amount,
+            firstname: data.firstName,
+            email: data.email,
+            phone: "",
+            productinfo: data.productInfo,
+            udf1: data.udf1,
+            udf2: data.udf2,
+            udf3: data.udf3,
+            udf4: data.udf4,
+            udf5: data.udf5,
+            surl: `${window.location.origin}/api/payu/success`,
+            furl: `${window.location.origin}/api/payu/failure`,
+          },
+          {
+            responseHandler: async (responsePayload: PayUBoltResponse) => {
+              const txnStatus = responsePayload.response.txnStatus;
+              if (isPayUCancelOrFailure(txnStatus)) {
+                localStorage.removeItem(PENDING_PAYMENT_KEY);
+                setPaymentError("Payment was cancelled. You can try again whenever you're ready.");
+                setIsProcessing(false);
+                return;
+              }
+
+              if (txnStatus !== "SUCCESS") {
+                await recoverAmbiguousPayment();
+                return;
+              }
+
               const verifyRes = await fetch("/api/payu/verify-payment", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  txnid: response.response.txnid,
-                  mihpayid: response.response.mihpayid,
+                  txnid: responsePayload.response.txnid,
+                  mihpayid: responsePayload.response.mihpayid,
                   status: "success",
-                  hash: response.response.hash,
+                  hash: responsePayload.response.hash,
                   amount: data.amount,
                   productinfo: data.productInfo,
                   firstname: data.firstName,
@@ -221,30 +337,18 @@ function BundleUpsellContent() {
               });
               const verifyData = await verifyRes.json().catch(() => ({ success: false }));
               if (verifyRes.ok && verifyData?.success) {
-                localStorage.removeItem(PENDING_PAYMENT_KEY);
-                appendUpsellTxnId(data.txnId);
-                pixelEvents.purchase(upsellPriceINR, "2026-predictions", "2026 Future Predictions");
-                setIsProcessing(false);
-                router.push("/onboarding/step-19");
+                completeUpsellCheckout();
               } else {
-                setPaymentError("Payment verification failed. Please contact support.");
-                setIsProcessing(false);
+                await recoverAmbiguousPayment();
               }
-            } else if (isPayUCancelOrFailure(response.response.txnStatus)) {
+            },
+            catchException: async () => {
               localStorage.removeItem(PENDING_PAYMENT_KEY);
               setPaymentError("Payment was cancelled. You can try again whenever you're ready.");
               setIsProcessing(false);
-            } else {
-              router.push(`/payment/processing?txnid=${encodeURIComponent(data.txnId)}&source=upsell_legacy`);
-            }
-          },
-          catchException: (error: any) => {
-            console.error("PayU Bolt error:", error);
-            localStorage.removeItem(PENDING_PAYMENT_KEY);
-            setPaymentError("Payment was cancelled. You can try again whenever you're ready.");
-            setIsProcessing(false);
+            },
           }
-        });
+        );
       } else if (data.error) {
         setPaymentError(data.error);
         setIsProcessing(false);
@@ -338,62 +442,68 @@ function BundleUpsellContent() {
           <div className="bg-gradient-to-br from-purple-600/20 via-blue-600/10 to-purple-600/20 rounded-3xl border border-purple-500/30 overflow-hidden">
             {/* Header */}
             <div className="bg-gradient-to-r from-purple-600/30 to-blue-600/30 px-6 py-5 text-center">
-              <div className="text-4xl mb-2">🔮</div>
-              <h3 className="text-2xl font-bold text-white mb-1">2026 Future Predictions</h3>
-              <p className="text-white/70 text-sm">Know what the stars have in store for you</p>
+              <div className="text-4xl mb-2">💞</div>
+              <h3 className="text-2xl font-bold text-white mb-1">Optional Add-ons</h3>
+              <p className="text-white/70 text-sm">Choose one, both, or skip</p>
             </div>
 
-            {/* Features */}
-            <div className="px-6 py-5 space-y-4">
-              {predictionFeatures.map((feature, index) => (
-                <motion.div
-                  key={feature.label}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.3 + index * 0.1 }}
-                  className="flex items-start gap-3"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center flex-shrink-0">
-                    <feature.icon className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-white text-sm">{feature.label}</h4>
-                    <p className="text-white/60 text-xs">{feature.description}</p>
-                  </div>
-                </motion.div>
-              ))}
+            <div className="px-6 py-5 space-y-3">
+              {upsellOffers.map((offer, index) => {
+                const selected = selectedIds.has(offer.id);
+                return (
+                  <motion.button
+                    key={offer.id}
+                    type="button"
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.3 + index * 0.1 }}
+                    onClick={() => toggleOffer(offer.id)}
+                    className={`w-full rounded-2xl border-2 p-4 text-left transition-all ${
+                      selected
+                        ? "border-primary bg-primary/15"
+                        : "border-white/10 bg-white/5 hover:border-primary/50"
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="text-2xl">{offer.emoji}</div>
+                      <div className="flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <h4 className="font-semibold text-white text-sm">{offer.name}</h4>
+                            <p className="text-white/60 text-xs">{offer.description}</p>
+                          </div>
+                          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                            selected ? "border-primary bg-primary" : "border-white/30"
+                          }`}>
+                            {selected && <Check className="w-4 h-4 text-primary-foreground" />}
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-center gap-2">
+                          <span className="text-white/45 line-through text-sm">₹{offer.originalPrice}</span>
+                          <span className="text-xl font-bold text-white">₹{offer.price}</span>
+                          <span className="bg-green-500/20 text-green-400 text-[10px] px-2 py-0.5 rounded-full font-semibold">
+                            50% OFF
+                          </span>
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {offer.features.map((feature) => (
+                            <div key={feature.label} className="flex items-start gap-2">
+                              <feature.icon className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                              <div>
+                                <p className="text-xs font-medium text-white">{feature.label}</p>
+                                <p className="text-[11px] text-white/55">{feature.description}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.button>
+                );
+              })}
             </div>
 
-            {/* Price Section */}
             <div className="px-6 py-5 bg-black/20">
-              <div className="flex items-center justify-center gap-3 mb-4">
-                <span className="text-white/50 line-through text-lg">₹999</span>
-                <span className="text-4xl font-bold text-white">₹499</span>
-                <span className="bg-green-500/20 text-green-400 text-xs px-2 py-1 rounded-full font-semibold">
-                  50% OFF
-                </span>
-              </div>
-
-              {/* Selection Toggle */}
-              <label
-                className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-all mb-4 ${
-                  selectedOffer
-                    ? "bg-primary/20 border-2 border-primary"
-                    : "bg-white/5 border-2 border-transparent"
-                }`}
-                onClick={() => setSelectedOffer(!selectedOffer)}
-              >
-                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                  selectedOffer ? "border-primary bg-primary" : "border-white/30"
-                }`}>
-                  {selectedOffer && <Check className="w-4 h-4 text-primary-foreground" />}
-                </div>
-                <div className="flex-1">
-                  <span className="font-semibold text-white">Add to my order</span>
-                  <p className="text-white/60 text-xs">One-time payment • Instant access</p>
-                </div>
-              </label>
-
               {/* Error message */}
               {paymentError && (
                 <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg mb-4">
@@ -403,10 +513,10 @@ function BundleUpsellContent() {
 
               {/* CTA Button */}
               <Button
-                onClick={selectedOffer ? handleAddUpsell : handleSkip}
+                onClick={selectedOffers.length > 0 ? handleCheckout : handleSkip}
                 disabled={isProcessing}
                 className={`w-full h-14 text-lg font-semibold ${
-                  selectedOffer
+                  selectedOffers.length > 0
                     ? "bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
                     : "bg-white/10 hover:bg-white/20"
                 }`}
@@ -417,8 +527,8 @@ function BundleUpsellContent() {
                     <Loader2 className="w-5 h-5 animate-spin" />
                     Processing...
                   </span>
-                ) : selectedOffer ? (
-                  "Add to Order - ₹499"
+                ) : selectedOffers.length > 0 ? (
+                  `Add to Order - ₹${selectedOfferPrice}`
                 ) : (
                   "Continue without this offer →"
                 )}
@@ -440,7 +550,7 @@ function BundleUpsellContent() {
             ))}
           </div>
           <p className="text-sm text-muted-foreground italic">
-            "The 2026 predictions were incredibly accurate! It helped me prepare for a major career change that happened exactly when predicted."
+            "The compatibility report explained our chemistry so clearly, and the 2026 predictions helped me prepare for a major career change right on time."
           </p>
           <p className="text-xs text-muted-foreground mt-2">— Sarah M., verified buyer</p>
         </motion.div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fadeUp } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
@@ -28,25 +28,14 @@ const sketchPredictionLabels = [
   { text: "Big change", emoji: "🚀", top: "60%", left: "52%", rotation: 8 },
 ];
 
-const DEFAULT_LAYOUT_TEST_ID = "onboarding-layout-qa";
-const FLOW_B_BUNDLE_IDS = ["palm-reading", "palm-birth", "palm-birth-sketch"] as const;
 const PAYWALL_DEFAULT_PLAN_TEST_ID = "paywall-default-plan-v1";
 const PAYWALL_DEFAULT_PLAN_VARIANT_STORAGE_KEY = "astrorekha_paywall_default_variant";
 const PAYWALL_ROUTE = "/onboarding/bundle-pricing";
 const PENDING_PAYMENT_KEY = "astrorekha_pending_payu_payment";
 const PAYWALL_DEFAULT_PLAN_BY_VARIANT = {
-  A: "palm-birth",
+  A: "palm-birth-sketch",
   B: "palm-birth-sketch",
 } as const;
-
-const SOULMATE_ANSWER_KEYS = [
-  "attracted_to",
-  "attractedTo",
-  "attracted",
-  "gender_preference",
-  "genderPreference",
-  "target_gender",
-] as const;
 
 type PayUBoltResponse = {
   response: {
@@ -130,54 +119,6 @@ function getPaywallVariantPageKey(variant: AbVariant): string {
   return variant === "B" ? "default-1599" : "default-839";
 }
 
-function parseSelectionValues(raw: unknown): string[] {
-  if (raw === null || raw === undefined) return [];
-  if (Array.isArray(raw)) {
-    return raw.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
-  }
-  if (typeof raw === "string") {
-    const trimmed = raw.trim();
-    if (!trimmed) return [];
-    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed)) {
-          return parsed.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
-        }
-      } catch {
-        // fallback to comma split below
-      }
-    }
-    return trimmed
-      .split(",")
-      .map((item) => item.trim().toLowerCase())
-      .filter(Boolean);
-  }
-  const asText = String(raw).trim().toLowerCase();
-  return asText ? [asText] : [];
-}
-
-function resolveSoulmatePreviewImage(attractedToRaw: unknown, userGenderRaw: unknown): "/male.png" | "/female.png" {
-  const selections = parseSelectionValues(attractedToRaw);
-  const attractedTo =
-    selections.find((item) => item === "male" || item === "female" || item === "any") || "";
-  const gender = String(userGenderRaw || "").trim().toLowerCase();
-
-  if (attractedTo === "female") return "/female.png";
-  if (attractedTo === "male") return "/male.png";
-
-  if (attractedTo === "any") {
-    if (gender === "male") return "/female.png";
-    if (gender === "female") return "/male.png";
-    return "/female.png";
-  }
-
-  // Safe fallback if selection is missing: infer opposite of user gender.
-  if (gender === "male") return "/female.png";
-  if (gender === "female") return "/male.png";
-  return "/female.png";
-}
-
 // Generate random stats with some variation for authenticity
 function generateRandomStats() {
   const baseStats = [
@@ -256,13 +197,12 @@ export default function BundlePricingPage() {
   const [croppedPalmImage, setCroppedPalmImage] = useState<string | null>(null);
   const [readingStats, setReadingStats] = useState<{ label: string; color: string; value: number }[]>([]);
   const [compatibilityStats, setCompatibilityStats] = useState<{ label: string; color: string; value: number }[]>([]);
-  const [onboardingFlow, setOnboardingFlow] = useState<"flow-a" | "flow-b">("flow-b");
-  const [layoutVariant, setLayoutVariant] = useState<"A" | "B">("B");
-  const [soulmatePreviewImage, setSoulmatePreviewImage] = useState<"/male.png" | "/female.png">("/female.png");
   const paymentSectionRef = useRef<HTMLDivElement>(null);
+  const pricingCardsRef = useRef<HTMLDivElement>(null);
   const testimonialSectionRef = useRef<HTMLDivElement>(null);
   const birthChartSectionRef = useRef<HTMLDivElement>(null);
-  const getFullReportRef = useRef<HTMLButtonElement>(null);
+  const checkoutCtaRef = useRef<HTMLDivElement>(null);
+  const [showPaymentStickyCTA, setShowPaymentStickyCTA] = useState(false);
   const [showStickyCTA, setShowStickyCTA] = useState(false);
   const [paywallPlanTestVariant, setPaywallPlanTestVariant] = useState<AbVariant | null>(null);
   const [hasResolvedPaywallPlanVariant, setHasResolvedPaywallPlanVariant] = useState(false);
@@ -274,16 +214,10 @@ export default function BundlePricingPage() {
   const paywallAbVisitorIdRef = useRef<string | null>(null);
   
   const { userId } = useUserStore();
-  const isLayoutB = onboardingFlow === "flow-b" && layoutVariant === "B";
-  const bundlePlans = useMemo(() => {
-    if (!isLayoutB) {
-      return allBundlePlans.filter((bundle) => bundle.active);
-    }
-
-    const byId = new Map(allBundlePlans.map((bundle) => [bundle.id, bundle]));
-    return FLOW_B_BUNDLE_IDS.map((id) => byId.get(id)).filter((bundle): bundle is NonNullable<typeof bundle> => Boolean(bundle));
-  }, [allBundlePlans, isLayoutB]);
-  const heroPredictionLabels = isLayoutB ? sketchPredictionLabels : predictionLabels;
+  const bundlePlans = allBundlePlans.filter((bundle) => bundle.active);
+  const heroPredictionLabels = predictionLabels;
+  const selectedPlanData = bundlePlans.find(p => p.id === selectedPlan);
+  const isPlanSelectionReady = hasResolvedPaywallPlanVariant && Boolean(selectedPlanData);
 
   const resolvePaywallAbVisitorId = (): string => {
     if (paywallAbVisitorIdRef.current) return paywallAbVisitorIdRef.current;
@@ -365,31 +299,8 @@ export default function BundlePricingPage() {
     };
     window.addEventListener("pageshow", handlePageShow);
 
-    localStorage.setItem("astrorekha_onboarding_flow", "flow-b");
-    localStorage.setItem("astrorekha_layout_variant", "B");
-    if (!localStorage.getItem("astrorekha_ab_test_id")) {
-      localStorage.setItem("astrorekha_ab_test_id", DEFAULT_LAYOUT_TEST_ID);
-    }
-    setOnboardingFlow("flow-b");
-    setLayoutVariant("B");
-
-    // Resolve preview image for layout-b sketch card.
-    try {
-      const answersRaw = localStorage.getItem("astrorekha_soulmate_answers");
-      const answers = answersRaw ? JSON.parse(answersRaw) : {};
-      const answerValue =
-        SOULMATE_ANSWER_KEYS.map((key) => answers?.[key]).find(
-          (value) => parseSelectionValues(value).length > 0
-        ) ?? null;
-
-      const onboardingStoreRaw = localStorage.getItem("astrorekha-onboarding");
-      const parsedOnboarding = onboardingStoreRaw ? JSON.parse(onboardingStoreRaw) : {};
-      const userGender = parsedOnboarding?.state?.gender ?? parsedOnboarding?.gender ?? null;
-
-      setSoulmatePreviewImage(resolveSoulmatePreviewImage(answerValue, userGender));
-    } catch {
-      setSoulmatePreviewImage("/female.png");
-    }
+    localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
+    localStorage.setItem("astrorekha_layout_variant", "A");
     
     // Route protection: Check if user has already completed payment
     const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
@@ -399,7 +310,7 @@ export default function BundlePricingPage() {
       router.replace("/dashboard");
       return;
     } else if (hasCompletedPayment) {
-      router.replace("/onboarding/bundle-upsell-b");
+      router.replace("/onboarding/bundle-upsell");
       return;
     }
     
@@ -529,7 +440,52 @@ export default function BundlePricingPage() {
     };
   }, [paywallPlanTestVariant, selectedPlan]);
 
-  // Sticky CTA visibility
+  // Keep the checkout CTA visible while the user is selecting bundles.
+  useEffect(() => {
+    let frameId = 0;
+    let timeoutId = 0;
+    let intervalId = 0;
+
+    const updateStickyState = () => {
+      if (!paymentSectionRef.current || !pricingCardsRef.current || !checkoutCtaRef.current) {
+        setShowPaymentStickyCTA(false);
+        return;
+      }
+
+      const scrollY = window.scrollY || window.pageYOffset;
+      const viewportBottom = scrollY + window.innerHeight;
+      const sectionTop = paymentSectionRef.current.getBoundingClientRect().top + scrollY;
+      const sectionBottom = sectionTop + paymentSectionRef.current.offsetHeight;
+      const cardsTop = pricingCardsRef.current.getBoundingClientRect().top + scrollY;
+      const buttonTop = checkoutCtaRef.current.getBoundingClientRect().top + scrollY;
+      const hasReachedBundleCards = viewportBottom >= cardsTop + 80;
+      const isBeforeRealButton = viewportBottom < buttonTop + 8;
+      const isWithinPaymentSection = scrollY < sectionBottom;
+
+      setShowPaymentStickyCTA(hasReachedBundleCards && isBeforeRealButton && isWithinPaymentSection);
+    };
+
+    const scheduleUpdate = () => {
+      window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(updateStickyState);
+    };
+
+    updateStickyState();
+    timeoutId = window.setTimeout(updateStickyState, 150);
+    intervalId = window.setInterval(updateStickyState, 300);
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+    };
+  }, [isPlanSelectionReady]);
+
+  // Sticky CTA visibility for content sections after the paywall.
   useEffect(() => {
     let isInContentSection = false;
     let isGetFullReportVisible = false;
@@ -556,7 +512,7 @@ export default function BundlePricingPage() {
 
     if (testimonialSectionRef.current) sectionObserver.observe(testimonialSectionRef.current);
     if (birthChartSectionRef.current) sectionObserver.observe(birthChartSectionRef.current);
-    if (getFullReportRef.current) buttonObserver.observe(getFullReportRef.current);
+    if (checkoutCtaRef.current) buttonObserver.observe(checkoutCtaRef.current);
 
     return () => {
       sectionObserver.disconnect();
@@ -690,7 +646,7 @@ export default function BundlePricingPage() {
           txnid: data.txnId,
           type: "bundle",
           bundleId: selectedPlan,
-          returnTo: "/onboarding/bundle-upsell-b",
+          returnTo: "/onboarding/bundle-upsell",
         });
         pixelEvents.initiateCheckout(plan.price, [plan.name]);
         pixelEvents.addPaymentInfo(plan.price, plan.name);
@@ -718,7 +674,7 @@ export default function BundlePricingPage() {
           localStorage.setItem("astrorekha_bundle_id", selectedPlan);
           localStorage.setItem("astrorekha_main_txn_id", data.txnId);
           pixelEvents.purchase(plan.price, selectedPlan, plan.name);
-          router.push("/onboarding/bundle-upsell-b");
+          router.push("/onboarding/bundle-upsell");
         };
 
         const recoverAmbiguousPayment = async () => {
@@ -863,16 +819,13 @@ export default function BundlePricingPage() {
         localStorage.setItem("astrorekha_user_id", data.userId);
       }
 
-      router.push("/onboarding/bundle-upsell-b");
+      router.push("/onboarding/bundle-upsell");
     } catch (error) {
       console.error("Coupon unlock error:", error);
       setPaymentError(error instanceof Error ? error.message : "Unable to redeem coupon code");
       setIsRedeemingCoupon(false);
     }
   };
-
-  const selectedPlanData = bundlePlans.find(p => p.id === selectedPlan);
-  const isPlanSelectionReady = hasResolvedPaywallPlanVariant && Boolean(selectedPlanData);
 
   return (
     <motion.div
@@ -899,7 +852,7 @@ export default function BundlePricingPage() {
           transition={{ delay: 0.1 }}
           className="text-2xl md:text-3xl font-bold text-center mb-1"
         >
-          {isLayoutB ? "Your Soulmate Sketch" : "Your Palm Reading"}
+          Your Palm Reading
         </motion.h1>
 
         <motion.p
@@ -923,13 +876,7 @@ export default function BundlePricingPage() {
           
           {/* Dark circle container */}
           <div className="absolute inset-4 rounded-full bg-card/80 border border-border/50 overflow-hidden flex items-center justify-center">
-            {isLayoutB ? (
-              <img
-                src={soulmatePreviewImage}
-                alt="Your soulmate sketch preview"
-                className="h-[78%] w-[68%] rounded-3xl object-cover border border-white/10"
-              />
-            ) : croppedPalmImage ? (
+            {croppedPalmImage ? (
               <img src={croppedPalmImage} alt="Your palm" className="w-full h-full object-cover opacity-80" />
             ) : (
               <img
@@ -998,7 +945,7 @@ export default function BundlePricingPage() {
         </motion.p>
 
         {/* Pricing Cards */}
-        <div className="w-full max-w-sm space-y-4 mb-6">
+        <div ref={pricingCardsRef} className="w-full max-w-sm space-y-4 mb-6">
           {!isPlanSelectionReady ? (
             <div className="rounded-2xl border border-border/50 bg-card/50 p-6 text-center text-sm text-muted-foreground">
               Loading your offer...
@@ -1102,13 +1049,13 @@ export default function BundlePricingPage() {
 
         {/* CTA Button */}
         <motion.div
+          ref={checkoutCtaRef}
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6 }}
           className="w-full max-w-sm mb-6"
         >
           <Button
-            ref={getFullReportRef}
             onClick={handlePurchase}
             disabled={!isPlanSelectionReady || !agreedToTerms || isProcessing || isRedeemingCoupon}
             className="w-full h-14 text-lg font-semibold"
@@ -1217,15 +1164,7 @@ export default function BundlePricingPage() {
         >
           {/* Palm image with stats overlay */}
           <div className="relative w-full h-48 rounded-xl overflow-hidden mb-4 bg-gradient-to-b from-muted/50 to-muted">
-            {isLayoutB ? (
-              <div className="flex h-full w-full items-center justify-center">
-                <img
-                  src={soulmatePreviewImage}
-                  alt="Your soulmate sketch preview"
-                  className="h-[86%] w-[52%] rounded-2xl object-cover border border-white/10"
-                />
-              </div>
-            ) : palmImage ? (
+            {palmImage ? (
               <img
                 src={palmImage}
                 alt="Your palm"
@@ -1243,7 +1182,7 @@ export default function BundlePricingPage() {
           </div>
 
           <h3 className="text-lg font-semibold text-center mb-4">
-            {isLayoutB ? "Your soulmate sketch preview" : "Your palm reading"}
+            Your palm reading
           </h3>
 
           {/* Stats bars */}
@@ -1676,6 +1615,35 @@ export default function BundlePricingPage() {
               size="lg"
             >
               Get personal prediction
+            </Button>
+          </div>
+        </motion.div>
+      )}
+
+      {showPaymentStickyCTA && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 20 }}
+          className="fixed bottom-0 left-0 right-0 z-50 p-4 bg-gradient-to-t from-background via-background to-transparent"
+        >
+          <div className="max-w-sm mx-auto">
+            <Button
+              onClick={handlePurchase}
+              disabled={!isPlanSelectionReady || !agreedToTerms || isProcessing || isRedeemingCoupon}
+              className="w-full h-14 text-lg font-semibold"
+              size="lg"
+            >
+              {isProcessing ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Processing...
+                </span>
+              ) : (
+                isPlanSelectionReady
+                  ? `Get My Reading - ₹${selectedPlanData?.displayPrice || selectedPlanData?.price}`
+                  : "Loading your offer..."
+              )}
             </Button>
           </div>
         </motion.div>

@@ -14,15 +14,7 @@ const progressSteps = [
   { label: "Access to the app", active: true },
 ];
 
-// Flow A (subscription) features
-const subscriptionFeatures = [
-  { icon: "🔮", title: "Daily Horoscope", description: "Personalized predictions based on your ascendant sign" },
-  { icon: "🖐️", title: "Palm Reading", description: "AI-powered palm analysis for life insights" },
-  { icon: "📊", title: "Birth Chart", description: "Complete astrological birth chart analysis" },
-  { icon: "💫", title: "2026 Predictions", description: "Your yearly and monthly cosmic forecast" },
-];
-
-// Flow B bundle features based on what was purchased
+// Bundle features based on what was purchased
 const getBundleFeatures = (bundleId: string | null) => {
   const features = [];
   
@@ -56,7 +48,6 @@ const getBundleFeatures = (bundleId: string | null) => {
 export default function Step20Page() {
   const router = useRouter();
   const [isAuthorized, setIsAuthorized] = useState(false);
-  const [isFlowB, setIsFlowB] = useState(false);
   const [bundleId, setBundleId] = useState<string | null>(null);
 
   // Route protection: Check if user has completed registration
@@ -64,12 +55,12 @@ export default function Step20Page() {
     const run = async () => {
       const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
       const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
-      const flow = localStorage.getItem("astrorekha_onboarding_flow");
       const bundle = localStorage.getItem("astrorekha_bundle_id");
       const storedEmail = (localStorage.getItem("astrorekha_email") || "").trim();
       const storedUserId = (localStorage.getItem("astrorekha_user_id") || "").trim();
 
-      setIsFlowB(flow === "flow-b");
+      localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
+      localStorage.setItem("astrorekha_layout_variant", "A");
       setBundleId(bundle);
 
       if (!hasCompletedRegistration) {
@@ -78,13 +69,7 @@ export default function Step20Page() {
           return;
         }
 
-        const onboardingFlow = localStorage.getItem("astrorekha_onboarding_flow");
-        if (onboardingFlow === "flow-b") {
-          const layoutVariant = localStorage.getItem("astrorekha_layout_variant");
-          router.replace(layoutVariant === "B" ? "/onboarding/bundle-pricing-b" : "/onboarding/bundle-pricing");
-        } else {
-          router.replace("/onboarding/step-17");
-        }
+        router.replace("/onboarding/bundle-pricing");
         return;
       }
 
@@ -127,8 +112,7 @@ export default function Step20Page() {
     run();
   }, [router]);
 
-  // Get features based on flow
-  const displayFeatures = isFlowB ? getBundleFeatures(bundleId) : subscriptionFeatures;
+  const displayFeatures = getBundleFeatures(bundleId);
 
   const handleAccessApp = async () => {
     // Set access cookie via API

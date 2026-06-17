@@ -54,7 +54,7 @@ function clearPendingPayment(txnid: string) {
 function resolveReturnTo(status: PaymentStatusResponse, pending: PendingPayment | null): string {
   const type = normalizeStatus(status.type || pending?.type || "");
   if (type === "bundle" || type === "bundle_payment") {
-    return "/onboarding/bundle-upsell-b";
+    return "/onboarding/bundle-upsell";
   }
   if (type === "upsell") {
     return "/onboarding/step-19";

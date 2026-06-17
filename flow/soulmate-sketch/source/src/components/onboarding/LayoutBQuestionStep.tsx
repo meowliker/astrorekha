@@ -3,76 +3,28 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OnboardingHeader, ProgressBar } from "@/components/onboarding/OnboardingHeader";
-import type { SketchQuestion, SketchQuestionId } from "@/lib/layout-b-funnel";
+import {
+  SKETCH_QUESTION_BANK,
+  type SketchQuestionId,
+} from "@/lib/layout-b-funnel";
 import { cn } from "@/lib/utils";
 import { generateUserId } from "@/lib/user-profile";
-import {
-  useOnboardingStore,
-  type ColorPreference,
-  type ElementPreference,
-  type RelationshipStatus,
-} from "@/lib/onboarding-store";
 
 const ANSWERS_STORAGE_KEY = "astrorekha_soulmate_answers";
-const MULTI_SELECT_QUESTION_IDS = new Set(["future_goal"]);
+const MULTI_SELECT_QUESTION_IDS = new Set(["main_worry", "future_goal"]);
 const ONBOARDING_LAYOUT_B_QUESTION_ORDER: SketchQuestionId[] = [
-  "relationship_status",
-  "future_goal",
-  "color_preference",
-  "element_preference",
+  "attracted_to",
+  "age_group",
+  "vibe",
+  "main_worry",
 ];
-
-const OLD_GENERIC_QUESTION_BANK: SketchQuestion[] = [
-  {
-    id: "relationship_status",
-    title: "To get started, tell us about your current relationship status",
-    options: [
-      { value: "in-relationship", label: "In a relationship", emoji: "💕" },
-      { value: "just-broke-up", label: "Just broke up", emoji: "💔" },
-      { value: "engaged", label: "Engaged", emoji: "🥰" },
-      { value: "married", label: "Married", emoji: "💍" },
-      { value: "looking-for-soulmate", label: "Looking for a soulmate", emoji: "🔍" },
-      { value: "single", label: "Single", emoji: "😊" },
-      { value: "complicated", label: "It's complicated", emoji: "🤔" },
-    ],
-  },
-  {
-    id: "future_goal",
-    title: "What are your goals for the future?",
-    options: [
-      { value: "family-harmony", label: "Family harmony", emoji: "👨‍👩‍👧" },
-      { value: "career", label: "Career", emoji: "🏆" },
-      { value: "health", label: "Health", emoji: "🍎" },
-      { value: "getting-married", label: "Getting married", emoji: "💒" },
-      { value: "traveling", label: "Traveling the world", emoji: "🌍" },
-      { value: "education", label: "Education", emoji: "🎓" },
-      { value: "friends", label: "Friends", emoji: "👥" },
-      { value: "children", label: "Children", emoji: "👶" },
-    ],
-  },
-  {
-    id: "color_preference",
-    title: "Which of the following colors do you prefer?",
-    options: [
-      { value: "red", label: "Red", emoji: "🔴" },
-      { value: "yellow", label: "Yellow", emoji: "🟡" },
-      { value: "blue", label: "Blue", emoji: "🔵" },
-      { value: "orange", label: "Orange", emoji: "🟠" },
-      { value: "green", label: "Green", emoji: "🟢" },
-      { value: "violet", label: "Violet", emoji: "🟣" },
-    ],
-  },
-  {
-    id: "element_preference",
-    title: "Which element of nature do you like the best?",
-    options: [
-      { value: "earth", label: "Earth", emoji: "🌍" },
-      { value: "water", label: "Water", emoji: "💧" },
-      { value: "fire", label: "Fire", emoji: "🔥" },
-      { value: "air", label: "Air", emoji: "🌬️" },
-    ],
-  },
-];
+const ATTRACTED_TO_ALIAS_KEYS = [
+  "attractedTo",
+  "attracted",
+  "gender_preference",
+  "genderPreference",
+  "target_gender",
+] as const;
 
 interface LayoutBQuestionStepProps {
   routeStep: number;
@@ -82,15 +34,9 @@ export function LayoutBQuestionStep({ routeStep }: LayoutBQuestionStepProps) {
   const router = useRouter();
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [ready, setReady] = useState(false);
-  const {
-    setRelationshipStatus,
-    setGoals,
-    setColorPreference,
-    setElementPreference,
-  } = useOnboardingStore();
 
   const questions = useMemo(() => {
-    const byId = new Map(OLD_GENERIC_QUESTION_BANK.map((q) => [q.id, q]));
+    const byId = new Map(SKETCH_QUESTION_BANK.map((q) => [q.id, q]));
     return ONBOARDING_LAYOUT_B_QUESTION_ORDER
       .map((id) => byId.get(id))
       .filter((q): q is NonNullable<typeof q> => !!q);
@@ -139,8 +85,19 @@ export function LayoutBQuestionStep({ routeStep }: LayoutBQuestionStepProps) {
     }
   };
 
+  const withAttractedAliases = (sourceAnswers: Record<string, string>) => {
+    const attractedValue = sourceAnswers.attracted_to;
+    if (!attractedValue) return sourceAnswers;
+
+    const next = { ...sourceAnswers };
+    for (const key of ATTRACTED_TO_ALIAS_KEYS) {
+      next[key] = attractedValue;
+    }
+    return next;
+  };
+
   const persistAnswers = (incomingAnswers: Record<string, string>) => {
-    const nextAnswers = mergeWithStoredAnswers(incomingAnswers);
+    const nextAnswers = withAttractedAliases(mergeWithStoredAnswers(incomingAnswers));
     localStorage.setItem(ANSWERS_STORAGE_KEY, JSON.stringify(nextAnswers));
 
     const userId = localStorage.getItem("astrorekha_user_id") || generateUserId();
@@ -155,18 +112,6 @@ export function LayoutBQuestionStep({ routeStep }: LayoutBQuestionStepProps) {
     });
 
     return nextAnswers;
-  };
-
-  const syncGenericAnswer = (questionId: SketchQuestionId, value: string) => {
-    if (questionId === "relationship_status") {
-      setRelationshipStatus(value as RelationshipStatus);
-    }
-    if (questionId === "color_preference") {
-      setColorPreference(value as ColorPreference);
-    }
-    if (questionId === "element_preference") {
-      setElementPreference(value as ElementPreference);
-    }
   };
 
   const parseMultiAnswer = (raw: string | undefined): string[] => {
@@ -194,16 +139,15 @@ export function LayoutBQuestionStep({ routeStep }: LayoutBQuestionStepProps) {
       }
 
       const mergedAnswers = persistAnswers(nextAnswers);
-      if (current.id === "future_goal") {
-        setGoals(nextValues);
-      }
       setAnswers(mergedAnswers);
       return;
     }
 
-    const nextAnswers = { ...answers, [current.id]: value };
+    const nextAnswers =
+      current.id === "attracted_to"
+        ? withAttractedAliases({ ...answers, [current.id]: value })
+        : { ...answers, [current.id]: value };
     const mergedAnswers = persistAnswers(nextAnswers);
-    syncGenericAnswer(current.id, value);
     setAnswers(mergedAnswers);
     handleContinue();
   };
@@ -213,7 +157,7 @@ export function LayoutBQuestionStep({ routeStep }: LayoutBQuestionStepProps) {
       router.push(`/onboarding/step-${routeStep + 1}`);
       return;
     }
-    router.push("/onboarding/step-11");
+    router.push("/onboarding/step-10b");
   };
 
   const handleBack = () => {

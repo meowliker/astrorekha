@@ -43,6 +43,12 @@ CREATE TABLE IF NOT EXISTS public.users (
   
   -- Sun sign (for horoscope emails)
   sun_sign TEXT,
+
+  -- WhatsApp marketing consent
+  whatsapp_number TEXT,
+  whatsapp_opt_in BOOLEAN DEFAULT FALSE,
+  whatsapp_opt_in_at TIMESTAMPTZ,
+  whatsapp_opt_in_source TEXT,
   
   -- Timestamps
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -145,10 +151,24 @@ CREATE TABLE IF NOT EXISTS public.leads (
   subscription_status TEXT DEFAULT 'no',
   onboarding_flow TEXT,
   ab_variant TEXT,
+  whatsapp_number TEXT,
+  whatsapp_opt_in BOOLEAN DEFAULT FALSE,
+  whatsapp_opt_in_at TIMESTAMPTZ,
+  whatsapp_opt_in_source TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_leads_email ON public.leads(email);
+
+-- Existing projects: add WhatsApp consent columns without recreating tables.
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS whatsapp_number TEXT;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS whatsapp_opt_in BOOLEAN DEFAULT FALSE;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS whatsapp_opt_in_at TIMESTAMPTZ;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS whatsapp_opt_in_source TEXT;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS whatsapp_number TEXT;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS whatsapp_opt_in BOOLEAN DEFAULT FALSE;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS whatsapp_opt_in_at TIMESTAMPTZ;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS whatsapp_opt_in_source TEXT;
 
 -- ============================================================
 -- 6. PALM_READINGS TABLE

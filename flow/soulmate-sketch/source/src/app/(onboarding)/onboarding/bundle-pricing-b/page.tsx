@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-// Legacy subscription trial page (variant B) — redirect to bundle pricing
-export default function AStep17Page() {
+export default function BundlePricingBPage() {
   const router = useRouter();
 
   useEffect(() => {
+    localStorage.setItem("astrorekha_onboarding_flow", "flow-b");
+    localStorage.setItem("astrorekha_layout_variant", "B");
     router.replace("/onboarding/bundle-pricing");
 
     const timeoutId = window.setTimeout(() => {
@@ -20,8 +21,8 @@ export default function AStep17Page() {
   }, [router]);
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 px-6">
-      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-6">
+      <Loader2 className="h-7 w-7 animate-spin text-primary" />
       <p className="text-sm text-muted-foreground">Loading checkout...</p>
       <Button size="sm" variant="outline" onClick={() => window.location.replace("/onboarding/bundle-pricing")}>
         Continue to Paywall
