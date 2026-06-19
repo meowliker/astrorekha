@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button";
 import { useUserStore, featureNames, featurePrices, UnlockedFeatures } from "@/lib/user-store";
 import { generateUserId } from "@/lib/user-profile";
 import { getPaymentAttributionPayload } from "@/lib/attribution-client";
+import Script from "next/script";
 
-// Map feature keys to report IDs for Razorpay checkout
+// Map feature keys to report IDs for PayU checkout
 const featureToReportId: Record<keyof UnlockedFeatures, string> = {
   palmReading: "report-palm",
   prediction2026: "report-2026",
@@ -98,6 +99,12 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
           returnTo: window.location.pathname,
         });
         const bolt = (window as any).bolt;
+        if (!bolt) {
+          setError("Payment checkout is still loading. Please try again.");
+          setIsProcessing(false);
+          return;
+        }
+
         bolt.launch({
           key: data.key,
           txnid: data.txnId,
@@ -174,9 +181,11 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
   const price = featurePrices[feature];
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
+    <>
+      <Script src="https://jssdk.payu.in/bolt/bolt.min.js" strategy="afterInteractive" />
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -257,9 +266,10 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
               Maybe later
             </button>
           </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 

@@ -38,10 +38,10 @@ const suggestedQuestions = [
 
 // Fallback coin packages (used while loading from API)
 const defaultCoinPackages = [
-  { id: 1, coins: 50, price: 199, discount: null, popular: false },
-  { id: 2, coins: 150, price: 509, discount: 15, popular: true },
-  { id: 3, coins: 300, price: 839, discount: 30, popular: false },
-  { id: 4, coins: 500, price: 1199, discount: 40, popular: false },
+  { id: 1, coins: 50, price: 416, discount: 17, popular: false },
+  { id: 2, coins: 150, price: 1082, discount: 28, popular: true },
+  { id: 3, coins: 300, price: 1666, discount: 33, popular: false },
+  { id: 4, coins: 500, price: 2499, discount: 29, popular: false },
 ];
 
 const PENDING_PAYMENT_KEY = "astrorekha_pending_payu_payment";
@@ -116,7 +116,7 @@ export default function ChatPage() {
   const coinPackages = pricing?.coinPackages?.filter(p => p.active).map((p, i) => ({
     id: i + 1,
     coins: p.coins,
-    price: p.displayPrice || p.price,
+    price: p.price,
     discount: p.originalPrice > p.price ? Math.round((1 - p.price / p.originalPrice) * 100) : null,
     popular: i === 1, // Second package is popular
     packageId: p.id,
