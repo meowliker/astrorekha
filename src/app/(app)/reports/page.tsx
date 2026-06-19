@@ -618,7 +618,7 @@ export default function DashboardPage() {
                       <p className="text-white/50 text-xs mt-0.5">AI portrait + relationship timeline highlights</p>
                       {!unlockedFeatures.soulmateSketch && (
                         <button className="mt-1 px-3 py-1 bg-primary/20 text-primary text-xs rounded-full">
-                          Unlock for ₹582
+                          Get Report
                         </button>
                       )}
                     </div>
