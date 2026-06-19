@@ -287,8 +287,8 @@ export const DEFAULT_PRICING: PricingConfig = {
     {
       id: "report-soulmate-sketch",
       name: "Soulmate Sketch",
-      price: 199,
-      originalPrice: 499,
+      price: 582,
+      originalPrice: 999,
       feature: "soulmateSketch",
       active: true,
     },

@@ -219,6 +219,6 @@ export const featurePrices: Record<keyof UnlockedFeatures, number> = {
   prediction2026: 582,
   birthChart: 582,
   compatibilityTest: 582,
-  soulmateSketch: 199,
+  soulmateSketch: 582,
   futurePartnerReport: 582,
 };
