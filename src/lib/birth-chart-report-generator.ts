@@ -290,7 +290,7 @@ applies. Keep tone warm and practical, not superstitious.`,
   const results = await Promise.all(
     sectionEntries.map(async ([key, prompt]) => {
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-5-20250929",
         max_tokens: 800,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: prompt }],

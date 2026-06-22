@@ -28,7 +28,7 @@ Provide insights about:
 Keep the tone mystical yet positive and encouraging. Format the response as JSON with keys: love, health, career, growth.`;
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5-20250929",
     max_tokens: 1024,
     messages: [
       {
@@ -56,7 +56,7 @@ Include:
 Keep it mystical, positive, and under 200 words. Format as JSON with keys: energy, love, career, luckyNumbers, luckyColor, advice.`;
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5-20250929",
     max_tokens: 512,
     messages: [
       {

@@ -283,7 +283,7 @@ If the user's question is about job/career/profession:
     });
 
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-5-20250929",
       max_tokens: 1024,
       system: fullSystemPrompt,
       messages,

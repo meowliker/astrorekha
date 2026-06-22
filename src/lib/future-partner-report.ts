@@ -230,7 +230,7 @@ Strict requirements:
   for (let attempt = 1; attempt <= PARTNER_REPORT_MAX_RETRIES; attempt += 1) {
     try {
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-5-20250929",
         max_tokens: 900,
         system:
           "You are a precise JSON generator. Always output strict JSON with the requested keys and valid JSON syntax.",

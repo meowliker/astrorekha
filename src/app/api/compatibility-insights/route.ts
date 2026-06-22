@@ -88,7 +88,7 @@ Generate a JSON response with the following structure (respond ONLY with valid J
 }`;
 
     const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-5-20250929",
       max_tokens: 1500,
       messages: [
         {
