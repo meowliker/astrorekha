@@ -219,7 +219,7 @@ function Step19Content() {
       };
       const upsellValue = offerList.reduce((sum, offerId) => sum + (offerPriceInr[offerId] ?? 499), 0);
 
-      pixelEvents.purchase(upsellValue, `upsell-${offers}`, `Upsell: ${offers}`);
+      pixelEvents.purchase(upsellValue, `upsell-${offers}`, `Upsell: ${offers}`, sessionId);
       localStorage.setItem(dedupeKey, "true");
     }
   }, [searchParams]);

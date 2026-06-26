@@ -648,8 +648,8 @@ export default function BundlePricingPage() {
           bundleId: selectedPlan,
           returnTo: "/onboarding/bundle-upsell",
         });
-        pixelEvents.initiateCheckout(plan.price, [plan.name]);
-        pixelEvents.addPaymentInfo(plan.price, plan.name);
+        pixelEvents.initiateCheckout(plan.price, [plan.name], data.txnId);
+        pixelEvents.addPaymentInfo(plan.price, plan.name, data.txnId);
         
         // Open PayU Bolt checkout
         const bolt = (window as Window & { bolt?: PayUBolt }).bolt;
@@ -673,7 +673,7 @@ export default function BundlePricingPage() {
           localStorage.setItem("astrorekha_purchase_type", "one-time");
           localStorage.setItem("astrorekha_bundle_id", selectedPlan);
           localStorage.setItem("astrorekha_main_txn_id", data.txnId);
-          pixelEvents.purchase(plan.price, selectedPlan, plan.name);
+          pixelEvents.purchase(plan.price, selectedPlan, plan.name, data.txnId);
           router.push("/onboarding/bundle-upsell");
         };
 

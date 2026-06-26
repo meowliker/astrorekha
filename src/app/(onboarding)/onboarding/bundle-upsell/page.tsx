@@ -199,7 +199,7 @@ function BundleUpsellContent() {
           "palm-birth-compat": 3158,
           "palm-birth-sketch": 3158,
         };
-        pixelEvents.purchase(planPrices[selectedPlan] || 1578, selectedPlan, selectedPlan);
+        pixelEvents.purchase(planPrices[selectedPlan] || 1578, selectedPlan, selectedPlan, sessionId);
         
         // Fulfill the checkout to unlock features
         fulfillCheckout(selectedPlan);
@@ -254,8 +254,8 @@ function BundleUpsellContent() {
           bundleId: selectedOfferIds,
           returnTo: "/onboarding/step-19",
         });
-        pixelEvents.initiateCheckout(selectedOfferPrice, selectedOfferNames);
-        pixelEvents.addPaymentInfo(selectedOfferPrice, selectedOfferLabel);
+        pixelEvents.initiateCheckout(selectedOfferPrice, selectedOfferNames, data.txnId);
+        pixelEvents.addPaymentInfo(selectedOfferPrice, selectedOfferLabel, data.txnId);
 
         const bolt = (window as Window & { bolt?: PayUBolt }).bolt;
         if (!bolt) {
@@ -267,7 +267,7 @@ function BundleUpsellContent() {
         const completeUpsellCheckout = () => {
           localStorage.removeItem(PENDING_PAYMENT_KEY);
           appendUpsellTxnId(data.txnId);
-          pixelEvents.purchase(selectedOfferPrice, `upsell-${selectedOfferIds}`, selectedOfferLabel);
+          pixelEvents.purchase(selectedOfferPrice, `upsell-${selectedOfferIds}`, selectedOfferLabel, data.txnId);
           setIsProcessing(false);
           router.push("/onboarding/step-19");
         };
