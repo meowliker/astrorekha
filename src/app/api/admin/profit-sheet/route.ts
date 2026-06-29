@@ -25,6 +25,7 @@ interface ProfitSheetRow {
   netRevenue: number;
   profitPercent: number;
   roas: number;
+  bundleRevenue: number;
   transactionCount: number;
   bundlePurchases: number;
   salesCount?: number;
@@ -434,12 +435,17 @@ export async function GET(request: NextRequest) {
       const adsCostINR = dailyMetaSpend.inr;
       const netRevenue = revenue - gst - adsCostINR;
       const profitPercent = revenue > 0 ? (netRevenue / revenue) * 100 : 0;
-      const roas = adsCostINR > 0 ? revenue / adsCostINR : 0;
       const salesCount = dayTransactions.filter((event) => event.kind === "sale").length;
       const refundCount = dayTransactions.filter((event) => event.kind === "refund").length;
-      const bundlePurchases = dayTransactions.filter(
+      const bundleSaleEvents = dayTransactions.filter(
         (event) => event.kind === "sale" && isBundlePurchaseType(event.type)
-      ).length;
+      );
+      const bundleRefundAmount = dayTransactions
+        .filter((event) => event.kind === "refund" && isBundlePurchaseType(event.type))
+        .reduce((sum, event) => sum + event.amount, 0);
+      const bundleRevenue = bundleSaleEvents.reduce((sum, event) => sum + event.amount, 0) - bundleRefundAmount;
+      const bundlePurchases = bundleSaleEvents.length;
+      const bundleRoas = adsCostINR > 0 ? bundleRevenue / adsCostINR : 0;
 
       return {
         date: costaRicaDate,
@@ -452,7 +458,8 @@ export async function GET(request: NextRequest) {
         adsCostINR,
         netRevenue,
         profitPercent,
-        roas,
+        roas: bundleRoas,
+        bundleRevenue,
         transactionCount: salesCount,
         bundlePurchases,
         salesCount,
@@ -470,6 +477,7 @@ export async function GET(request: NextRequest) {
         adsCostUSD: acc.adsCostUSD + row.adsCostUSD,
         adsCostINR: acc.adsCostINR + row.adsCostINR,
         netRevenue: acc.netRevenue + row.netRevenue,
+        bundleRevenue: acc.bundleRevenue + row.bundleRevenue,
         transactionCount: acc.transactionCount + row.transactionCount,
         bundlePurchases: acc.bundlePurchases + row.bundlePurchases,
         salesCount: acc.salesCount + (row.salesCount || row.transactionCount || 0),
@@ -483,6 +491,7 @@ export async function GET(request: NextRequest) {
         adsCostUSD: 0,
         adsCostINR: 0,
         netRevenue: 0,
+        bundleRevenue: 0,
         transactionCount: 0,
         bundlePurchases: 0,
         salesCount: 0,
@@ -490,7 +499,7 @@ export async function GET(request: NextRequest) {
       }
     );
 
-    const overallRoas = totals.adsCostINR > 0 ? totals.revenue / totals.adsCostINR : 0;
+    const overallRoas = totals.adsCostINR > 0 ? totals.bundleRevenue / totals.adsCostINR : 0;
     const overallProfitPercent = totals.revenue > 0 ? (totals.netRevenue / totals.revenue) * 100 : 0;
 
     return NextResponse.json({

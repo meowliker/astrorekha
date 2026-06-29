@@ -958,9 +958,10 @@ export async function GET(request: NextRequest) {
 
     const firstPartySales = totalSales;
     const metaPurchases = mergedTotals.purchases;
-    const attributionBaseline = firstPartyCampaignAttributionAvailable
-      ? firstPartyAttributedSales
-      : metaPurchases;
+    const attributionBaseline = Math.max(
+      metaPurchases,
+      firstPartyCampaignAttributionAvailable ? firstPartyAttributedSales : 0
+    );
     const organicOrUnattributedSales = clampNonNegative(firstPartySales - attributionBaseline);
 
     const totalSpendINR = mergedTotals.spend * exchangeRate;
@@ -993,7 +994,7 @@ export async function GET(request: NextRequest) {
           firstPartyAttributedRevenue: accountAttributed.revenue,
           metaPurchases: account.totals.purchases,
           organicOrUnattributedSales: clampNonNegative(
-            firstPartySales - (firstPartyCampaignAttributionAvailable ? accountAttributed.sales : account.totals.purchases)
+            firstPartySales - Math.max(account.totals.purchases, firstPartyCampaignAttributionAvailable ? accountAttributed.sales : 0)
           ),
         },
       };

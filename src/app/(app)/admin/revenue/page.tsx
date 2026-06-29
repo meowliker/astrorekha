@@ -56,7 +56,8 @@ interface ProfitSheetRow {
   adsCostINR: number;     // Meta Ads spend converted to INR
   netRevenue: number;     // Revenue - GST - Ads Cost (INR)
   profitPercent?: number; // Net Revenue / Revenue * 100
-  roas: number;           // Revenue / Ads Cost INR (if ads cost > 0)
+  roas: number;           // Bundle purchase revenue / Ads Cost INR (if ads cost > 0)
+  bundleRevenue?: number; // Revenue from bundle purchases only
   transactionCount: number;
   bundlePurchases: number;
 }
@@ -2258,6 +2259,7 @@ function ProfitSheetTab({
       adsCostUSD: acc.adsCostUSD + row.adsCostUSD,
       adsCostINR: acc.adsCostINR + row.adsCostINR,
       netRevenue: acc.netRevenue + row.netRevenue,
+      bundleRevenue: acc.bundleRevenue + (row.bundleRevenue ?? 0),
       transactionCount: acc.transactionCount + row.transactionCount,
       bundlePurchases: acc.bundlePurchases + row.bundlePurchases,
     }),
@@ -2269,11 +2271,12 @@ function ProfitSheetTab({
       adsCostUSD: 0,
       adsCostINR: 0,
       netRevenue: 0,
+      bundleRevenue: 0,
       transactionCount: 0,
       bundlePurchases: 0,
     }
   );
-  const overallRoas = totals.adsCostINR > 0 ? totals.revenue / totals.adsCostINR : 0;
+  const overallRoas = totals.adsCostINR > 0 ? totals.bundleRevenue / totals.adsCostINR : 0;
   const overallProfitPercent = totals.revenue > 0 ? (totals.netRevenue / totals.revenue) * 100 : 0;
 
   return (
@@ -2507,7 +2510,7 @@ function ProfitSheetTab({
           <p className="text-red-400 text-xl font-bold">{formatCurrency(totals.adsCostINR)}</p>
         </div>
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
-          <p className="text-white/50 text-xs mb-1">Net Revenue</p>
+          <p className="text-white/50 text-xs mb-1">Purchase</p>
           <p className={`text-xl font-bold ${totals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>
             {formatCurrency(totals.netRevenue)}
           </p>
@@ -2546,7 +2549,7 @@ function ProfitSheetTab({
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">GST (5%)</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Ads (USD)</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Ads (INR)</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Net Revenue</th>
+                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Purchase</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Profit %</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">ROAS</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Bundle Purchases</th>
@@ -2897,7 +2900,9 @@ function MetaBreakdownTab({
       0
     );
     const sectionMetaPurchases = activeCampaigns.reduce((sum, campaign) => sum + (campaign.purchases || 0), 0);
-    const sectionOrganicOrUnattributedSales = Math.max(sectionFirstPartySales - sectionFirstPartyAttributedSales, 0);
+    const sectionOrganicOrUnattributedSales =
+      sectionSourceBreakdown?.organicOrUnattributedSales ??
+      Math.max(sectionFirstPartySales - Math.max(sectionMetaPurchases, sectionFirstPartyAttributedSales), 0);
     const sectionSpendInr = activeCampaigns.reduce((sum, campaign) => {
       const currency = accountCurrencyById.get(normalizeAccountKey(campaign.accountId));
       return sum + toInrValue(campaign.spend, currency);
