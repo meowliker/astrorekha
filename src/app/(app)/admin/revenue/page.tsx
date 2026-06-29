@@ -684,7 +684,7 @@ export default function AdminRevenuePage() {
   const [profitSheetData, setProfitSheetData] = useState<ProfitSheetRow[]>([]);
   const [profitSheetLoading, setProfitSheetLoading] = useState(false);
   const [profitSheetError, setProfitSheetError] = useState<string | null>(null);
-  const [profitSheetStartDate, setProfitSheetStartDate] = useState<string>("2026-03-13");
+  const [profitSheetStartDate, setProfitSheetStartDate] = useState<string>("2026-06-21");
   const [profitSheetEndDate, setProfitSheetEndDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const [profitSheetFilter, setProfitSheetFilter] = useState<string>("all");
   const [profitSheetRoasFilter, setProfitSheetRoasFilter] = useState<string>("all");
@@ -2068,7 +2068,7 @@ function ProfitSheetTab({
     });
   };
 
-  const profitMinRangeStart = "2026-03-13";
+  const profitMinRangeStart = "2026-06-21";
   const [pickerStartDate, setPickerStartDate] = useState<string>(startDate);
   const [pickerEndDate, setPickerEndDate] = useState<string>(endDate);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
@@ -2510,7 +2510,7 @@ function ProfitSheetTab({
           <p className="text-red-400 text-xl font-bold">{formatCurrency(totals.adsCostINR)}</p>
         </div>
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
-          <p className="text-white/50 text-xs mb-1">Purchase</p>
+          <p className="text-white/50 text-xs mb-1">Profit</p>
           <p className={`text-xl font-bold ${totals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>
             {formatCurrency(totals.netRevenue)}
           </p>
@@ -2549,7 +2549,7 @@ function ProfitSheetTab({
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">GST (5%)</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Ads (USD)</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Ads (INR)</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Purchase</th>
+                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Profit</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Profit %</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">ROAS</th>
                   <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Bundle Purchases</th>

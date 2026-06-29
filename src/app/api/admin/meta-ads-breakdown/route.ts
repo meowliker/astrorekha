@@ -411,11 +411,11 @@ interface CampaignData extends AdMetrics {
 }
 
 const PURCHASE_ACTION_PRIORITY = [
-  "website_purchase",
-  "onsite_web_purchase",
   "offsite_conversion.fb_pixel_purchase",
-  "omni_purchase",
   "purchase",
+  "onsite_web_purchase",
+  "website_purchase",
+  "omni_purchase",
 ];
 
 function clampNonNegative(value: number): number {
@@ -824,6 +824,36 @@ export async function GET(request: NextRequest) {
               ...metrics,
               adsets,
             };
+          });
+
+          const knownCampaignIds = new Set(campaignsData.map((campaign: any) => String(campaign.id)));
+          campaignInsightsData.forEach((campaignInsight: any) => {
+            const campaignId = String(campaignInsight?.campaign_id || "");
+            if (!campaignId || knownCampaignIds.has(campaignId)) return;
+
+            const metrics = extractMetrics(campaignInsight);
+            if (
+              metrics.spend === 0 &&
+              metrics.purchases === 0 &&
+              metrics.impressions === 0 &&
+              metrics.clicks === 0
+            ) {
+              return;
+            }
+
+            campaigns.push({
+              id: `${normalizedAdAccountId}:${campaignId}`,
+              metaId: campaignId,
+              accountId: normalizedAdAccountId,
+              accountName: accountData?.name || `act_${normalizedAdAccountId}`,
+              name: campaignInsight?.campaign_name || campaignId,
+              status: "ACTIVE",
+              budget: null,
+              firstPartySales: 0,
+              firstPartyRevenue: 0,
+              ...metrics,
+              adsets: [],
+            });
           });
 
           campaigns.sort((a, b) => b.spend - a.spend);
