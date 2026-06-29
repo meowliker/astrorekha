@@ -673,7 +673,9 @@ export async function GET(request: NextRequest) {
     // Build date range params for Meta (date-granular, mapped from IST business window)
     const metaSinceDate = businessWindow.startDateIso;
     const metaUntilDate = businessWindow.endDateIso;
-    const dateParams = `time_range={"since":"${metaSinceDate}","until":"${metaUntilDate}"}`;
+    const dateParams = new URLSearchParams({
+      time_range: JSON.stringify({ since: metaSinceDate, until: metaUntilDate }),
+    }).toString();
 
     // Fields to fetch for insights
     const insightFields = "spend,impressions,clicks,cpc,cpm,ctr,reach,actions,cost_per_action_type,purchase_roas,website_purchase_roas";
