@@ -25,6 +25,7 @@ interface PayUTransaction {
   amount: string;
   status: string;
   addedon: string;
+  udf2?: string;
   net_amount_debit?: string;
   field9?: string;
   error_Message?: string;
@@ -151,6 +152,14 @@ function shiftIsoDate(isoDate: string, days: number): string {
 
 function getCurrentBusinessDateIso(now: Date): string {
   const ist = getIstDateTimeParts(now);
+  const isBeforeBoundary =
+    ist.hour < BUSINESS_BOUNDARY_HOUR ||
+    (ist.hour === BUSINESS_BOUNDARY_HOUR && ist.minute < BUSINESS_BOUNDARY_MINUTE);
+  return isBeforeBoundary ? shiftIsoDate(ist.dayKey, -1) : ist.dayKey;
+}
+
+function getBusinessDayKeyFromDate(date: Date): string {
+  const ist = getIstDateTimeParts(date);
   const isBeforeBoundary =
     ist.hour < BUSINESS_BOUNDARY_HOUR ||
     (ist.hour === BUSINESS_BOUNDARY_HOUR && ist.minute < BUSINESS_BOUNDARY_MINUTE);
@@ -367,6 +376,15 @@ function parsePayUTimestamp(value: unknown): Date | null {
   return null;
 }
 
+function normalizePurchaseType(value: string | null | undefined): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isBundlePurchaseType(value: string | null | undefined): boolean {
+  const normalized = normalizePurchaseType(value);
+  return normalized === "bundle" || normalized === "main" || normalized === "package";
+}
+
 function formatIstDateTime(date: Date): string {
   const value = new Intl.DateTimeFormat("en-IN", {
     timeZone: IST_TIMEZONE,
@@ -577,8 +595,8 @@ export async function GET(request: NextRequest) {
       ? resolveCustomBusinessWindow(customStartDateValue, customEndDate, now)
       : resolvePresetBusinessWindow(datePreset, now);
 
-    const payuFetchStartDate = getIstDateTimeParts(businessWindow.start).dayKey;
-    const payuFetchEndDate = getIstDateTimeParts(businessWindow.end).dayKey;
+    const payuFetchStartDate = businessWindow.startDateIso;
+    const payuFetchEndDate = shiftIsoDate(businessWindow.endDateIso, 1);
 
     // Fetch PayU transactions for the date range to get actual revenue
     console.log(
@@ -598,13 +616,19 @@ export async function GET(request: NextRequest) {
         txn,
         financial: classifyPayUEvent(txn as Record<string, unknown>),
         timestamp: parsePayUTimestamp(txn?.addedon),
+        dayKey: null as string | null,
+      }))
+      .map((row) => ({
+        ...row,
+        dayKey: row.timestamp ? getBusinessDayKeyFromDate(row.timestamp) : null,
       }))
       .filter(
         (row) =>
           row.financial.kind !== "ignore" &&
           !!row.timestamp &&
-          row.timestamp >= businessWindow.start &&
-          row.timestamp <= businessWindow.end
+          !!row.dayKey &&
+          row.dayKey >= businessWindow.startDateIso &&
+          row.dayKey <= businessWindow.endDateIso
       );
 
     const grossRevenue = classifiedPayu
@@ -616,6 +640,9 @@ export async function GET(request: NextRequest) {
     const totalRevenue = grossRevenue - refundAmount;
     const totalSales = classifiedPayu.filter((row) => row.financial.kind === "sale").length;
     const totalRefunds = classifiedPayu.filter((row) => row.financial.kind === "refund").length;
+    const bundleSales = classifiedPayu.filter(
+      (row) => row.financial.kind === "sale" && isBundlePurchaseType(row.txn?.udf2)
+    ).length;
     console.log(`PayU: ${totalSales} sales, ₹${totalRevenue.toFixed(2)} revenue`);
 
     type PaymentAttributionRow = {
@@ -988,7 +1015,7 @@ export async function GET(request: NextRequest) {
       }))
     );
 
-    const firstPartySales = totalSales;
+    const firstPartySales = bundleSales;
     const metaPurchases = mergedTotals.purchases;
     const attributionBaseline = Math.max(
       metaPurchases,
