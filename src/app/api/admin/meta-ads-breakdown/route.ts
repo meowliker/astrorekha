@@ -376,6 +376,12 @@ function parsePayUTimestamp(value: unknown): Date | null {
   return null;
 }
 
+function parsePayUAddedOnTimestamp(value: unknown): Date | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = new Date(value.trim().replace(" ", "T") + "+05:30");
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function normalizePurchaseType(value: string | null | undefined): string {
   return String(value || "").trim().toLowerCase();
 }
@@ -615,7 +621,7 @@ export async function GET(request: NextRequest) {
       .map((txn: any) => ({
         txn,
         financial: classifyPayUEvent(txn as Record<string, unknown>),
-        timestamp: parsePayUTimestamp(txn?.addedon),
+        timestamp: parsePayUAddedOnTimestamp(txn?.addedon),
         dayKey: null as string | null,
       }))
       .map((row) => ({
