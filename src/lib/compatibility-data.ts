@@ -22,6 +22,66 @@ export interface CompatibilityResult {
   createdAt: string;
 }
 
+type CompatibilityRow = {
+  sign1?: string;
+  sign2?: string;
+  overallScore?: number;
+  emotionalScore?: number;
+  intellectualScore?: number;
+  physicalScore?: number;
+  spiritualScore?: number;
+  toxicityScore?: number;
+  toxicityDescription?: string;
+  createdAt?: string;
+  overall_score?: number;
+  emotional_score?: number;
+  intellectual_score?: number;
+  physical_score?: number;
+  spiritual_score?: number;
+  toxicity_score?: number;
+  toxicity_description?: string;
+  created_at?: string;
+  summary?: string;
+  strengths?: string[];
+  challenges?: ChallengeItem[];
+};
+
+function toCompatibilityResult(row: CompatibilityRow): CompatibilityResult {
+  return {
+    sign1: row.sign1 || "",
+    sign2: row.sign2 || "",
+    overallScore: row.overallScore ?? row.overall_score ?? 0,
+    emotionalScore: row.emotionalScore ?? row.emotional_score ?? 0,
+    intellectualScore: row.intellectualScore ?? row.intellectual_score ?? 0,
+    physicalScore: row.physicalScore ?? row.physical_score ?? 0,
+    spiritualScore: row.spiritualScore ?? row.spiritual_score ?? 0,
+    summary: row.summary || "",
+    strengths: row.strengths || [],
+    challenges: row.challenges || [],
+    toxicityScore: row.toxicityScore ?? row.toxicity_score ?? 0,
+    toxicityDescription: row.toxicityDescription ?? row.toxicity_description ?? "",
+    createdAt: row.createdAt ?? row.created_at ?? new Date().toISOString(),
+  };
+}
+
+export function toCompatibilityRow(result: CompatibilityResult) {
+  return {
+    sign1: result.sign1,
+    sign2: result.sign2,
+    overall_score: result.overallScore,
+    emotional_score: result.emotionalScore,
+    intellectual_score: result.intellectualScore,
+    physical_score: result.physicalScore,
+    spiritual_score: result.spiritualScore,
+    summary: result.summary,
+    strengths: result.strengths,
+    challenges: result.challenges,
+    toxicity_score: result.toxicityScore,
+    toxicity_description: result.toxicityDescription,
+    created_at: result.createdAt,
+  };
+}
+
 // Get compatibility result from Supabase
 export async function getCompatibilityResult(
   sign1: string,
@@ -33,9 +93,7 @@ export async function getCompatibilityResult(
     
     const { data } = await supabase.from("compatibility").select("*").eq("id", docId).single();
     
-    if (data) {
-      return data as CompatibilityResult;
-    }
+    if (data) return toCompatibilityResult(data as CompatibilityRow);
     
     return null;
   } catch (error) {
@@ -54,8 +112,12 @@ export async function saveCompatibilityResult(
     
     await supabase.from("compatibility").upsert({
       id: docId,
-      ...result,
-      created_at: new Date().toISOString(),
+      ...toCompatibilityRow({
+        ...result,
+        sign1: s1,
+        sign2: s2,
+        createdAt: new Date().toISOString(),
+      }),
     }, { onConflict: "id" });
     
     return true;
@@ -72,6 +134,66 @@ export const ZODIAC_SIGNS = [
   "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"
 ];
 
+export const SIGN_ELEMENTS: Record<string, string> = {
+  Aries: "fire", Taurus: "earth", Gemini: "air", Cancer: "water",
+  Leo: "fire", Virgo: "earth", Libra: "air", Scorpio: "water",
+  Sagittarius: "fire", Capricorn: "earth", Aquarius: "air", Pisces: "water"
+};
+
+export const SIGN_MODALITIES: Record<string, string> = {
+  Aries: "cardinal", Taurus: "fixed", Gemini: "mutable", Cancer: "cardinal",
+  Leo: "fixed", Virgo: "mutable", Libra: "cardinal", Scorpio: "fixed",
+  Sagittarius: "mutable", Capricorn: "cardinal", Aquarius: "fixed", Pisces: "mutable"
+};
+
+function clampScore(value: number, min = 42, max = 96): number {
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function zodiacDistance(sign1: string, sign2: string): number {
+  const idx1 = ZODIAC_SIGNS.indexOf(sign1);
+  const idx2 = ZODIAC_SIGNS.indexOf(sign2);
+  const rawDistance = Math.abs(idx1 - idx2);
+  return Math.min(rawDistance, 12 - rawDistance);
+}
+
+function elementAdjustment(element1: string, element2: string): number {
+  if (element1 === element2) return 3;
+  if ((element1 === "fire" && element2 === "air") || (element1 === "air" && element2 === "fire")) return 5;
+  if ((element1 === "earth" && element2 === "water") || (element1 === "water" && element2 === "earth")) return 5;
+  if ((element1 === "fire" && element2 === "water") || (element1 === "water" && element2 === "fire")) return -6;
+  if ((element1 === "earth" && element2 === "air") || (element1 === "air" && element2 === "earth")) return -4;
+  return 0;
+}
+
+function aspectBaseScore(distance: number): number {
+  switch (distance) {
+    case 0:
+      return 78; // conjunction: familiar, strong, sometimes too similar
+    case 2:
+      return 81; // sextile: cooperative and supportive
+    case 3:
+      return 58; // square: friction that needs effort
+    case 4:
+      return 86; // trine: natural ease and harmony
+    case 5:
+      return 57; // quincunx: adjustment and learning
+    case 6:
+      return 78; // opposition: magnetic but balancing
+    default:
+      return 62; // semi-sextile: workable but less natural
+  }
+}
+
+function deterministicVariation(sign1: string, sign2: string, category: string, spread = 5): number {
+  const key = [sign1, sign2].sort().join(":") + `:${category}`;
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash * 31 + key.charCodeAt(i)) % 1009;
+  }
+  return (hash % (spread * 2 + 1)) - spread;
+}
+
 // Generate a deterministic compatibility score based on zodiac elements and modalities
 export function generateCompatibilityScores(sign1: string, sign2: string): {
   overall: number;
@@ -80,63 +202,27 @@ export function generateCompatibilityScores(sign1: string, sign2: string): {
   physical: number;
   spiritual: number;
 } {
-  const elements: Record<string, string> = {
-    Aries: "fire", Taurus: "earth", Gemini: "air", Cancer: "water",
-    Leo: "fire", Virgo: "earth", Libra: "air", Scorpio: "water",
-    Sagittarius: "fire", Capricorn: "earth", Aquarius: "air", Pisces: "water"
-  };
-  
-  const modalities: Record<string, string> = {
-    Aries: "cardinal", Taurus: "fixed", Gemini: "mutable", Cancer: "cardinal",
-    Leo: "fixed", Virgo: "mutable", Libra: "cardinal", Scorpio: "fixed",
-    Sagittarius: "mutable", Capricorn: "cardinal", Aquarius: "fixed", Pisces: "mutable"
-  };
-
-  const e1 = elements[sign1];
-  const e2 = elements[sign2];
-  const m1 = modalities[sign1];
-  const m2 = modalities[sign2];
-
-  let baseScore = 65;
-
-  // Same sign bonus
-  if (sign1 === sign2) baseScore = 75;
-
-  // Element compatibility
-  if (e1 === e2) baseScore += 15; // Same element
-  else if ((e1 === "fire" && e2 === "air") || (e1 === "air" && e2 === "fire")) baseScore += 12;
-  else if ((e1 === "earth" && e2 === "water") || (e1 === "water" && e2 === "earth")) baseScore += 12;
-  else if ((e1 === "fire" && e2 === "water") || (e1 === "water" && e2 === "fire")) baseScore -= 5;
-  else if ((e1 === "earth" && e2 === "air") || (e1 === "air" && e2 === "earth")) baseScore -= 3;
-
-  // Modality compatibility
-  if (m1 === m2) baseScore += 5;
-  else if (m1 !== m2) baseScore += 3;
-
-  // Add some variation based on sign positions
-  const idx1 = ZODIAC_SIGNS.indexOf(sign1);
-  const idx2 = ZODIAC_SIGNS.indexOf(sign2);
-  const distance = Math.abs(idx1 - idx2);
-  
-  // Opposite signs (6 apart) have magnetic attraction
-  if (distance === 6) baseScore += 8;
-  // Trine (4 apart) is harmonious
-  if (distance === 4 || distance === 8) baseScore += 6;
-  // Square (3 apart) is challenging but dynamic
-  if (distance === 3 || distance === 9) baseScore -= 2;
-
-  // Clamp to reasonable range
-  baseScore = Math.max(55, Math.min(95, baseScore));
-
-  // Generate sub-scores with variation
-  const variation = () => Math.floor(Math.random() * 10) - 5;
+  const e1 = SIGN_ELEMENTS[sign1];
+  const e2 = SIGN_ELEMENTS[sign2];
+  const m1 = SIGN_MODALITIES[sign1];
+  const m2 = SIGN_MODALITIES[sign2];
+  const distance = zodiacDistance(sign1, sign2);
+  const modalityAdjustment = m1 === m2 ? 2 : 1;
+  const overall = clampScore(aspectBaseScore(distance) + elementAdjustment(e1, e2) + modalityAdjustment);
+  const hasWater = e1 === "water" || e2 === "water";
+  const hasAir = e1 === "air" || e2 === "air";
+  const hasFire = e1 === "fire" || e2 === "fire";
+  const emotionalBase = overall + (hasWater ? 4 : -7) + (e1 === e2 ? 2 : 0) - (distance === 6 ? 3 : 0);
+  const intellectualBase = overall + (hasAir ? 1 : 0) + (m1 === "mutable" || m2 === "mutable" ? 1 : 0);
+  const physicalBase = overall + (hasFire ? 4 : 0) + (distance === 6 ? 2 : 0);
+  const spiritualBase = overall + (hasWater ? 3 : -4) + (distance === 4 ? 4 : 0) - (distance === 6 ? 1 : 0);
   
   return {
-    overall: baseScore,
-    emotional: Math.max(50, Math.min(98, baseScore + variation())),
-    intellectual: Math.max(50, Math.min(98, baseScore + variation())),
-    physical: Math.max(50, Math.min(98, baseScore + variation())),
-    spiritual: Math.max(50, Math.min(98, baseScore + variation())),
+    overall,
+    emotional: clampScore(emotionalBase + deterministicVariation(sign1, sign2, "emotional"), 35, 98),
+    intellectual: clampScore(intellectualBase + deterministicVariation(sign1, sign2, "intellectual"), 35, 98),
+    physical: clampScore(physicalBase + deterministicVariation(sign1, sign2, "physical"), 35, 98),
+    spiritual: clampScore(spiritualBase + deterministicVariation(sign1, sign2, "spiritual"), 35, 98),
   };
 }
 
@@ -305,14 +391,8 @@ export const COMPATIBILITY_INSIGHTS: Record<string, {
 
 // Get element-based insight key
 export function getInsightKey(sign1: string, sign2: string): string {
-  const elements: Record<string, string> = {
-    Aries: "fire", Taurus: "earth", Gemini: "air", Cancer: "water",
-    Leo: "fire", Virgo: "earth", Libra: "air", Scorpio: "water",
-    Sagittarius: "fire", Capricorn: "earth", Aquarius: "air", Pisces: "water"
-  };
-  
-  const e1 = elements[sign1];
-  const e2 = elements[sign2];
+  const e1 = SIGN_ELEMENTS[sign1];
+  const e2 = SIGN_ELEMENTS[sign2];
   const [el1, el2] = [e1, e2].sort();
   
   return `${el1}_${el2}`;

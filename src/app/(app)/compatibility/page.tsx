@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, ChevronDown, ChevronUp, Lightbulb } from "lucide-react";
+import { ArrowLeft, Loader2, ChevronDown, ChevronUp, Lightbulb, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getZodiacSign } from "@/lib/astrology-api";
 import { getInstantCompatibility, getCompatibilityResult, saveCompatibilityResult } from "@/lib/compatibility-data";
@@ -442,6 +442,12 @@ export default function CompatibilityPage() {
         
         // Merge cached insights
         fullResult.relationshipGlance = cachedResult.summary;
+        fullResult.wheelOfBalance = {
+          emotional: cachedResult.emotionalScore,
+          intellectual: cachedResult.intellectualScore,
+          spiritual: cachedResult.spiritualScore,
+          sexual: cachedResult.physicalScore,
+        };
         fullResult.wheelDescriptions = {
           emotional: cachedResult.strengths[0] || "Strong emotional connection",
           intellectual: cachedResult.strengths[1] || "Good mental compatibility",
@@ -759,6 +765,15 @@ export default function CompatibilityPage() {
                   ) : (
                     "Check compatibility"
                   )}
+                </Button>
+
+                <Button
+                  onClick={() => router.push("/compatibility/partner")}
+                  variant="outline"
+                  className="w-full border-[#D4B896]/30 bg-[#1A1F2E]/50 text-[#D4B896] hover:bg-[#D4B896]/10 hover:text-[#D4B896] py-6 rounded-full text-base font-medium"
+                >
+                  <Moon className="w-4 h-4 mr-2" />
+                  Check using partner birth details
                 </Button>
               </motion.div>
             ) : (
