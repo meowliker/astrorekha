@@ -7,7 +7,7 @@ import { getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const APP_LAUNCH_DATE = "2026-06-21";
+const APP_LAUNCH_DATE = "2026-03-13";
 
 // Meta API
 const META_API_VERSION = "v21.0";

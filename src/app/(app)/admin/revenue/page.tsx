@@ -2068,7 +2068,7 @@ function ProfitSheetTab({
     });
   };
 
-  const profitMinRangeStart = "2026-06-21";
+  const profitMinRangeStart = "2026-03-13";
   const [pickerStartDate, setPickerStartDate] = useState<string>(startDate);
   const [pickerEndDate, setPickerEndDate] = useState<string>(endDate);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
