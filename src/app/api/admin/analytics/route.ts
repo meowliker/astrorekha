@@ -41,6 +41,8 @@ interface HourlyProfitabilityPoint {
   roas: number;
 }
 type MatrixDayMode = "calendar_ist" | "business_1130_ist";
+const IST_TIMEZONE = "Asia/Kolkata";
+const DEFAULT_GA4_PROPERTY_TIMEZONE = "America/Costa_Rica";
 
 interface RouteMetric {
   route: string;
@@ -85,7 +87,7 @@ function formatHourLabel(hour: number, mode: MatrixDayMode): string {
 
 function getIstDateTimeParts(date: Date): { dayKey: string; hour: number; minute: number } {
   const formatter = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Kolkata",
+    timeZone: IST_TIMEZONE,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -105,6 +107,56 @@ function getIstDateTimeParts(date: Date): { dayKey: string; hour: number; minute
     hour: Number.isFinite(hour) ? hour : 0,
     minute: Number.isFinite(minute) ? minute : 0,
   };
+}
+
+function getTimeZoneOffsetMinutes(timeZone: string, date: Date): number {
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = formatter.formatToParts(date);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value || 0);
+  const zonedAsUtc = Date.UTC(
+    get("year"),
+    get("month") - 1,
+    get("day"),
+    get("hour"),
+    get("minute"),
+    get("second")
+  );
+  return Math.round((zonedAsUtc - date.getTime()) / 60000);
+}
+
+function zonedDateTimeToUtc(
+  timeZone: string,
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute = 0
+): Date {
+  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
+  const firstOffset = getTimeZoneOffsetMinutes(timeZone, utcGuess);
+  const firstUtc = new Date(utcGuess.getTime() - firstOffset * 60 * 1000);
+  const secondOffset = getTimeZoneOffsetMinutes(timeZone, firstUtc);
+  return new Date(utcGuess.getTime() - secondOffset * 60 * 1000);
+}
+
+function parseGa4DateHour(dateHourRaw: string, propertyTimeZone: string): Date | null {
+  if (!/^\d{10}$/.test(dateHourRaw)) return null;
+  const year = Number(dateHourRaw.slice(0, 4));
+  const month = Number(dateHourRaw.slice(4, 6));
+  const day = Number(dateHourRaw.slice(6, 8));
+  const hour = Number(dateHourRaw.slice(8, 10));
+  if (![year, month, day, hour].every(Number.isFinite)) return null;
+  const parsed = zonedDateTimeToUtc(propertyTimeZone, year, month, day, hour);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function shiftIsoDate(isoDate: string, days: number): string {
@@ -136,7 +188,7 @@ function getMatrixDateGroup(date: Date, mode: MatrixDayMode): { dayKey: string; 
 function getWeekdayFromIsoDate(isoDate: string): string {
   if (!isoDate) return "N/A";
   return new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Kolkata",
+    timeZone: IST_TIMEZONE,
     weekday: "long",
   }).format(new Date(`${isoDate}T12:00:00.000Z`));
 }
@@ -376,6 +428,10 @@ async function fetchGoogleAnalyticsData(
   const propertyId = process.env.GA4_PROPERTY_ID || process.env.GOOGLE_ANALYTICS_PROPERTY_ID;
   const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  const gaPropertyTimeZone =
+    process.env.GA4_PROPERTY_TIMEZONE ||
+    process.env.GOOGLE_ANALYTICS_PROPERTY_TIMEZONE ||
+    DEFAULT_GA4_PROPERTY_TIMEZONE;
 
   if (!propertyId || !clientEmail || !privateKey) {
     return {
@@ -408,8 +464,9 @@ async function fetchGoogleAnalyticsData(
 
     const analyticsData = google.analyticsdata({ version: "v1beta", auth });
 
-    const trafficEndDate = dayMode === "business_1130_ist" ? shiftIsoDate(endDate, 1) : endDate;
-    const trafficRange = [{ startDate, endDate: trafficEndDate }];
+    const trafficStartDate = dayMode === "calendar_ist" ? shiftIsoDate(startDate, -1) : startDate;
+    const trafficEndDate = shiftIsoDate(endDate, 1);
+    const trafficRange = [{ startDate: trafficStartDate, endDate: trafficEndDate }];
     const routeRange = [{ startDate, endDate }];
 
     const [hourResp, routeResp] = await Promise.all([
@@ -442,12 +499,9 @@ async function fetchGoogleAnalyticsData(
     const hourlyMap = new Map<string, number>();
     for (const row of hourResp.data.rows || []) {
       const dateHourRaw = row.dimensionValues?.[0]?.value || "";
-      // GA dateHour format: YYYYMMDDHH
-      if (!/^\d{10}$/.test(dateHourRaw)) continue;
-      const parsed = new Date(
-        `${dateHourRaw.slice(0, 4)}-${dateHourRaw.slice(4, 6)}-${dateHourRaw.slice(6, 8)}T${dateHourRaw.slice(8, 10)}:00:00+05:30`
-      );
-      if (Number.isNaN(parsed.getTime())) continue;
+      // GA dateHour format is YYYYMMDDHH in the GA4 property timezone.
+      const parsed = parseGa4DateHour(dateHourRaw, gaPropertyTimeZone);
+      if (!parsed) continue;
       const grouped = getMatrixDateGroup(parsed, dayMode);
       if (grouped.dayKey < startDate || grouped.dayKey > endDate) continue;
       const sessions = toNumber(row.metricValues?.[0]?.value);
@@ -459,11 +513,8 @@ async function fetchGoogleAnalyticsData(
     const weekdayMap = new Map<string, number>();
     for (const row of hourResp.data.rows || []) {
       const dateHourRaw = row.dimensionValues?.[0]?.value || "";
-      if (!/^\d{10}$/.test(dateHourRaw)) continue;
-      const parsed = new Date(
-        `${dateHourRaw.slice(0, 4)}-${dateHourRaw.slice(4, 6)}-${dateHourRaw.slice(6, 8)}T${dateHourRaw.slice(8, 10)}:00:00+05:30`
-      );
-      if (Number.isNaN(parsed.getTime())) continue;
+      const parsed = parseGa4DateHour(dateHourRaw, gaPropertyTimeZone);
+      if (!parsed) continue;
       const grouped = getMatrixDateGroup(parsed, dayMode);
       if (grouped.dayKey < startDate || grouped.dayKey > endDate) continue;
       const sessions = toNumber(row.metricValues?.[0]?.value);
@@ -516,8 +567,8 @@ async function fetchGoogleAnalyticsData(
         configured: true,
         connected: true,
         message: dayMode === "business_1130_ist"
-          ? "Connected to GA4 Data API (CST mode uses shifted hour/day aggregation)."
-          : "Connected to GA4 Data API.",
+          ? `Connected to GA4 Data API (${gaPropertyTimeZone}; CST mode uses shifted hour/day aggregation).`
+          : `Connected to GA4 Data API (${gaPropertyTimeZone}; hourly data converted to IST).`,
       },
     };
   } catch (error: any) {
