@@ -43,3 +43,6 @@ next-env.d.ts
 DEPLOYMENT_CHECKLIST.md
 *.md
 *.txt
+
+# Local-only mock page gallery. Do not deploy.
+/src/app/page-previews/

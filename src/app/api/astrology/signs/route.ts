@@ -52,9 +52,11 @@ const MONTH_MAP: Record<string, number> = {
   july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
 };
 
+const SIGNS_CACHE_VERSION = "vedic_moon_v1";
+
 // Generate a cache key from birth data
 function generateCacheKey(birthMonth: string, birthDay: string, birthYear: string, birthHour?: string, birthMinute?: string, birthPeriod?: string, birthPlace?: string): string {
-  const parts = [birthMonth, birthDay, birthYear, birthHour || "unknown", birthMinute || "00", birthPeriod || "unknown", birthPlace || "unknown"];
+  const parts = [SIGNS_CACHE_VERSION, birthMonth, birthDay, birthYear, birthHour || "unknown", birthMinute || "00", birthPeriod || "unknown", birthPlace || "unknown"];
   return parts.join("_").toLowerCase().replace(/[^a-z0-9_]/g, "_");
 }
 
@@ -112,8 +114,9 @@ export async function POST(request: NextRequest) {
     });
 
     const bigThree = astroResult.chart?.big_three || {};
+    const planets = astroResult.chart?.planets || {};
     const sunSignName = bigThree.sun?.sign || "Aries";
-    const moonSignName = bigThree.moon?.sign || "Aries";
+    const moonSignName = planets.Moon?.sidereal?.sign || bigThree.moon?.sign || "Aries";
     const risingSignName = bigThree.rising?.sign || sunSignName;
 
     // Format response to match what the frontend expects

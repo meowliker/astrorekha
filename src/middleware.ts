@@ -2,6 +2,10 @@ import { type NextRequest, NextResponse } from "next/server";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  if (process.env.NODE_ENV === "production" && pathname.startsWith("/page-previews")) {
+    return new NextResponse("Not found", { status: 404 });
+  }
   
   // Protected routes that require onboarding completion
   const protectedRoutes = [
