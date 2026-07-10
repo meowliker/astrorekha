@@ -185,7 +185,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
   const description = isVastuGuide
     ? "Get the ebook with practical Vastu guidance for home, entrance, remedies, and business."
     : `Get your personalized ${featureName.toLowerCase()} and discover deeper insights about your cosmic journey.`;
-  const ctaLabel = isVastuGuide ? "Get Ebook" : `Get ${featureName}`;
+  const ctaLabel = isVastuGuide ? "Get EBook" : `Get ${featureName}`;
 
   return (
     <>

@@ -794,7 +794,7 @@ export default function DashboardPage() {
                         </p>
                         {!unlockedFeatures.vastuShastraGuide && (
                           <button className="mt-1 px-3 py-1 bg-primary/20 text-primary text-xs rounded-full">
-                            Get Report
+                            Get EBook
                           </button>
                         )}
                       </div>
