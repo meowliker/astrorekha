@@ -180,6 +180,12 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
 
   const featureName = featureNames[feature];
   const price = featurePrices[feature];
+  const isVastuGuide = feature === "vastuShastraGuide";
+  const displayName = isVastuGuide ? "Vastu Shastra Guide" : featureName;
+  const description = isVastuGuide
+    ? "Get the ebook with practical Vastu guidance for home, entrance, remedies, and business."
+    : `Get your personalized ${featureName.toLowerCase()} and discover deeper insights about your cosmic journey.`;
+  const ctaLabel = isVastuGuide ? "Get Ebook" : `Get ${featureName}`;
 
   return (
     <>
@@ -217,22 +223,22 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
 
             {/* Title */}
             <h2 className="text-white text-xl font-bold text-center mb-2">
-              Unlock {featureName}
+              Unlock {displayName}
             </h2>
 
             {/* Description */}
             <p className="text-white/60 text-center text-sm mb-6">
-              Get your personalized {featureName.toLowerCase()} and discover deeper insights about your cosmic journey.
+              {description}
             </p>
 
             {/* Price */}
             <div className="bg-white/5 rounded-2xl p-4 mb-6 border border-white/10">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-primary" />
-                  <span className="text-white font-medium">{featureName}</span>
+                <div className="flex min-w-0 items-center gap-2">
+                  <Sparkles className="w-5 h-5 flex-shrink-0 text-primary" />
+                  <span className="truncate text-white font-medium">{displayName}</span>
                 </div>
-                <div className="text-right">
+                <div className="ml-3 flex-shrink-0 text-right">
                   <span className="text-white text-xl font-bold">₹{price}</span>
                 </div>
               </div>
@@ -249,13 +255,13 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
             <Button
               onClick={handlePurchase}
               disabled={isProcessing}
-              className="w-full h-14 text-lg font-semibold bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+              className="w-full h-14 px-4 text-base sm:text-lg font-semibold whitespace-nowrap bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
               size="lg"
             >
               {isProcessing ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
-                `Get ${featureName}`
+                ctaLabel
               )}
             </Button>
 
