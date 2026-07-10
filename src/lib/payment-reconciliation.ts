@@ -21,6 +21,8 @@ const OFFER_ID_TO_FEATURE: Record<string, string> = {
   "soulmate-sketch": "soulmateSketch",
   "future-partner": "futurePartnerReport",
   "report-future-partner": "futurePartnerReport",
+  "vastu-shastra-guide": "vastuShastraGuide",
+  "report-vastu-shastra-guide": "vastuShastraGuide",
 };
 
 interface PaymentRow {
@@ -49,6 +51,7 @@ function mergeFeatures(
     compatibilityTest: false,
     soulmateSketch: false,
     futurePartnerReport: false,
+    vastuShastraGuide: false,
     ...(current || {}),
   };
 
@@ -158,6 +161,7 @@ export async function reconcilePaidPaymentsForEmail({
     compatibilityTest: false,
     soulmateSketch: false,
     futurePartnerReport: false,
+    vastuShastraGuide: false,
     ...(userData?.unlocked_features || {}),
   };
   let computedCoinsFromPayments = 0;

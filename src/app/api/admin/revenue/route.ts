@@ -8,6 +8,127 @@ import {
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const UPSELL_LABELS: Record<string, string> = {
+  "2026-predictions": "2026 Future Predictions",
+  prediction2026: "2026 Future Predictions",
+  compatibility: "Compatibility Report",
+  compatibilityTest: "Compatibility Report",
+  "birth-chart": "Birth Chart Report",
+  birthChart: "Birth Chart Report",
+  "soulmate-sketch": "Soulmate Sketch",
+  soulmateSketch: "Soulmate Sketch",
+  "vastu-shastra-guide": "Complete Vastu Shastra Guide Ebook",
+  "report-vastu-shastra-guide": "Complete Vastu Shastra Guide Ebook",
+  vastuShastraGuide: "Complete Vastu Shastra Guide Ebook",
+};
+
+function getPaymentUserKey(payment: any): string {
+  return String(payment?.userId || payment?.user_id || payment?.customerEmail || payment?.customer_email || "")
+    .trim()
+    .toLowerCase();
+}
+
+function parseUpsellItems(value: unknown): string[] {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => UPSELL_LABELS[item] || item.replace(/-/g, " "));
+}
+
+function buildUpsellAttachmentSummary(sales: any[]) {
+  const bundleBuyerKeys = new Set<string>();
+  const upsellsByBuyer = new Map<string, { items: Set<string>; revenue: number; itemRevenue: Map<string, number> }>();
+
+  for (const payment of sales) {
+    const userKey = getPaymentUserKey(payment);
+    if (!userKey) continue;
+
+    const type = String(payment?.type || "").trim().toLowerCase();
+    if (type === "bundle" || type === "bundle_payment") {
+      bundleBuyerKeys.add(userKey);
+      continue;
+    }
+
+    if (type !== "upsell") continue;
+
+    const itemNames = parseUpsellItems(payment?.bundle_id).length > 0
+      ? parseUpsellItems(payment?.bundle_id)
+      : parseUpsellItems(payment?.feature);
+    if (itemNames.length === 0) continue;
+
+    const current = upsellsByBuyer.get(userKey) || { items: new Set<string>(), revenue: 0, itemRevenue: new Map<string, number>() };
+    const amount = Number(payment?.amountInrAbs ?? payment?.amount ?? 0) || 0;
+    const allocatedAmount = itemNames.length > 0 ? amount / itemNames.length : 0;
+    itemNames.forEach((item) => current.items.add(item));
+    itemNames.forEach((item) => current.itemRevenue.set(item, (current.itemRevenue.get(item) || 0) + allocatedAmount));
+    current.revenue += amount;
+    upsellsByBuyer.set(userKey, current);
+  }
+
+  const bundleBuyerCount = bundleBuyerKeys.size;
+  const combinationMap = new Map<string, { items: string[]; buyers: number; revenue: number }>();
+  const itemMap = new Map<string, { item: string; buyers: number; revenue: number }>();
+  let noUpsellBuyers = 0;
+
+  for (const userKey of bundleBuyerKeys) {
+    const userUpsells = upsellsByBuyer.get(userKey);
+    if (!userUpsells || userUpsells.items.size === 0) {
+      noUpsellBuyers += 1;
+      continue;
+    }
+
+    const items = Array.from(userUpsells.items).sort();
+    const combinationKey = items.join(" + ");
+    const currentCombo = combinationMap.get(combinationKey) || { items, buyers: 0, revenue: 0 };
+    currentCombo.buyers += 1;
+    currentCombo.revenue += userUpsells.revenue;
+    combinationMap.set(combinationKey, currentCombo);
+
+    for (const item of items) {
+      const currentItem = itemMap.get(item) || { item, buyers: 0, revenue: 0 };
+      currentItem.buyers += 1;
+      currentItem.revenue += userUpsells.itemRevenue.get(item) || 0;
+      itemMap.set(item, currentItem);
+    }
+  }
+
+  const toPercent = (buyers: number) => (bundleBuyerCount > 0 ? Number(((buyers / bundleBuyerCount) * 100).toFixed(2)) : 0);
+  const combinationBreakdown = Array.from(combinationMap.values())
+    .map((row) => ({
+      label: row.items.join(" + "),
+      items: row.items,
+      itemCount: row.items.length,
+      buyers: row.buyers,
+      percentOfBundleBuyers: toPercent(row.buyers),
+      revenue: Number(row.revenue.toFixed(2)),
+    }))
+    .sort((a, b) => b.buyers - a.buyers || b.revenue - a.revenue);
+
+  const itemBreakdown = Array.from(itemMap.values())
+    .map((row) => ({
+      item: row.item,
+      buyers: row.buyers,
+      percentOfBundleBuyers: toPercent(row.buyers),
+      revenue: Number(row.revenue.toFixed(2)),
+    }))
+    .sort((a, b) => b.buyers - a.buyers || b.revenue - a.revenue);
+
+  const upsellBuyerCount = bundleBuyerCount - noUpsellBuyers;
+  const upsellRevenue = combinationBreakdown.reduce((sum, row) => sum + row.revenue, 0);
+
+  return {
+    bundleBuyerCount,
+    upsellBuyerCount,
+    noUpsellBuyers,
+    upsellAttachRate: toPercent(upsellBuyerCount),
+    noUpsellRate: toPercent(noUpsellBuyers),
+    upsellRevenue: Number(upsellRevenue.toFixed(2)),
+    combinationBreakdown,
+    itemBreakdown,
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     // Create fresh Supabase client directly - no caching
@@ -198,6 +319,7 @@ export async function GET(request: NextRequest) {
 
     const uniquePayingUsers = new Set(sales.map(p => p.userId).filter(Boolean)).size;
     const arpu = uniquePayingUsers > 0 ? (totalRevenue / uniquePayingUsers).toFixed(2) : "0";
+    const upsellAttachment = buildUpsellAttachmentSummary(sales);
 
     // Payment status breakdown
     const successfulPayments = sales.length;
@@ -301,6 +423,7 @@ export async function GET(request: NextRequest) {
       // Revenue breakdown
       revenueByType,
       bundleBreakdown,
+      upsellAttachment,
       arpu,
 
       // Transaction activity

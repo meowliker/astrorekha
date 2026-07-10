@@ -12,6 +12,7 @@ export interface UnlockedFeatures {
   compatibilityTest: boolean;
   soulmateSketch: boolean;
   futurePartnerReport: boolean;
+  vastuShastraGuide: boolean;
 }
 
 interface UserState {
@@ -55,6 +56,7 @@ interface UserState {
     prediction2026?: boolean;
     soulmateSketch?: boolean;
     futurePartnerReport?: boolean;
+    vastuShastraGuide?: boolean;
     coins?: number;
     purchasedBundle?: PurchasedBundle;
   }) => void;
@@ -67,6 +69,7 @@ const initialUnlockedFeatures: UnlockedFeatures = {
   compatibilityTest: false,
   soulmateSketch: false,
   futurePartnerReport: false,
+  vastuShastraGuide: false,
 };
 
 const initialState = {
@@ -102,6 +105,7 @@ export const useUserStore = create<UserState>()(
             compatibilityTest: true,
             soulmateSketch: true,
             futurePartnerReport: true,
+            vastuShastraGuide: true,
           },
         }),
 
@@ -157,6 +161,7 @@ export const useUserStore = create<UserState>()(
             compatibilityTest: true,
             soulmateSketch: true,
             futurePartnerReport: true,
+            vastuShastraGuide: true,
           },
         }),
 
@@ -175,6 +180,8 @@ export const useUserStore = create<UserState>()(
           soulmateSketch: data.unlockedFeatures?.soulmateSketch ?? data.soulmateSketch ?? false,
           futurePartnerReport:
             data.unlockedFeatures?.futurePartnerReport ?? data.futurePartnerReport ?? false,
+          vastuShastraGuide:
+            data.unlockedFeatures?.vastuShastraGuide ?? data.vastuShastraGuide ?? false,
         };
         updates.unlockedFeatures = features;
         
@@ -211,6 +218,7 @@ export const featureNames: Record<keyof UnlockedFeatures, string> = {
   compatibilityTest: "Compatibility Test",
   soulmateSketch: "Soulmate Sketch",
   futurePartnerReport: "Future Partner Report",
+  vastuShastraGuide: "Complete Vastu Shastra Guide Ebook",
 };
 
 // Feature prices (INR)
@@ -221,4 +229,5 @@ export const featurePrices: Record<keyof UnlockedFeatures, number> = {
   compatibilityTest: 582,
   soulmateSketch: 582,
   futurePartnerReport: 582,
+  vastuShastraGuide: 297,
 };

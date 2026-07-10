@@ -151,6 +151,7 @@ export default function UserHydrator() {
       const hasCompatibility = !!unlocked.compatibilityTest;
       const hasSoulmateSketch = !!unlocked.soulmateSketch;
       const hasFuturePartnerReport = !!unlocked.futurePartnerReport;
+      const hasVastuShastraGuide = !!unlocked.vastuShastraGuide;
 
       if (hasPalmReading) unlockFeature("palmReading");
       if (hasPrediction2026) unlockFeature("prediction2026");
@@ -158,6 +159,7 @@ export default function UserHydrator() {
       if (hasCompatibility) unlockFeature("compatibilityTest");
       if (hasSoulmateSketch) unlockFeature("soulmateSketch");
       if (hasFuturePartnerReport) unlockFeature("futurePartnerReport");
+      if (hasVastuShastraGuide) unlockFeature("vastuShastraGuide");
     } catch (err) {
       console.error("Failed to hydrate user:", err);
     }

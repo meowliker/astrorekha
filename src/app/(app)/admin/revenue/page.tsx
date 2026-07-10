@@ -295,6 +295,28 @@ interface RevenueData {
   revenueLastMonth: string;
   momGrowth: string;
   revenueByType: { bundle: number; upsell: number; coins: number; report: number };
+  upsellAttachment?: {
+    bundleBuyerCount: number;
+    upsellBuyerCount: number;
+    noUpsellBuyers: number;
+    upsellAttachRate: number;
+    noUpsellRate: number;
+    upsellRevenue: number;
+    combinationBreakdown: {
+      label: string;
+      items: string[];
+      itemCount: number;
+      buyers: number;
+      percentOfBundleBuyers: number;
+      revenue: number;
+    }[];
+    itemBreakdown: {
+      item: string;
+      buyers: number;
+      percentOfBundleBuyers: number;
+      revenue: number;
+    }[];
+  };
   bundleBreakdown: {
     "palm-reading": { count: number; revenue: number };
     "palm-birth": { count: number; revenue: number };
@@ -1763,6 +1785,108 @@ export default function AdminRevenuePage() {
                 {totalBundleCount === 0 && (
                   <span className="text-white/40 text-sm">No sales yet</span>
                 )}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Upsell Attachment */}
+        <section>
+          <h2 className="text-white/70 text-sm font-medium mb-3 flex items-center gap-2">
+            <Package className="w-4 h-4" /> Upsell Attachment
+          </h2>
+          <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-white/40 text-xs">Bundle Buyers</p>
+                <p className="text-white text-xl font-bold">{data.upsellAttachment?.bundleBuyerCount || totalBundleCount}</p>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-white/40 text-xs">Upsell Buyers</p>
+                <p className="text-green-400 text-xl font-bold">{data.upsellAttachment?.upsellBuyerCount || 0}</p>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-white/40 text-xs">Attach Rate</p>
+                <p className="text-primary text-xl font-bold">{(data.upsellAttachment?.upsellAttachRate || 0).toFixed(2)}%</p>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-white/40 text-xs">Upsell Value</p>
+                <p className="text-emerald-400 text-xl font-bold">{formatCurrency(data.upsellAttachment?.upsellRevenue || 0)}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <h3 className="text-white/60 text-xs mb-3">Exact Upsell Combinations</h3>
+                <div className="overflow-x-auto rounded-lg border border-white/10">
+                  <table className="w-full">
+                    <thead className="bg-white/5">
+                      <tr>
+                        <th className="text-left text-white/50 text-xs font-medium px-3 py-2">Combination</th>
+                        <th className="text-right text-white/50 text-xs font-medium px-3 py-2">Users</th>
+                        <th className="text-right text-white/50 text-xs font-medium px-3 py-2">%</th>
+                        <th className="text-right text-white/50 text-xs font-medium px-3 py-2">Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(data.upsellAttachment?.combinationBreakdown || []).map((row) => (
+                        <tr key={row.label} className="border-t border-white/5">
+                          <td className="text-white/80 text-sm px-3 py-2">{row.label}</td>
+                          <td className="text-white text-sm px-3 py-2 text-right">{row.buyers}</td>
+                          <td className="text-primary text-sm px-3 py-2 text-right">{row.percentOfBundleBuyers.toFixed(2)}%</td>
+                          <td className="text-green-400 text-sm px-3 py-2 text-right">{formatCurrency(row.revenue)}</td>
+                        </tr>
+                      ))}
+                      {(data.upsellAttachment?.combinationBreakdown || []).length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="text-white/40 text-sm px-3 py-4 text-center">No upsells bought by bundle buyers in this range.</td>
+                        </tr>
+                      )}
+                      {(data.upsellAttachment?.noUpsellBuyers || 0) > 0 && (
+                        <tr className="border-t border-white/10 bg-white/[0.03]">
+                          <td className="text-white/60 text-sm px-3 py-2">No upsell</td>
+                          <td className="text-white/70 text-sm px-3 py-2 text-right">{data.upsellAttachment?.noUpsellBuyers || 0}</td>
+                          <td className="text-white/50 text-sm px-3 py-2 text-right">{(data.upsellAttachment?.noUpsellRate || 0).toFixed(2)}%</td>
+                          <td className="text-white/40 text-sm px-3 py-2 text-right">{formatCurrency(0)}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-white/60 text-xs mb-3">Individual Upsell Reach</h3>
+                <div className="overflow-x-auto rounded-lg border border-white/10">
+                  <table className="w-full">
+                    <thead className="bg-white/5">
+                      <tr>
+                        <th className="text-left text-white/50 text-xs font-medium px-3 py-2">Upsell</th>
+                        <th className="text-right text-white/50 text-xs font-medium px-3 py-2">Users</th>
+                        <th className="text-right text-white/50 text-xs font-medium px-3 py-2">%</th>
+                        <th className="text-right text-white/50 text-xs font-medium px-3 py-2">Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(data.upsellAttachment?.itemBreakdown || []).map((row) => (
+                        <tr key={row.item} className="border-t border-white/5">
+                          <td className="text-white/80 text-sm px-3 py-2">{row.item}</td>
+                          <td className="text-white text-sm px-3 py-2 text-right">{row.buyers}</td>
+                          <td className="text-primary text-sm px-3 py-2 text-right">{row.percentOfBundleBuyers.toFixed(2)}%</td>
+                          <td className="text-green-400 text-sm px-3 py-2 text-right">{formatCurrency(row.revenue)}</td>
+                        </tr>
+                      ))}
+                      {(data.upsellAttachment?.itemBreakdown || []).length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="text-white/40 text-sm px-3 py-4 text-center">No individual upsell data in this range.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-white/35 text-xs mt-2">
+                  Percentages use bundle buyers as the denominator. A user who bought two upsells appears once in each individual upsell row and once in the exact-combination table.
+                </p>
               </div>
             </div>
           </div>

@@ -67,6 +67,7 @@ function featureToName(feature: string): string {
     compatibilityTest: "Compatibility Report",
     soulmateSketch: "Soulmate Sketch",
     futurePartnerReport: "Future Partner Report",
+    vastuShastraGuide: "Complete Vastu Shastra Guide Ebook",
   };
   return labels[feature] || feature.replace(/([A-Z])/g, " $1").trim();
 }

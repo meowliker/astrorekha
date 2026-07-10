@@ -258,6 +258,17 @@ export const DEFAULT_PRICING: PricingConfig = {
       feature: "soulmateSketch",
       active: true,
     },
+    {
+      id: "vastu-shastra-guide",
+      name: "Complete Vastu Shastra Guide Ebook",
+      price: 297,
+      displayPrice: 297,
+      originalPrice: 999,
+      discount: "70% OFF",
+      description: "150+ page PDF guide for home, entrance, remedies, office, and business Vastu.",
+      feature: "vastuShastraGuide",
+      active: true,
+    },
   ],
   reports: [
     {
@@ -298,6 +309,14 @@ export const DEFAULT_PRICING: PricingConfig = {
       price: 582,
       originalPrice: 999,
       feature: "futurePartnerReport",
+      active: true,
+    },
+    {
+      id: "report-vastu-shastra-guide",
+      name: "Complete Vastu Shastra Guide Ebook",
+      price: 297,
+      originalPrice: 999,
+      feature: "vastuShastraGuide",
       active: true,
     },
   ],

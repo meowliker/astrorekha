@@ -31,6 +31,15 @@ interface DailyInsights {
   current_dasha?: string;
 }
 
+const VASTU_GUIDE_VISIBLE_MS = 24 * 60 * 60 * 1000;
+
+function shouldHideVastuGuideCard(purchasedAt: string | null): boolean {
+  if (!purchasedAt) return false;
+  const purchasedTime = new Date(purchasedAt).getTime();
+  if (!Number.isFinite(purchasedTime)) return false;
+  return Date.now() - purchasedTime >= VASTU_GUIDE_VISIBLE_MS;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [userZodiac, setUserZodiac] = useState({ sign: "Aries", symbol: "♈", color: "from-red-500 to-orange-500" });
@@ -46,6 +55,8 @@ export default function DashboardPage() {
   const [dailyInsights, setDailyInsights] = useState<DailyInsights | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(true);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
+  const [vastuGuidePurchasedAt, setVastuGuidePurchasedAt] = useState<string | null>(null);
+  const [hideVastuGuideCard, setHideVastuGuideCard] = useState(false);
 
   // Get sun sign from onboarding store as fallback
   const { birthMonth: storeBirthMonth, birthDay: storeBirthDay, sunSign: storeSunSign } = useOnboardingStore();
@@ -60,6 +71,28 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchDailyInsightsV2();
   }, []);
+
+  useEffect(() => {
+    if (!unlockedFeatures.vastuShastraGuide) {
+      setHideVastuGuideCard(false);
+      return;
+    }
+
+    setHideVastuGuideCard(shouldHideVastuGuideCard(vastuGuidePurchasedAt));
+
+    if (!vastuGuidePurchasedAt) return;
+    const purchasedTime = new Date(vastuGuidePurchasedAt).getTime();
+    if (!Number.isFinite(purchasedTime)) return;
+
+    const remainingMs = VASTU_GUIDE_VISIBLE_MS - (Date.now() - purchasedTime);
+    if (remainingMs <= 0) return;
+
+    const timeout = window.setTimeout(() => {
+      setHideVastuGuideCard(true);
+    }, remainingMs);
+
+    return () => window.clearTimeout(timeout);
+  }, [unlockedFeatures.vastuShastraGuide, vastuGuidePurchasedAt]);
 
   const loadUserZodiac = async () => {
     try {
@@ -88,6 +121,10 @@ export default function DashboardPage() {
           }
           if (userData.birth_chart_timer_started_at) {
             setBirthChartTimerStartedAt(userData.birth_chart_timer_started_at);
+          }
+
+          if (userData.unlocked_features?.vastuShastraGuide) {
+            loadVastuGuidePurchaseTime(userId, userData.email || null);
           }
           
           let sunSignName = extractStoredSignName(userData.sun_sign);
@@ -151,6 +188,39 @@ export default function DashboardPage() {
         symbol: getZodiacSymbol(sign),
         color: getZodiacColor(sign),
       });
+    }
+  };
+
+  const loadVastuGuidePurchaseTime = async (userId: string, email?: string | null) => {
+    const normalizedEmail = email?.trim().toLowerCase() || localStorage.getItem("astrorekha_email") || "";
+    const itemFilter = [
+      "bundle_id.eq.vastu-shastra-guide",
+      "bundle_id.eq.report-vastu-shastra-guide",
+      "bundle_id.ilike.%vastu-shastra-guide%",
+      "feature.eq.vastuShastraGuide",
+      "feature.ilike.%vastuShastraGuide%",
+    ].join(",");
+
+    try {
+      let query = supabase
+        .from("payments")
+        .select("created_at, fulfilled_at")
+        .in("payment_status", ["paid", "success", "captured"])
+        .or(itemFilter)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (userId) {
+        query = query.eq("user_id", userId);
+      } else if (normalizedEmail) {
+        query = query.eq("customer_email", normalizedEmail);
+      }
+
+      const { data } = await query.maybeSingle();
+      setVastuGuidePurchasedAt(data?.fulfilled_at || data?.created_at || null);
+    } catch (error) {
+      console.error("Failed to load Vastu guide purchase time:", error);
+      setVastuGuidePurchasedAt(null);
     }
   };
 
@@ -691,6 +761,51 @@ export default function DashboardPage() {
                     <ChevronRight className="w-6 h-6 text-white/40" />
                   </div>
                 </div>
+
+                {/* Vastu Shastra Guide Ebook */}
+                {!hideVastuGuideCard && (
+                  <div
+                    onClick={() => {
+                      if (!unlockedFeatures.vastuShastraGuide) {
+                        setUpsellPopup({ isOpen: true, feature: "vastuShastraGuide" });
+                      }
+                    }}
+                    className={`bg-[#1A2235] rounded-2xl border border-primary/20 p-3 transition-colors relative ${
+                      unlockedFeatures.vastuShastraGuide
+                        ? "cursor-default"
+                        : "cursor-pointer hover:border-primary/40"
+                    }`}
+                  >
+                    {!unlockedFeatures.vastuShastraGuide && (
+                      <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
+                        <Lock className="w-3 h-3 text-white/60" />
+                      </div>
+                    )}
+                    <div className="flex items-center gap-3">
+                      <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-blue-500/30 to-indigo-600/30 flex items-center justify-center flex-shrink-0 overflow-hidden border border-white/10">
+                        <span className="text-3xl">📘</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-white font-semibold">Complete Vastu Shastra Guide Ebook</h3>
+                        <p className="text-white/50 text-xs mt-0.5">
+                          {unlockedFeatures.vastuShastraGuide
+                            ? "Sent via email"
+                            : "150+ page PDF guide for home, office, and remedies"}
+                        </p>
+                        {!unlockedFeatures.vastuShastraGuide && (
+                          <button className="mt-1 px-3 py-1 bg-primary/20 text-primary text-xs rounded-full">
+                            Get Report
+                          </button>
+                        )}
+                      </div>
+                      {unlockedFeatures.vastuShastraGuide ? (
+                        <CheckCircle className="w-6 h-6 text-emerald-400" />
+                      ) : (
+                        <ChevronRight className="w-6 h-6 text-white/40" />
+                      )}
+                    </div>
+                  </div>
+                )}
                 
               </div>
             </motion.div>
@@ -712,6 +827,13 @@ export default function DashboardPage() {
               if (upsellPopup.feature === "futurePartnerReport") {
                 unlockFeature("futurePartnerReport");
                 router.push("/future-partner");
+                return;
+              }
+              if (upsellPopup.feature === "vastuShastraGuide") {
+                unlockFeature("vastuShastraGuide");
+                setVastuGuidePurchasedAt(new Date().toISOString());
+                setHideVastuGuideCard(false);
+                setUpsellPopup({ isOpen: false, feature: null });
                 return;
               }
               window.location.reload();

@@ -248,6 +248,9 @@ function mapUpsellName(raw: string): string {
     "future-partner": "Future Partner Report",
     "report-future-partner": "Future Partner Report",
     futurepartnerreport: "Future Partner Report",
+    "vastu-shastra-guide": "Complete Vastu Shastra Guide Ebook",
+    "report-vastu-shastra-guide": "Complete Vastu Shastra Guide Ebook",
+    vastushastraguide: "Complete Vastu Shastra Guide Ebook",
   };
   return map[key] || raw.trim() || "Unknown Upsell";
 }

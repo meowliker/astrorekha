@@ -17,6 +17,7 @@ const featureToReportId: Record<keyof UnlockedFeatures, string> = {
   compatibilityTest: "report-compatibility",
   soulmateSketch: "report-soulmate-sketch",
   futurePartnerReport: "report-future-partner",
+  vastuShastraGuide: "report-vastu-shastra-guide",
 };
 
 const PENDING_PAYMENT_KEY = "astrorekha_pending_payu_payment";

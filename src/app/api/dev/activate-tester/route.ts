@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
         compatibilityTest: true,
         soulmateSketch: true,
         futurePartnerReport: true,
+        vastuShastraGuide: true,
       },
       updated_at: now,
     }, { onConflict: "id" });

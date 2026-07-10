@@ -21,6 +21,7 @@ const FEATURE_LABELS: Record<string, string> = {
   prediction2026: "2026 Predictions",
   soulmateSketch: "Soulmate Sketch",
   futurePartnerReport: "Future Partner Report",
+  vastuShastraGuide: "Complete Vastu Shastra Guide Ebook",
 };
 
 export default function ManageSubscriptionPage() {

@@ -142,6 +142,7 @@ function humanizeFeature(value: string): string {
     compatibilityTest: "Compatibility Report",
     soulmateSketch: "Soulmate Sketch",
     futurePartnerReport: "Future Partner Report",
+    vastuShastraGuide: "Complete Vastu Shastra Guide Ebook",
   };
   return labels[value] || value.replace(/[-_]/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").trim();
 }

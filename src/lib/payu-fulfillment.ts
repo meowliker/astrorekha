@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { sendVastuGuideEmail } from "@/lib/vastu-guide-email";
 
 const BUNDLE_FEATURES: Record<string, string[]> = {
   "palm-reading": ["palmReading"],
@@ -21,6 +22,8 @@ const OFFER_ID_TO_FEATURE: Record<string, string> = {
   "soulmate-sketch": "soulmateSketch",
   "future-partner": "futurePartnerReport",
   "report-future-partner": "futurePartnerReport",
+  "vastu-shastra-guide": "vastuShastraGuide",
+  "report-vastu-shastra-guide": "vastuShastraGuide",
 };
 
 const SUCCESS_STATUSES = new Set(["success", "paid", "captured"]);
@@ -213,11 +216,13 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload): Promise<
     compatibilityTest: false,
     soulmateSketch: false,
     futurePartnerReport: false,
+    vastuShastraGuide: false,
   };
   let updatedFeatures = { ...currentFeatures } as Record<string, boolean>;
   let updatedCoins = typeof user?.coins === "number" ? user.coins : 0;
 
-  for (const f of parseFeaturesFromMetadata(type, bundleId, feature)) {
+  const featuresToUnlock = parseFeaturesFromMetadata(type, bundleId, feature);
+  for (const f of featuresToUnlock) {
     updatedFeatures[f] = true;
   }
 
@@ -239,6 +244,17 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload): Promise<
   }
 
   await supabase.from("users").upsert(userUpdate, { onConflict: "id" });
+
+  if (featuresToUnlock.includes("vastuShastraGuide") && normalizedEmail) {
+    try {
+      await sendVastuGuideEmail({
+        email: normalizedEmail,
+        name: payload.firstname || null,
+      });
+    } catch (error) {
+      console.error("[PayU] Failed to send Vastu guide email:", error);
+    }
+  }
 
   return { success: true, alreadyPaid: false, userId: resolvedUserId };
 }

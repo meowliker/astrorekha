@@ -16,7 +16,7 @@ const subscriptionBenefits = [
 ];
 
 // Bundle benefits based on what was purchased
-const getBundleBenefits = (bundleId: string | null, unlockedFeatures?: { birthChart?: boolean; compatibilityTest?: boolean; prediction2026?: boolean; soulmateSketch?: boolean; futurePartnerReport?: boolean }) => {
+const getBundleBenefits = (bundleId: string | null, unlockedFeatures?: { birthChart?: boolean; compatibilityTest?: boolean; prediction2026?: boolean; soulmateSketch?: boolean; futurePartnerReport?: boolean; vastuShastraGuide?: boolean }) => {
   const benefits = [];
   
   // Always included for all users
@@ -35,6 +35,9 @@ if (bundleId === "palm-birth-sketch" || unlockedFeatures?.soulmateSketch) {
 }
 if (bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" || unlockedFeatures?.futurePartnerReport) {
   benefits.push({ icon: "💍", text: "Future Partner Report" });
+}
+if (unlockedFeatures?.vastuShastraGuide) {
+  benefits.push({ icon: "📘", text: "Vastu Shastra Guide Ebook" });
 }
 
 // Bundle 3 (palm-birth-compat) gives 30 coins, others give 15

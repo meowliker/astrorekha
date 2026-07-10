@@ -5,7 +5,7 @@ import { useMemo, useState, useEffect, Suspense } from "react";
 import { fadeUp } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, Loader2, Star, Sparkles, Calendar, Heart, Briefcase, Activity, Users } from "lucide-react";
+import { Check, Loader2, Star, Sparkles, Calendar, Heart, Briefcase, Activity, Users, BookOpen, Home } from "lucide-react";
 import { useUserStore } from "@/lib/user-store";
 import { supabase } from "@/lib/supabase";
 import { generateUserId } from "@/lib/user-profile";
@@ -112,6 +112,7 @@ const upsellOffers = [
     description: "Know how your relationship energy aligns.",
     price: 499,
     originalPrice: 999,
+    discount: "50% OFF",
     icon: Users,
     emoji: "💕",
     features: [
@@ -125,12 +126,27 @@ const upsellOffers = [
     description: "Month-wise timeline of your next big year.",
     price: 499,
     originalPrice: 999,
+    discount: "50% OFF",
     icon: Calendar,
     emoji: "🔮",
     features: [
       { icon: Calendar, label: "Month-by-month forecasts", description: "Detailed predictions for all 12 months" },
       { icon: Briefcase, label: "Career and life timing", description: "Key opportunities, changes, and windows" },
       { icon: Activity, label: "Health guidance", description: "Best times for wellness focus" },
+    ],
+  },
+  {
+    id: "vastu-shastra-guide",
+    name: "Complete Vastu Shastra Guide Ebook",
+    description: "150+ page practical guide for home and office Vastu.",
+    price: 297,
+    originalPrice: 999,
+    discount: "70% OFF",
+    icon: BookOpen,
+    emoji: "📘",
+    features: [
+      { icon: Home, label: "Home and entrance Vastu", description: "Directions, rooms, remedies, and layout guidance" },
+      { icon: Briefcase, label: "Office and business Vastu", description: "Practical setup advice for workspaces and growth" },
     ],
   },
 ];
@@ -482,7 +498,7 @@ function BundleUpsellContent() {
                           <span className="text-white/45 line-through text-sm">₹{offer.originalPrice}</span>
                           <span className="text-xl font-bold text-white">₹{offer.price}</span>
                           <span className="bg-green-500/20 text-green-400 text-[10px] px-2 py-0.5 rounded-full font-semibold">
-                            50% OFF
+                            {offer.discount}
                           </span>
                         </div>
                         <div className="mt-3 space-y-2">

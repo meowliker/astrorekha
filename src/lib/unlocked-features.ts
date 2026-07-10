@@ -5,6 +5,7 @@ export interface NormalizedUnlockedFeatures {
   compatibilityTest: boolean;
   soulmateSketch: boolean;
   futurePartnerReport: boolean;
+  vastuShastraGuide: boolean;
 }
 
 const DEFAULT_UNLOCKED_FEATURES: NormalizedUnlockedFeatures = {
@@ -14,6 +15,7 @@ const DEFAULT_UNLOCKED_FEATURES: NormalizedUnlockedFeatures = {
   compatibilityTest: false,
   soulmateSketch: false,
   futurePartnerReport: false,
+  vastuShastraGuide: false,
 };
 
 function toBoolean(value: unknown): boolean {
@@ -51,5 +53,6 @@ export function normalizeUnlockedFeatures(raw: unknown): NormalizedUnlockedFeatu
     compatibilityTest: toBoolean(source.compatibilityTest),
     soulmateSketch: toBoolean(source.soulmateSketch),
     futurePartnerReport: toBoolean(source.futurePartnerReport),
+    vastuShastraGuide: toBoolean(source.vastuShastraGuide),
   };
 }
