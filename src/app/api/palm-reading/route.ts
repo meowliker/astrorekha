@@ -9,6 +9,7 @@ const PALM_READING_PROMPT = `You are an expert palm reader and mystic with decad
 
 User's birth date: {birthDate}
 User's zodiac sign: {zodiacSign}
+User's gender: {gender}
 
 IMPORTANT: You must respond with ONLY valid JSON, no markdown, no code fences, just pure JSON.
 
@@ -65,7 +66,13 @@ Analyze the palm and return this exact JSON structure:
       "marriageTiming": "When marriage is indicated",
       "partnersFinancialStatus": "Partner's financial prospects",
       "relationshipChallenges": "Potential challenges to overcome",
-      "familyPredictions": "Family and children indications"
+      "familyPredictions": "Family and children indications",
+      "pregnancyWindow": {
+        "title": "Pregnancy Window",
+        "primaryYear": "Most likely year, for example 2027",
+        "secondaryWindow": "Optional secondary timing window, for example late 2028 or empty string",
+        "description": "2-3 sentences explaining the pregnancy or parenthood timing in a warm, entertainment-style palm reading tone"
+      }
     }
   },
   "meta": {
@@ -86,9 +93,21 @@ If the image is NOT a palm or hand, respond with:
 
 Be specific, personalized, and mystical in your readings. Connect insights to the user's zodiac sign when relevant.`;
 
+const PREGNANCY_WINDOW_GUIDANCE = `
+Pregnancy/parenthood guidance rules:
+- Always include love.pregnancyWindow.
+- Choose the most likely year or year range based on the visible palm indicators, birth date, and zodiac context. Do not hardcode one year for everyone.
+- If gender is female, use title "Pregnancy Window" and describe pregnancy-related timing.
+- If gender is male, use title "Parenthood Window" and describe pregnancy news through a partner, planning for fatherhood, or becoming a father. Do not say he may get pregnant.
+- If gender is non-binary or unspecified, use title "Parenthood Window" and keep the wording neutral.
+- Do not assume this is their first child or that they have no children already. Use neutral wording like "pregnancy news", "a child-related chapter", "parenthood responsibilities", or "expanding the family" when appropriate.
+- Do not predict baby sex/gender such as boy or girl.
+- Do not give an exact birth date or exact conception date.
+- Do not make medical claims or guarantees. Use language like "suggests", "may", and "supportive window".`;
+
 export async function POST(request: NextRequest) {
   try {
-    const { imageData, birthDate, zodiacSign } = await request.json();
+    const { imageData, birthDate, zodiacSign, gender } = await request.json();
 
     if (!imageData) {
       return NextResponse.json(
@@ -100,7 +119,9 @@ export async function POST(request: NextRequest) {
     // Prepare the prompt with user data
     const prompt = PALM_READING_PROMPT
       .replace("{birthDate}", birthDate || "Not provided")
-      .replace("{zodiacSign}", zodiacSign || "Unknown");
+      .replace("{zodiacSign}", zodiacSign || "Unknown")
+      .replace("{gender}", gender || "Not specified")
+      + PREGNANCY_WINDOW_GUIDANCE;
 
     // Extract base64 data from data URL
     const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");

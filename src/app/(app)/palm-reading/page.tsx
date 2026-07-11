@@ -37,7 +37,7 @@ export default function PalmReadingPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  const { birthMonth, birthDay, birthYear } = useOnboardingStore();
+  const { birthMonth, birthDay, birthYear, gender } = useOnboardingStore();
 
   const zodiacSign = calculateZodiacSign(birthMonth, birthDay);
   const birthDate = `${birthYear}-${birthMonth}-${birthDay}`;
@@ -175,6 +175,7 @@ export default function PalmReadingPage() {
           imageData,
           birthDate,
           zodiacSign,
+          gender,
         }),
       });
 
@@ -423,6 +424,13 @@ export default function PalmReadingPage() {
   const renderLove = () => {
     const t = reading?.tabs?.love;
     if (!t) return null;
+    const pregnancyWindow = typeof t.pregnancyWindow === "object" && t.pregnancyWindow !== null ? t.pregnancyWindow : null;
+    const pregnancyWindowTitle =
+      pregnancyWindow?.title && !String(pregnancyWindow.title).includes("female users")
+        ? pregnancyWindow.title
+        : gender === "female"
+          ? "Pregnancy Window"
+          : "Parenthood Window";
     
     return (
       <div className="bg-[#1A1F2E] rounded-2xl p-4 border border-white/10 space-y-4">
@@ -454,6 +462,13 @@ export default function PalmReadingPage() {
           <h4 className="text-white font-semibold text-sm mb-1">Family Predictions</h4>
           <p className="text-white/70 text-sm">{t.familyPredictions}</p>
         </div>
+
+        {pregnancyWindow && (
+          <div className="border-t border-white/10 pt-4">
+            <h4 className="mb-2 text-white font-semibold text-sm">{pregnancyWindowTitle}</h4>
+            <p className="text-white/70 text-sm">{pregnancyWindow.description}</p>
+          </div>
+        )}
       </div>
     );
   };

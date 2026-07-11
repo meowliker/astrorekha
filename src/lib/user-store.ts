@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 
 export type PurchasedBundle = "palm-reading" | "palm-birth" | "palm-birth-compat" | "palm-birth-sketch" | null;
 
@@ -79,6 +79,32 @@ const initialState = {
   userId: null as string | null,
   birthChartGenerating: false,
   birthChartReady: false,
+};
+
+const safeLocalStorage: StateStorage = {
+  getItem: (name) => {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem(name);
+  },
+  setItem: (name, value) => {
+    if (typeof window === "undefined") return;
+
+    try {
+      window.localStorage.setItem(name, value);
+    } catch (error) {
+      console.warn(`[UserStore] Failed to persist ${name}; clearing large local cache and retrying.`, error);
+      try {
+        window.localStorage.removeItem("astrorekha_palm_image");
+        window.localStorage.setItem(name, value);
+      } catch (retryError) {
+        console.warn(`[UserStore] Failed to persist ${name} after cleanup.`, retryError);
+      }
+    }
+  },
+  removeItem: (name) => {
+    if (typeof window === "undefined") return;
+    window.localStorage.removeItem(name);
+  },
 };
 
 export const useUserStore = create<UserState>()(
@@ -198,6 +224,14 @@ export const useUserStore = create<UserState>()(
     }),
     {
       name: "astrorekha-user",
+      storage: createJSONStorage(() => safeLocalStorage),
+      partialize: (state) => ({
+        purchasedBundle: state.purchasedBundle,
+        unlockedFeatures: state.unlockedFeatures,
+        coins: state.coins,
+        userId: state.userId,
+        birthChartReady: state.birthChartReady,
+      }),
     }
   )
 );
