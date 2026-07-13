@@ -10,7 +10,7 @@ export default function WelcomeBRedirectPage() {
   useEffect(() => {
     localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
     localStorage.setItem("astrorekha_layout_variant", "A");
-    router.replace("/welcome");
+    router.replace(`/welcome${window.location.search || ""}`);
   }, [router]);
 
   return (

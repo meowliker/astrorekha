@@ -319,156 +319,8 @@ function addDaysToIsoDate(isoDate: string, days: number): string {
   return d.toISOString().split("T")[0];
 }
 
-export async function GET(request: NextRequest) {
-  try {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-    const supabase = createClient(url, serviceKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-
-    const { searchParams } = new URL(request.url);
-    const token = searchParams.get("token");
-    const startDate = searchParams.get("startDate") || APP_LAUNCH_DATE;
-    const endDate = searchParams.get("endDate") || new Date().toISOString().split("T")[0];
-
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Verify admin session
-    const { data: sessionData } = await supabase
-      .from("admin_sessions")
-      .select("*")
-      .eq("id", token)
-      .single();
-
-    if (!sessionData) {
-      return NextResponse.json({ error: "Invalid session" }, { status: 401 });
-    }
-
-    if (new Date(sessionData.expires_at) < new Date()) {
-      return NextResponse.json({ error: "Session expired" }, { status: 401 });
-    }
-
-    // Get exchange rate (use custom if provided, otherwise fetch)
-    const customExchangeRate = searchParams.get("exchangeRate");
-    const exchangeRate = customExchangeRate ? parseFloat(customExchangeRate) : await fetchExchangeRate();
-    console.log(`Using exchange rate: ${exchangeRate}`);
-
-    // Fetch Meta Ads daily spend normalized to business-day windows (11:30 IST boundary).
-    const metaSpendMap = await fetchMetaAdsDailySpend(startDate, endDate, exchangeRate);
-    console.log(`Fetched Meta Ads spend for ${metaSpendMap.size} days`);
-
-    // Generate date range
-    const dates: string[] = [];
-    const current = new Date(startDate);
-    const end = new Date(endDate);
-    while (current <= end) {
-      dates.push(current.toISOString().split("T")[0]);
-      current.setDate(current.getDate() + 1);
-    }
-
-    type FinancialRow = {
-      createdAt: Date;
-      dayKey: string;
-      kind: "sale" | "refund";
-      amount: number;
-      signedAmount: number;
-      type: string;
-    };
-
-    const payuFetchEnd = addDaysToIsoDate(endDate, 1);
-    const payuTransactions = await getPayUTransactions(startDate, payuFetchEnd);
-    const financialRows: FinancialRow[] = payuTransactions
-      .map((txn) => {
-        const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
-        if (financial.kind === "ignore") return null;
-        const createdAt = new Date(String(txn.addedon || "").replace(" ", "T") + "+05:30");
-        if (Number.isNaN(createdAt.getTime())) return null;
-        const dayKey = getCostaRicaBusinessDayKeyFromDate(createdAt);
-        if (dayKey < startDate || dayKey > endDate) return null;
-        return {
-          createdAt,
-          dayKey,
-          kind: financial.kind,
-          amount: financial.amount,
-          signedAmount: financial.signedAmount,
-          type: normalizePurchaseType(txn.udf2),
-        } as FinancialRow;
-      })
-      .filter((row): row is FinancialRow => !!row);
-
-    const sourceUsed = "payu_live";
-
-    console.log(`Profit sheet financial source: ${sourceUsed}, rows: ${financialRows.length}`);
-
-    // Build profit sheet rows
-    const profitSheet: ProfitSheetRow[] = dates.map(costaRicaDate => {
-      const { start: istStart, end: istEnd } = getISTRangeForCostaRicaDate(costaRicaDate);
-      
-      // Debug log for first date
-      if (costaRicaDate === dates[0]) {
-        console.log(`Profit Sheet Debug - Date: ${costaRicaDate}`);
-        console.log(`IST Start: ${istStart.toISOString()} (${istStart.toString()})`);
-        console.log(`IST End: ${istEnd.toISOString()} (${istEnd.toString()})`);
-        if (financialRows.length > 0) {
-          const sample = financialRows[0];
-          console.log(`Sample financial row: kind=${sample.kind}, amount=${sample.signedAmount}, at=${sample.createdAt.toISOString()}`);
-        }
-      }
-      
-      // Filter transactions for this Costa Rica day (historical from Supabase, current day optionally overlaid from PayU live)
-      const dayTransactions = financialRows.filter((txn) => txn.dayKey === costaRicaDate);
-
-      const grossRevenue = dayTransactions
-        .filter((event) => event.kind === "sale")
-        .reduce((sum, event) => sum + event.amount, 0);
-      const refundAmount = dayTransactions
-        .filter((event) => event.kind === "refund")
-        .reduce((sum, event) => sum + event.amount, 0);
-      const revenue = grossRevenue - refundAmount;
-
-      const gst = revenue * 0.05; // 5% GST on net revenue
-      const dailyMetaSpend = metaSpendMap.get(costaRicaDate) || { usd: 0, inr: 0 };
-      const adsCostUSD = dailyMetaSpend.usd;
-      const adsCostINR = dailyMetaSpend.inr;
-      const netRevenue = revenue - gst - adsCostINR;
-      const profitPercent = revenue > 0 ? (netRevenue / revenue) * 100 : 0;
-      const salesCount = dayTransactions.filter((event) => event.kind === "sale").length;
-      const refundCount = dayTransactions.filter((event) => event.kind === "refund").length;
-      const bundleSaleEvents = dayTransactions.filter(
-        (event) => event.kind === "sale" && isBundlePurchaseType(event.type)
-      );
-      const bundleRefundAmount = dayTransactions
-        .filter((event) => event.kind === "refund" && isBundlePurchaseType(event.type))
-        .reduce((sum, event) => sum + event.amount, 0);
-      const bundleRevenue = bundleSaleEvents.reduce((sum, event) => sum + event.amount, 0) - bundleRefundAmount;
-      const bundlePurchases = bundleSaleEvents.length;
-      const bundleRoas = adsCostINR > 0 ? bundleRevenue / adsCostINR : 0;
-
-      return {
-        date: costaRicaDate,
-        day: getDayOfWeek(costaRicaDate),
-        revenue,
-        grossRevenue,
-        refundAmount,
-        gst,
-        adsCostUSD,
-        adsCostINR,
-        netRevenue,
-        profitPercent,
-        roas: bundleRoas,
-        bundleRevenue,
-        transactionCount: salesCount,
-        bundlePurchases,
-        salesCount,
-        refundCount,
-      };
-    });
-
-    // Calculate totals
-    const totals = profitSheet.reduce(
+function calculateTotals(profitSheet: ProfitSheetRow[]) {
+  const totals = profitSheet.reduce(
       (acc, row) => ({
         revenue: acc.revenue + row.revenue,
         grossRevenue: acc.grossRevenue + (row.grossRevenue || 0),
@@ -499,19 +351,256 @@ export async function GET(request: NextRequest) {
       }
     );
 
-    const overallRoas = totals.adsCostINR > 0 ? totals.bundleRevenue / totals.adsCostINR : 0;
-    const overallProfitPercent = totals.revenue > 0 ? (totals.netRevenue / totals.revenue) * 100 : 0;
+  const overallRoas = totals.adsCostINR > 0 ? totals.bundleRevenue / totals.adsCostINR : 0;
+  const overallProfitPercent = totals.revenue > 0 ? (totals.netRevenue / totals.revenue) * 100 : 0;
+
+  return {
+    ...totals,
+    roas: overallRoas,
+    profitPercent: overallProfitPercent,
+  };
+}
+
+async function buildProfitSheetRows(
+  startDate: string,
+  endDate: string,
+  exchangeRate: number
+): Promise<{ rows: ProfitSheetRow[]; source: string }> {
+  console.log(`Using exchange rate: ${exchangeRate}`);
+
+  const metaSpendMap = await fetchMetaAdsDailySpend(startDate, endDate, exchangeRate);
+  console.log(`Fetched Meta Ads spend for ${metaSpendMap.size} days`);
+
+  const dates: string[] = [];
+  const current = new Date(startDate);
+  const end = new Date(endDate);
+  while (current <= end) {
+    dates.push(current.toISOString().split("T")[0]);
+    current.setDate(current.getDate() + 1);
+  }
+
+  type FinancialRow = {
+    createdAt: Date;
+    dayKey: string;
+    kind: "sale" | "refund";
+    amount: number;
+    signedAmount: number;
+    type: string;
+  };
+
+  const payuFetchEnd = addDaysToIsoDate(endDate, 1);
+  const payuTransactions = await getPayUTransactions(startDate, payuFetchEnd);
+  const financialRows: FinancialRow[] = payuTransactions
+    .map((txn) => {
+      const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
+      if (financial.kind === "ignore") return null;
+      const createdAt = new Date(String(txn.addedon || "").replace(" ", "T") + "+05:30");
+      if (Number.isNaN(createdAt.getTime())) return null;
+      const dayKey = getCostaRicaBusinessDayKeyFromDate(createdAt);
+      if (dayKey < startDate || dayKey > endDate) return null;
+      return {
+        createdAt,
+        dayKey,
+        kind: financial.kind,
+        amount: financial.amount,
+        signedAmount: financial.signedAmount,
+        type: normalizePurchaseType(txn.udf2),
+      } as FinancialRow;
+    })
+    .filter((row): row is FinancialRow => !!row);
+
+  const sourceUsed = "payu_live";
+  console.log(`Profit sheet financial source: ${sourceUsed}, rows: ${financialRows.length}`);
+
+  const rows: ProfitSheetRow[] = dates.map((costaRicaDate) => {
+    const dayTransactions = financialRows.filter((txn) => txn.dayKey === costaRicaDate);
+    const grossRevenue = dayTransactions
+      .filter((event) => event.kind === "sale")
+      .reduce((sum, event) => sum + event.amount, 0);
+    const refundAmount = dayTransactions
+      .filter((event) => event.kind === "refund")
+      .reduce((sum, event) => sum + event.amount, 0);
+    const revenue = grossRevenue - refundAmount;
+    const gst = revenue * 0.05;
+    const dailyMetaSpend = metaSpendMap.get(costaRicaDate) || { usd: 0, inr: 0 };
+    const adsCostUSD = dailyMetaSpend.usd;
+    const adsCostINR = dailyMetaSpend.inr;
+    const netRevenue = revenue - gst - adsCostINR;
+    const profitPercent = revenue > 0 ? (netRevenue / revenue) * 100 : 0;
+    const salesCount = dayTransactions.filter((event) => event.kind === "sale").length;
+    const refundCount = dayTransactions.filter((event) => event.kind === "refund").length;
+    const bundleSaleEvents = dayTransactions.filter(
+      (event) => event.kind === "sale" && isBundlePurchaseType(event.type)
+    );
+    const bundleRefundAmount = dayTransactions
+      .filter((event) => event.kind === "refund" && isBundlePurchaseType(event.type))
+      .reduce((sum, event) => sum + event.amount, 0);
+    const bundleRevenue = bundleSaleEvents.reduce((sum, event) => sum + event.amount, 0) - bundleRefundAmount;
+    const bundlePurchases = bundleSaleEvents.length;
+    const bundleRoas = adsCostINR > 0 ? bundleRevenue / adsCostINR : 0;
+
+    return {
+      date: costaRicaDate,
+      day: getDayOfWeek(costaRicaDate),
+      revenue,
+      grossRevenue,
+      refundAmount,
+      gst,
+      adsCostUSD,
+      adsCostINR,
+      netRevenue,
+      profitPercent,
+      roas: bundleRoas,
+      bundleRevenue,
+      transactionCount: salesCount,
+      bundlePurchases,
+      salesCount,
+      refundCount,
+    };
+  });
+
+  return { rows, source: sourceUsed };
+}
+
+function toDbRow(row: ProfitSheetRow, exchangeRate: number, source: string) {
+  const nowIso = new Date().toISOString();
+  return {
+    date: row.date,
+    day: row.day,
+    revenue: row.revenue,
+    gross_revenue: row.grossRevenue || 0,
+    refund_amount: row.refundAmount || 0,
+    gst: row.gst,
+    ads_cost_usd: row.adsCostUSD,
+    ads_cost_inr: row.adsCostINR,
+    net_revenue: row.netRevenue,
+    profit_percent: row.profitPercent,
+    roas: row.roas,
+    bundle_revenue: row.bundleRevenue,
+    transaction_count: row.transactionCount,
+    bundle_purchases: row.bundlePurchases,
+    sales_count: row.salesCount || row.transactionCount || 0,
+    refund_count: row.refundCount || 0,
+    exchange_rate: exchangeRate,
+    source,
+    synced_at: nowIso,
+    updated_at: nowIso,
+  };
+}
+
+function fromDbRow(row: any): ProfitSheetRow {
+  return {
+    date: row.date,
+    day: row.day,
+    revenue: Number(row.revenue || 0),
+    grossRevenue: Number(row.gross_revenue || 0),
+    refundAmount: Number(row.refund_amount || 0),
+    gst: Number(row.gst || 0),
+    adsCostUSD: Number(row.ads_cost_usd || 0),
+    adsCostINR: Number(row.ads_cost_inr || 0),
+    netRevenue: Number(row.net_revenue || 0),
+    profitPercent: Number(row.profit_percent || 0),
+    roas: Number(row.roas || 0),
+    bundleRevenue: Number(row.bundle_revenue || 0),
+    transactionCount: Number(row.transaction_count || 0),
+    bundlePurchases: Number(row.bundle_purchases || 0),
+    salesCount: Number(row.sales_count || 0),
+    refundCount: Number(row.refund_count || 0),
+  };
+}
+
+async function readProfitSheetRows(supabase: any, startDate: string, endDate: string): Promise<ProfitSheetRow[]> {
+  const { data, error } = await supabase
+    .from("profit_sheet")
+    .select("*")
+    .gte("date", startDate)
+    .lte("date", endDate)
+    .order("date", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message || "Failed to read profit sheet");
+  }
+
+  return (data || []).map(fromDbRow);
+}
+
+async function syncProfitSheetRows(
+  supabase: any,
+  startDate: string,
+  endDate: string,
+  exchangeRate: number
+): Promise<{ rows: ProfitSheetRow[]; source: string }> {
+  const result = await buildProfitSheetRows(startDate, endDate, exchangeRate);
+  if (result.rows.length > 0) {
+    const { error } = await supabase
+      .from("profit_sheet")
+      .upsert(result.rows.map((row) => toDbRow(row, exchangeRate, result.source)), { onConflict: "date" });
+
+    if (error) {
+      throw new Error(error.message || "Failed to sync profit sheet");
+    }
+  }
+  return result;
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const supabase = createClient(url, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const { searchParams } = new URL(request.url);
+    const token = searchParams.get("token");
+    const startDate = searchParams.get("startDate") || APP_LAUNCH_DATE;
+    const endDate = searchParams.get("endDate") || new Date().toISOString().split("T")[0];
+
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { data: sessionData } = await supabase
+      .from("admin_sessions")
+      .select("*")
+      .eq("id", token)
+      .single();
+
+    if (!sessionData) {
+      return NextResponse.json({ error: "Invalid session" }, { status: 401 });
+    }
+
+    if (new Date(sessionData.expires_at) < new Date()) {
+      return NextResponse.json({ error: "Session expired" }, { status: 401 });
+    }
+
+    const customExchangeRate = searchParams.get("exchangeRate");
+    const exchangeRate = customExchangeRate ? parseFloat(customExchangeRate) : await fetchExchangeRate();
+    const syncMode = searchParams.get("sync");
+    let syncedRange: { start: string; end: string } | null = null;
+
+    if (syncMode === "range") {
+      const syncStartDate = searchParams.get("syncStartDate") || startDate;
+      const syncEndDate = searchParams.get("syncEndDate") || endDate;
+      await syncProfitSheetRows(supabase, syncStartDate, syncEndDate, exchangeRate);
+      syncedRange = { start: syncStartDate, end: syncEndDate };
+    } else if (syncMode === "last2") {
+      const today = new Date().toISOString().split("T")[0];
+      const syncStartDate = addDaysToIsoDate(today, -1);
+      await syncProfitSheetRows(supabase, syncStartDate, today, exchangeRate);
+      syncedRange = { start: syncStartDate, end: today };
+    }
+
+    const rows = await readProfitSheetRows(supabase, startDate, endDate);
+    const totals = calculateTotals(rows);
 
     return NextResponse.json({
-      rows: profitSheet,
-      totals: {
-        ...totals,
-        roas: overallRoas,
-        profitPercent: overallProfitPercent,
-      },
+      rows,
+      totals,
       exchangeRate,
-      source: sourceUsed,
+      source: "supabase_profit_sheet",
       dateRange: { start: startDate, end: endDate },
+      syncedRange,
     });
   } catch (error: any) {
     console.error("Profit sheet error:", error);

@@ -25,6 +25,26 @@ async function getInitialWelcomeRoute() {
   }
 }
 
-export default async function Home() {
-  redirect(await getInitialWelcomeRoute());
+function buildQueryString(searchParams?: Record<string, string | string[] | undefined>): string {
+  const params = new URLSearchParams();
+  Object.entries(searchParams || {}).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => params.append(key, item));
+      return;
+    }
+    if (typeof value === "string") {
+      params.set(key, value);
+    }
+  });
+  return params.toString();
+}
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams?: Record<string, string | string[] | undefined>;
+}) {
+  const route = await getInitialWelcomeRoute();
+  const queryString = buildQueryString(searchParams);
+  redirect(queryString ? `${route}?${queryString}` : route);
 }

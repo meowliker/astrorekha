@@ -789,6 +789,7 @@ export default function AdminRevenuePage() {
   const [profitSheetRoasFilter, setProfitSheetRoasFilter] = useState<string>("all");
   const [profitSheetExchangeRate, setProfitSheetExchangeRate] = useState<number>(85);
   const [profitSheetCustomExchangeRate, setProfitSheetCustomExchangeRate] = useState<string>("");
+  const [profitSheetSelectedDates, setProfitSheetSelectedDates] = useState<string[]>([]);
   const profitSheetRequestIdRef = useRef(0);
 
   // Meta Breakdown state
@@ -943,7 +944,7 @@ export default function AdminRevenuePage() {
   };
 
   // Fetch Profit Sheet data
-  const fetchProfitSheet = async (customRate?: number) => {
+  const fetchProfitSheet = async (customRate?: number, syncLastTwoDays: boolean = false) => {
     const requestId = ++profitSheetRequestIdRef.current;
     try {
       setProfitSheetLoading(true);
@@ -952,6 +953,9 @@ export default function AdminRevenuePage() {
       if (!token) return;
       
       let url = `/api/admin/profit-sheet?token=${token}&startDate=${profitSheetStartDate}&endDate=${profitSheetEndDate}`;
+      if (syncLastTwoDays) {
+        url += "&sync=last2";
+      }
       
       // Use custom exchange rate if provided
       const rateToUse = customRate || (profitSheetCustomExchangeRate ? parseFloat(profitSheetCustomExchangeRate) : undefined);
@@ -1347,7 +1351,7 @@ export default function AdminRevenuePage() {
               <button
                 onClick={() => {
                   if (activeTab === "dashboard") fetchData();
-                  else if (activeTab === "profit-sheet") fetchProfitSheet();
+                  else if (activeTab === "profit-sheet") fetchProfitSheet(undefined, true);
                   else if (activeTab === "meta-details") fetchMetaBreakdown();
                   else if (activeTab === "attribution") fetchAttribution();
                   else if (activeTab === "analytics") fetchAnalytics();
@@ -2233,10 +2237,12 @@ export default function AdminRevenuePage() {
             setPeriodFilter={setProfitSheetFilter}
             roasFilter={profitSheetRoasFilter}
             setRoasFilter={setProfitSheetRoasFilter}
+            selectedDates={profitSheetSelectedDates}
+            setSelectedDates={setProfitSheetSelectedDates}
             exchangeRate={profitSheetCustomExchangeRate}
             setExchangeRate={setProfitSheetCustomExchangeRate}
-            onRefresh={() => fetchProfitSheet()}
-            onRefreshWithRate={(rate) => fetchProfitSheet(rate)}
+            onRefresh={() => fetchProfitSheet(undefined, true)}
+            onRefreshWithRate={(rate) => fetchProfitSheet(rate, true)}
           />
         )}
 
@@ -2314,6 +2320,8 @@ function ProfitSheetTab({
   setPeriodFilter,
   roasFilter,
   setRoasFilter,
+  selectedDates,
+  setSelectedDates,
   exchangeRate,
   setExchangeRate,
   onRefresh,
@@ -2330,6 +2338,8 @@ function ProfitSheetTab({
   setPeriodFilter: (v: string) => void;
   roasFilter: string;
   setRoasFilter: (v: string) => void;
+  selectedDates: string[];
+  setSelectedDates: (dates: string[]) => void;
   exchangeRate: string;
   setExchangeRate: (v: string) => void;
   onRefresh: () => void;
@@ -2359,6 +2369,12 @@ function ProfitSheetTab({
   const calendarDropdownRef = useRef<HTMLDivElement | null>(null);
   const [calendarMonthStart, setCalendarMonthStart] = useState<Date>(() => {
     const focusDate = endDate || startDate || getCurrentBusinessDateIso();
+    return getMonthStartUtcDate(focusDate);
+  });
+  const [isSpecificDaysOpen, setIsSpecificDaysOpen] = useState(false);
+  const specificDaysDropdownRef = useRef<HTMLDivElement | null>(null);
+  const [specificDaysMonthStart, setSpecificDaysMonthStart] = useState<Date>(() => {
+    const focusDate = selectedDates[selectedDates.length - 1] || endDate || startDate || getCurrentBusinessDateIso();
     return getMonthStartUtcDate(focusDate);
   });
 
@@ -2391,6 +2407,34 @@ function ProfitSheetTab({
     };
   }, [isCalendarOpen]);
 
+  useEffect(() => {
+    if (!isSpecificDaysOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (
+        specificDaysDropdownRef.current &&
+        target &&
+        !specificDaysDropdownRef.current.contains(target)
+      ) {
+        setIsSpecificDaysOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsSpecificDaysOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isSpecificDaysOpen]);
+
   const maxSelectableBusinessDate = getCurrentBusinessDateIso();
   const maxMonthStart = getMonthStartUtcDate(maxSelectableBusinessDate);
   const secondCalendarMonthStart = useMemo(
@@ -2402,6 +2446,19 @@ function ProfitSheetTab({
     () => buildMonthGrid(secondCalendarMonthStart),
     [secondCalendarMonthStart]
   );
+  const selectedDateSet = useMemo(() => new Set(selectedDates), [selectedDates]);
+  const specificSecondCalendarMonthStart = useMemo(
+    () => shiftMonthStartUtcDate(specificDaysMonthStart, 1),
+    [specificDaysMonthStart]
+  );
+  const specificPrimaryCalendarCells = useMemo(
+    () => buildMonthGrid(specificDaysMonthStart),
+    [specificDaysMonthStart]
+  );
+  const specificSecondaryCalendarCells = useMemo(
+    () => buildMonthGrid(specificSecondCalendarMonthStart),
+    [specificSecondCalendarMonthStart]
+  );
   const primaryMonthLabel = new Intl.DateTimeFormat("en-IN", {
     timeZone: META_IST_TIMEZONE,
     month: "long",
@@ -2412,6 +2469,16 @@ function ProfitSheetTab({
     month: "long",
     year: "numeric",
   }).format(secondCalendarMonthStart);
+  const specificPrimaryMonthLabel = new Intl.DateTimeFormat("en-IN", {
+    timeZone: META_IST_TIMEZONE,
+    month: "long",
+    year: "numeric",
+  }).format(specificDaysMonthStart);
+  const specificSecondaryMonthLabel = new Intl.DateTimeFormat("en-IN", {
+    timeZone: META_IST_TIMEZONE,
+    month: "long",
+    year: "numeric",
+  }).format(specificSecondCalendarMonthStart);
 
   const clampToAllowedDate = (isoDate: string): string => {
     if (isoDate < profitMinRangeStart) return profitMinRangeStart;
@@ -2436,6 +2503,44 @@ function ProfitSheetTab({
     setPickerEndDate(isoDate);
   };
 
+  const applySpecificDateSelection = (dates: string[]) => {
+    const normalizedDates = Array.from(
+      new Set(
+        dates
+          .map((date) => clampToAllowedDate(date))
+          .filter((date) => date >= profitMinRangeStart && date <= maxSelectableBusinessDate)
+      )
+    ).sort();
+
+    setSelectedDates(normalizedDates);
+    if (normalizedDates.length === 0) {
+      return;
+    }
+
+    const firstDate = normalizedDates[0];
+    const lastDate = normalizedDates[normalizedDates.length - 1];
+    setStartDate(firstDate);
+    setEndDate(lastDate);
+    setPickerStartDate(firstDate);
+    setPickerEndDate(lastDate);
+    setCalendarMonthStart(getMonthStartUtcDate(lastDate));
+  };
+
+  const toggleSpecificDate = (isoDate: string) => {
+    if (isoDate < profitMinRangeStart || isoDate > maxSelectableBusinessDate) {
+      return;
+    }
+
+    const nextDates = selectedDateSet.has(isoDate)
+      ? selectedDates.filter((date) => date !== isoDate)
+      : [...selectedDates, isoDate];
+    applySpecificDateSelection(nextDates);
+  };
+
+  const clearSpecificDates = () => {
+    setSelectedDates([]);
+  };
+
   const applyCustomRange = () => {
     if (!pickerStartDate) return;
     const normalizedStart = clampToAllowedDate(pickerStartDate);
@@ -2444,6 +2549,7 @@ function ProfitSheetTab({
     const finalEndDate = normalizedStart <= normalizedEnd ? normalizedEnd : normalizedStart;
     setStartDate(finalStartDate);
     setEndDate(finalEndDate);
+    setSelectedDates([]);
     setIsCalendarOpen(false);
   };
 
@@ -2475,6 +2581,7 @@ function ProfitSheetTab({
     setPickerStartDate(periodRange.startDate);
     setPickerEndDate(periodRange.endDate);
     setCalendarMonthStart(getMonthStartUtcDate(periodRange.endDate));
+    setSelectedDates([]);
     setIsCalendarOpen(false);
   };
 
@@ -2521,8 +2628,45 @@ function ProfitSheetTab({
     </>
   );
 
+  const renderSpecificDaysCalendarGrid = (cells: CalendarCell[]) => (
+    <>
+      <div className="grid grid-cols-7 gap-1 text-[11px] text-white/50 mb-2">
+        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((weekday) => (
+          <div key={weekday} className="text-center py-1">
+            {weekday}
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((cell) => {
+          const isDisabled = cell.isoDate < profitMinRangeStart || cell.isoDate > maxSelectableBusinessDate;
+          const isSelected = selectedDateSet.has(cell.isoDate);
+          return (
+            <button
+              key={cell.isoDate}
+              onClick={() => toggleSpecificDate(cell.isoDate)}
+              disabled={isDisabled}
+              className={`h-9 rounded-md text-sm transition-colors ${
+                isSelected
+                  ? "bg-primary text-white"
+                  : cell.inCurrentMonth
+                  ? "bg-white/5 text-white hover:bg-white/15"
+                  : "bg-white/[0.02] text-white/45 hover:bg-white/10"
+              } ${isDisabled ? "opacity-30 cursor-not-allowed" : ""}`}
+              title={formatCalendarDateLabel(cell.isoDate)}
+            >
+              {cell.day}
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+
   // Filter data based on filters
-  let filteredData = [...data];
+  let filteredData = selectedDates.length > 0
+    ? data.filter((row) => selectedDateSet.has(row.date))
+    : [...data];
 
   // ROAS filter
   if (roasFilter === "positive") {
@@ -2693,11 +2837,116 @@ function ProfitSheetTab({
                   </div>
                 </div>
               </div>
-            )}
-          </div>
-          <div>
-            <label className="text-white/50 text-xs mb-1 block">Period</label>
-            <select
+	            )}
+	          </div>
+	          <div ref={specificDaysDropdownRef} className="relative">
+	            <label className="text-white/50 text-xs mb-1 block">Specific Days</label>
+	            <button
+	              onClick={() => {
+	                setSpecificDaysMonthStart(
+	                  getMonthStartUtcDate(
+	                    selectedDates[selectedDates.length - 1] || endDate || startDate || getCurrentBusinessDateIso()
+	                  )
+	                );
+	                setIsSpecificDaysOpen((prev) => !prev);
+	              }}
+	              className={`px-3 py-2 rounded-lg text-sm border transition-colors ${
+	                selectedDates.length > 0
+	                  ? "bg-primary/15 border-primary/40 text-primary"
+	                  : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
+	              }`}
+	            >
+	              {selectedDates.length > 0 ? `${selectedDates.length} days selected` : "Pick Days"}
+	            </button>
+	            {isSpecificDaysOpen && (
+	              <div className="absolute left-0 top-[calc(100%+8px)] z-50 w-[92vw] sm:w-[680px] max-w-[92vw] rounded-2xl border border-white/15 bg-[#1A2235] shadow-2xl p-4">
+	                <div className="flex items-center justify-between mb-3">
+	                  <p className="text-white/80 text-sm font-medium">Specific Days</p>
+	                  <button
+	                    onClick={() => setIsSpecificDaysOpen(false)}
+	                    className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
+	                    aria-label="Close specific days picker"
+	                  >
+	                    <X className="w-4 h-4" />
+	                  </button>
+	                </div>
+	                <div className="flex items-center justify-between mb-3">
+	                  <button
+	                    onClick={() =>
+	                      setSpecificDaysMonthStart((prev) => shiftMonthStartUtcDate(prev, -1))
+	                    }
+	                    className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
+	                    aria-label="Previous month"
+	                  >
+	                    <ChevronLeft className="w-4 h-4" />
+	                  </button>
+	                  <p className="text-white text-sm font-medium">Select Individual Dates</p>
+	                  <button
+	                    onClick={() =>
+	                      setSpecificDaysMonthStart((prev) => shiftMonthStartUtcDate(prev, 1))
+	                    }
+	                    disabled={specificSecondCalendarMonthStart.getTime() >= maxMonthStart.getTime()}
+	                    className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+	                    aria-label="Next month"
+	                  >
+	                    <ChevronRight className="w-4 h-4" />
+	                  </button>
+	                </div>
+	                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+	                  <div>
+	                    <p className="text-white/75 text-sm font-medium mb-2">{specificPrimaryMonthLabel}</p>
+	                    {renderSpecificDaysCalendarGrid(specificPrimaryCalendarCells)}
+	                  </div>
+	                  <div>
+	                    <p className="text-white/75 text-sm font-medium mb-2">{specificSecondaryMonthLabel}</p>
+	                    {renderSpecificDaysCalendarGrid(specificSecondaryCalendarCells)}
+	                  </div>
+	                </div>
+	                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+	                  <div className="min-w-0 flex-1">
+	                    <p className="text-xs text-white/60 mb-2">
+	                      Selected:{" "}
+	                      <span className="text-white/90">
+	                        {selectedDates.length > 0 ? `${selectedDates.length} day${selectedDates.length === 1 ? "" : "s"}` : "No dates selected"}
+	                      </span>
+	                    </p>
+	                    {selectedDates.length > 0 && (
+	                      <div className="flex flex-wrap gap-1.5">
+	                        {selectedDates.map((date) => (
+	                          <button
+	                            key={date}
+	                            onClick={() => toggleSpecificDate(date)}
+	                            className="rounded-full bg-primary/15 px-2 py-1 text-xs text-primary hover:bg-primary/25 transition-colors"
+	                            title="Click to remove"
+	                          >
+	                            {formatCalendarDateShort(date)}
+	                          </button>
+	                        ))}
+	                      </div>
+	                    )}
+	                  </div>
+	                  <div className="flex items-center gap-2">
+	                    <button
+	                      onClick={clearSpecificDates}
+	                      disabled={selectedDates.length === 0}
+	                      className="px-3 py-1.5 text-xs rounded-md bg-white/10 hover:bg-white/20 text-white/80 transition-colors disabled:opacity-40"
+	                    >
+	                      Clear
+	                    </button>
+	                    <button
+	                      onClick={() => setIsSpecificDaysOpen(false)}
+	                      className="px-3 py-1.5 text-xs rounded-md bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 transition-colors"
+	                    >
+	                      Done
+	                    </button>
+	                  </div>
+	                </div>
+	              </div>
+	            )}
+	          </div>
+	          <div>
+	            <label className="text-white/50 text-xs mb-1 block">Period</label>
+	            <select
               value={periodFilter}
               onChange={(e) => applyPeriodRange(e.target.value)}
               className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50"
@@ -2753,10 +3002,31 @@ function ProfitSheetTab({
             Refresh
           </button>
         </div>
-        <p className="text-white/30 text-xs mt-3">
-          Note: Each date represents Costa Rica timezone (UTC-6). Revenue is calculated from 11:30 AM IST to next day 11:29 AM IST. Ads cost is fetched in USD and converted to INR.
-        </p>
-      </div>
+	        <p className="text-white/30 text-xs mt-3">
+	          Note: Each date represents Costa Rica timezone (UTC-6). Revenue is calculated from 11:30 AM IST to next day 11:29 AM IST. Ads cost is fetched in USD and converted to INR.
+	        </p>
+	        {selectedDates.length > 0 && (
+	          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2">
+	            <span className="text-xs font-medium text-primary">Showing specific days:</span>
+	            {selectedDates.map((date) => (
+	              <button
+	                key={date}
+	                onClick={() => toggleSpecificDate(date)}
+	                className="rounded-full bg-white/10 px-2 py-1 text-xs text-white/80 hover:bg-white/20 transition-colors"
+	                title="Click to remove"
+	              >
+	                {formatCalendarDateShort(date)}
+	              </button>
+	            ))}
+	            <button
+	              onClick={clearSpecificDates}
+	              className="ml-auto rounded-md bg-white/10 px-2 py-1 text-xs text-white/70 hover:bg-white/20 transition-colors"
+	            >
+	              Clear
+	            </button>
+	          </div>
+	        )}
+	      </div>
       {error && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-300">
           {error}

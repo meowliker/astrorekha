@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Menu } from "lucide-react";
 import { OnboardingSidebar } from "@/components/OnboardingSidebar";
 import Image from "next/image";
+import { captureAttributionFromPage } from "@/lib/attribution-client";
 
 export default function WelcomePage() {
   const router = useRouter();
@@ -30,6 +31,7 @@ export default function WelcomePage() {
       const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
       const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
       seedSingleFunnel();
+      captureAttributionFromPage();
       if (cancelled) return;
 
       if (hasCompletedRegistration) {
