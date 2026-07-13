@@ -137,18 +137,12 @@ function campaignKey(row: MarketingEventRow | PaymentRow): string {
     row.meta_ad_id ||
     row.meta_adset_id ||
     row.meta_campaign_id ||
-    row.utm_campaign ||
-    row.utm_content ||
     "unattributed"
   );
 }
 
 function hasMarketingAttribution(row: MarketingEventRow | PaymentRow): boolean {
-  return (
-    campaignKey(row) !== "unattributed" ||
-    !!row.utm_source ||
-    !!row.utm_medium
-  );
+  return Boolean(row.meta_campaign_id || row.meta_adset_id || row.meta_ad_id);
 }
 
 function productKey(row: PaymentRow): string {

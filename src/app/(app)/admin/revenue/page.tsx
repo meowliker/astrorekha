@@ -4425,7 +4425,7 @@ function AttributionTab({
             </div>
             <div className="bg-[#162136] rounded-xl p-4 border border-white/10">
               <p className="text-white/45 text-xs mb-1">Scope</p>
-              <p className="text-blue-400 text-xl font-bold">UTM Only</p>
+              <p className="text-blue-400 text-xl font-bold">Our Params Only</p>
             </div>
             <div className="bg-[#162136] rounded-xl p-4 border border-white/10">
               <p className="text-white/45 text-xs mb-1">Meta Spend Join</p>
