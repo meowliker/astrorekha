@@ -3,7 +3,7 @@
 import Script from "next/script";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, Suspense } from "react";
-import { captureAttributionFromPage } from "@/lib/attribution-client";
+import { captureMarketingAttribution, trackMarketingEvent } from "@/lib/marketing-events-client";
 
 const PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID;
 
@@ -13,7 +13,16 @@ function PageViewTracker() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    captureAttributionFromPage();
+    const attribution = captureMarketingAttribution();
+    void trackMarketingEvent({
+      eventName: "page_view",
+      attribution,
+      metadata: {
+        pathname,
+        search: searchParams.toString(),
+      },
+    });
+
     // Track page view on route change
     if (typeof window !== "undefined" && (window as any).fbq) {
       (window as any).fbq("track", "PageView");
@@ -24,12 +33,11 @@ function PageViewTracker() {
 }
 
 export const MetaPixel = () => {
-  if (!PIXEL_ID) return null;
-
   return (
     <>
-      <Script id="meta-pixel-init" strategy="afterInteractive">
-        {`
+      {PIXEL_ID ? (
+        <Script id="meta-pixel-init" strategy="afterInteractive">
+          {`
           !function(f,b,e,v,n,t,s)
           {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
           n.callMethod.apply(n,arguments):n.queue.push(arguments)};
@@ -41,19 +49,22 @@ export const MetaPixel = () => {
           fbq('init', '${PIXEL_ID}');
           fbq('track', 'PageView');
         `}
-      </Script>
+        </Script>
+      ) : null}
       <Suspense fallback={null}>
         <PageViewTracker />
       </Suspense>
-      <noscript>
-        <img
-          height="1"
-          width="1"
-          style={{ display: "none" }}
-          src={`https://www.facebook.com/tr?id=${PIXEL_ID}&ev=PageView&noscript=1`}
-          alt=""
-        />
-      </noscript>
+      {PIXEL_ID ? (
+        <noscript>
+          <img
+            height="1"
+            width="1"
+            style={{ display: "none" }}
+            src={`https://www.facebook.com/tr?id=${PIXEL_ID}&ev=PageView&noscript=1`}
+            alt=""
+          />
+        </noscript>
+      ) : null}
     </>
   );
 };

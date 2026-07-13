@@ -1,5 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { sendVastuGuideEmail } from "@/lib/vastu-guide-email";
+import { type PaymentAttributionPayload } from "@/lib/attribution";
+import { recordMarketingEvent } from "@/lib/marketing-events";
 
 const BUNDLE_FEATURES: Record<string, string[]> = {
   "palm-reading": ["palmReading"],
@@ -93,6 +95,30 @@ function parseCoins(type: string, coins: string, bundleId: string): number {
   return 0;
 }
 
+function attributionFromPayment(payment: any): PaymentAttributionPayload {
+  if (!payment) return {};
+
+  return {
+    fbclid: payment.fbclid || undefined,
+    fbc: payment.fbc || undefined,
+    fbp: payment.fbp || undefined,
+    utm_source: payment.utm_source || undefined,
+    utm_medium: payment.utm_medium || undefined,
+    utm_campaign: payment.utm_campaign || undefined,
+    utm_term: payment.utm_term || undefined,
+    utm_content: payment.utm_content || undefined,
+    utm_id: payment.utm_id || undefined,
+    click_id: payment.click_id || undefined,
+    meta_campaign_id: payment.meta_campaign_id || undefined,
+    meta_adset_id: payment.meta_adset_id || undefined,
+    meta_ad_id: payment.meta_ad_id || undefined,
+    landing_path: payment.landing_path || undefined,
+    landing_url: payment.landing_url || undefined,
+    referrer_url: payment.referrer_url || undefined,
+    captured_at: payment.attribution_captured_at || undefined,
+  };
+}
+
 async function resolveUserIdFromEmail(email?: string): Promise<string | null> {
   if (!email) return null;
   const normalizedEmail = email.toLowerCase().trim();
@@ -127,7 +153,9 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload): Promise<
 
   const { data: existingPayment } = await supabase
     .from("payments")
-    .select("id, user_id, payment_status, type, bundle_id, feature, coins")
+    .select(
+      "id, user_id, payment_status, type, bundle_id, feature, coins, amount, customer_email, fbclid, fbc, fbp, utm_source, utm_medium, utm_campaign, utm_term, utm_content, utm_id, click_id, meta_campaign_id, meta_adset_id, meta_ad_id, landing_path, landing_url, referrer_url, attribution_captured_at"
+    )
     .eq("payu_txn_id", txnid)
     .maybeSingle();
 
@@ -141,6 +169,24 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload): Promise<
         payu_payment_id: mihpayid || null,
       })
       .eq("payu_txn_id", txnid);
+
+    await recordMarketingEvent({
+      eventName: "payment_failed",
+      userId: existingPayment?.user_id || payload.udf1 || null,
+      email: existingPayment?.customer_email || payload.email || null,
+      productType: payload.udf2 || existingPayment?.type || null,
+      productId: payload.udf3 || existingPayment?.bundle_id || null,
+      productName: payload.productinfo || null,
+      paymentId: existingPayment?.id || `pay_${txnid}`,
+      payuTxnId: txnid,
+      amount: parseAmountToPaise(payload.amount) || existingPayment?.amount || null,
+      currency: "INR",
+      attribution: attributionFromPayment(existingPayment),
+      metadata: {
+        payuStatus: payload.status || null,
+        mihpayid: mihpayid || null,
+      },
+    });
 
     return { success: false, alreadyPaid: false, userId: existingPayment?.user_id || null, reason: "Payment not successful" };
   }
@@ -196,6 +242,28 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload): Promise<
       payment_status: "paid",
       fulfilled_at: nowIso,
       created_at: nowIso,
+    });
+  }
+
+  if (!alreadyPaid) {
+    await recordMarketingEvent({
+      eventName: "purchase_success",
+      userId: resolvedUserId || null,
+      email: normalizedEmail || existingPayment?.customer_email || null,
+      productType: type || null,
+      productId: bundleId || null,
+      productName: payload.productinfo || bundleId || feature || type || null,
+      paymentId: existingPayment?.id || `pay_${txnid}`,
+      payuTxnId: txnid,
+      amount: amountInPaise || existingPayment?.amount || null,
+      currency: "INR",
+      attribution: attributionFromPayment(existingPayment),
+      metadata: {
+        payuStatus: payload.status || null,
+        mihpayid: mihpayid || null,
+        feature: feature || null,
+        coins: coins || null,
+      },
     });
   }
 

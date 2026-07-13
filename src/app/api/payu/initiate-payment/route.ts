@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing, type PricingConfig } from "@/lib/pricing";
 import { sanitizePaymentAttribution, type PaymentAttributionPayload } from "@/lib/attribution";
+import { recordMarketingEvent } from "@/lib/marketing-events";
 
 // Fetch dynamic pricing from database
 async function getPricingConfig(): Promise<PricingConfig> {
@@ -217,6 +218,24 @@ export async function POST(request: NextRequest) {
       console.error("Failed to save payment record:", paymentError);
       // Don't fail the request - payment can still proceed
     }
+
+    await recordMarketingEvent({
+      eventName: "checkout_started",
+      userId: userId || null,
+      email: normalizedEmail || null,
+      productType: type || null,
+      productId: bundleId || packageId || null,
+      productName: productInfo,
+      paymentId: `pay_${txnId}`,
+      payuTxnId: txnId,
+      amount: Math.round(amount * 100),
+      currency: "INR",
+      route: finalAttribution.landing_path || null,
+      url: finalAttribution.landing_url || null,
+      referrerUrl: finalAttribution.referrer_url || requestReferrer || null,
+      attribution: finalAttribution,
+      metadata,
+    });
 
     return NextResponse.json({
       txnId,

@@ -42,7 +42,7 @@ import React from "react";
 import { createPortal } from "react-dom";
 
 // Tab type
-type TabType = "dashboard" | "profit-sheet" | "meta-details" | "analytics";
+type TabType = "dashboard" | "profit-sheet" | "meta-details" | "attribution" | "analytics";
 
 // Profit Sheet row interface
 interface ProfitSheetRow {
@@ -161,6 +161,82 @@ interface MetaBreakdownData {
     note: string;
   };
   totals: MetaTotals;
+}
+
+interface AttributionFunnelStage {
+  id: string;
+  label: string;
+  visitors: number;
+  dropOffFromPrevious: number;
+  conversionFromPreviousPercent: number;
+}
+
+interface AttributionProductRow {
+  key: string;
+  label: string;
+  productType: string;
+  productId: string | null;
+  orders: number;
+  revenueInr: number;
+  estimatedGstInr: number;
+  estimatedProfitBeforeAdSpendInr: number;
+}
+
+interface AttributionCampaignProduct {
+  label: string;
+  orders: number;
+  revenueInr: number;
+}
+
+interface AttributionCampaignRow {
+  key: string;
+  utmCampaign: string | null;
+  utmContent: string | null;
+  metaCampaignId: string | null;
+  metaAdsetId: string | null;
+  metaAdId: string | null;
+  campaignName?: string | null;
+  adsetName?: string | null;
+  adName?: string | null;
+  orders: number;
+  metaPurchases?: number | null;
+  revenueInr: number;
+  adSpendInr: number;
+  budgetInr?: number | null;
+  impressions?: number;
+  clicks?: number;
+  cpcInr?: number;
+  cpaInr?: number;
+  cpmInr?: number;
+  ctr?: number;
+  estimatedProfitAfterAdSpendInr: number;
+  roas: number | null;
+  products: AttributionCampaignProduct[];
+}
+
+interface MarketingAttributionData {
+  configured: boolean;
+  eventsAvailable: boolean;
+  eventsError: string | null;
+  range: {
+    start: string;
+    end: string;
+    startDate: string;
+    endDate: string;
+  };
+  metaUrlParameterTemplate: string;
+  summary: {
+    events: number;
+    payments: number;
+    paidOrders: number;
+    revenueInr: number;
+    attributedRevenueInr: number;
+    attributedRevenuePercent: number;
+    metaSpendConfigured: boolean;
+  };
+  funnel: AttributionFunnelStage[];
+  products: AttributionProductRow[];
+  campaigns: AttributionCampaignRow[];
 }
 
 interface AnalyticsPeakSalesMetric {
@@ -419,6 +495,7 @@ const META_IST_TIMEZONE = "Asia/Kolkata";
 const META_BUSINESS_BOUNDARY_HOUR = 11;
 const META_BUSINESS_BOUNDARY_MINUTE = 30;
 const META_MIN_RANGE_START = "2024-01-01";
+const ATTRIBUTION_TRACKING_START_DATE = "2026-07-13";
 const ANALYTICS_RANGE_STORAGE_KEY = "analytics_date_range_v1";
 
 type CalendarRange = { startDate: string; endDate: string };
@@ -729,6 +806,19 @@ export default function AdminRevenuePage() {
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set());
   const [expandedAdsets, setExpandedAdsets] = useState<Set<string>>(new Set());
 
+  // First-party attribution
+  const [attributionData, setAttributionData] = useState<MarketingAttributionData | null>(null);
+  const [attributionLoading, setAttributionLoading] = useState(false);
+  const [attributionError, setAttributionError] = useState<string | null>(null);
+  const [attributionDatePreset, setAttributionDatePreset] = useState<string>("today");
+  const [attributionStartDate, setAttributionStartDate] = useState<string>(
+    ATTRIBUTION_TRACKING_START_DATE
+  );
+  const [attributionEndDate, setAttributionEndDate] = useState<string>(
+    () => new Date().toISOString().split("T")[0]
+  );
+  const [attributionUseCustomDateRange, setAttributionUseCustomDateRange] = useState(true);
+
   // Backfill
   const [backfillLoading, setBackfillLoading] = useState(false);
   const [backfillResult, setBackfillResult] = useState<string | null>(null);
@@ -946,6 +1036,41 @@ export default function AdminRevenuePage() {
     }
   };
 
+  const fetchAttribution = async () => {
+    try {
+      setAttributionLoading(true);
+      setAttributionError(null);
+      const token = localStorage.getItem("admin_session_token");
+      if (!token) return;
+
+      const presetRange = getPresetCalendarRange(attributionDatePreset);
+      const startDate = attributionUseCustomDateRange ? attributionStartDate : presetRange.startDate;
+      const endDate = attributionUseCustomDateRange ? attributionEndDate : presetRange.endDate;
+      const res = await fetch(
+        `/api/admin/marketing-attribution?token=${encodeURIComponent(token)}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+        { cache: "no-store" }
+      );
+      if (res.status === 401) {
+        localStorage.removeItem("admin_session_token");
+        localStorage.removeItem("admin_session_expiry");
+        router.push("/admin/login");
+        return;
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed to fetch attribution" }));
+        throw new Error(err.error || "Failed to fetch attribution");
+      }
+      const result = await res.json();
+      setAttributionData(result);
+    } catch (err) {
+      console.error("Attribution fetch error:", err);
+      setAttributionError(err instanceof Error ? err.message : "Failed to fetch attribution");
+      setAttributionData(null);
+    } finally {
+      setAttributionLoading(false);
+    }
+  };
+
   const fetchAnalytics = async () => {
     try {
       setAnalyticsLoading(true);
@@ -1027,6 +1152,12 @@ export default function AdminRevenuePage() {
       fetchMetaBreakdown();
     }
   }, [activeTab, metaBreakdownDatePreset]);
+
+  useEffect(() => {
+    if (activeTab === "attribution") {
+      fetchAttribution();
+    }
+  }, [activeTab, attributionDatePreset, attributionStartDate, attributionEndDate, attributionUseCustomDateRange]);
 
   useEffect(() => {
     if (activeTab === "analytics") {
@@ -1218,18 +1349,19 @@ export default function AdminRevenuePage() {
                   if (activeTab === "dashboard") fetchData();
                   else if (activeTab === "profit-sheet") fetchProfitSheet();
                   else if (activeTab === "meta-details") fetchMetaBreakdown();
+                  else if (activeTab === "attribution") fetchAttribution();
                   else if (activeTab === "analytics") fetchAnalytics();
                 }}
-                disabled={refreshing || profitSheetLoading || metaLoading || metaBreakdownLoading || analyticsLoading}
+                disabled={refreshing || profitSheetLoading || metaLoading || metaBreakdownLoading || attributionLoading || analyticsLoading}
                 className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
               >
-                <RefreshCw className={`w-5 h-5 text-white ${(refreshing || profitSheetLoading || metaLoading || metaBreakdownLoading || analyticsLoading) ? "animate-spin" : ""}`} />
+                <RefreshCw className={`w-5 h-5 text-white ${(refreshing || profitSheetLoading || metaLoading || metaBreakdownLoading || attributionLoading || analyticsLoading) ? "animate-spin" : ""}`} />
               </button>
             </div>
           </div>
           
           {/* Tab Navigation */}
-          <div className="flex items-center gap-2 bg-white/5 rounded-xl p-1">
+          <div className="flex flex-wrap items-center gap-2 bg-white/5 rounded-xl p-1">
             <button
               onClick={() => setActiveTab("dashboard")}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
@@ -1262,6 +1394,17 @@ export default function AdminRevenuePage() {
             >
               <Facebook className="w-4 h-4" />
               Meta Details
+            </button>
+            <button
+              onClick={() => setActiveTab("attribution")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                activeTab === "attribution"
+                  ? "bg-primary text-white shadow-lg"
+                  : "text-white/60 hover:text-white hover:bg-white/10"
+              }`}
+            >
+              <Target className="w-4 h-4" />
+              Attribution
             </button>
             <button
               onClick={() => setActiveTab("analytics")}
@@ -2119,6 +2262,23 @@ export default function AdminRevenuePage() {
             onRefresh={() => fetchMetaBreakdown()}
             onRefreshWithRate={(rate) => fetchMetaBreakdown(rate)}
             onCustomDateRefresh={(start, end) => fetchMetaBreakdown(undefined, start, end)}
+          />
+        )}
+
+        {activeTab === "attribution" && (
+          <AttributionTab
+            data={attributionData}
+            loading={attributionLoading}
+            error={attributionError}
+            datePreset={attributionDatePreset}
+            setDatePreset={setAttributionDatePreset}
+            startDate={attributionStartDate}
+            setStartDate={setAttributionStartDate}
+            endDate={attributionEndDate}
+            setEndDate={setAttributionEndDate}
+            useCustomDateRange={attributionUseCustomDateRange}
+            setUseCustomDateRange={setAttributionUseCustomDateRange}
+            onRefresh={fetchAttribution}
           />
         )}
 
@@ -3651,6 +3811,502 @@ function MetaBreakdownTab({
       <div className="space-y-4">
         {breakdownSections.map((section) => renderBreakdownSection(section))}
       </div>
+    </div>
+  );
+}
+
+function AttributionTab({
+  data,
+  loading,
+  error,
+  datePreset,
+  setDatePreset,
+  startDate,
+  setStartDate,
+  endDate,
+  setEndDate,
+  useCustomDateRange,
+  setUseCustomDateRange,
+  onRefresh,
+}: {
+  data: MarketingAttributionData | null;
+  loading: boolean;
+  error: string | null;
+  datePreset: string;
+  setDatePreset: (value: string) => void;
+  startDate: string;
+  setStartDate: (value: string) => void;
+  endDate: string;
+  setEndDate: (value: string) => void;
+  useCustomDateRange: boolean;
+  setUseCustomDateRange: (value: boolean) => void;
+  onRefresh: () => void;
+}) {
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 0,
+    }).format(value || 0);
+  const formatCurrencyPrecise = (value: number) =>
+    new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 2,
+    }).format(value || 0);
+
+  const [copiedParameters, setCopiedParameters] = useState(false);
+  const [pickerStartDate, setPickerStartDate] = useState<string>(startDate);
+  const [pickerEndDate, setPickerEndDate] = useState<string>(endDate);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const calendarDropdownRef = useRef<HTMLDivElement | null>(null);
+  const [calendarMonthStart, setCalendarMonthStart] = useState<Date>(() => {
+    const focusDate = endDate || startDate || getCurrentBusinessDateIso();
+    return getMonthStartUtcDate(focusDate);
+  });
+
+  useEffect(() => {
+    setPickerStartDate(startDate);
+    setPickerEndDate(endDate);
+  }, [startDate, endDate]);
+
+  useEffect(() => {
+    if (!isCalendarOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (calendarDropdownRef.current && target && !calendarDropdownRef.current.contains(target)) {
+        setIsCalendarOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsCalendarOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isCalendarOpen]);
+
+  const maxSelectableBusinessDate = getCurrentBusinessDateIso();
+  const maxMonthStart = getMonthStartUtcDate(maxSelectableBusinessDate);
+  const calendarCells = useMemo(() => buildMonthGrid(calendarMonthStart), [calendarMonthStart]);
+  const monthLabel = new Intl.DateTimeFormat("en-IN", {
+    timeZone: META_IST_TIMEZONE,
+    month: "long",
+    year: "numeric",
+  }).format(calendarMonthStart);
+
+  const applyPresetRange = (preset: string) => {
+    const presetRange = getPresetCalendarRange(preset);
+    setDatePreset(preset);
+    setUseCustomDateRange(false);
+    setStartDate(presetRange.startDate);
+    setEndDate(presetRange.endDate);
+    setPickerStartDate(presetRange.startDate);
+    setPickerEndDate(presetRange.endDate);
+    setCalendarMonthStart(getMonthStartUtcDate(presetRange.endDate));
+    setIsCalendarOpen(false);
+  };
+
+  const handleCalendarDateSelect = (isoDate: string) => {
+    if (isoDate < META_MIN_RANGE_START || isoDate > maxSelectableBusinessDate) {
+      return;
+    }
+    if (!pickerStartDate || (pickerStartDate && pickerEndDate)) {
+      setPickerStartDate(isoDate);
+      setPickerEndDate("");
+      return;
+    }
+    if (isoDate < pickerStartDate) {
+      setPickerStartDate(isoDate);
+      setPickerEndDate("");
+      return;
+    }
+    setPickerEndDate(isoDate);
+  };
+
+  const applyCustomRange = () => {
+    if (!pickerStartDate) return;
+    const finalEndDate = pickerEndDate || pickerStartDate;
+    setUseCustomDateRange(true);
+    setStartDate(pickerStartDate);
+    setEndDate(finalEndDate);
+    setIsCalendarOpen(false);
+  };
+
+  const selectedRangeLabel = pickerStartDate
+    ? `${formatCalendarDateLabel(pickerStartDate)}${
+        pickerEndDate ? ` → ${formatCalendarDateLabel(pickerEndDate)}` : ""
+      }`
+    : "No date selected";
+
+  const activeRangeButtonLabel =
+    startDate && endDate
+      ? startDate === endDate
+        ? formatCalendarDateShort(startDate)
+        : `${formatCalendarDateShort(startDate)} - ${formatCalendarDateShort(endDate)}`
+      : "Select Range";
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-white text-sm font-semibold">First-Party Attribution</p>
+            <p className="text-white/45 text-xs mt-1">
+              Funnel, bundle revenue, campaign ROAS, and profit from captured Meta URL params.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="text-white/50 text-xs mb-1 block">Quick Select</label>
+              <select
+                value={datePreset}
+                onChange={(e) => applyPresetRange(e.target.value)}
+                className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50"
+              >
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="last_3d">Last 3 Days</option>
+                <option value="last_7d">Last 7 Days</option>
+                <option value="last_14d">Last 14 Days</option>
+                <option value="last_30d">Last 30 Days</option>
+                <option value="last_60d">Last 60 Days</option>
+                <option value="last_90d">Last 90 Days</option>
+                <option value="this_week">This Week</option>
+                <option value="last_week">Last Week</option>
+                <option value="this_month">This Month</option>
+                <option value="last_month">Last Month</option>
+                <option value="this_quarter">This Quarter</option>
+                <option value="last_quarter">Last Quarter</option>
+                <option value="this_year">This Year</option>
+                <option value="last_year">Last Year</option>
+                <option value="maximum">All Time</option>
+              </select>
+            </div>
+            <div ref={calendarDropdownRef} className="relative">
+              <label className="text-white/50 text-xs mb-1 block">Custom Range</label>
+              <button
+                onClick={() => setIsCalendarOpen((prev) => !prev)}
+                className={`px-3 py-2 rounded-lg text-sm border transition-colors ${
+                  useCustomDateRange
+                    ? "bg-blue-500/20 border-blue-500/40 text-blue-300"
+                    : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
+                }`}
+              >
+                {activeRangeButtonLabel}
+              </button>
+              {isCalendarOpen && (
+                <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-[92vw] sm:w-[680px] max-w-[92vw] rounded-2xl border border-white/15 bg-[#1A2235] shadow-2xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-white/80 text-sm font-medium">Custom Range</p>
+                    <button
+                      onClick={() => setIsCalendarOpen(false)}
+                      className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
+                      aria-label="Close custom range picker"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between mb-3">
+                    <button
+                      onClick={() =>
+                        setCalendarMonthStart(
+                          (prev) => new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() - 1, 1))
+                        )
+                      }
+                      className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
+                      aria-label="Previous month"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <p className="text-white text-sm font-medium">{monthLabel}</p>
+                    <button
+                      onClick={() =>
+                        setCalendarMonthStart(
+                          (prev) => new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() + 1, 1))
+                        )
+                      }
+                      disabled={calendarMonthStart.getTime() >= maxMonthStart.getTime()}
+                      className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      aria-label="Next month"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-7 gap-1 text-[11px] text-white/50 mb-2">
+                    {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((weekday) => (
+                      <div key={weekday} className="text-center py-1">
+                        {weekday}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-1">
+                    {calendarCells.map((cell) => {
+                      const isDisabled =
+                        cell.isoDate < META_MIN_RANGE_START || cell.isoDate > maxSelectableBusinessDate;
+                      const isStart = pickerStartDate === cell.isoDate;
+                      const isEnd = pickerEndDate === cell.isoDate;
+                      const isInRange =
+                        !!pickerStartDate &&
+                        !!pickerEndDate &&
+                        cell.isoDate >= pickerStartDate &&
+                        cell.isoDate <= pickerEndDate;
+                      return (
+                        <button
+                          key={cell.isoDate}
+                          onClick={() => handleCalendarDateSelect(cell.isoDate)}
+                          disabled={isDisabled}
+                          className={`h-9 rounded-md text-sm transition-colors ${
+                            isStart || isEnd
+                              ? "bg-primary text-white"
+                              : isInRange
+                              ? "bg-primary/25 text-white"
+                              : cell.inCurrentMonth
+                              ? "bg-white/5 text-white hover:bg-white/15"
+                              : "bg-white/[0.02] text-white/45 hover:bg-white/10"
+                          } ${isDisabled ? "opacity-30 cursor-not-allowed" : ""}`}
+                          title={formatCalendarDateLabel(cell.isoDate)}
+                        >
+                          {cell.day}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs text-white/60">
+                      Selected: <span className="text-white/90">{selectedRangeLabel}</span>
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setPickerStartDate(startDate);
+                          setPickerEndDate(endDate);
+                        }}
+                        className="px-3 py-1.5 text-xs rounded-md bg-white/10 hover:bg-white/20 text-white/80 transition-colors"
+                      >
+                        Reset
+                      </button>
+                      <button
+                        onClick={applyCustomRange}
+                        disabled={!pickerStartDate}
+                        className="px-3 py-1.5 text-xs rounded-md bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 transition-colors disabled:opacity-50"
+                      >
+                        Apply Range
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={onRefresh}
+              disabled={loading}
+              className="px-4 py-2 bg-primary hover:bg-primary/80 text-white text-sm rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </button>
+          </div>
+        </div>
+        {data?.range && (
+          <p className="text-white/30 text-xs mt-3">
+            Selected dates: {data.range.startDate} to {data.range.endDate}
+          </p>
+        )}
+      </div>
+
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4">
+          <p className="text-red-300 text-sm">{error}</p>
+        </div>
+      )}
+
+      {loading && !data ? (
+        <div className="bg-[#1A2235] rounded-xl p-8 border border-white/10 flex items-center justify-center">
+          <Loader2 className="w-6 h-6 text-primary animate-spin" />
+          <span className="ml-2 text-white/60">Loading attribution...</span>
+        </div>
+      ) : data ? (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+            <div className="bg-[#162136] rounded-xl p-4 border border-white/10">
+              <p className="text-white/45 text-xs mb-1">Tracked Events</p>
+              <p className="text-white text-xl font-bold">{data.summary.events}</p>
+            </div>
+            <div className="bg-[#162136] rounded-xl p-4 border border-white/10">
+              <p className="text-white/45 text-xs mb-1">Paid Orders</p>
+              <p className="text-green-400 text-xl font-bold">{data.summary.paidOrders}</p>
+            </div>
+            <div className="bg-[#162136] rounded-xl p-4 border border-white/10">
+              <p className="text-white/45 text-xs mb-1">Revenue</p>
+              <p className="text-green-400 text-xl font-bold">{formatCurrency(data.summary.revenueInr)}</p>
+            </div>
+            <div className="bg-[#162136] rounded-xl p-4 border border-white/10">
+              <p className="text-white/45 text-xs mb-1">Attributed Revenue</p>
+              <p className="text-cyan-300 text-xl font-bold">{formatCurrency(data.summary.attributedRevenueInr)}</p>
+            </div>
+            <div className="bg-[#162136] rounded-xl p-4 border border-white/10">
+              <p className="text-white/45 text-xs mb-1">Scope</p>
+              <p className="text-blue-400 text-xl font-bold">UTM Only</p>
+            </div>
+            <div className="bg-[#162136] rounded-xl p-4 border border-white/10">
+              <p className="text-white/45 text-xs mb-1">Meta Spend Join</p>
+              <p className={`text-xl font-bold ${data.summary.metaSpendConfigured ? "text-emerald-400" : "text-amber-400"}`}>
+                {data.summary.metaSpendConfigured ? "On" : "Off"}
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-[#1A2235] rounded-xl p-3 border border-white/10 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-white/75 text-sm font-semibold">Meta URL Parameters</p>
+              <p className="text-white/35 text-xs">Click the parameter pill to copy it.</p>
+            </div>
+            <button
+              onClick={async () => {
+                await navigator.clipboard?.writeText(data.metaUrlParameterTemplate);
+                setCopiedParameters(true);
+                window.setTimeout(() => setCopiedParameters(false), 1600);
+              }}
+              className="group relative max-w-full sm:max-w-[720px] px-3 py-2 rounded-lg bg-black/20 hover:bg-black/30 border border-white/10 text-left transition-colors"
+              title={copiedParameters ? "Copied!" : "Click to copy"}
+            >
+              <span className="pointer-events-none absolute -top-8 right-2 rounded-md bg-white/95 px-2 py-1 text-[11px] font-medium text-[#0A0E1A] opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+                {copiedParameters ? "Copied!" : "Click to copy"}
+              </span>
+              <code className="block whitespace-normal break-all text-xs leading-5 text-cyan-200">
+                {data.metaUrlParameterTemplate}
+              </code>
+            </button>
+          </div>
+
+          <div className="bg-[#1A2235] rounded-xl border border-white/10 overflow-hidden">
+            <div className="px-4 py-3 border-b border-white/10">
+              <h3 className="text-white/75 text-sm font-semibold">First-Party Campaign Performance</h3>
+              <p className="text-white/35 text-xs mt-1">
+                Same operating columns as Meta Details, calculated from captured URL params and paid orders.
+              </p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-white/10 bg-white/5">
+                    <th className="text-left text-white/70 text-xs font-semibold px-4 py-3">Campaign / Ad</th>
+                    <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Spend</th>
+                    <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Budget</th>
+                    <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">ROAS</th>
+                    <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Profit</th>
+                    <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Meta Purchases</th>
+                    <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Live Sales</th>
+                    <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Revenue</th>
+                    <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">CPC</th>
+                    <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">CPA</th>
+                    <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">CPM</th>
+                    <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">CTR</th>
+                    <th className="text-left text-white/70 text-xs font-semibold px-4 py-3">Top Products</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.campaigns.length === 0 ? (
+                    <tr>
+                      <td className="text-center text-white/40 py-8" colSpan={13}>
+                        No attributed campaign sales in this range.
+                      </td>
+                    </tr>
+                  ) : (
+                    data.campaigns.map((campaign) => (
+                      <tr key={campaign.key} className="border-b border-white/5 hover:bg-white/5">
+                        <td className="px-4 py-3">
+                          <p className="text-white font-medium">
+                            {campaign.adName || campaign.adsetName || campaign.campaignName || campaign.utmCampaign || campaign.key}
+                          </p>
+                          <p className="text-white/35 text-[11px] mt-0.5">
+                            {campaign.metaCampaignId || "no campaign id"} / {campaign.metaAdsetId || "no adset id"} / {campaign.metaAdId || "no ad id"}
+                          </p>
+                        </td>
+                        <td className="text-red-400 px-4 py-3 text-right">{formatCurrency(campaign.adSpendInr)}</td>
+                        <td className="text-white/45 px-4 py-3 text-right">
+                          {campaign.budgetInr ? formatCurrency(campaign.budgetInr) : "-"}
+                        </td>
+                        <td className="text-blue-400 px-4 py-3 text-right">{campaign.roas ? campaign.roas.toFixed(2) : "-"}</td>
+                        <td
+                          className={`px-4 py-3 text-right ${
+                            campaign.estimatedProfitAfterAdSpendInr >= 0 ? "text-green-400" : "text-red-400"
+                          }`}
+                        >
+                          {formatCurrency(campaign.estimatedProfitAfterAdSpendInr)}
+                        </td>
+                        <td className="text-white/45 px-4 py-3 text-right">
+                          {typeof campaign.metaPurchases === "number" ? campaign.metaPurchases : "-"}
+                        </td>
+                        <td className="text-cyan-300 px-4 py-3 text-right">{campaign.orders}</td>
+                        <td className="text-green-400 px-4 py-3 text-right">{formatCurrency(campaign.revenueInr)}</td>
+                        <td className="text-white/60 px-4 py-3 text-right">
+                          {campaign.cpcInr ? formatCurrencyPrecise(campaign.cpcInr) : "-"}
+                        </td>
+                        <td className="text-amber-400 px-4 py-3 text-right">
+                          {campaign.cpaInr ? formatCurrencyPrecise(campaign.cpaInr) : "-"}
+                        </td>
+                        <td className="text-white/60 px-4 py-3 text-right">
+                          {campaign.cpmInr ? formatCurrencyPrecise(campaign.cpmInr) : "-"}
+                        </td>
+                        <td className="text-blue-400 px-4 py-3 text-right">
+                          {typeof campaign.ctr === "number" && campaign.ctr > 0 ? `${campaign.ctr.toFixed(2)}%` : "-"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-1">
+                            {campaign.products.slice(0, 3).map((product) => (
+                              <span key={product.label} className="px-2 py-1 rounded-md bg-white/5 text-white/55 text-[11px]">
+                                {product.label} ({product.orders})
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="bg-[#1A2235] rounded-xl border border-white/10 overflow-hidden">
+            <div className="px-4 py-3 border-b border-white/10">
+              <h3 className="text-white/75 text-sm font-semibold">Product / Bundle Breakdown</h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 p-4">
+              {data.products.map((product) => (
+                <div key={product.key} className="bg-[#162136] rounded-xl p-4 border border-white/10">
+                  <p className="text-white text-sm font-semibold">{product.label}</p>
+                  <p className="text-white/35 text-xs mt-1">{product.productType}</p>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <p className="text-white/40">Orders</p>
+                      <p className="text-white font-semibold">{product.orders}</p>
+                    </div>
+                    <div>
+                      <p className="text-white/40">Revenue</p>
+                      <p className="text-green-400 font-semibold">{formatCurrency(product.revenueInr)}</p>
+                    </div>
+                    <div>
+                      <p className="text-white/40">After GST</p>
+                      <p className="text-cyan-300 font-semibold">{formatCurrency(product.estimatedProfitBeforeAdSpendInr)}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
