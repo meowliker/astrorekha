@@ -6,6 +6,7 @@ import { DEFAULT_LAYOUT_B_CONFIG, normalizeLayoutBConfig } from "@/lib/layout-b-
 // Handles getting assigned variant for a user and managing test configs
 const SETTINGS_KEY = "funnel_layout_b_config";
 const PAYWALL_DEFAULT_PLAN_TEST_ID_PREFIX = "paywall-default-plan";
+const PAYWALL_GST_TEST_ID_PREFIX = "paywall-gst-exclusive";
 
 function clampPercent(value: number): number {
   if (!Number.isFinite(value)) return 50;
@@ -14,14 +15,17 @@ function clampPercent(value: number): number {
 
 function getNormalizedVariants(
   testData: any,
-  isOnboardingLayoutTest: boolean,
-  isPaywallDefaultPlanTest: boolean
-) {
-  const defaults = isOnboardingLayoutTest
-    ? { pageA: "bundle-pricing", pageB: "bundle-pricing" }
-    : isPaywallDefaultPlanTest
-    ? { pageA: "default-839", pageB: "default-1599" }
-    : { pageA: "step-17", pageB: "a-step-17" };
+	  isOnboardingLayoutTest: boolean,
+	  isPaywallDefaultPlanTest: boolean,
+	  isPaywallGstTest: boolean
+	) {
+	  const defaults = isOnboardingLayoutTest
+	    ? { pageA: "bundle-pricing", pageB: "bundle-pricing" }
+	    : isPaywallDefaultPlanTest
+	    ? { pageA: "default-839", pageB: "default-1599" }
+	    : isPaywallGstTest
+	    ? { pageA: "tax-inclusive", pageB: "exclusive-gst" }
+	    : { pageA: "step-17", pageB: "a-step-17" };
 
   const configA = Number(testData?.variants?.A?.weight);
   const configB = Number(testData?.variants?.B?.weight);
@@ -121,29 +125,37 @@ export async function GET(request: NextRequest) {
 
     const supabase = getSupabaseAdmin();
     const testId = requestedTestId || await resolveDefaultTestId(supabase);
-    const isOnboardingLayoutTest = testId.startsWith("onboarding-layout");
-    const isPaywallDefaultPlanTest = testId.startsWith(PAYWALL_DEFAULT_PLAN_TEST_ID_PREFIX);
+	    const isOnboardingLayoutTest = testId.startsWith("onboarding-layout");
+	    const isPaywallDefaultPlanTest = testId.startsWith(PAYWALL_DEFAULT_PLAN_TEST_ID_PREFIX);
+	    const isPaywallGstTest = testId.startsWith(PAYWALL_GST_TEST_ID_PREFIX);
 
     const defaultTest = {
       id: testId,
       name: isOnboardingLayoutTest
         ? "Onboarding Layout A/B (QA)"
-        : isPaywallDefaultPlanTest
-        ? "Paywall Default Plan A/B (₹839 vs ₹1599)"
-        : "Pricing Page A/B Test",
-      status: "active",
+	        : isPaywallDefaultPlanTest
+	        ? "Paywall Default Plan A/B (₹839 vs ₹1599)"
+	        : isPaywallGstTest
+	        ? "Paywall GST Exclusive Price Test"
+	        : "Pricing Page A/B Test",
+	      status: isPaywallGstTest ? "paused" : "active",
       traffic_split: 0.5,
       variants: isOnboardingLayoutTest
         ? {
             A: { weight: 0, page: "bundle-pricing" },
             B: { weight: 100, page: "bundle-pricing" },
           }
-        : isPaywallDefaultPlanTest
-        ? {
-            A: { weight: 50, page: "default-839" },
-            B: { weight: 50, page: "default-1599" },
-          }
-        : {
+	        : isPaywallDefaultPlanTest
+	        ? {
+	            A: { weight: 50, page: "default-839" },
+	            B: { weight: 50, page: "default-1599" },
+	          }
+	        : isPaywallGstTest
+	        ? {
+	            A: { weight: 50, page: "tax-inclusive" },
+	            B: { weight: 50, page: "exclusive-gst" },
+	          }
+	        : {
             A: { weight: 50, page: "step-17" },
             B: { weight: 50, page: "a-step-17" },
           },
@@ -163,13 +175,20 @@ export async function GET(request: NextRequest) {
       if (isOnboardingLayoutTest) {
         return "bundle-pricing";
       }
-      if (isPaywallDefaultPlanTest) {
+	      if (isPaywallDefaultPlanTest) {
         const configured = test?.variants?.[variant]?.page;
         if (configured && typeof configured === "string") {
           return configured;
         }
-        return variant === "B" ? "default-1599" : "default-839";
-      }
+	        return variant === "B" ? "default-1599" : "default-839";
+	      }
+	      if (isPaywallGstTest) {
+	        const configured = test?.variants?.[variant]?.page;
+	        if (configured && typeof configured === "string") {
+	          return configured;
+	        }
+	        return variant === "B" ? "exclusive-gst" : "tax-inclusive";
+	      }
       const configured = test?.variants?.[variant]?.page;
       if (configured && typeof configured === "string") {
         return configured;
@@ -197,7 +216,7 @@ export async function GET(request: NextRequest) {
         });
       }
       
-      const variant = isOnboardingLayoutTest ? "B" : Math.random() < 0.5 ? "A" : "B";
+	      const variant = isOnboardingLayoutTest ? "B" : isPaywallGstTest ? "A" : Math.random() < 0.5 ? "A" : "B";
       
       return NextResponse.json({
         testId,
@@ -235,7 +254,7 @@ export async function GET(request: NextRequest) {
       }
       
       if (assignment) {
-        const variants = getNormalizedVariants(testData, isOnboardingLayoutTest, isPaywallDefaultPlanTest);
+	        const variants = getNormalizedVariants(testData, isOnboardingLayoutTest, isPaywallDefaultPlanTest, isPaywallGstTest);
         const normalizedStoredVariant = normalizeVariant(assignment.variant, isOnboardingLayoutTest);
         const assignmentVariant =
           variants[normalizedStoredVariant]?.weight > 0
@@ -283,7 +302,7 @@ export async function GET(request: NextRequest) {
     // Assign variant based on weights
     let assignedVariant = normalizeVariant("A", isOnboardingLayoutTest);
     if (!isOnboardingLayoutTest) {
-      const variants = getNormalizedVariants(testData, isOnboardingLayoutTest, isPaywallDefaultPlanTest);
+	      const variants = getNormalizedVariants(testData, isOnboardingLayoutTest, isPaywallDefaultPlanTest, isPaywallGstTest);
       assignedVariant = normalizeVariant(chooseWeightedVariant(variants), isOnboardingLayoutTest);
     }
 

@@ -17,10 +17,15 @@ type PaymentRow = {
   currency: string | null;
   payment_status: string | null;
   payu_txn_id: string | null;
-  payu_payment_id: string | null;
-  fulfilled_at: string | null;
-  created_at: string | null;
-};
+    payu_payment_id: string | null;
+    tax_mode: string | null;
+    base_amount: number | null;
+    gst_rate: number | null;
+    gst_amount: number | null;
+    total_amount: number | null;
+    fulfilled_at: string | null;
+    created_at: string | null;
+  };
 
 type UserRow = {
   id: string;
@@ -52,11 +57,16 @@ export type OrderInvoice = {
     txnId?: string;
     paymentId?: string;
   }>;
-  subtotal: number;
-  total: number;
-  currency: string;
-  deliveryStatus: string;
-};
+    subtotal: number;
+    taxLines: Array<{
+      label: string;
+      ratePercent: number;
+      amount: number;
+    }>;
+    total: number;
+    currency: string;
+    deliveryStatus: string;
+  };
 
 function firstDefined(...values: Array<string | null | undefined>): string {
   return values.find((value) => String(value || "").trim()) || "";
@@ -95,6 +105,23 @@ function humanizeFeature(value: string): string {
 function moneyFromPaise(value: unknown): number {
   const amount = Number(value || 0);
   return Number.isFinite(amount) ? amount / 100 : 0;
+}
+
+function roundMoney(value: number): number {
+  return Number(value.toFixed(2));
+}
+
+function isExclusiveGstPayment(payment: PaymentRow): boolean {
+  return String(payment.tax_mode || "").trim().toLowerCase() === "exclusive_gst";
+}
+
+function getPaymentTotalInr(payment: PaymentRow): number {
+  return moneyFromPaise(payment.total_amount || payment.amount);
+}
+
+function getPaymentInvoiceLineInr(payment: PaymentRow): number {
+  if (isExclusiveGstPayment(payment)) return getPaymentTotalInr(payment);
+  return moneyFromPaise(payment.amount);
 }
 
 function sanitizeInvoiceSuffixSource(value: string): string {
@@ -174,7 +201,7 @@ function resolvePaymentItemNames(payment: PaymentRow, pricing: PricingConfig): s
 
 function buildPaymentItems(payment: PaymentRow, pricing: PricingConfig): OrderInvoice["items"] {
   const itemNames = resolvePaymentItemNames(payment, pricing);
-  const total = moneyFromPaise(payment.amount);
+  const total = getPaymentInvoiceLineInr(payment);
   const lineAmount = itemNames.length ? total / itemNames.length : total;
   const txnId = firstDefined(payment.payu_txn_id, payment.id);
   const paymentId = firstDefined(payment.payu_payment_id);
@@ -183,7 +210,7 @@ function buildPaymentItems(payment: PaymentRow, pricing: PricingConfig): OrderIn
     ? itemNames.map((name) => ({
         name,
         quantity: 1,
-        amount: Number(lineAmount.toFixed(2)),
+          amount: roundMoney(lineAmount),
         txnId,
         paymentId,
       }))
@@ -254,8 +281,10 @@ export async function buildCombinedOrderInvoice(txnIds: string[]): Promise<Order
   const paidAt = firstDefined(payment.fulfilled_at, payment.created_at, invoiceNow.toISOString());
   const paymentTxnId = firstDefined(payment.payu_txn_id, payment.id);
   const paymentId = firstDefined(payment.payu_payment_id);
-  const items = uniquePayments.flatMap((paidPayment) => buildPaymentItems(paidPayment, pricing));
-  const total = Number(items.reduce((sum, item) => sum + item.amount, 0).toFixed(2));
+    const items = uniquePayments.flatMap((paidPayment) => buildPaymentItems(paidPayment, pricing));
+    const subtotal = roundMoney(items.reduce((sum, item) => sum + item.amount, 0));
+    const total = roundMoney(uniquePayments.reduce((sum, paidPayment) => sum + getPaymentTotalInr(paidPayment), 0));
+    const taxLines: OrderInvoice["taxLines"] = [];
 
   return {
     invoiceNumber: buildInvoiceNumber(invoiceNow, paymentTxnId, paymentId),
@@ -271,10 +300,11 @@ export async function buildCombinedOrderInvoice(txnIds: string[]): Promise<Order
       txnId: paymentTxnId,
       paymentId,
       paidAt,
-    },
-    items,
-    subtotal: total,
-    total,
+      },
+      items,
+      subtotal,
+      taxLines,
+      total,
     currency: payment.currency || "INR",
     deliveryStatus: "Completed digitally in-app",
   };
@@ -311,9 +341,10 @@ export function generateOrderInvoicePdf(invoice: OrderInvoice): Buffer {
     return 5;
   };
 
-  const paidAt = formatDate(invoice.payment.paidAt || invoice.invoiceDate);
-  const invoiceDate = formatDate(invoice.invoiceDate);
-  const totalLabel = `INR ${invoice.total.toFixed(2)}`;
+    const paidAt = formatDate(invoice.payment.paidAt || invoice.invoiceDate);
+    const invoiceDate = formatDate(invoice.invoiceDate);
+    const totalLabel = `INR ${invoice.total.toFixed(2)}`;
+    const hasTaxLines = invoice.taxLines.length > 0;
 
   doc.setFillColor(26, 32, 50);
   doc.rect(0, 0, pageWidth, 34, "F");
@@ -372,12 +403,26 @@ export function generateOrderInvoicePdf(invoice: OrderInvoice): Buffer {
     y += rowHeight;
   });
 
-  line(y);
-  y += 10;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.text(`Total: ${totalLabel}`, rightX, y, { align: "right" });
-  y += 14;
+    line(y);
+    y += 10;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    if (hasTaxLines) {
+      doc.text(`Subtotal: INR ${invoice.subtotal.toFixed(2)}`, rightX, y, { align: "right" });
+      y += 6;
+      invoice.taxLines.forEach((taxLine) => {
+        doc.text(
+          `${taxLine.label} (${taxLine.ratePercent}%): INR ${taxLine.amount.toFixed(2)}`,
+          rightX,
+          y,
+          { align: "right" }
+        );
+        y += 6;
+      });
+    }
+    doc.setFontSize(12);
+    doc.text(`Total: ${totalLabel}`, rightX, y, { align: "right" });
+    y += 14;
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
@@ -414,13 +459,23 @@ export async function sendCombinedOrderInvoiceEmail(txnIds: string[]): Promise<O
       return `<li><strong>${label}:</strong> ${item.name} - INR ${item.amount.toFixed(2)}</li>`;
     })
     .join("");
+  const taxSummary = invoice.taxLines.length
+    ? `
+<p><strong>Tax Summary:</strong><br/>
+Bundle Price: INR ${invoice.subtotal.toFixed(2)}<br/>
+${invoice.taxLines
+  .map((taxLine) => `${taxLine.label} (${taxLine.ratePercent}%): INR ${taxLine.amount.toFixed(2)}`)
+  .join("<br/>")}<br/>
+Total Paid: INR ${invoice.total.toFixed(2)}</p>`
+    : `<p><strong>Total Paid:</strong> INR ${invoice.total.toFixed(2)}</p>`;
   const html = `
     <p>Namaste 🙏🏻</p>
 
 <p>Thank you for your purchase! Your AstroRekha bundle has been confirmed and is now available in the app.</p>
 
-<p><strong>Order Summary:</strong></p>
-<ul>${itemList}</ul>
+  <p><strong>Order Summary:</strong></p>
+  <ul>${itemList}</ul>
+  ${taxSummary}
 
 <p>
   Log in to AstroRekha to access your reports and begin your journey:<br/>

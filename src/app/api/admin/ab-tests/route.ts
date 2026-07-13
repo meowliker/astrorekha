@@ -5,6 +5,9 @@ import { DEFAULT_LAYOUT_B_CONFIG, normalizeLayoutBConfig } from "@/lib/layout-b-
 // Admin API for managing A/B tests
 const SETTINGS_KEY = "funnel_layout_b_config";
 const DEFAULT_ONBOARDING_TEST_ID = DEFAULT_LAYOUT_B_CONFIG.testId;
+const PAYWALL_DEFAULT_PLAN_TEST_ID_PREFIX = "paywall-default-plan";
+const PAYWALL_GST_TEST_ID = "paywall-gst-exclusive-v1";
+const PAYWALL_GST_TEST_ID_PREFIX = "paywall-gst-exclusive";
 const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "success", "captured"]);
 
 type VariantKey = "A" | "B";
@@ -200,7 +203,30 @@ function inferVariantFromUser(user: any): VariantKey {
   return "A";
 }
 
-function variantLabel(variant: VariantKey): string {
+function isPaywallDefaultPlanTestId(testId: string): boolean {
+  return testId.startsWith(PAYWALL_DEFAULT_PLAN_TEST_ID_PREFIX);
+}
+
+function isPaywallGstTestId(testId: string): boolean {
+  return testId.startsWith(PAYWALL_GST_TEST_ID_PREFIX);
+}
+
+function isPaywallScopedTestId(testId: string): boolean {
+  return isPaywallDefaultPlanTestId(testId) || isPaywallGstTestId(testId);
+}
+
+function inferPaymentVariant(row: any, user: any, testId: string): VariantKey | null {
+  if (isPaywallGstTestId(testId)) {
+    if (String(row?.paywall_test_id || "") !== testId) return null;
+    if (row?.paywall_variant === "A" || row?.paywall_variant === "B") return row.paywall_variant;
+    return null;
+  }
+  return inferVariantFromUser(user);
+}
+
+function variantLabel(variant: VariantKey, testId = ""): string {
+  if (isPaywallGstTestId(testId)) return variant === "B" ? "Exclusive GST" : "Current Price";
+  if (isPaywallDefaultPlanTestId(testId)) return variant === "B" ? "Default Full Bundle" : "Default Mid Bundle";
   return variant === "B" ? "Layout B" : "Layout A";
 }
 
@@ -367,8 +393,14 @@ function getTestVariants(row: Record<string, any> | null | undefined, defaults: 
 
 function normalizeTestForResponse(row: Record<string, any> | null | undefined, testId: string) {
   const isOnboardingLayoutTest = testId.startsWith("onboarding-layout");
+  const isPaywallDefaultPlanTest = isPaywallDefaultPlanTestId(testId);
+  const isPaywallGstTest = isPaywallGstTestId(testId);
   const defaults = isOnboardingLayoutTest
     ? { pageA: "bundle-pricing", pageB: "bundle-pricing-b" }
+    : isPaywallDefaultPlanTest
+    ? { pageA: "default-839", pageB: "default-1599" }
+    : isPaywallGstTest
+    ? { pageA: "tax-inclusive", pageB: "exclusive-gst" }
     : { pageA: "step-17", pageB: "a-step-17" };
   const variants = getTestVariants(row, defaults);
   const trafficSplit = variants.B.weight / 100;
@@ -377,7 +409,15 @@ function normalizeTestForResponse(row: Record<string, any> | null | undefined, t
 
   return {
     id: testId,
-    name: row?.name || (isOnboardingLayoutTest ? "Onboarding Layout A/B (QA)" : "Pricing Page A/B Test"),
+    name:
+      row?.name ||
+      (isOnboardingLayoutTest
+        ? "Onboarding Layout A/B (QA)"
+        : isPaywallDefaultPlanTest
+        ? "Paywall Default Plan A/B (₹839 vs ₹1599)"
+        : isPaywallGstTest
+        ? "Paywall GST Exclusive Price Test"
+        : "Pricing Page A/B Test"),
     status: row?.status || "active",
     variants,
     traffic_split: trafficSplit,
@@ -439,11 +479,37 @@ async function ensureOnboardingLayoutTest(supabase: ReturnType<typeof getSupabas
   return testId;
 }
 
+async function ensurePaywallGstTest(supabase: ReturnType<typeof getSupabaseAdmin>) {
+  const { data: existing } = await supabase
+    .from("ab_tests")
+    .select("*")
+    .eq("id", PAYWALL_GST_TEST_ID)
+    .maybeSingle();
+
+  if (!existing) {
+    const now = new Date().toISOString();
+    await supabase.from("ab_tests").upsert(
+      {
+        id: PAYWALL_GST_TEST_ID,
+        name: "Paywall GST Exclusive Price Test",
+        status: "paused",
+        traffic_split: 0.5,
+        created_at: now,
+        updated_at: now,
+      },
+      { onConflict: "id" }
+    );
+  }
+
+  return PAYWALL_GST_TEST_ID;
+}
+
 async function buildDefaultTestData(testId: string) {
+  const isPaywallGstTest = isPaywallGstTestId(testId);
   const row = normalizeTestForResponse(
     {
-      name: "Onboarding Layout A/B (QA)",
-      status: "active",
+      name: isPaywallGstTest ? "Paywall GST Exclusive Price Test" : "Onboarding Layout A/B (QA)",
+      status: isPaywallGstTest ? "paused" : "active",
       traffic_split: 0.5,
       updated_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
@@ -458,8 +524,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const testId = searchParams.get("testId");
 
-    const supabase = getSupabaseAdmin();
-    const onboardingTestId = await ensureOnboardingLayoutTest(supabase);
+      const supabase = getSupabaseAdmin();
+      const onboardingTestId = await ensureOnboardingLayoutTest(supabase);
+      const paywallGstTestId = await ensurePaywallGstTest(supabase);
 
     if (testId) {
       // Get specific test with detailed stats
@@ -537,10 +604,11 @@ export async function GET(request: NextRequest) {
           : null;
 
       const isOnboardingLayoutTest = testId.startsWith("onboarding-layout");
-      const pricingRoutes: Record<VariantKey, string> = isOnboardingLayoutTest
-        ? {
-            A: "/onboarding/bundle-pricing",
-            B: "/onboarding/bundle-pricing",
+        const isPaywallScopedTest = isPaywallScopedTestId(testId);
+        const pricingRoutes: Record<VariantKey, string> = isOnboardingLayoutTest || isPaywallScopedTest
+          ? {
+              A: "/onboarding/bundle-pricing",
+              B: "/onboarding/bundle-pricing",
           }
         : {
             A: canonicalizeTrackedRoute(
@@ -551,12 +619,17 @@ export async function GET(request: NextRequest) {
             ),
           };
 
-      const upsellRoutes: Record<VariantKey, string> = isOnboardingLayoutTest
-        ? {
-            A: "/onboarding/bundle-upsell",
-            B: "/onboarding/bundle-upsell-b",
-          }
-        : {
+        const upsellRoutes: Record<VariantKey, string> = isOnboardingLayoutTest
+          ? {
+              A: "/onboarding/bundle-upsell",
+              B: "/onboarding/bundle-upsell-b",
+            }
+          : isPaywallScopedTest
+          ? {
+              A: "/onboarding/bundle-upsell",
+              B: "/onboarding/bundle-upsell",
+            }
+          : {
             A: "/onboarding/step-19",
             B: "/onboarding/step-19",
           };
@@ -771,9 +844,10 @@ export async function GET(request: NextRequest) {
         if (safeEndDate && paymentDayKey > safeEndDate) continue;
 
         const user = usersById.get(userId);
-        const variant = inferVariantFromUser(user);
-        const funnel = variantLabel(variant);
-        const amountInr = toInrAmount(row?.amount, row?.currency);
+          const variant = inferPaymentVariant(row, user, testId);
+          if (!variant) continue;
+          const funnel = variantLabel(variant, testId);
+          const amountInr = Number(row?.total_amount || row?.amount || 0) / 100;
         const paymentType = String(row?.type || "").trim().toLowerCase();
         const email = String(user?.email || row?.customer_email || "").trim() || "N/A";
         const userName = String(user?.name || "").trim() || undefined;
@@ -1103,14 +1177,22 @@ export async function GET(request: NextRequest) {
     // Get all tests
     const { data: allTests } = await supabase.from("ab_tests").select("*");
     const hydratedTests = [...(allTests || [])];
-    if (!hydratedTests.some((test) => test.id === onboardingTestId)) {
+      if (!hydratedTests.some((test) => test.id === onboardingTestId)) {
       const { data: onboardingTest } = await supabase
         .from("ab_tests")
         .select("*")
         .eq("id", onboardingTestId)
         .single();
-      if (onboardingTest) hydratedTests.push(onboardingTest);
-    }
+        if (onboardingTest) hydratedTests.push(onboardingTest);
+      }
+      if (!hydratedTests.some((test) => test.id === paywallGstTestId)) {
+        const { data: paywallGstTest } = await supabase
+          .from("ab_tests")
+          .select("*")
+          .eq("id", paywallGstTestId)
+          .single();
+        if (paywallGstTest) hydratedTests.push(paywallGstTest);
+      }
     const tests = [];
 
     for (const testRow of hydratedTests) {

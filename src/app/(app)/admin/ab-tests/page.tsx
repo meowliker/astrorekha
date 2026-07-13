@@ -26,6 +26,8 @@ import {
 } from "@/lib/layout-b-funnel";
 const DEFAULT_ONBOARDING_TEST_ID = DEFAULT_LAYOUT_B_CONFIG.testId;
 const PAYWALL_DEFAULT_PLAN_TEST_ID_PREFIX = "paywall-default-plan";
+const PAYWALL_GST_TEST_ID = "paywall-gst-exclusive-v1";
+const PAYWALL_GST_TEST_ID_PREFIX = "paywall-gst-exclusive";
 
 interface ABTest {
   id: string;
@@ -203,12 +205,19 @@ function isPaywallDefaultPlanTestId(testId: string): boolean {
   return testId.startsWith(PAYWALL_DEFAULT_PLAN_TEST_ID_PREFIX);
 }
 
+function isPaywallGstTestId(testId: string): boolean {
+  return testId.startsWith(PAYWALL_GST_TEST_ID_PREFIX);
+}
+
 function getVariantPageKeysForTest(testId: string): { A: string; B: string } {
   if (isOnboardingLayoutTestId(testId)) {
     return { A: "bundle-pricing", B: "bundle-pricing-b" };
   }
   if (isPaywallDefaultPlanTestId(testId)) {
     return { A: "default-839", B: "default-1599" };
+  }
+  if (isPaywallGstTestId(testId)) {
+    return { A: "tax-inclusive", B: "exclusive-gst" };
   }
   return { A: "step-17", B: "a-step-17" };
 }
@@ -245,6 +254,23 @@ function getTestCopy(testId: string): TestCopy {
       variantBStatsTitle: "Variant B - ₹1599 Default",
       summaryATitle: "Variant A (₹839 Default)",
       summaryBTitle: "Variant B (₹1599 Default)",
+    };
+  }
+
+  if (isPaywallGstTestId(testId)) {
+    return {
+      variantAInputLabel: "Variant A (Current checkout)",
+      variantBInputLabel: "Variant B (Exclusive GST)",
+      variantARouteLabel: "Variant A mode:",
+      variantBRouteLabel: "Variant B mode:",
+      variantARouteFallback: "tax-inclusive",
+      variantBRouteFallback: "exclusive-gst",
+      variantADescription: "Current behavior: displayed bundle price is the final PayU amount",
+      variantBDescription: "Displayed price stays the same; PayU charges price + 18% GST",
+      variantAStatsTitle: "Variant A - Current Price",
+      variantBStatsTitle: "Variant B - Price + GST",
+      summaryATitle: "Variant A (Current Price)",
+      summaryBTitle: "Variant B (Price + GST)",
     };
   }
 
@@ -489,11 +515,12 @@ export default function ABTestsPage() {
     try {
       const testId = funnelConfig.testId || DEFAULT_ONBOARDING_TEST_ID;
       await fetch("/api/admin/ab-tests", {
-        method: "POST",
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           testId,
           name: "Onboarding Layout A/B (QA)",
+          status: funnelConfig.enabled ? "active" : "paused",
           variants: {
             A: { weight: funnelConfig.variantAWeight, page: "bundle-pricing" },
             B: { weight: funnelConfig.variantBWeight, page: "bundle-pricing-b" },
@@ -504,6 +531,28 @@ export default function ABTestsPage() {
       await fetchTestDetails(testId);
     } catch (error) {
       console.error("Failed to create test:", error);
+    }
+  };
+
+  const createPaywallGstTest = async () => {
+    try {
+      await fetch("/api/admin/ab-tests", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          testId: PAYWALL_GST_TEST_ID,
+          name: "Paywall GST Exclusive Price Test",
+          status: "paused",
+          variants: {
+            A: { weight: 50, page: "tax-inclusive" },
+            B: { weight: 50, page: "exclusive-gst" },
+          },
+        }),
+      });
+      await fetchTests();
+      await fetchTestDetails(PAYWALL_GST_TEST_ID);
+    } catch (error) {
+      console.error("Failed to create GST paywall test:", error);
     }
   };
 
@@ -810,7 +859,9 @@ export default function ABTestsPage() {
           variants.length === 0
             ? "Unknown"
             : variants.length === 1
-              ? `Layout ${variants[0]}`
+              ? variants[0] === "A"
+                ? testCopy.summaryATitle
+                : testCopy.summaryBTitle
               : "Mixed (A/B)";
         return {
           key: entry.userId,
@@ -1817,8 +1868,8 @@ export default function ABTestsPage() {
                   className="w-full px-3 py-2 bg-background border border-border rounded-lg"
                 >
                   <option value="all">All</option>
-                  <option value="A">Layout A</option>
-                  <option value="B">Layout B</option>
+                  <option value="A">{testCopy.summaryATitle}</option>
+                  <option value="B">{testCopy.summaryBTitle}</option>
                 </select>
               </label>
               <label className="text-sm">
@@ -1930,8 +1981,8 @@ export default function ABTestsPage() {
               ) : (
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                   {([
-                    { variant: "A" as const, label: "Layout A (Variant A)", accent: "text-blue-400", rows: groupedBundleRowsByVariant.A },
-                    { variant: "B" as const, label: "Layout B (Variant B)", accent: "text-purple-400", rows: groupedBundleRowsByVariant.B },
+                    { variant: "A" as const, label: testCopy.summaryATitle, accent: "text-blue-400", rows: groupedBundleRowsByVariant.A },
+                    { variant: "B" as const, label: testCopy.summaryBTitle, accent: "text-purple-400", rows: groupedBundleRowsByVariant.B },
                   ]).map((group) => (
                     <div key={group.variant} className="rounded-lg border border-border/70 bg-background/40 p-4">
                       <p className={`text-sm font-semibold mb-3 ${group.accent}`}>{group.label}</p>
@@ -2033,6 +2084,25 @@ export default function ABTestsPage() {
             <RefreshCw className="w-4 h-4 mr-2" />
             Refresh
           </Button>
+        </div>
+
+        <div className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-5 mb-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Experiment Library</h2>
+              <p className="text-sm text-muted-foreground">
+                Create or reopen the standard tests without manually entering IDs.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button variant="outline" onClick={createDefaultTest}>
+                Onboarding Layout
+              </Button>
+              <Button onClick={createPaywallGstTest}>
+                Paywall GST Test
+              </Button>
+            </div>
+          </div>
         </div>
 
         {loading ? (

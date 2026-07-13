@@ -5,6 +5,9 @@ import { DEFAULT_PRICING, normalizePricing, type PricingConfig } from "@/lib/pri
 import { sanitizePaymentAttribution, type PaymentAttributionPayload } from "@/lib/attribution";
 import { recordMarketingEvent } from "@/lib/marketing-events";
 
+const PAYWALL_GST_TEST_ID = "paywall-gst-exclusive-v1";
+const GST_RATE_PERCENT = 18;
+
 // Fetch dynamic pricing from database
 async function getPricingConfig(): Promise<PricingConfig> {
   try {
@@ -25,6 +28,19 @@ function generateHash(params: Record<string, string>, salt: string): string {
   // PayU hash sequence: key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||||salt
   const hashString = `${params.key}|${params.txnid}|${params.amount}|${params.productinfo}|${params.firstname}|${params.email}|${params.udf1 || ""}|${params.udf2 || ""}|${params.udf3 || ""}|${params.udf4 || ""}|${params.udf5 || ""}||||||${salt}`;
   return crypto.createHash("sha512").update(hashString).digest("hex");
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function toPaise(value: number): number {
+  return Math.round(value * 100);
+}
+
+function normalizePaywallVariant(value: unknown): "A" | "B" | null {
+  if (value === "A" || value === "B") return value;
+  return null;
 }
 
 function extractAttributionFromReferer(referer: string | undefined): PaymentAttributionPayload {
@@ -67,12 +83,25 @@ export async function POST(request: NextRequest) {
       packageId?: string;
       userId?: string;
       email?: string;
-      firstName?: string;
-      attribution?: PaymentAttributionPayload;
-    };
-    const { type, bundleId, packageId, userId, email, firstName, attribution } = body;
-    const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
-    const sanitizedAttribution = sanitizePaymentAttribution(attribution);
+        firstName?: string;
+        attribution?: PaymentAttributionPayload;
+        paywallTestId?: string;
+        paywallVariant?: string;
+        taxMode?: string;
+      };
+      const { type, bundleId, packageId, userId, email, firstName, attribution } = body;
+      const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+      const paywallVariant = normalizePaywallVariant(body.paywallVariant);
+      const paywallTestId =
+        type === "bundle" && typeof body.paywallTestId === "string" && body.paywallTestId === PAYWALL_GST_TEST_ID
+          ? body.paywallTestId
+          : null;
+      const shouldApplyExclusiveGst =
+        type === "bundle" &&
+        paywallTestId === PAYWALL_GST_TEST_ID &&
+        paywallVariant === "B" &&
+        body.taxMode === "exclusive_gst";
+      const sanitizedAttribution = sanitizePaymentAttribution(attribution);
     const requestReferrer = request.headers.get("referer") || undefined;
     const refererAttribution = extractAttributionFromReferer(requestReferrer);
     const finalAttribution: PaymentAttributionPayload = {
@@ -93,11 +122,15 @@ export async function POST(request: NextRequest) {
     // Fetch dynamic pricing from database
     const pricing = await getPricingConfig();
 
-    let amount: number;
-    let productInfo: string;
-    const metadata: Record<string, string> = {
-      userId: userId || "",
-      type: type || "",
+      let amount: number;
+      let baseAmount: number | null = null;
+      let gstAmount: number | null = null;
+      let gstRate: number | null = null;
+      let taxMode: "inclusive" | "exclusive_gst" = "inclusive";
+      let productInfo: string;
+      const metadata: Record<string, string> = {
+        userId: userId || "",
+        type: type || "",
     };
 
     if (type === "bundle") {
@@ -105,10 +138,26 @@ export async function POST(request: NextRequest) {
       if (!bundle) {
         return NextResponse.json({ error: `Invalid bundle: ${bundleId}` }, { status: 400 });
       }
-      amount = bundle.price;
-      productInfo = bundle.name;
-      metadata.bundleId = bundle.id;
-      metadata.features = JSON.stringify(bundle.features);
+        baseAmount = bundle.displayPrice || bundle.price;
+        if (shouldApplyExclusiveGst) {
+          gstRate = GST_RATE_PERCENT;
+          gstAmount = roundMoney(baseAmount * (GST_RATE_PERCENT / 100));
+          amount = roundMoney(baseAmount + gstAmount);
+          taxMode = "exclusive_gst";
+          metadata.paywallTestId = paywallTestId;
+          metadata.paywallVariant = paywallVariant;
+          metadata.taxMode = taxMode;
+          metadata.baseAmountInr = baseAmount.toFixed(2);
+          metadata.gstRatePercent = String(GST_RATE_PERCENT);
+          metadata.gstAmountInr = gstAmount.toFixed(2);
+          metadata.totalAmountInr = amount.toFixed(2);
+        } else {
+          amount = bundle.price;
+          baseAmount = bundle.price;
+        }
+        productInfo = bundle.name;
+        metadata.bundleId = bundle.id;
+        metadata.features = JSON.stringify(bundle.features);
     } else if (type === "upsell") {
       const selectedUpsellIds = (bundleId || packageId || "")
         .split(",")
@@ -191,8 +240,15 @@ export async function POST(request: NextRequest) {
       feature: metadata.feature || null,
       coins: metadata.coins ? parseInt(metadata.coins, 10) : null,
       customer_email: normalizedEmail || null,
-      amount: Math.round(amount * 100), // Store in paise for consistency
-      currency: "INR",
+        amount: toPaise(amount), // Store in paise for consistency
+        paywall_test_id: paywallTestId,
+        paywall_variant: paywallVariant,
+        tax_mode: taxMode,
+        base_amount: baseAmount !== null ? toPaise(baseAmount) : null,
+        gst_rate: gstRate,
+        gst_amount: gstAmount !== null ? toPaise(gstAmount) : null,
+        total_amount: toPaise(amount),
+        currency: "INR",
       payment_status: "created",
       fbclid: finalAttribution.fbclid || null,
       fbc: finalAttribution.fbc || null,
@@ -228,7 +284,7 @@ export async function POST(request: NextRequest) {
       productName: productInfo,
       paymentId: `pay_${txnId}`,
       payuTxnId: txnId,
-      amount: Math.round(amount * 100),
+        amount: toPaise(amount),
       currency: "INR",
       route: finalAttribution.landing_path || null,
       url: finalAttribution.landing_url || null,

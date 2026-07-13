@@ -25,9 +25,14 @@ type InvoicePayload = {
     name: string;
     quantity: number;
     amount: number;
-  }>;
-  subtotal: number;
-  total: number;
+    }>;
+    subtotal: number;
+    taxLines?: Array<{
+      label: string;
+      ratePercent: number;
+      amount: number;
+    }>;
+    total: number;
   currency: string;
   unlockedFeatures: string[];
   account: {
@@ -304,9 +309,25 @@ function AdminInvoiceViewContent() {
                 )}
               </div>
 
-              <div className="min-h-[140px] rounded-xl border border-[#334155] bg-[#0F172A] p-4">
-                <h3 className="mb-3 text-base font-semibold">Total</h3>
-                <p className="text-2xl font-bold">{formatCurrency(invoice.total, invoice.currency)}</p>
+                <div className="min-h-[140px] rounded-xl border border-[#334155] bg-[#0F172A] p-4">
+                  <h3 className="mb-3 text-base font-semibold">Total</h3>
+                  {(invoice.taxLines || []).length > 0 ? (
+                    <div className="mb-3 space-y-1 text-sm text-[#D1D5DB]">
+                      <div className="flex justify-between gap-3">
+                        <span>Bundle Price</span>
+                        <span>{formatCurrency(invoice.subtotal, invoice.currency)}</span>
+                      </div>
+                      {(invoice.taxLines || []).map((taxLine) => (
+                        <div key={`${taxLine.label}-${taxLine.ratePercent}`} className="flex justify-between gap-3">
+                          <span>
+                            {taxLine.label} ({taxLine.ratePercent}%)
+                          </span>
+                          <span>{formatCurrency(taxLine.amount, invoice.currency)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  <p className="text-2xl font-bold">{formatCurrency(invoice.total, invoice.currency)}</p>
                 <p className="mt-4 text-xs leading-5 text-[#9CA3AF]">
                   This invoice is generated from AstroRekha transaction logs as proof of purchase and digital delivery.
                 </p>

@@ -127,6 +127,13 @@ CREATE TABLE IF NOT EXISTS public.payments (
   coins INTEGER,                          -- coins purchased (for coin purchases)
   customer_email TEXT,
   amount INTEGER NOT NULL,                -- amount in paise (INR smallest unit)
+  paywall_test_id TEXT,
+  paywall_variant TEXT,
+  tax_mode TEXT,
+  base_amount INTEGER,                    -- pre-tax amount in paise when taxes are separated
+  gst_rate NUMERIC,
+  gst_amount INTEGER,
+  total_amount INTEGER,                   -- final charged amount in paise
   currency TEXT DEFAULT 'INR',
   payment_status TEXT DEFAULT 'created',  -- 'created', 'paid', 'failed'
   fulfilled_at TIMESTAMPTZ,
@@ -135,6 +142,7 @@ CREATE TABLE IF NOT EXISTS public.payments (
 
 CREATE INDEX IF NOT EXISTS idx_payments_user_id ON public.payments(user_id);
 CREATE INDEX IF NOT EXISTS idx_payments_razorpay_order ON public.payments(razorpay_order_id);
+CREATE INDEX IF NOT EXISTS idx_payments_paywall_test ON public.payments(paywall_test_id, paywall_variant);
 
 -- ============================================================
 -- 5. LEADS TABLE (abandoned checkout leads)
