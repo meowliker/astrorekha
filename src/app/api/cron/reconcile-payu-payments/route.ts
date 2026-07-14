@@ -22,6 +22,12 @@ type PayUTransaction = {
   udf5?: string;
 };
 
+const DEFAULT_LOOKBACK_DAYS = 2;
+const DEFAULT_MAX_ROWS = 100;
+const MAX_LOOKBACK_DAYS = 90;
+const MAX_ROWS = 2000;
+const DEFAULT_RECONCILE_STATUSES = ["created", "pending"];
+
 function toYMD(date: Date): string {
   const y = date.getUTCFullYear();
   const m = String(date.getUTCMonth() + 1).padStart(2, "0");
@@ -33,15 +39,26 @@ function normalizeStatus(status: unknown): string {
   return String(status || "").trim().toLowerCase();
 }
 
-async function runReconciliation(lookbackDays: number, maxRows: number) {
+function parseBooleanFlag(value: unknown): boolean {
+  return value === true || value === "true" || value === "1" || value === 1;
+}
+
+function parseBoundedInteger(value: unknown, defaultValue: number, min: number, max: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return defaultValue;
+  return Math.max(min, Math.min(max, Math.floor(parsed)));
+}
+
+async function runReconciliation(lookbackDays: number, maxRows: number, includeFailed: boolean) {
   try {
     const supabase = getSupabaseAdmin();
+    const statuses = includeFailed ? [...DEFAULT_RECONCILE_STATUSES, "failed"] : DEFAULT_RECONCILE_STATUSES;
 
     const since = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
     const { data: pendingRows, error: pendingError } = await supabase
       .from("payments")
       .select("id, payu_txn_id, user_id, type, bundle_id, feature, coins, customer_email, payment_status, created_at")
-      .in("payment_status", ["created", "pending", "failed"])
+      .in("payment_status", statuses)
       .not("payu_txn_id", "is", null)
       .gte("created_at", since)
       .order("created_at", { ascending: false })
@@ -56,6 +73,8 @@ async function runReconciliation(lookbackDays: number, maxRows: number) {
         success: true,
         scanned: 0,
         reconciled: 0,
+        includeFailed,
+        statuses,
         message: "No unresolved PayU payments in lookback window",
       });
     }
@@ -146,6 +165,10 @@ async function runReconciliation(lookbackDays: number, maxRows: number) {
       stillPending,
       notFoundInPayU,
       errors,
+      lookbackDays,
+      maxRows,
+      includeFailed,
+      statuses,
       fromDate,
       toDate,
       sampleReconciledIds: reconciledIds.slice(0, 50),
@@ -182,9 +205,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const lookbackDays = Math.max(1, Math.min(90, Number(body?.lookbackDays || 30)));
-  const maxRows = Math.max(1, Math.min(2000, Number(body?.maxRows || 500)));
-  return runReconciliation(lookbackDays, maxRows);
+  const lookbackDays = parseBoundedInteger(body?.lookbackDays, DEFAULT_LOOKBACK_DAYS, 1, MAX_LOOKBACK_DAYS);
+  const maxRows = parseBoundedInteger(body?.maxRows, DEFAULT_MAX_ROWS, 1, MAX_ROWS);
+  const includeFailed = parseBooleanFlag(body?.includeFailed);
+  return runReconciliation(lookbackDays, maxRows, includeFailed);
 }
 
 export async function GET(request: NextRequest) {
@@ -193,7 +217,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const lookbackDays = Math.max(1, Math.min(90, Number(request.nextUrl.searchParams.get("lookbackDays") || 30)));
-  const maxRows = Math.max(1, Math.min(2000, Number(request.nextUrl.searchParams.get("maxRows") || 500)));
-  return runReconciliation(lookbackDays, maxRows);
+  const lookbackDays = parseBoundedInteger(
+    request.nextUrl.searchParams.get("lookbackDays"),
+    DEFAULT_LOOKBACK_DAYS,
+    1,
+    MAX_LOOKBACK_DAYS
+  );
+  const maxRows = parseBoundedInteger(request.nextUrl.searchParams.get("maxRows"), DEFAULT_MAX_ROWS, 1, MAX_ROWS);
+  const includeFailed = parseBooleanFlag(request.nextUrl.searchParams.get("includeFailed"));
+  return runReconciliation(lookbackDays, maxRows, includeFailed);
 }

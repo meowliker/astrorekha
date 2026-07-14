@@ -2,17 +2,21 @@ name: Reconcile PayU Payments
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       lookbackDays:
         description: "How many days back to reconcile"
         required: false
-        default: "30"
+        default: "2"
       maxRows:
         description: "Max rows to reconcile per run"
         required: false
-        default: "500"
+        default: "100"
+      includeFailed:
+        description: "Also recheck failed payments. Use only for manual backfills."
+        required: false
+        default: "false"
 
 concurrency:
   group: reconcile-payu-payments
@@ -27,16 +31,21 @@ jobs:
         env:
           RECONCILE_URL: ${{ secrets.RECONCILE_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          LOOKBACK_DAYS: ${{ github.event.inputs.lookbackDays || '30' }}
-          MAX_ROWS: ${{ github.event.inputs.maxRows || '500' }}
+          LOOKBACK_DAYS: ${{ github.event.inputs.lookbackDays || '2' }}
+          MAX_ROWS: ${{ github.event.inputs.maxRows || '100' }}
+          INCLUDE_FAILED: ${{ github.event.inputs.includeFailed || 'false' }}
         run: |
           if [ -z "$RECONCILE_URL" ] || [ -z "$CRON_SECRET" ]; then
             echo "Missing required secrets: RECONCILE_URL and/or CRON_SECRET"
             exit 1
           fi
 
+          if [ "$INCLUDE_FAILED" != "true" ]; then
+            INCLUDE_FAILED=false
+          fi
+
           echo "Calling: ${RECONCILE_URL}"
-          BODY=$(printf '{"secret":"%s","lookbackDays":%s,"maxRows":%s}' "$CRON_SECRET" "$LOOKBACK_DAYS" "$MAX_ROWS")
+          BODY=$(printf '{"secret":"%s","lookbackDays":%s,"maxRows":%s,"includeFailed":%s}' "$CRON_SECRET" "$LOOKBACK_DAYS" "$MAX_ROWS" "$INCLUDE_FAILED")
           STATUS=$(curl -sSL -o response.json -w "%{http_code}" \
             -X POST "${RECONCILE_URL}" \
             -H "Content-Type: application/json" \
