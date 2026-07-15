@@ -9,7 +9,7 @@ import { analyzePalm, analyzePalmFromDataUrl, MediaType } from "@/lib/palm-visio
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { image, imageBase64, mediaType = "image/jpeg" } = body;
+    const { image, imageBase64, mediaType = "image/jpeg", userId } = body;
 
     // Validate input - accept either data URL or raw base64
     if (!image && !imageBase64) {
@@ -32,10 +32,10 @@ export async function POST(request: NextRequest) {
 
     if (image) {
       // Handle data URL format (e.g., from camera capture or file input)
-      result = await analyzePalmFromDataUrl(image);
+      result = await analyzePalmFromDataUrl(image, { userId });
     } else {
       // Handle raw base64 format
-      result = await analyzePalm(imageBase64, mediaType as MediaType);
+      result = await analyzePalm(imageBase64, mediaType as MediaType, { userId });
     }
 
     return NextResponse.json({

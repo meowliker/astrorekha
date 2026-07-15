@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { logClaudeUsage } from "@/lib/ai-usage-logger";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
+
+const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
 
 const PREDICTION_PROMPT = `You are a mystical astrologer providing detailed yearly predictions. Generate a comprehensive 2026 prediction for someone with the zodiac sign: {zodiacSign}.
 
@@ -54,8 +57,11 @@ Return this exact JSON structure:
 Make each month unique and specific. Include planetary influences, retrogrades, and astrological events relevant to {zodiacSign}. Be mystical yet practical. Ratings should be between 6.0 and 9.5.`;
 
 export async function POST(request: NextRequest) {
+  let zodiacSignForLog: string | null = null;
+
   try {
     const { zodiacSign } = await request.json();
+    zodiacSignForLog = zodiacSign || null;
 
     if (!zodiacSign) {
       return NextResponse.json(
@@ -67,7 +73,7 @@ export async function POST(request: NextRequest) {
     const prompt = PREDICTION_PROMPT.replace(/{zodiacSign}/g, zodiacSign);
 
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-5-20250929",
+      model: CLAUDE_MODEL,
       max_tokens: 8192,
       messages: [
         {
@@ -75,6 +81,17 @@ export async function POST(request: NextRequest) {
           content: prompt,
         },
       ],
+    });
+
+    await logClaudeUsage({
+      feature: "prediction_2026",
+      operation: "generate",
+      model: CLAUDE_MODEL,
+      requestId: response.id,
+      usage: response.usage,
+      metadata: {
+        zodiacSign,
+      },
     });
 
     const textContent = response.content.find((c) => c.type === "text");
@@ -105,6 +122,16 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Prediction API error:", error);
+    await logClaudeUsage({
+      feature: "prediction_2026",
+      operation: "generate",
+      model: CLAUDE_MODEL,
+      status: "failed",
+      error,
+      metadata: {
+        zodiacSign: zodiacSignForLog,
+      },
+    });
     return NextResponse.json(
       { success: false, error: "Failed to generate prediction" },
       { status: 500 }

@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { supabase } from "@/lib/supabase";
+import { logClaudeUsage } from "@/lib/ai-usage-logger";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
+
+const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
 
 const ZODIAC_SIGNS = [
   "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
@@ -63,7 +66,7 @@ async function generatePredictionForSign(zodiacSign: string): Promise<any> {
   const prompt = PREDICTION_PROMPT.replace(/{zodiacSign}/g, zodiacSign);
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-5-20250929",
+    model: CLAUDE_MODEL,
     max_tokens: 8192,
     messages: [
       {
@@ -71,6 +74,17 @@ async function generatePredictionForSign(zodiacSign: string): Promise<any> {
         content: prompt,
       },
     ],
+  });
+
+  await logClaudeUsage({
+    feature: "prediction_2026_global",
+    operation: "generate",
+    model: CLAUDE_MODEL,
+    requestId: response.id,
+    usage: response.usage,
+    metadata: {
+      zodiacSign,
+    },
   });
 
   const textContent = response.content.find((c) => c.type === "text");

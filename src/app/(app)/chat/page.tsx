@@ -466,6 +466,7 @@ export default function ChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: textToSend,
+          userId: currentUserId,
           userProfile,
           palmImageBase64: palmImage,
           palmReading: palmReading,

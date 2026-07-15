@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { fetchFromAstroEngine } from "@/lib/astro-client";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { logClaudeUsage } from "@/lib/ai-usage-logger";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
 
 function getDateKey(): string {
   const now = new Date();
@@ -192,10 +195,23 @@ Generate the daily insights JSON now.`;
         }
 
         const response = await anthropic.messages.create({
-          model: "claude-sonnet-4-5-20250929",
+          model: CLAUDE_MODEL,
           max_tokens: 512,
           system: INSIGHTS_PROMPT,
           messages: [{ role: "user", content: userMessage }],
+        });
+
+        await logClaudeUsage({
+          feature: "daily_insights",
+          operation: "generate",
+          model: CLAUDE_MODEL,
+          userId,
+          requestId: response.id,
+          usage: response.usage,
+          metadata: {
+            dateKey,
+            usedNatalData: !!natalData,
+          },
         });
 
         const textContent = response.content.find((b) => b.type === "text");
@@ -239,6 +255,17 @@ Generate the daily insights JSON now.`;
         await new Promise((r) => setTimeout(r, 500));
       } catch (err: any) {
         console.error(`Failed insights for ${userId}:`, err.message);
+        await logClaudeUsage({
+          feature: "daily_insights",
+          operation: "generate",
+          model: CLAUDE_MODEL,
+          userId,
+          status: "failed",
+          error: err,
+          metadata: {
+            dateKey,
+          },
+        });
         results[userId] = false;
       }
     }

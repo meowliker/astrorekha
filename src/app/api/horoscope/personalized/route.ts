@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { fetchFromAstroEngine } from "@/lib/astro-client";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { logClaudeUsage } from "@/lib/ai-usage-logger";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
 
 // Get today's date key for caching
 function getDateKey(offset: number = 0): string {
@@ -218,10 +221,23 @@ Generate the personalized ${periodLabel} horoscope JSON now. Remember: DO NOT st
     // 5. Call Claude to generate the horoscope
     const maxTokens = period === "weekly" || period === "monthly" ? 1500 : 1024;
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-5-20250929",
+      model: CLAUDE_MODEL,
       max_tokens: maxTokens,
       system: getSystemPrompt(period === "tomorrow" ? "daily" : period),
       messages: [{ role: "user", content: userMessage }],
+    });
+
+    await logClaudeUsage({
+      feature: "personalized_horoscope",
+      operation: period,
+      model: CLAUDE_MODEL,
+      userId,
+      requestId: response.id,
+      usage: response.usage,
+      metadata: {
+        cacheTimeKey,
+        maxTokens,
+      },
     });
 
     const textContent = response.content.find((block) => block.type === "text");
@@ -270,6 +286,17 @@ Generate the personalized ${periodLabel} horoscope JSON now. Remember: DO NOT st
     });
   } catch (error: any) {
     console.error("Personalized horoscope error:", error);
+    await logClaudeUsage({
+      feature: "personalized_horoscope",
+      operation: period,
+      model: CLAUDE_MODEL,
+      userId,
+      status: "failed",
+      error,
+      metadata: {
+        cacheTimeKey,
+      },
+    });
     return NextResponse.json(
       { success: false, error: error.message || "Failed to generate horoscope" },
       { status: 500 }

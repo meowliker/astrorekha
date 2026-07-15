@@ -2,6 +2,9 @@ import { anthropic } from "@/lib/anthropic";
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
+import { logClaudeUsage } from "@/lib/ai-usage-logger";
+
+const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
 
 // Load prompt files from prompts/ directory
 function loadPrompt(filename: string): string {
@@ -227,8 +230,11 @@ function isCareerIntent(text: string): boolean {
 }
 
 export async function POST(request: NextRequest) {
+  let userId: string | null = null;
+
   try {
-    const { message, userProfile, palmImageBase64, palmReading, natalChart, context } = await request.json();
+    const { message, userId: requestUserId, userProfile, palmImageBase64, palmReading, natalChart, context } = await request.json();
+    userId = requestUserId || null;
 
     if (!message) {
       return NextResponse.json(
@@ -283,10 +289,26 @@ If the user's question is about job/career/profession:
     });
 
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-5-20250929",
+      model: CLAUDE_MODEL,
       max_tokens: 1024,
       system: fullSystemPrompt,
       messages,
+    });
+
+    await logClaudeUsage({
+      feature: "chat",
+      operation: "reply",
+      model: CLAUDE_MODEL,
+      userId,
+      requestId: response.id,
+      usage: response.usage,
+      metadata: {
+        previousMessagesCount: context?.previousMessages?.length || 0,
+        hasPalmReading: !!palmReading,
+        hasNatalChart: !!natalChart,
+        hasPalmImage: !!palmImageBase64,
+        careerIntent: isCareerIntent(String(message || "")),
+      },
     });
 
     const textContent = response.content.find((block) => block.type === "text");
@@ -298,6 +320,14 @@ If the user's question is about job/career/profession:
     });
   } catch (error) {
     console.error("Chat API error:", error);
+    await logClaudeUsage({
+      feature: "chat",
+      operation: "reply",
+      model: CLAUDE_MODEL,
+      userId,
+      status: "failed",
+      error,
+    });
     return NextResponse.json(
       { error: "Failed to process chat message" },
       { status: 500 }

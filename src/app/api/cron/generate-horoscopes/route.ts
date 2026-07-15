@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { fetchFromAstroEngine } from "@/lib/astro-client";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { logClaudeUsage } from "@/lib/ai-usage-logger";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
 
 const ZODIAC_SIGNS = [
   "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
@@ -126,10 +129,23 @@ Generate the ${periodLabel} horoscope JSON for ${sign} now. Do NOT start with "D
 
   const maxTokens = period === "weekly" || period === "monthly" ? 1500 : 1024;
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-5-20250929",
+    model: CLAUDE_MODEL,
     max_tokens: maxTokens,
     system: getSystemPrompt(period === "tomorrow" ? "daily" : period),
     messages: [{ role: "user", content: userMessage }],
+  });
+
+  await logClaudeUsage({
+    feature: "global_horoscope",
+    operation: period,
+    model: CLAUDE_MODEL,
+    requestId: response.id,
+    usage: response.usage,
+    metadata: {
+      sign,
+      period,
+      maxTokens,
+    },
   });
 
   const textContent = response.content.find((block) => block.type === "text");
@@ -247,6 +263,18 @@ export async function POST(request: NextRequest) {
           await new Promise((r) => setTimeout(r, 500));
         } catch (err: any) {
           console.error(`Failed to generate ${period} horoscope for ${sign}:`, err.message);
+          await logClaudeUsage({
+            feature: "global_horoscope",
+            operation: period,
+            model: CLAUDE_MODEL,
+            status: "failed",
+            error: err,
+            metadata: {
+              sign,
+              period,
+              cacheTimeKey,
+            },
+          });
           results[period][sign] = false;
         }
       }

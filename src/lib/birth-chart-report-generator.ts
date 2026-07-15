@@ -1,4 +1,5 @@
 import { anthropic } from "@/lib/anthropic";
+import { logClaudeUsage } from "@/lib/ai-usage-logger";
 
 type AnyRecord = Record<string, any>;
 
@@ -14,6 +15,13 @@ type ReportSections = {
   strengths_challenges: string;
   guidance_remedies: string;
 };
+
+type UsageLogContext = {
+  userId?: string | null;
+  reportId?: string | null;
+};
+
+const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
 
 const SYSTEM_PROMPT = `You are an expert Vedic astrologer writing a personalized birth chart report. Use authentic Jyotish principles. Write in warm, flowing second-person prose. No bullet points. Reference specific chart placements in every paragraph. Each section should be 2-3 paragraphs unless specified otherwise.`;
 
@@ -124,7 +132,8 @@ function getAscendantFromPlanetPositions(chartData: AnyRecord): { lagna: string;
 export async function generateBirthChartReport(
   chartData: Record<string, any>,
   userProfile: Record<string, any>,
-  user: Record<string, any>
+  user: Record<string, any>,
+  usageLogContext: UsageLogContext = {}
 ): Promise<{ sections: Record<string, string> }> {
   const mergedChart = isObject(chartData?.data) ? { ...chartData, ...chartData.data } : chartData;
   const ascendantFromPlanetPositions = getAscendantFromPlanetPositions(mergedChart);
@@ -289,11 +298,40 @@ applies. Keep tone warm and practical, not superstitious.`,
 
   const results = await Promise.all(
     sectionEntries.map(async ([key, prompt]) => {
-      const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-5-20250929",
-        max_tokens: 800,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: prompt }],
+      let response: any;
+
+      try {
+        response = await anthropic.messages.create({
+          model: CLAUDE_MODEL,
+          max_tokens: 800,
+          system: SYSTEM_PROMPT,
+          messages: [{ role: "user", content: prompt }],
+        });
+      } catch (error) {
+        await logClaudeUsage({
+          feature: "birth_chart_report",
+          operation: key,
+          model: CLAUDE_MODEL,
+          userId: usageLogContext.userId,
+          status: "failed",
+          error,
+          metadata: {
+            reportId: usageLogContext.reportId || null,
+          },
+        });
+        throw error;
+      }
+
+      await logClaudeUsage({
+        feature: "birth_chart_report",
+        operation: key,
+        model: CLAUDE_MODEL,
+        userId: usageLogContext.userId,
+        requestId: response.id,
+        usage: response.usage,
+        metadata: {
+          reportId: usageLogContext.reportId || null,
+        },
       });
 
       const text = getAnthropicText(response) || "We could not generate this section right now.";

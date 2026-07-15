@@ -6,10 +6,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import fs from "fs";
 import path from "path";
+import { logClaudeUsage } from "@/lib/ai-usage-logger";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
 
 export type MediaType = "image/jpeg" | "image/png" | "image/webp" | "image/gif";
 
@@ -128,14 +131,15 @@ export interface PalmAnalysisResult {
  */
 export async function analyzePalm(
   imageBase64: string,
-  mediaType: MediaType = "image/jpeg"
+  mediaType: MediaType = "image/jpeg",
+  usageLogContext: { userId?: string | null } = {}
 ): Promise<PalmAnalysisResult> {
   // Read the prompt from the prompts folder
   const promptPath = path.join(process.cwd(), "prompts", "palm_extraction_prompt.txt");
   const prompt = fs.readFileSync(promptPath, "utf-8");
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-5-20250929",
+    model: CLAUDE_MODEL,
     max_tokens: 4096,
     messages: [
       {
@@ -156,6 +160,18 @@ export async function analyzePalm(
         ],
       },
     ],
+  });
+
+  await logClaudeUsage({
+    feature: "palm_analysis",
+    operation: "extract",
+    model: CLAUDE_MODEL,
+    userId: usageLogContext.userId,
+    requestId: response.id,
+    usage: response.usage,
+    metadata: {
+      mediaType,
+    },
   });
 
   // Extract text from response
@@ -201,7 +217,10 @@ export function parseDataUrl(dataUrl: string): { base64: string; mediaType: Medi
  * @param dataUrl - Data URL containing the image
  * @returns Structured palm analysis data
  */
-export async function analyzePalmFromDataUrl(dataUrl: string): Promise<PalmAnalysisResult> {
+export async function analyzePalmFromDataUrl(
+  dataUrl: string,
+  usageLogContext: { userId?: string | null } = {}
+): Promise<PalmAnalysisResult> {
   const { base64, mediaType } = parseDataUrl(dataUrl);
-  return analyzePalm(base64, mediaType);
+  return analyzePalm(base64, mediaType, usageLogContext);
 }

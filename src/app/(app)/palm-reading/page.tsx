@@ -176,6 +176,7 @@ export default function PalmReadingPage() {
           birthDate,
           zodiacSign,
           gender,
+          userId: generateUserId(),
         }),
       });
 

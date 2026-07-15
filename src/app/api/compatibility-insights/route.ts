@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { logClaudeUsage } from "@/lib/ai-usage-logger";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
 
 interface InsightRequest {
   sign1: string;
@@ -27,8 +30,13 @@ interface InsightRequest {
 }
 
 export async function POST(request: NextRequest) {
+  let sign1ForLog: string | null = null;
+  let sign2ForLog: string | null = null;
+
   try {
     const { sign1, sign2, scores, aspects }: InsightRequest = await request.json();
+    sign1ForLog = sign1;
+    sign2ForLog = sign2;
 
     const prompt = `You are an expert astrologer providing compatibility insights for a ${sign1} and ${sign2} couple. Based on their compatibility scores, generate personalized insights.
 
@@ -88,7 +96,7 @@ Generate a JSON response with the following structure (respond ONLY with valid J
 }`;
 
     const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-5-20250929",
+      model: CLAUDE_MODEL,
       max_tokens: 1500,
       messages: [
         {
@@ -97,6 +105,18 @@ Generate a JSON response with the following structure (respond ONLY with valid J
         },
       ],
       system: "You are an expert astrologer who provides insightful, personalized compatibility readings. Always respond with valid JSON only, no markdown formatting or code blocks.",
+    });
+
+    await logClaudeUsage({
+      feature: "compatibility_insights",
+      operation: "generate",
+      model: CLAUDE_MODEL,
+      requestId: message.id,
+      usage: message.usage,
+      metadata: {
+        sign1,
+        sign2,
+      },
     });
 
     const responseText = message.content[0].type === "text" ? message.content[0].text : "";
@@ -120,6 +140,17 @@ Generate a JSON response with the following structure (respond ONLY with valid J
     });
   } catch (error) {
     console.error("Compatibility insights error:", error);
+    await logClaudeUsage({
+      feature: "compatibility_insights",
+      operation: "generate",
+      model: CLAUDE_MODEL,
+      status: "failed",
+      error,
+      metadata: {
+        sign1: sign1ForLog,
+        sign2: sign2ForLog,
+      },
+    });
     return NextResponse.json(
       { success: false, error: "Failed to generate insights" },
       { status: 500 }

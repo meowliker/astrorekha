@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { logClaudeUsage } from "@/lib/ai-usage-logger";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
+
+const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
 
 const PALM_READING_PROMPT = `You are an expert palm reader and mystic with decades of experience analyzing palms. Analyze this palm image and provide a comprehensive reading.
 
@@ -106,8 +109,11 @@ Pregnancy/parenthood guidance rules:
 - Do not make medical claims or guarantees. Use language like "suggests", "may", and "supportive window".`;
 
 export async function POST(request: NextRequest) {
+  let userId: string | null = null;
+
   try {
-    const { imageData, birthDate, zodiacSign, gender } = await request.json();
+    const { imageData, birthDate, zodiacSign, gender, userId: requestUserId } = await request.json();
+    userId = requestUserId || null;
 
     if (!imageData) {
       return NextResponse.json(
@@ -128,7 +134,7 @@ export async function POST(request: NextRequest) {
     const mediaType = imageData.match(/^data:(image\/\w+);base64,/)?.[1] || "image/jpeg";
 
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-5-20250929",
+      model: CLAUDE_MODEL,
       max_tokens: 4096,
       messages: [
         {
@@ -149,6 +155,21 @@ export async function POST(request: NextRequest) {
           ],
         },
       ],
+    });
+
+    await logClaudeUsage({
+      feature: "palm_reading",
+      operation: "generate",
+      model: CLAUDE_MODEL,
+      userId,
+      requestId: response.id,
+      usage: response.usage,
+      metadata: {
+        hasImage: true,
+        mediaType,
+        zodiacSign: zodiacSign || null,
+        gender: gender || null,
+      },
     });
 
     // Extract text content from response
@@ -181,6 +202,14 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Palm reading API error:", error);
+    await logClaudeUsage({
+      feature: "palm_reading",
+      operation: "generate",
+      model: CLAUDE_MODEL,
+      userId,
+      status: "failed",
+      error,
+    });
     return NextResponse.json(
       { success: false, error: "Failed to analyze palm" },
       { status: 500 }

@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
       palmData,
       // Required: User context
       userContext,
+      userId,
     } = body;
 
     // Validate required inputs
@@ -67,14 +68,16 @@ export async function POST(request: NextRequest) {
       reading = await generateReading(
         finalNatalData,
         palmData as PalmData,
-        userContext as UserContext
+        userContext as UserContext,
+        { userId }
       );
     } else {
       // Fetch natal data from astro-engine and generate reading
       const result = await generateCompleteReading(
         birthData,
         palmData as PalmData,
-        userContext as UserContext
+        userContext as UserContext,
+        { userId }
       );
       reading = result.reading;
       finalNatalData = result.natalData;

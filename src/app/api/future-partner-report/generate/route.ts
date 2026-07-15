@@ -142,6 +142,10 @@ export async function POST(request: NextRequest) {
       user,
       userProfile,
       chartData,
+      usageLogContext: {
+        userId,
+        reportId: existingRow?.id || null,
+      },
     });
 
     const generatedAt = new Date().toISOString();

@@ -1,4 +1,5 @@
 import { anthropic } from "@/lib/anthropic";
+import { logClaudeUsage } from "@/lib/ai-usage-logger";
 import { toPartnerInitial } from "@/lib/future-partner-format";
 
 export interface FuturePartnerReportData {
@@ -15,6 +16,7 @@ export interface FuturePartnerReportData {
 }
 
 const PARTNER_REPORT_MAX_RETRIES = 4;
+const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -163,10 +165,15 @@ export async function generateFuturePartnerReport({
   user,
   userProfile,
   chartData,
+  usageLogContext,
 }: {
   user: Record<string, any>;
   userProfile: Record<string, any> | null;
   chartData: Record<string, any> | null;
+  usageLogContext?: {
+    userId?: string | null;
+    reportId?: string | null;
+  };
 }): Promise<FuturePartnerReportData> {
   const name = String(user?.name || userProfile?.name || "friend").trim() || "friend";
 
@@ -230,17 +237,43 @@ Strict requirements:
   for (let attempt = 1; attempt <= PARTNER_REPORT_MAX_RETRIES; attempt += 1) {
     try {
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-5-20250929",
+        model: CLAUDE_MODEL,
         max_tokens: 900,
         system:
           "You are a precise JSON generator. Always output strict JSON with the requested keys and valid JSON syntax.",
         messages: [{ role: "user", content: prompt }],
       });
 
+      await logClaudeUsage({
+        feature: "future_partner_report",
+        operation: "generate",
+        model: CLAUDE_MODEL,
+        userId: usageLogContext?.userId,
+        requestId: response.id,
+        usage: response.usage,
+        metadata: {
+          reportId: usageLogContext?.reportId || null,
+          attempt,
+        },
+      });
+
       const text = extractText(response);
       return parseReportJson(text);
     } catch (error) {
       lastError = error;
+
+      await logClaudeUsage({
+        feature: "future_partner_report",
+        operation: "generate",
+        model: CLAUDE_MODEL,
+        userId: usageLogContext?.userId,
+        status: "failed",
+        error,
+        metadata: {
+          reportId: usageLogContext?.reportId || null,
+          attempt,
+        },
+      });
 
       if (!isOverloadedError(error) || attempt === PARTNER_REPORT_MAX_RETRIES) {
         throw error;

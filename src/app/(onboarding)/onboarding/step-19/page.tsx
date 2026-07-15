@@ -333,7 +333,7 @@ function Step19Content() {
         fetch("/api/palm-reading", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ imageData: palmImage, birthDate, zodiacSign }),
+          body: JSON.stringify({ imageData: palmImage, birthDate, zodiacSign, gender: onboardingData.gender, userId: uid }),
         })
           .then((res) => res.json())
           .then(async (result) => {

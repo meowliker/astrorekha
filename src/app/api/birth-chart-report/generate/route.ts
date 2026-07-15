@@ -197,7 +197,10 @@ export async function POST(request: NextRequest) {
     const reportId = insertedReport.id as string;
 
     try {
-      const generated = await generateBirthChartReport(chartData, userProfile || {}, user || {});
+      const generated = await generateBirthChartReport(chartData, userProfile || {}, user || {}, {
+        userId,
+        reportId,
+      });
 
       const { error: updateError } = await supabaseAdmin
         .from("birth_chart_reports")

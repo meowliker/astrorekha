@@ -7,10 +7,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import fs from "fs";
 import path from "path";
 import { fetchFromAstroEngine } from "@/lib/astro-client";
+import { logClaudeUsage } from "@/lib/ai-usage-logger";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
 
 export interface UserContext {
   age?: number | string;
@@ -72,7 +75,8 @@ export interface PalmData {
 export async function generateReading(
   natalData: NatalData,
   palmData: PalmData,
-  userContext: UserContext
+  userContext: UserContext,
+  usageLogContext: { userId?: string | null } = {}
 ): Promise<string> {
   // Read the master reading prompt
   const promptPath = path.join(process.cwd(), "prompts", "master_reading_prompt.txt");
@@ -107,10 +111,22 @@ Minimum 800 words.
 `;
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-5-20250929",
+    model: CLAUDE_MODEL,
     max_tokens: 4096,
     system: systemPrompt,
     messages: [{ role: "user", content: userMessage }],
+  });
+
+  await logClaudeUsage({
+    feature: "complete_reading",
+    operation: "generate",
+    model: CLAUDE_MODEL,
+    userId: usageLogContext.userId,
+    requestId: response.id,
+    usage: response.usage,
+    metadata: {
+      primaryConcern: userContext.primary_concern || null,
+    },
   });
 
   // Extract text from response
@@ -162,13 +178,14 @@ export async function generateCompleteReading(
     place: string;
   },
   palmData: PalmData,
-  userContext: UserContext
+  userContext: UserContext,
+  usageLogContext: { userId?: string | null } = {}
 ): Promise<{ reading: string; natalData: NatalData }> {
   // Fetch natal data from astro-engine
   const natalData = await fetchNatalData(birthData);
   
   // Generate the reading
-  const reading = await generateReading(natalData, palmData, userContext);
+  const reading = await generateReading(natalData, palmData, userContext, usageLogContext);
   
   return { reading, natalData };
 }

@@ -1,9 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { logClaudeUsage } from "@/lib/ai-usage-logger";
 
 // Initialize Anthropic client for Claude AI
 export const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
+
+const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
 
 // Helper function to generate palm reading insights
 export async function generatePalmReading(palmData: {
@@ -28,7 +31,7 @@ Provide insights about:
 Keep the tone mystical yet positive and encouraging. Format the response as JSON with keys: love, health, career, growth.`;
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-5-20250929",
+    model: CLAUDE_MODEL,
     max_tokens: 1024,
     messages: [
       {
@@ -36,6 +39,14 @@ Keep the tone mystical yet positive and encouraging. Format the response as JSON
         content: prompt,
       },
     ],
+  });
+
+  await logClaudeUsage({
+    feature: "palm_reading_helper",
+    operation: "generate",
+    model: CLAUDE_MODEL,
+    requestId: response.id,
+    usage: response.usage,
   });
 
   return response;
@@ -56,7 +67,7 @@ Include:
 Keep it mystical, positive, and under 200 words. Format as JSON with keys: energy, love, career, luckyNumbers, luckyColor, advice.`;
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-5-20250929",
+    model: CLAUDE_MODEL,
     max_tokens: 512,
     messages: [
       {
@@ -64,6 +75,17 @@ Keep it mystical, positive, and under 200 words. Format as JSON with keys: energ
         content: prompt,
       },
     ],
+  });
+
+  await logClaudeUsage({
+    feature: "daily_horoscope_helper",
+    operation: "generate",
+    model: CLAUDE_MODEL,
+    requestId: response.id,
+    usage: response.usage,
+    metadata: {
+      zodiacSign,
+    },
   });
 
   return response;
