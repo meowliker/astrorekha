@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Share2, Trash2, ChevronDown, ChevronUp, Camera, RefreshCw, Flashlight, FlashlightOff } from "lucide-react";
+import { ArrowLeft, Loader2, Share2, ChevronDown, ChevronUp, Camera, Flashlight, FlashlightOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { supabase } from "@/lib/supabase";
@@ -30,7 +30,6 @@ export default function PalmReadingPage() {
   const [expandedCosmic, setExpandedCosmic] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
-  const [isFlowB, setIsFlowB] = useState(false);
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchEnabled, setTorchEnabled] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -43,11 +42,6 @@ export default function PalmReadingPage() {
   const birthDate = `${birthYear}-${birthMonth}-${birthDay}`;
 
   useEffect(() => {
-    // Check if user is Flow B
-    const flow = localStorage.getItem("astrorekha_onboarding_flow");
-    const purchaseType = localStorage.getItem("astrorekha_purchase_type");
-    setIsFlowB(flow === "flow-b" || purchaseType === "one-time");
-    
     loadExistingReading();
     return () => {
       // Cleanup camera stream
@@ -247,23 +241,6 @@ export default function PalmReadingPage() {
       analyzePalm(imageData);
     };
     reader.readAsDataURL(file);
-  };
-
-  const handleDeleteReading = async () => {
-    if (!confirm("Are you sure you want to delete this reading?")) return;
-    
-    try {
-      const userId = generateUserId();
-      await supabase.from("palm_readings").update({
-        reading: null,
-        palm_image_url: null,
-        deleted_at: new Date().toISOString(),
-      }).eq("id", userId);
-      setReading(null);
-      setCapturedImage(null);
-    } catch (err) {
-      console.error("Failed to delete:", err);
-    }
   };
 
   const handleShare = async () => {
@@ -673,21 +650,7 @@ export default function PalmReadingPage() {
               <span className="text-white text-sm">← Back</span>
             </button>
             <h1 className="text-white text-lg font-bold">Results</h1>
-            {/* Only show New Scan button for Flow A (subscription) users */}
-            {!isFlowB ? (
-              <button 
-                onClick={() => {
-                  setReading(null);
-                  setCapturedImage(null);
-                }} 
-                className="px-4 py-2 bg-white/10 rounded-full border border-white/20 flex items-center gap-1"
-              >
-                <Camera className="w-4 h-4 text-white" />
-                <span className="text-white text-sm">New Scan</span>
-              </button>
-            ) : (
-              <div className="w-24" /> // Placeholder for layout balance
-            )}
+            <div className="w-24" />
           </div>
         </div>
 
@@ -754,31 +717,6 @@ export default function PalmReadingPage() {
                 {renderActiveTab()}
               </motion.div>
             </AnimatePresence>
-
-            {/* Actions - Only show for Flow A users */}
-            {!isFlowB && (
-              <div className="pt-4 space-y-3">
-                <Button
-                  onClick={() => {
-                    setReading(null);
-                    setCapturedImage(null);
-                  }}
-                  variant="outline"
-                  className="w-full border-white/20 text-white hover:bg-white/10"
-                >
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  New Reading
-                </Button>
-
-                <button
-                  onClick={handleDeleteReading}
-                  className="w-full py-3 bg-red-500/20 border border-red-500/30 rounded-xl text-red-400 font-semibold flex items-center justify-center gap-2"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Delete This Reading
-                </button>
-              </div>
-            )}
 
             <ReportDisclaimer />
           </div>
