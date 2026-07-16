@@ -542,10 +542,10 @@ export default function ABTestsPage() {
         body: JSON.stringify({
           testId: PAYWALL_GST_TEST_ID,
           name: "Paywall GST Exclusive Price Test",
-          status: "paused",
+          status: "completed",
           variants: {
-            A: { weight: 50, page: "tax-inclusive" },
-            B: { weight: 50, page: "exclusive-gst" },
+            A: { weight: 0, page: "tax-inclusive" },
+            B: { weight: 100, page: "exclusive-gst" },
           },
         }),
       });
@@ -1067,19 +1067,25 @@ export default function ABTestsPage() {
               }`}>
                 {(test.status || "unknown").charAt(0).toUpperCase() + (test.status || "unknown").slice(1)}
               </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  updateTestStatus(
-                    test.id || funnelConfig.testId || DEFAULT_ONBOARDING_TEST_ID,
-                    test.status === "active" ? "paused" : "active"
-                  )
-                }
-              >
-                {test.status === "active" ? <Pause className="w-4 h-4 mr-2" /> : <Play className="w-4 h-4 mr-2" />}
-                {test.status === "active" ? "Pause" : "Resume"}
-              </Button>
+              {test.status === "completed" ? (
+                <Button variant="outline" size="sm" disabled>
+                  Completed
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    updateTestStatus(
+                      test.id || funnelConfig.testId || DEFAULT_ONBOARDING_TEST_ID,
+                      test.status === "active" ? "paused" : "active"
+                    )
+                  }
+                >
+                  {test.status === "active" ? <Pause className="w-4 h-4 mr-2" /> : <Play className="w-4 h-4 mr-2" />}
+                  {test.status === "active" ? "Pause" : "Resume"}
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"

@@ -5,7 +5,6 @@ import { DEFAULT_PRICING, normalizePricing, type PricingConfig } from "@/lib/pri
 import { sanitizePaymentAttribution, type PaymentAttributionPayload } from "@/lib/attribution";
 import { recordMarketingEvent } from "@/lib/marketing-events";
 
-const PAYWALL_GST_TEST_ID = "paywall-gst-exclusive-v1";
 const GST_RATE_PERCENT = 18;
 
 // Fetch dynamic pricing from database
@@ -36,11 +35,6 @@ function roundMoney(value: number): number {
 
 function toPaise(value: number): number {
   return Math.round(value * 100);
-}
-
-function normalizePaywallVariant(value: unknown): "A" | "B" | null {
-  if (value === "A" || value === "B") return value;
-  return null;
 }
 
 function extractAttributionFromReferer(referer: string | undefined): PaymentAttributionPayload {
@@ -85,22 +79,12 @@ export async function POST(request: NextRequest) {
       email?: string;
         firstName?: string;
         attribution?: PaymentAttributionPayload;
-        paywallTestId?: string;
-        paywallVariant?: string;
-        taxMode?: string;
       };
       const { type, bundleId, packageId, userId, email, firstName, attribution } = body;
       const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
-      const paywallVariant = normalizePaywallVariant(body.paywallVariant);
-      const paywallTestId =
-        type === "bundle" && typeof body.paywallTestId === "string" && body.paywallTestId === PAYWALL_GST_TEST_ID
-          ? body.paywallTestId
-          : null;
-      const shouldApplyExclusiveGst =
-        type === "bundle" &&
-        paywallTestId === PAYWALL_GST_TEST_ID &&
-        paywallVariant === "B" &&
-        body.taxMode === "exclusive_gst";
+      const paywallTestId = null;
+      const paywallVariant = null;
+      const shouldApplyExclusiveGst = type === "bundle";
       const sanitizedAttribution = sanitizePaymentAttribution(attribution);
     const requestReferrer = request.headers.get("referer") || undefined;
     const refererAttribution = extractAttributionFromReferer(requestReferrer);
@@ -144,8 +128,6 @@ export async function POST(request: NextRequest) {
           gstAmount = roundMoney(baseAmount * (GST_RATE_PERCENT / 100));
           amount = roundMoney(baseAmount + gstAmount);
           taxMode = "exclusive_gst";
-          metadata.paywallTestId = paywallTestId;
-          metadata.paywallVariant = paywallVariant;
           metadata.taxMode = taxMode;
           metadata.baseAmountInr = baseAmount.toFixed(2);
           metadata.gstRatePercent = String(GST_RATE_PERCENT);

@@ -28,16 +28,7 @@ const sketchPredictionLabels = [
   { text: "Big change", emoji: "🚀", top: "60%", left: "52%", rotation: 8 },
 ];
 
-const PAYWALL_DEFAULT_PLAN_TEST_ID = "paywall-default-plan-v1";
-const PAYWALL_DEFAULT_PLAN_VARIANT_STORAGE_KEY = "astrorekha_paywall_default_variant";
-const PAYWALL_GST_TEST_ID = "paywall-gst-exclusive-v1";
-const PAYWALL_GST_VARIANT_STORAGE_KEY = "astrorekha_paywall_gst_variant";
-const PAYWALL_ROUTE = "/onboarding/bundle-pricing";
 const PENDING_PAYMENT_KEY = "astrorekha_pending_payu_payment";
-const PAYWALL_DEFAULT_PLAN_BY_VARIANT = {
-  A: "palm-birth-sketch",
-  B: "palm-birth-sketch",
-} as const;
 
 type PayUBoltResponse = {
   response: {
@@ -57,8 +48,6 @@ type PayUBolt = {
     }
   ) => void;
 };
-
-type AbVariant = "A" | "B";
 
 async function waitForPayUConfirmation(txnId: string, attempts = 8): Promise<boolean> {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -111,18 +100,6 @@ function isPayUCancelOrFailure(value: unknown): boolean {
     status.includes("drop") ||
     status === "usercancelled"
   );
-}
-
-function normalizeAbVariant(variant: unknown): AbVariant {
-  return variant === "B" ? "B" : "A";
-}
-
-function getPaywallVariantPageKey(variant: AbVariant): string {
-  return variant === "B" ? "default-1599" : "default-839";
-}
-
-function getPaywallGstPageKey(variant: AbVariant): string {
-  return variant === "B" ? "exclusive-gst" : "tax-inclusive";
 }
 
 // Generate random stats with some variation for authenticity
@@ -210,136 +187,14 @@ export default function BundlePricingPage() {
   const checkoutCtaRef = useRef<HTMLDivElement>(null);
   const [showPaymentStickyCTA, setShowPaymentStickyCTA] = useState(false);
   const [showStickyCTA, setShowStickyCTA] = useState(false);
-  const [paywallPlanTestVariant, setPaywallPlanTestVariant] = useState<AbVariant | null>(null);
-  const [paywallGstTestVariant, setPaywallGstTestVariant] = useState<AbVariant | null>(null);
-  const [hasResolvedPaywallPlanVariant, setHasResolvedPaywallPlanVariant] = useState(false);
-  const [hasResolvedPaywallGstVariant, setHasResolvedPaywallGstVariant] = useState(false);
   const hasUserTouchedPlanSelectionRef = useRef(false);
-  const hasAppliedVariantDefaultRef = useRef(false);
-  const paywallAbImpressionTrackedRef = useRef(false);
-  const paywallAbConversionTrackedRef = useRef(false);
-  const paywallAbBounceTrackedRef = useRef(false);
-  const paywallGstAbImpressionTrackedRef = useRef(false);
-  const paywallGstAbConversionTrackedRef = useRef(false);
-  const paywallGstAbBounceTrackedRef = useRef(false);
-  const paywallAbVisitorIdRef = useRef<string | null>(null);
   
   const { userId } = useUserStore();
   const bundlePlans = allBundlePlans.filter((bundle) => bundle.active);
   const heroPredictionLabels = predictionLabels;
   const selectedPlanData = bundlePlans.find(p => p.id === selectedPlan);
   const selectedPlanDisplayPrice = selectedPlanData?.displayPrice || selectedPlanData?.price;
-  const isExclusiveGstVariant = paywallGstTestVariant === "B";
-  const isPlanSelectionReady = hasResolvedPaywallPlanVariant && hasResolvedPaywallGstVariant && Boolean(selectedPlanData);
-
-  const resolvePaywallAbVisitorId = (): string => {
-    if (paywallAbVisitorIdRef.current) return paywallAbVisitorIdRef.current;
-
-    const localUserId = localStorage.getItem("astrorekha_user_id")?.trim() || "";
-    const localAnonId = localStorage.getItem("astrorekha_anon_id")?.trim() || "";
-    const storeUserId = (userId || "").trim();
-    const resolved = localUserId || localAnonId || storeUserId || generateUserId();
-
-    if (!localUserId && resolved) {
-      localStorage.setItem("astrorekha_user_id", resolved);
-    }
-
-    paywallAbVisitorIdRef.current = resolved;
-    return resolved;
-  };
-
-  const trackPaywallAbEvent = (
-    eventType: "impression" | "conversion" | "bounce" | "checkout_started",
-    metadata: Record<string, unknown> = {},
-    useBeacon = false,
-    variantOverride?: AbVariant
-  ) => {
-    const cachedVariant =
-      typeof localStorage !== "undefined" && localStorage.getItem(PAYWALL_DEFAULT_PLAN_VARIANT_STORAGE_KEY) === "B"
-        ? "B"
-        : "A";
-    const resolvedVariant = variantOverride || paywallPlanTestVariant || cachedVariant;
-    if (!resolvedVariant) return;
-    const visitorId = resolvePaywallAbVisitorId();
-    const payload = {
-      testId: PAYWALL_DEFAULT_PLAN_TEST_ID,
-      variant: resolvedVariant,
-      eventType,
-      visitorId,
-      userId: visitorId,
-      metadata: {
-        route: PAYWALL_ROUTE,
-        page: getPaywallVariantPageKey(resolvedVariant),
-        ...metadata,
-      },
-    };
-
-    if (useBeacon && typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
-      try {
-        const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
-        navigator.sendBeacon("/api/ab-test/event", blob);
-        return;
-      } catch (error) {
-        console.error("Paywall AB beacon failed, falling back to fetch:", error);
-      }
-    }
-
-    fetch("/api/ab-test/event", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      keepalive: useBeacon,
-    }).catch((error) => {
-      console.error("Failed to track paywall AB event:", error);
-    });
-  };
-
-  const trackPaywallGstAbEvent = (
-    eventType: "impression" | "conversion" | "bounce" | "checkout_started",
-    metadata: Record<string, unknown> = {},
-    useBeacon = false,
-    variantOverride?: AbVariant
-  ) => {
-    const cachedVariant =
-      typeof localStorage !== "undefined" && localStorage.getItem(PAYWALL_GST_VARIANT_STORAGE_KEY) === "B"
-        ? "B"
-        : "A";
-    const resolvedVariant = variantOverride || paywallGstTestVariant || cachedVariant;
-    if (!resolvedVariant) return;
-    const visitorId = resolvePaywallAbVisitorId();
-    const payload = {
-      testId: PAYWALL_GST_TEST_ID,
-      variant: resolvedVariant,
-      eventType,
-      visitorId,
-      userId: visitorId,
-      metadata: {
-        route: PAYWALL_ROUTE,
-        page: getPaywallGstPageKey(resolvedVariant),
-        taxMode: resolvedVariant === "B" ? "exclusive_gst" : "inclusive",
-        ...metadata,
-      },
-    };
-
-    if (useBeacon && typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
-      try {
-        const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
-        navigator.sendBeacon("/api/ab-test/event", blob);
-        return;
-      } catch (error) {
-        console.error("Paywall GST AB beacon failed, falling back to fetch:", error);
-      }
-    }
-
-    fetch("/api/ab-test/event", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      keepalive: useBeacon,
-    }).catch((error) => {
-      console.error("Failed to track paywall GST AB event:", error);
-    });
-  };
+  const isPlanSelectionReady = Boolean(selectedPlanData);
 
   useEffect(() => {
     const handlePageShow = () => {
@@ -391,185 +246,9 @@ export default function BundlePricingPage() {
     if (bundlePlans.length === 0) return;
     setSelectedPlan((current) => {
       if (bundlePlans.some((plan) => plan.id === current)) return current;
-      if (paywallPlanTestVariant) {
-        const variantDefault = PAYWALL_DEFAULT_PLAN_BY_VARIANT[paywallPlanTestVariant];
-        if (bundlePlans.some((plan) => plan.id === variantDefault)) {
-          return variantDefault;
-        }
-      }
       return bundlePlans[0].id;
     });
-  }, [bundlePlans, paywallPlanTestVariant]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const assignPaywallVariant = async () => {
-      if (bundlePlans.length === 0) return;
-
-      const cachedVariantRaw = localStorage.getItem(PAYWALL_DEFAULT_PLAN_VARIANT_STORAGE_KEY);
-      if (cachedVariantRaw === "A" || cachedVariantRaw === "B") {
-        setPaywallPlanTestVariant(cachedVariantRaw);
-        const cachedDefault = PAYWALL_DEFAULT_PLAN_BY_VARIANT[cachedVariantRaw];
-        if (!hasUserTouchedPlanSelectionRef.current && bundlePlans.some((plan) => plan.id === cachedDefault)) {
-          setSelectedPlan(cachedDefault);
-        }
-      }
-
-      let resolvedVariant: AbVariant = cachedVariantRaw === "B" ? "B" : "A";
-      try {
-        const visitorId = resolvePaywallAbVisitorId();
-        const params = new URLSearchParams({
-          testId: PAYWALL_DEFAULT_PLAN_TEST_ID,
-          visitorId,
-          userId: visitorId,
-        });
-
-        const response = await fetch(`/api/ab-test?${params.toString()}`, {
-          cache: "no-store",
-        });
-        const data = await response.json().catch(() => ({}));
-        if (response.ok) {
-          resolvedVariant = normalizeAbVariant(data?.variant);
-        }
-      } catch (error) {
-        console.error("Failed to fetch paywall AB assignment. Falling back to cached/default variant.", error);
-      }
-
-      if (cancelled) return;
-      setPaywallPlanTestVariant(resolvedVariant);
-      setHasResolvedPaywallPlanVariant(true);
-      localStorage.setItem(PAYWALL_DEFAULT_PLAN_VARIANT_STORAGE_KEY, resolvedVariant);
-
-      if (!hasAppliedVariantDefaultRef.current && !hasUserTouchedPlanSelectionRef.current) {
-        const variantDefault = PAYWALL_DEFAULT_PLAN_BY_VARIANT[resolvedVariant];
-        if (bundlePlans.some((plan) => plan.id === variantDefault)) {
-          setSelectedPlan(variantDefault);
-          hasAppliedVariantDefaultRef.current = true;
-        }
-      }
-
-      if (!paywallAbImpressionTrackedRef.current) {
-        trackPaywallAbEvent(
-          "impression",
-          {
-            defaultPlanId: PAYWALL_DEFAULT_PLAN_BY_VARIANT[resolvedVariant],
-            selectedPlanId: PAYWALL_DEFAULT_PLAN_BY_VARIANT[resolvedVariant],
-          },
-          false,
-          resolvedVariant
-        );
-        paywallAbImpressionTrackedRef.current = true;
-      }
-    };
-
-    assignPaywallVariant();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [bundlePlans, userId]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const assignPaywallGstVariant = async () => {
-      const cachedVariantRaw = localStorage.getItem(PAYWALL_GST_VARIANT_STORAGE_KEY);
-      if (cachedVariantRaw === "A" || cachedVariantRaw === "B") {
-        setPaywallGstTestVariant(cachedVariantRaw);
-      }
-
-      let resolvedVariant: AbVariant = cachedVariantRaw === "B" ? "B" : "A";
-      try {
-        const visitorId = resolvePaywallAbVisitorId();
-        const params = new URLSearchParams({
-          testId: PAYWALL_GST_TEST_ID,
-          visitorId,
-          userId: visitorId,
-        });
-
-        const response = await fetch(`/api/ab-test?${params.toString()}`, {
-          cache: "no-store",
-        });
-        const data = await response.json().catch(() => ({}));
-        if (response.ok) {
-          resolvedVariant = normalizeAbVariant(data?.variant);
-        }
-      } catch (error) {
-        console.error("Failed to fetch paywall GST AB assignment. Falling back to cached/default variant.", error);
-      }
-
-      if (cancelled) return;
-      setPaywallGstTestVariant(resolvedVariant);
-      setHasResolvedPaywallGstVariant(true);
-      localStorage.setItem(PAYWALL_GST_VARIANT_STORAGE_KEY, resolvedVariant);
-
-      if (!paywallGstAbImpressionTrackedRef.current) {
-        trackPaywallGstAbEvent(
-          "impression",
-          {
-            selectedPlanId: selectedPlan || null,
-          },
-          false,
-          resolvedVariant
-        );
-        paywallGstAbImpressionTrackedRef.current = true;
-      }
-    };
-
-    assignPaywallGstVariant();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [userId]);
-
-  useEffect(() => {
-    const sendBounceIfNeeded = () => {
-      if (paywallAbBounceTrackedRef.current || paywallAbConversionTrackedRef.current || !paywallPlanTestVariant) {
-        if (paywallGstAbBounceTrackedRef.current || paywallGstAbConversionTrackedRef.current || !paywallGstTestVariant) {
-          return;
-        }
-      }
-
-      if (!paywallAbBounceTrackedRef.current && !paywallAbConversionTrackedRef.current && paywallPlanTestVariant) {
-        paywallAbBounceTrackedRef.current = true;
-        trackPaywallAbEvent(
-          "bounce",
-          {
-            selectedPlanId: selectedPlan,
-            converted: false,
-          },
-          true
-        );
-      }
-
-      if (!paywallGstAbBounceTrackedRef.current && !paywallGstAbConversionTrackedRef.current && paywallGstTestVariant) {
-        paywallGstAbBounceTrackedRef.current = true;
-        trackPaywallGstAbEvent(
-          "bounce",
-          {
-            selectedPlanId: selectedPlan,
-            converted: false,
-          },
-          true
-        );
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        sendBounceIfNeeded();
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("pagehide", sendBounceIfNeeded);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("pagehide", sendBounceIfNeeded);
-    };
-  }, [paywallPlanTestVariant, paywallGstTestVariant, selectedPlan]);
+  }, [bundlePlans]);
 
   // Keep the checkout CTA visible while the user is selecting bundles.
   useEffect(() => {
@@ -730,19 +409,6 @@ export default function BundlePricingPage() {
     // Track AddToCart
     pixelEvents.addToCart(plan.price, plan.name);
 
-    trackPaywallAbEvent("checkout_started", {
-      selectedPlanId: selectedPlan,
-      selectedPlanName: plan.name,
-      selectedPlanPriceInr: plan.price,
-      defaultPlanId: paywallPlanTestVariant ? PAYWALL_DEFAULT_PLAN_BY_VARIANT[paywallPlanTestVariant] : null,
-    });
-    trackPaywallGstAbEvent("checkout_started", {
-      selectedPlanId: selectedPlan,
-      selectedPlanName: plan.name,
-      selectedPlanPriceInr: plan.displayPrice || plan.price,
-      taxMode: isExclusiveGstVariant ? "exclusive_gst" : "inclusive",
-    });
-
     // Track Brevo checkout_started for abandoned checkout automation (30-min email)
     const userEmail = localStorage.getItem("astrorekha_email");
     if (userEmail) {
@@ -773,9 +439,6 @@ export default function BundlePricingPage() {
           email: localStorage.getItem("astrorekha_email") || "",
           firstName: localStorage.getItem("astrorekha_name") || "Customer",
           attribution: getPaymentAttributionPayload(),
-          paywallTestId: PAYWALL_GST_TEST_ID,
-          paywallVariant: paywallGstTestVariant || "A",
-          taxMode: isExclusiveGstVariant ? "exclusive_gst" : "inclusive",
         }),
       });
 
@@ -801,24 +464,6 @@ export default function BundlePricingPage() {
         }
         const completeBundleCheckout = () => {
           localStorage.removeItem(PENDING_PAYMENT_KEY);
-          paywallAbConversionTrackedRef.current = true;
-          paywallGstAbConversionTrackedRef.current = true;
-          trackPaywallAbEvent("conversion", {
-            selectedPlanId: selectedPlan,
-            selectedPlanName: plan.name,
-            selectedPlanPriceInr: plan.price,
-            amount: chargedAmountInr,
-            paymentMethod: "payu",
-            defaultPlanId: paywallPlanTestVariant ? PAYWALL_DEFAULT_PLAN_BY_VARIANT[paywallPlanTestVariant] : null,
-          }, true);
-          trackPaywallGstAbEvent("conversion", {
-            selectedPlanId: selectedPlan,
-            selectedPlanName: plan.name,
-            selectedPlanPriceInr: plan.displayPrice || plan.price,
-            amount: chargedAmountInr,
-            paymentMethod: "payu",
-            taxMode: isExclusiveGstVariant ? "exclusive_gst" : "inclusive",
-          }, true);
           localStorage.setItem("astrorekha_payment_completed", "true");
           localStorage.setItem("astrorekha_purchase_type", "one-time");
           localStorage.setItem("astrorekha_bundle_id", selectedPlan);
@@ -947,18 +592,6 @@ export default function BundlePricingPage() {
       if (!response.ok || !data.success) {
         throw new Error(data.error || "Invalid coupon code");
       }
-
-      const redeemedPlan = bundlePlans.find((plan) => plan.id === data.bundleId);
-      paywallAbConversionTrackedRef.current = true;
-      trackPaywallAbEvent("conversion", {
-        selectedPlanId: data.bundleId || selectedPlan,
-        selectedPlanName: redeemedPlan?.name || "Coupon Unlock",
-        selectedPlanPriceInr: redeemedPlan?.price ?? 0,
-        amount: redeemedPlan?.price ?? 0,
-        paymentMethod: "coupon_unlock",
-        couponCode: data.code,
-        defaultPlanId: paywallPlanTestVariant ? PAYWALL_DEFAULT_PLAN_BY_VARIANT[paywallPlanTestVariant] : null,
-      }, true);
 
       localStorage.setItem("astrorekha_payment_completed", "true");
       localStorage.setItem("astrorekha_purchase_type", "coupon_unlock");
@@ -1151,11 +784,9 @@ export default function BundlePricingPage() {
                       <span className="text-2xl font-bold text-primary">₹{plan.displayPrice || plan.price}</span>
                       <span className="text-muted-foreground line-through text-sm">₹{plan.originalPrice}</span>
                     </div>
-                    {isExclusiveGstVariant && (
-                      <p className="mb-3 text-xs font-bold text-muted-foreground">
-                        Prices exclusive of GST. Final total shown at checkout.
-                      </p>
-                    )}
+                    <p className="mb-3 text-xs font-bold text-muted-foreground">
+                      Prices exclusive of GST. Final total shown at checkout.
+                    </p>
 
                   {/* Features */}
                   <ul className="space-y-1.5">
@@ -1227,11 +858,9 @@ export default function BundlePricingPage() {
                   : "Loading your offer..."
               )}
             </Button>
-          {isExclusiveGstVariant && (
-            <p className="mt-2 text-center text-xs font-bold text-muted-foreground">
-              Prices exclusive of GST. Final total shown at checkout.
-            </p>
-          )}
+          <p className="mt-2 text-center text-xs font-bold text-muted-foreground">
+            Prices exclusive of GST. Final total shown at checkout.
+          </p>
         </motion.div>
 
         {/* Coupon unlock for internal testing */}

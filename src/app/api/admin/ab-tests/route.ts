@@ -492,25 +492,39 @@ async function ensurePaywallGstTest(supabase: ReturnType<typeof getSupabaseAdmin
       {
         id: PAYWALL_GST_TEST_ID,
         name: "Paywall GST Exclusive Price Test",
-        status: "paused",
-        traffic_split: 0.5,
+        status: "completed",
+        traffic_split: 1,
         created_at: now,
         updated_at: now,
       },
       { onConflict: "id" }
     );
+  } else if (existing.status !== "completed" || Number(existing.traffic_split) !== 1) {
+    await supabase
+      .from("ab_tests")
+      .update({
+        status: "completed",
+        traffic_split: 1,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", PAYWALL_GST_TEST_ID);
   }
 
   return PAYWALL_GST_TEST_ID;
 }
 
 async function buildDefaultTestData(testId: string) {
+  const isPaywallDefaultPlanTest = isPaywallDefaultPlanTestId(testId);
   const isPaywallGstTest = isPaywallGstTestId(testId);
   const row = normalizeTestForResponse(
     {
-      name: isPaywallGstTest ? "Paywall GST Exclusive Price Test" : "Onboarding Layout A/B (QA)",
-      status: isPaywallGstTest ? "paused" : "active",
-      traffic_split: 0.5,
+      name: isPaywallGstTest
+        ? "Paywall GST Exclusive Price Test"
+        : isPaywallDefaultPlanTest
+        ? "Paywall Default Plan A/B (₹839 vs ₹1599)"
+        : "Onboarding Layout A/B (QA)",
+      status: isPaywallDefaultPlanTest || isPaywallGstTest ? "completed" : "active",
+      traffic_split: isPaywallDefaultPlanTest || isPaywallGstTest ? 1 : 0.5,
       updated_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
     },

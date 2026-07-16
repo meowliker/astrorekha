@@ -138,8 +138,8 @@ export async function GET(request: NextRequest) {
 	        : isPaywallGstTest
 	        ? "Paywall GST Exclusive Price Test"
 	        : "Pricing Page A/B Test",
-	      status: isPaywallGstTest ? "paused" : "active",
-      traffic_split: 0.5,
+	      status: isPaywallDefaultPlanTest || isPaywallGstTest ? "completed" : "active",
+      traffic_split: isPaywallDefaultPlanTest || isPaywallGstTest ? 1 : 0.5,
       variants: isOnboardingLayoutTest
         ? {
             A: { weight: 0, page: "bundle-pricing" },
@@ -147,13 +147,13 @@ export async function GET(request: NextRequest) {
           }
 	        : isPaywallDefaultPlanTest
 	        ? {
-	            A: { weight: 50, page: "default-839" },
-	            B: { weight: 50, page: "default-1599" },
+	            A: { weight: 0, page: "default-839" },
+	            B: { weight: 100, page: "default-1599" },
 	          }
 	        : isPaywallGstTest
 	        ? {
-	            A: { weight: 50, page: "tax-inclusive" },
-	            B: { weight: 50, page: "exclusive-gst" },
+	            A: { weight: 0, page: "tax-inclusive" },
+	            B: { weight: 100, page: "exclusive-gst" },
 	          }
 	        : {
             A: { weight: 50, page: "step-17" },
@@ -216,7 +216,11 @@ export async function GET(request: NextRequest) {
         });
       }
       
-	      const variant = isOnboardingLayoutTest ? "B" : isPaywallGstTest ? "A" : Math.random() < 0.5 ? "A" : "B";
+	      const variant = isOnboardingLayoutTest || isPaywallDefaultPlanTest || isPaywallGstTest
+          ? "B"
+          : Math.random() < 0.5
+          ? "A"
+          : "B";
       
       return NextResponse.json({
         testId,
@@ -228,7 +232,7 @@ export async function GET(request: NextRequest) {
 
     // Check if test is active
     if (testData.status !== "active") {
-      const fallbackVariant = normalizeVariant("A", isOnboardingLayoutTest);
+      const fallbackVariant = isPaywallDefaultPlanTest || isPaywallGstTest ? "B" : normalizeVariant("A", isOnboardingLayoutTest);
       return NextResponse.json({
         testId,
         variant: fallbackVariant,
