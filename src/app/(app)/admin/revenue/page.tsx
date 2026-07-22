@@ -21,6 +21,8 @@ import {
   Clock,
   Filter,
   ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   Package,
   X,
   HelpCircle,
@@ -2318,6 +2320,23 @@ export default function AdminRevenuePage() {
   );
 }
 
+type ProfitSheetSortKey =
+  | "date"
+  | "day"
+  | "grossRevenue"
+  | "refundAmount"
+  | "revenue"
+  | "gst"
+  | "adsCostUSD"
+  | "adsCostINR"
+  | "netRevenue"
+  | "profitPercent"
+  | "roas"
+  | "bundlePurchases"
+  | "transactionCount";
+
+type ProfitSheetSortDirection = "asc" | "desc" | null;
+
 // Profit Sheet Tab Component
 function ProfitSheetTab({
   data,
@@ -2388,6 +2407,8 @@ function ProfitSheetTab({
     const focusDate = selectedDates[selectedDates.length - 1] || endDate || startDate || getCurrentBusinessDateIso();
     return getMonthStartUtcDate(focusDate);
   });
+  const [profitSortKey, setProfitSortKey] = useState<ProfitSheetSortKey | null>(null);
+  const [profitSortDirection, setProfitSortDirection] = useState<ProfitSheetSortDirection>(null);
 
   useEffect(() => {
     setPickerStartDate(startDate);
@@ -2687,6 +2708,89 @@ function ProfitSheetTab({
   } else if (roasFilter === "noads") {
     filteredData = filteredData.filter(row => row.adsCostINR === 0);
   }
+
+  const getSortValue = (row: ProfitSheetRow, key: ProfitSheetSortKey): string | number => {
+    switch (key) {
+      case "date":
+        return new Date(`${row.date}T00:00:00`).getTime();
+      case "day":
+        return row.day || "";
+      case "grossRevenue":
+        return row.grossRevenue ?? row.revenue;
+      case "refundAmount":
+        return row.refundAmount ?? 0;
+      case "profitPercent":
+        return row.profitPercent ?? 0;
+      case "bundlePurchases":
+        return row.bundlePurchases || 0;
+      case "transactionCount":
+        return row.transactionCount || 0;
+      default:
+        return Number(row[key] ?? 0);
+    }
+  };
+
+  const sortedData = profitSortKey && profitSortDirection
+    ? [...filteredData].sort((a, b) => {
+        const aValue = getSortValue(a, profitSortKey);
+        const bValue = getSortValue(b, profitSortKey);
+        let comparison = 0;
+
+        if (typeof aValue === "string" || typeof bValue === "string") {
+          comparison = String(aValue).localeCompare(String(bValue));
+        } else {
+          comparison = aValue - bValue;
+        }
+
+        return profitSortDirection === "asc" ? comparison : -comparison;
+      })
+    : filteredData;
+
+  const handleProfitSort = (key: ProfitSheetSortKey) => {
+    if (profitSortKey !== key) {
+      setProfitSortKey(key);
+      setProfitSortDirection("asc");
+      return;
+    }
+
+    if (profitSortDirection === "asc") {
+      setProfitSortDirection("desc");
+      return;
+    }
+
+    setProfitSortKey(null);
+    setProfitSortDirection(null);
+  };
+
+  const SortableHeader = ({
+    sortKey,
+    children,
+    align = "right",
+  }: {
+    sortKey: ProfitSheetSortKey;
+    children: React.ReactNode;
+    align?: "left" | "right";
+  }) => {
+    const isActive = profitSortKey === sortKey && !!profitSortDirection;
+    const Icon = profitSortDirection === "asc" ? ArrowUp : ArrowDown;
+
+    return (
+      <th className={`px-4 py-3 ${align === "right" ? "text-right" : "text-left"}`}>
+        <button
+          type="button"
+          onClick={() => handleProfitSort(sortKey)}
+          className={`inline-flex items-center gap-1.5 text-xs font-semibold transition-colors ${
+            align === "right" ? "justify-end" : "justify-start"
+          } ${isActive ? "text-primary" : "text-white/70 hover:text-white"}`}
+          aria-sort={isActive ? (profitSortDirection === "asc" ? "ascending" : "descending") : "none"}
+          title="Click to sort"
+        >
+          <span>{children}</span>
+          {isActive ? <Icon className="w-3.5 h-3.5" /> : <ArrowUpDown className="w-3.5 h-3.5 opacity-45" />}
+        </button>
+      </th>
+    );
+  };
 
   // Calculate totals
   const totals = filteredData.reduce(
@@ -3106,23 +3210,23 @@ function ProfitSheetTab({
             <table className="w-full">
               <thead>
                 <tr className="border-b border-white/10 bg-white/5">
-                  <th className="text-left text-white/70 text-xs font-semibold px-4 py-3">Date</th>
-                  <th className="text-left text-white/70 text-xs font-semibold px-4 py-3">Day</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Received</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Refund</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Revenue</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">GST (5%)</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Ads (USD)</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Ads (INR)</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Profit</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Profit %</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">ROAS</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Bundle Purchases</th>
-                  <th className="text-right text-white/70 text-xs font-semibold px-4 py-3">Orders</th>
+                  <SortableHeader sortKey="date" align="left">Date</SortableHeader>
+                  <SortableHeader sortKey="day" align="left">Day</SortableHeader>
+                  <SortableHeader sortKey="grossRevenue">Received</SortableHeader>
+                  <SortableHeader sortKey="refundAmount">Refund</SortableHeader>
+                  <SortableHeader sortKey="revenue">Revenue</SortableHeader>
+                  <SortableHeader sortKey="gst">GST (5%)</SortableHeader>
+                  <SortableHeader sortKey="adsCostUSD">Ads (USD)</SortableHeader>
+                  <SortableHeader sortKey="adsCostINR">Ads (INR)</SortableHeader>
+                  <SortableHeader sortKey="netRevenue">Profit</SortableHeader>
+                  <SortableHeader sortKey="profitPercent">Profit %</SortableHeader>
+                  <SortableHeader sortKey="roas">ROAS</SortableHeader>
+                  <SortableHeader sortKey="bundlePurchases">Bundle Purchases</SortableHeader>
+                  <SortableHeader sortKey="transactionCount">Orders</SortableHeader>
                 </tr>
               </thead>
               <tbody>
-                {filteredData.length === 0 ? (
+                {sortedData.length === 0 ? (
                   <tr>
                     <td colSpan={13} className="text-center text-white/40 py-8">
                       No data available for the selected filters
@@ -3130,7 +3234,7 @@ function ProfitSheetTab({
                   </tr>
                 ) : (
                   <>
-                    {filteredData.map((row, idx) => (
+                    {sortedData.map((row, idx) => (
                       <tr key={row.date} className={`border-b border-white/5 hover:bg-white/5 ${idx % 2 === 0 ? "bg-white/[0.02]" : ""}`}>
                         <td className="text-white/80 text-sm px-4 py-3">{formatDate(row.date)}</td>
                         <td className="text-white/60 text-sm px-4 py-3">{row.day}</td>

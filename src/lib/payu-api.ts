@@ -150,11 +150,14 @@ export function getPayUPaymentId(txn: Partial<PayUTransaction>): string {
 }
 
 export function getPayUEventFingerprint(txn: Partial<PayUTransaction>): string {
+  // PayU can repeat the same successful payment with a later `addedon`
+  // timestamp when the transaction receives a gateway/refund update. The
+  // payment identity, status, amount, and message fields are stable enough to
+  // preserve status transitions while collapsing those duplicate sale rows.
   return [
     normalizeToken(txn?.txnid),
     normalizeToken(getPayUPaymentId(txn)),
     normalizeToken((txn as any)?.status),
-    normalizeToken((txn as any)?.addedon),
     normalizeAmountToken((txn as any)?.amount),
     normalizeAmountToken((txn as any)?.amt),
     normalizeAmountToken((txn as any)?.transaction_fee),
