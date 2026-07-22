@@ -18,6 +18,8 @@ const featureToReportId: Record<keyof UnlockedFeatures, string> = {
   soulmateSketch: "report-soulmate-sketch",
   futurePartnerReport: "report-future-partner",
   vastuShastraGuide: "report-vastu-shastra-guide",
+  auraColorReport: "report-aura-color",
+  astrocartographyReport: "report-astrocartography",
 };
 
 const PENDING_PAYMENT_KEY = "astrorekha_pending_payu_payment";
@@ -181,9 +183,15 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
   const featureName = featureNames[feature];
   const price = featurePrices[feature];
   const isVastuGuide = feature === "vastuShastraGuide";
+  const isAuraColorReport = feature === "auraColorReport";
+  const isAstrocartographyReport = feature === "astrocartographyReport";
   const displayName = isVastuGuide ? "Vastu Shastra Guide" : featureName;
   const description = isVastuGuide
     ? "Get the ebook with practical Vastu guidance for home, entrance, remedies, and business."
+    : isAuraColorReport
+    ? `Get your personalized ${featureName.toLowerCase()} and discover deeper insights about your cosmic energy.`
+    : isAstrocartographyReport
+    ? "Discover your most supportive places for love, career, home, and spiritual growth through your birth map."
     : `Get your personalized ${featureName.toLowerCase()} and discover deeper insights about your cosmic journey.`;
   const ctaLabel = isVastuGuide ? "Get EBook" : `Get ${featureName}`;
 

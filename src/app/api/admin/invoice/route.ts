@@ -153,6 +153,8 @@ function humanizeFeature(value: string): string {
     soulmateSketch: "Soulmate Sketch",
     futurePartnerReport: "Future Partner Report",
     vastuShastraGuide: "Complete Vastu Shastra Guide Ebook",
+    auraColorReport: "Aura Color Quiz",
+    astrocartographyReport: "Astrocartography",
   };
   return labels[value] || value.replace(/[-_]/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").trim();
 }
@@ -447,7 +449,7 @@ function selectInvoicePayments(payments: PaymentRow[], requestedTxnId: string): 
     .filter((payment) => {
       const bundleId = String(payment.bundle_id || "");
       const amount = Number(payment.amount || 0);
-      return bundleId === "palm-birth-sketch" || amount >= 159900;
+      return bundleId === "palm-birth-sketch" || bundleId === "palm-birth-sketch-aura-astro" || amount >= 159900;
     })
     .sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0))[0];
 

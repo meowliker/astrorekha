@@ -10,6 +10,7 @@ const BUNDLE_PRICES: Record<string, number> = {
   "palm-birth": 83900,
   "palm-birth-compat": 159900,
   "palm-birth-sketch": 159900,
+  "palm-birth-sketch-aura-astro": 306682,
 };
 
 type BackfillUserRow = {

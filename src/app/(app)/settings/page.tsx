@@ -16,7 +16,7 @@ const subscriptionBenefits = [
 ];
 
 // Bundle benefits based on what was purchased
-const getBundleBenefits = (bundleId: string | null, unlockedFeatures?: { birthChart?: boolean; compatibilityTest?: boolean; prediction2026?: boolean; soulmateSketch?: boolean; futurePartnerReport?: boolean; vastuShastraGuide?: boolean }) => {
+const getBundleBenefits = (bundleId: string | null, unlockedFeatures?: { birthChart?: boolean; compatibilityTest?: boolean; prediction2026?: boolean; soulmateSketch?: boolean; futurePartnerReport?: boolean; vastuShastraGuide?: boolean; auraColorReport?: boolean; astrocartographyReport?: boolean }) => {
   const benefits = [];
   
   // Always included for all users
@@ -24,25 +24,32 @@ const getBundleBenefits = (bundleId: string | null, unlockedFeatures?: { birthCh
   benefits.push({ icon: "🖐️", text: "Palm Reading Report" });
   
   // Show based on what was purchased (check both bundleId and unlockedFeatures)
-  if (bundleId === "palm-birth" || bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" || unlockedFeatures?.birthChart) {
+  const isCompleteBundle = bundleId === "palm-birth-sketch-aura-astro";
+
+  if (bundleId === "palm-birth" || bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" || isCompleteBundle || unlockedFeatures?.birthChart) {
   benefits.push({ icon: "🌙", text: "Birth Chart Analysis" });
 }
 if (bundleId === "palm-birth-compat" || unlockedFeatures?.compatibilityTest) {
   benefits.push({ icon: "💕", text: "Compatibility Report" });
 }
-if (bundleId === "palm-birth-sketch" || unlockedFeatures?.soulmateSketch) {
+if (bundleId === "palm-birth-sketch" || isCompleteBundle || unlockedFeatures?.soulmateSketch) {
   benefits.push({ icon: "🎨", text: "Soulmate Sketch" });
 }
-if (bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" || unlockedFeatures?.futurePartnerReport) {
+if (bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" || isCompleteBundle || unlockedFeatures?.futurePartnerReport) {
   benefits.push({ icon: "💍", text: "Future Partner Report" });
 }
 if (unlockedFeatures?.vastuShastraGuide) {
   benefits.push({ icon: "📘", text: "Vastu Shastra Guide Ebook" });
 }
+if (isCompleteBundle || unlockedFeatures?.auraColorReport) {
+  benefits.push({ icon: "🧘", text: "Aura Color Quiz" });
+}
+if (isCompleteBundle || unlockedFeatures?.astrocartographyReport) {
+  benefits.push({ icon: "🗺️", text: "Astrocartography" });
+}
 
-// Bundle 3 (palm-birth-compat) gives 30 coins, others give 15
-const coinCount = bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" ? 30 : 15;
-  benefits.push({ icon: "💬", text: `${coinCount} AI Chat Coins` });
+const coinCount = isCompleteBundle ? 60 : bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" ? 30 : 15;
+  benefits.push({ icon: "💬", text: isCompleteBundle ? "20 questions to chat with Elysia" : `${coinCount} AI Chat Coins` });
   
   return benefits;
 };

@@ -80,6 +80,23 @@ function canonicalizeBundleFeatures(bundleId: string, features: string[]): strin
     return ["palmReading", "birthChart", "soulmateSketch", "futurePartnerReport"];
   }
 
+  if (bundleId === "palm-birth-sketch-aura-astro") {
+    unique.add("palmReading");
+    unique.add("birthChart");
+    unique.add("soulmateSketch");
+    unique.add("futurePartnerReport");
+    unique.add("auraColorReport");
+    unique.add("astrocartographyReport");
+    return [
+      "palmReading",
+      "birthChart",
+      "soulmateSketch",
+      "futurePartnerReport",
+      "auraColorReport",
+      "astrocartographyReport",
+    ];
+  }
+
   return Array.from(unique);
 }
 
@@ -112,6 +129,23 @@ function applyBundleOverrides(bundles: BundlePlan[]): BundlePlan[] {
           "Future partner report",
         ],
         active: true,
+      };
+    }
+
+    if (bundle.id === "palm-birth-sketch-aura-astro") {
+      return {
+        ...bundle,
+        name: "Cosmic Bundle",
+        description: "All premium reports plus Aura Color Quiz and Astrocartography.",
+        features: canonicalizeBundleFeatures(bundle.id, bundle.features),
+        featureList: [
+          "Everything in Palm + Birth Chart + Soulmate Sketch + Future Partner Report",
+          "Aura Color Quiz",
+          "Astrocartography map",
+          "20 questions to chat with Elysia",
+        ],
+        limitedOffer: false,
+        active: false,
       };
     }
 
@@ -191,7 +225,7 @@ export const DEFAULT_PRICING: PricingConfig = {
         "Future partner report",
       ],
       popular: false,
-      limitedOffer: true,
+      limitedOffer: false,
       active: false,
     },
     {
@@ -211,6 +245,25 @@ export const DEFAULT_PRICING: PricingConfig = {
       popular: false,
       limitedOffer: true,
       active: true,
+    },
+    {
+      id: "palm-birth-sketch-aura-astro",
+      name: "Cosmic Bundle",
+      price: 2599,
+      displayPrice: 2599,
+      originalPrice: 5199,
+      discount: "50% OFF",
+      description: "All premium reports plus Aura Color Quiz and Astrocartography.",
+      features: ["palmReading", "birthChart", "soulmateSketch", "futurePartnerReport", "auraColorReport", "astrocartographyReport"],
+      featureList: [
+        "Everything in Palm + Birth Chart + Soulmate Sketch + Future Partner Report",
+        "Aura Color Quiz",
+        "Astrocartography map",
+        "20 questions to chat with Elysia",
+      ],
+      popular: false,
+      limitedOffer: false,
+      active: false,
     },
   ],
   upsells: [
@@ -309,6 +362,22 @@ export const DEFAULT_PRICING: PricingConfig = {
       price: 582,
       originalPrice: 999,
       feature: "futurePartnerReport",
+      active: true,
+    },
+    {
+      id: "report-aura-color",
+      name: "Aura Color Quiz",
+      price: 582,
+      originalPrice: 999,
+      feature: "auraColorReport",
+      active: true,
+    },
+    {
+      id: "report-astrocartography",
+      name: "Astrocartography",
+      price: 582,
+      originalPrice: 999,
+      feature: "astrocartographyReport",
       active: true,
     },
     {

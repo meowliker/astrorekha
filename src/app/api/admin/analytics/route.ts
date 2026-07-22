@@ -940,7 +940,13 @@ export async function GET(request: NextRequest) {
     };
 
     const paymentStarts = paymentRows?.length || 0;
-    const conversionBundleIds = new Set(["palm-reading", "palm-birth", "palm-birth-compat"]);
+    const conversionBundleIds = new Set([
+      "palm-reading",
+      "palm-birth",
+      "palm-birth-compat",
+      "palm-birth-sketch",
+      "palm-birth-sketch-aura-astro",
+    ]);
     const successfulStatuses = new Set(["paid", "success", "captured"]);
     const uniqueBundleBuyers = new Set<string>();
 
@@ -1071,7 +1077,7 @@ export async function GET(request: NextRequest) {
         paywallSignal.matchedRoute
           ? `Paywall audience inferred from route: ${paywallSignal.matchedRoute}.`
           : "Paywall audience inferred from payment starts because paywall route traffic was unavailable.",
-        "Checkout funnel conversion is calculated using unique site viewers and unique buyers of these bundles: palm-reading, palm-birth, palm-birth-compat.",
+        "Checkout funnel conversion is calculated using unique site viewers and unique buyers of active bundle purchases.",
         hasLivePayUSalesData
           ? "Sales metrics are sourced from PayU live with refund/chargeback events subtracted."
           : "PayU live did not return sales rows for this range.",

@@ -28,6 +28,8 @@ const DEFAULT_ONBOARDING_TEST_ID = DEFAULT_LAYOUT_B_CONFIG.testId;
 const PAYWALL_DEFAULT_PLAN_TEST_ID_PREFIX = "paywall-default-plan";
 const PAYWALL_GST_TEST_ID = "paywall-gst-exclusive-v1";
 const PAYWALL_GST_TEST_ID_PREFIX = "paywall-gst-exclusive";
+const PAYWALL_COSMIC_BUNDLE_TEST_ID = "paywall-cosmic-bundle-v1";
+const PAYWALL_COSMIC_BUNDLE_TEST_ID_PREFIX = "paywall-cosmic-bundle";
 
 interface ABTest {
   id: string;
@@ -209,6 +211,10 @@ function isPaywallGstTestId(testId: string): boolean {
   return testId.startsWith(PAYWALL_GST_TEST_ID_PREFIX);
 }
 
+function isPaywallCosmicBundleTestId(testId: string): boolean {
+  return testId.startsWith(PAYWALL_COSMIC_BUNDLE_TEST_ID_PREFIX);
+}
+
 function getVariantPageKeysForTest(testId: string): { A: string; B: string } {
   if (isOnboardingLayoutTestId(testId)) {
     return { A: "bundle-pricing", B: "bundle-pricing-b" };
@@ -218,6 +224,9 @@ function getVariantPageKeysForTest(testId: string): { A: string; B: string } {
   }
   if (isPaywallGstTestId(testId)) {
     return { A: "tax-inclusive", B: "exclusive-gst" };
+  }
+  if (isPaywallCosmicBundleTestId(testId)) {
+    return { A: "current-bundles", B: "cosmic-bundle" };
   }
   return { A: "step-17", B: "a-step-17" };
 }
@@ -271,6 +280,23 @@ function getTestCopy(testId: string): TestCopy {
       variantBStatsTitle: "Variant B - Price + GST",
       summaryATitle: "Variant A (Current Price)",
       summaryBTitle: "Variant B (Price + GST)",
+    };
+  }
+
+  if (isPaywallCosmicBundleTestId(testId)) {
+    return {
+      variantAInputLabel: "Variant A (Current bundles)",
+      variantBInputLabel: "Variant B (Cosmic Bundle)",
+      variantARouteLabel: "Variant A mode:",
+      variantBRouteLabel: "Variant B mode:",
+      variantARouteFallback: "current-bundles",
+      variantBRouteFallback: "cosmic-bundle",
+      variantADescription: "Current paywall bundle set",
+      variantBDescription: "Current paywall plus Cosmic Bundle with Aura, Astrocartography, and 60 chat coins",
+      variantAStatsTitle: "Variant A - Current Bundles",
+      variantBStatsTitle: "Variant B - Cosmic Bundle",
+      summaryATitle: "Variant A (Current Bundles)",
+      summaryBTitle: "Variant B (Cosmic Bundle)",
     };
   }
 
@@ -553,6 +579,28 @@ export default function ABTestsPage() {
       await fetchTestDetails(PAYWALL_GST_TEST_ID);
     } catch (error) {
       console.error("Failed to create GST paywall test:", error);
+    }
+  };
+
+  const createPaywallCosmicBundleTest = async () => {
+    try {
+      await fetch("/api/admin/ab-tests", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          testId: PAYWALL_COSMIC_BUNDLE_TEST_ID,
+          name: "Paywall Cosmic Bundle Test",
+          status: "active",
+          variants: {
+            A: { weight: 70, page: "current-bundles" },
+            B: { weight: 30, page: "cosmic-bundle" },
+          },
+        }),
+      });
+      await fetchTests();
+      await fetchTestDetails(PAYWALL_COSMIC_BUNDLE_TEST_ID);
+    } catch (error) {
+      console.error("Failed to create Cosmic Bundle paywall test:", error);
     }
   };
 
@@ -2106,6 +2154,9 @@ export default function ABTestsPage() {
               </Button>
               <Button onClick={createPaywallGstTest}>
                 Paywall GST Test
+              </Button>
+              <Button onClick={createPaywallCosmicBundleTest}>
+                Cosmic Bundle Test
               </Button>
             </div>
           </div>

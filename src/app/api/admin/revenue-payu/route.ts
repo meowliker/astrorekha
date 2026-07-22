@@ -473,6 +473,7 @@ export async function GET(request: NextRequest) {
       "palm-birth": { count: 0, revenue: 0 },
       "palm-birth-compat": { count: 0, revenue: 0 },
       "palm-birth-sketch": { count: 0, revenue: 0 },
+      "palm-birth-sketch-aura-astro": { count: 0, revenue: 0 },
     };
 
     processedTransactions.forEach((txn) => {

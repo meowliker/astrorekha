@@ -8,6 +8,8 @@ const DEFAULT_ONBOARDING_TEST_ID = DEFAULT_LAYOUT_B_CONFIG.testId;
 const PAYWALL_DEFAULT_PLAN_TEST_ID_PREFIX = "paywall-default-plan";
 const PAYWALL_GST_TEST_ID = "paywall-gst-exclusive-v1";
 const PAYWALL_GST_TEST_ID_PREFIX = "paywall-gst-exclusive";
+const PAYWALL_COSMIC_BUNDLE_TEST_ID = "paywall-cosmic-bundle-v1";
+const PAYWALL_COSMIC_BUNDLE_TEST_ID_PREFIX = "paywall-cosmic-bundle";
 const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "success", "captured"]);
 
 type VariantKey = "A" | "B";
@@ -211,12 +213,16 @@ function isPaywallGstTestId(testId: string): boolean {
   return testId.startsWith(PAYWALL_GST_TEST_ID_PREFIX);
 }
 
+function isPaywallCosmicBundleTestId(testId: string): boolean {
+  return testId.startsWith(PAYWALL_COSMIC_BUNDLE_TEST_ID_PREFIX);
+}
+
 function isPaywallScopedTestId(testId: string): boolean {
-  return isPaywallDefaultPlanTestId(testId) || isPaywallGstTestId(testId);
+  return isPaywallDefaultPlanTestId(testId) || isPaywallGstTestId(testId) || isPaywallCosmicBundleTestId(testId);
 }
 
 function inferPaymentVariant(row: any, user: any, testId: string): VariantKey | null {
-  if (isPaywallGstTestId(testId)) {
+  if (isPaywallGstTestId(testId) || isPaywallCosmicBundleTestId(testId)) {
     if (String(row?.paywall_test_id || "") !== testId) return null;
     if (row?.paywall_variant === "A" || row?.paywall_variant === "B") return row.paywall_variant;
     return null;
@@ -226,6 +232,7 @@ function inferPaymentVariant(row: any, user: any, testId: string): VariantKey | 
 
 function variantLabel(variant: VariantKey, testId = ""): string {
   if (isPaywallGstTestId(testId)) return variant === "B" ? "Exclusive GST" : "Current Price";
+  if (isPaywallCosmicBundleTestId(testId)) return variant === "B" ? "Cosmic Bundle" : "Current Bundles";
   if (isPaywallDefaultPlanTestId(testId)) return variant === "B" ? "Default Full Bundle" : "Default Mid Bundle";
   return variant === "B" ? "Layout B" : "Layout A";
 }
@@ -237,6 +244,7 @@ function mapBundleName(bundleId: string): string {
     "palm-birth": "Palm + Birth Chart",
     "palm-birth-compat": "Palm + Birth + Compatibility + Future Partner Report",
     "palm-birth-sketch": "Palm + Birth + Soulmate Sketch + Future Partner Report",
+    "palm-birth-sketch-aura-astro": "Cosmic Bundle",
   };
   return map[key] || key || "Unknown Bundle";
 }
@@ -395,12 +403,15 @@ function normalizeTestForResponse(row: Record<string, any> | null | undefined, t
   const isOnboardingLayoutTest = testId.startsWith("onboarding-layout");
   const isPaywallDefaultPlanTest = isPaywallDefaultPlanTestId(testId);
   const isPaywallGstTest = isPaywallGstTestId(testId);
+  const isPaywallCosmicBundleTest = isPaywallCosmicBundleTestId(testId);
   const defaults = isOnboardingLayoutTest
     ? { pageA: "bundle-pricing", pageB: "bundle-pricing-b" }
     : isPaywallDefaultPlanTest
     ? { pageA: "default-839", pageB: "default-1599" }
     : isPaywallGstTest
     ? { pageA: "tax-inclusive", pageB: "exclusive-gst" }
+    : isPaywallCosmicBundleTest
+    ? { pageA: "current-bundles", pageB: "cosmic-bundle" }
     : { pageA: "step-17", pageB: "a-step-17" };
   const variants = getTestVariants(row, defaults);
   const trafficSplit = variants.B.weight / 100;
@@ -417,6 +428,8 @@ function normalizeTestForResponse(row: Record<string, any> | null | undefined, t
         ? "Paywall Default Plan A/B (₹839 vs ₹1599)"
         : isPaywallGstTest
         ? "Paywall GST Exclusive Price Test"
+        : isPaywallCosmicBundleTest
+        ? "Paywall Cosmic Bundle Test"
         : "Pricing Page A/B Test"),
     status: row?.status || "active",
     variants,
@@ -513,18 +526,71 @@ async function ensurePaywallGstTest(supabase: ReturnType<typeof getSupabaseAdmin
   return PAYWALL_GST_TEST_ID;
 }
 
+async function ensurePaywallCosmicBundleTest(supabase: ReturnType<typeof getSupabaseAdmin>) {
+  const now = new Date().toISOString();
+  const row = {
+    id: PAYWALL_COSMIC_BUNDLE_TEST_ID,
+    name: "Paywall Cosmic Bundle Test",
+    status: "active",
+    traffic_split: 0.3,
+    variants: {
+      A: { weight: 70, page: "current-bundles" },
+      B: { weight: 30, page: "cosmic-bundle" },
+    },
+    updated_at: now,
+    created_at: now,
+  };
+
+  const { data: existing } = await supabase
+    .from("ab_tests")
+    .select("*")
+    .eq("id", PAYWALL_COSMIC_BUNDLE_TEST_ID)
+    .maybeSingle();
+
+  if (!existing) {
+    await supabase.from("ab_tests").insert(row);
+    return PAYWALL_COSMIC_BUNDLE_TEST_ID;
+  }
+
+  const patch: Record<string, unknown> = {};
+  if (existing.name !== row.name) patch.name = row.name;
+  if (!existing.status) patch.status = row.status;
+  if (existing.traffic_split === null || existing.traffic_split === undefined) {
+    patch.traffic_split = row.traffic_split;
+  }
+  if (!existing.variants?.A || !existing.variants?.B) {
+    patch.variants = row.variants;
+  }
+
+  if (Object.keys(patch).length > 0) {
+    patch.updated_at = now;
+    await supabase.from("ab_tests").update(patch).eq("id", PAYWALL_COSMIC_BUNDLE_TEST_ID);
+  }
+
+  return PAYWALL_COSMIC_BUNDLE_TEST_ID;
+}
+
 async function buildDefaultTestData(testId: string) {
   const isPaywallDefaultPlanTest = isPaywallDefaultPlanTestId(testId);
   const isPaywallGstTest = isPaywallGstTestId(testId);
+  const isPaywallCosmicBundleTest = isPaywallCosmicBundleTestId(testId);
   const row = normalizeTestForResponse(
     {
       name: isPaywallGstTest
         ? "Paywall GST Exclusive Price Test"
         : isPaywallDefaultPlanTest
         ? "Paywall Default Plan A/B (₹839 vs ₹1599)"
+        : isPaywallCosmicBundleTest
+        ? "Paywall Cosmic Bundle Test"
         : "Onboarding Layout A/B (QA)",
       status: isPaywallDefaultPlanTest || isPaywallGstTest ? "completed" : "active",
-      traffic_split: isPaywallDefaultPlanTest || isPaywallGstTest ? 1 : 0.5,
+      traffic_split: isPaywallDefaultPlanTest || isPaywallGstTest ? 1 : isPaywallCosmicBundleTest ? 0.3 : 0.5,
+      variants: isPaywallCosmicBundleTest
+        ? {
+            A: { weight: 70, page: "current-bundles" },
+            B: { weight: 30, page: "cosmic-bundle" },
+          }
+        : undefined,
       updated_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
     },
@@ -541,6 +607,7 @@ export async function GET(request: NextRequest) {
       const supabase = getSupabaseAdmin();
       const onboardingTestId = await ensureOnboardingLayoutTest(supabase);
       const paywallGstTestId = await ensurePaywallGstTest(supabase);
+      const paywallCosmicBundleTestId = await ensurePaywallCosmicBundleTest(supabase);
 
     if (testId) {
       // Get specific test with detailed stats
@@ -1207,6 +1274,14 @@ export async function GET(request: NextRequest) {
           .single();
         if (paywallGstTest) hydratedTests.push(paywallGstTest);
       }
+      if (!hydratedTests.some((test) => test.id === paywallCosmicBundleTestId)) {
+        const { data: paywallCosmicBundleTest } = await supabase
+          .from("ab_tests")
+          .select("*")
+          .eq("id", paywallCosmicBundleTestId)
+          .single();
+        if (paywallCosmicBundleTest) hydratedTests.push(paywallCosmicBundleTest);
+      }
     const tests = [];
 
     for (const testRow of hydratedTests) {
@@ -1310,6 +1385,7 @@ export async function PUT(request: NextRequest) {
     };
 
     if (nextTrafficSplit !== null) updateData.traffic_split = nextTrafficSplit;
+    if (variants) updateData.variants = variants;
     if (status) updateData.status = status;
     if (name) updateData.name = name;
 

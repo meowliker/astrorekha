@@ -23,7 +23,9 @@ const getBundleFeatures = (bundleId: string | null) => {
   features.push({ icon: "🖐️", title: "Palm Reading", description: "AI-powered palm analysis for life insights" });
   
   // Palm + Birth Chart and Full Bundle include birth chart
-  if (bundleId === "palm-birth" || bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch") {
+  const isCompleteBundle = bundleId === "palm-birth-sketch-aura-astro";
+
+  if (bundleId === "palm-birth" || bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" || isCompleteBundle) {
     features.push({ icon: "📊", title: "Birth Chart", description: "Complete astrological birth chart analysis" });
   }
   
@@ -31,16 +33,23 @@ const getBundleFeatures = (bundleId: string | null) => {
   if (bundleId === "palm-birth-compat") {
     features.push({ icon: "💕", title: "Compatibility Report", description: "Find your perfect cosmic match" });
   }
-  if (bundleId === "palm-birth-sketch") {
+  if (bundleId === "palm-birth-sketch" || isCompleteBundle) {
     features.push({ icon: "🎨", title: "Soulmate Sketch", description: "One personalized AI soulmate portrait" });
   }
-  if (bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch") {
+  if (bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" || isCompleteBundle) {
     features.push({ icon: "💍", title: "Future Partner Report", description: "One-time partner-name + marriage insights report" });
   }
+  if (isCompleteBundle) {
+    features.push({ icon: "🧘", title: "Aura Color Quiz", description: "Personal energy color and aura pattern insights" });
+    features.push({ icon: "🗺️", title: "Astrocartography", description: "Interactive map for your strongest planetary places" });
+  }
   
-  // Bundle 3 (palm-birth-compat) gives 30 coins, others give 15
-  const coinCount = bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" ? 30 : 15;
-  features.push({ icon: "💬", title: `${coinCount} AI Chat Coins`, description: "Ask Elysia anything about your destiny" });
+  const coinCount = isCompleteBundle ? 60 : bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" ? 30 : 15;
+  features.push({
+    icon: "💬",
+    title: isCompleteBundle ? "20 questions to chat with Elysia" : `${coinCount} AI Chat Coins`,
+    description: "Ask Elysia anything about your destiny",
+  });
   
   return features;
 };

@@ -6,6 +6,8 @@ export interface NormalizedUnlockedFeatures {
   soulmateSketch: boolean;
   futurePartnerReport: boolean;
   vastuShastraGuide: boolean;
+  auraColorReport: boolean;
+  astrocartographyReport: boolean;
 }
 
 const DEFAULT_UNLOCKED_FEATURES: NormalizedUnlockedFeatures = {
@@ -16,6 +18,8 @@ const DEFAULT_UNLOCKED_FEATURES: NormalizedUnlockedFeatures = {
   soulmateSketch: false,
   futurePartnerReport: false,
   vastuShastraGuide: false,
+  auraColorReport: false,
+  astrocartographyReport: false,
 };
 
 function toBoolean(value: unknown): boolean {
@@ -54,5 +58,7 @@ export function normalizeUnlockedFeatures(raw: unknown): NormalizedUnlockedFeatu
     soulmateSketch: toBoolean(source.soulmateSketch),
     futurePartnerReport: toBoolean(source.futurePartnerReport),
     vastuShastraGuide: toBoolean(source.vastuShastraGuide),
+    auraColorReport: toBoolean(source.auraColorReport),
+    astrocartographyReport: toBoolean(source.astrocartographyReport),
   };
 }

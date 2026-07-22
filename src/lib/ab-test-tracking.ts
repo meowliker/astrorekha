@@ -3,6 +3,8 @@
 import { DEFAULT_LAYOUT_B_CONFIG, type LayoutVariant } from "@/lib/layout-b-funnel";
 import { generateUserId } from "@/lib/user-profile";
 
+export type { LayoutVariant };
+
 const DEFAULT_TEST_ID = DEFAULT_LAYOUT_B_CONFIG.testId;
 const VISITOR_KEY = "astrorekha_ab_visitor_id";
 const TEST_ID_KEY = "astrorekha_ab_test_id";

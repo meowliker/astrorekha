@@ -98,6 +98,8 @@ function humanizeFeature(value: string): string {
     soulmateSketch: "Soulmate Sketch",
     futurePartnerReport: "Future Partner Report",
     vastuShastraGuide: "Complete Vastu Shastra Guide Ebook",
+    auraColorReport: "Aura Color Quiz",
+    astrocartographyReport: "Astrocartography",
   };
   return labels[value] || value.replace(/[-_]/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").trim();
 }

@@ -12,6 +12,7 @@ const BUNDLE_NAMES: Record<string, string> = {
   "palm-birth": "Palm + Birth Chart Report",
   "palm-birth-compat": "Palm + Birth Chart + Compatibility Report + Future Partner Report",
   "palm-birth-sketch": "Palm + Birth Chart + Soulmate Sketch + Future Partner Report",
+  "palm-birth-sketch-aura-astro": "Cosmic Bundle",
 };
 
 const FEATURE_LABELS: Record<string, string> = {
@@ -22,6 +23,8 @@ const FEATURE_LABELS: Record<string, string> = {
   soulmateSketch: "Soulmate Sketch",
   futurePartnerReport: "Future Partner Report",
   vastuShastraGuide: "Complete Vastu Shastra Guide Ebook",
+  auraColorReport: "Aura Color Quiz",
+  astrocartographyReport: "Astrocartography",
 };
 
 export default function ManageSubscriptionPage() {

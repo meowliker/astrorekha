@@ -4,6 +4,7 @@ import { DEFAULT_LAYOUT_B_CONFIG, normalizeLayoutBConfig } from "@/lib/layout-b-
 
 // Track A/B test events (impressions, conversions, bounces)
 const SETTINGS_KEY = "funnel_layout_b_config";
+const PAYWALL_COSMIC_BUNDLE_TEST_ID = "paywall-cosmic-bundle-v1";
 
 async function resolveDefaultTestId(supabase: ReturnType<typeof getSupabaseAdmin>) {
   const { data } = await supabase
@@ -17,19 +18,57 @@ async function resolveDefaultTestId(supabase: ReturnType<typeof getSupabaseAdmin
 
 async function ensureTestRowExists(supabase: ReturnType<typeof getSupabaseAdmin>, testId: string) {
   const now = new Date().toISOString();
-  const { error } = await supabase.from("ab_tests").upsert(
-    {
-      id: testId,
-      name: "Onboarding Layout A/B (QA)",
-      status: "active",
-      traffic_split: 0.5,
-      updated_at: now,
-      created_at: now,
-    },
-    { onConflict: "id" }
-  );
-  if (error) {
-    console.error("[ab-test/event] failed to ensure test row", { testId, error });
+  const isCosmicBundleTest = testId === PAYWALL_COSMIC_BUNDLE_TEST_ID;
+  const row = {
+    id: testId,
+    name: isCosmicBundleTest ? "Paywall Cosmic Bundle Test" : "Onboarding Layout A/B (QA)",
+    status: "active",
+    traffic_split: isCosmicBundleTest ? 0.3 : 0.5,
+    variants: isCosmicBundleTest
+      ? {
+          A: { weight: 70, page: "current-bundles" },
+          B: { weight: 30, page: "cosmic-bundle" },
+        }
+      : undefined,
+    updated_at: now,
+    created_at: now,
+  };
+
+  const { data: existing, error: lookupError } = await supabase
+    .from("ab_tests")
+    .select("*")
+    .eq("id", testId)
+    .maybeSingle();
+
+  if (lookupError && lookupError.code !== "PGRST116") {
+    console.error("[ab-test/event] failed to read test row", { testId, error: lookupError });
+    return;
+  }
+
+  if (!existing) {
+    const { error } = await supabase.from("ab_tests").insert(row);
+    if (error) {
+      console.error("[ab-test/event] failed to create test row", { testId, error });
+    }
+    return;
+  }
+
+  const patch: Record<string, unknown> = {};
+  if (!existing.name) patch.name = row.name;
+  if (!existing.status) patch.status = row.status;
+  if (existing.traffic_split === null || existing.traffic_split === undefined) {
+    patch.traffic_split = row.traffic_split;
+  }
+  if (isCosmicBundleTest && (!existing.variants?.A || !existing.variants?.B)) {
+    patch.variants = row.variants;
+  }
+
+  if (Object.keys(patch).length > 0) {
+    patch.updated_at = now;
+    const { error } = await supabase.from("ab_tests").update(patch).eq("id", testId);
+    if (error) {
+      console.error("[ab-test/event] failed to update test row", { testId, error });
+    }
   }
 }
 

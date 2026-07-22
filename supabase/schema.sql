@@ -285,6 +285,7 @@ CREATE TABLE IF NOT EXISTS public.ab_tests (
   name TEXT,
   status TEXT DEFAULT 'active',
   traffic_split NUMERIC DEFAULT 0.5,
+  variants JSONB,
   last_reset_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()

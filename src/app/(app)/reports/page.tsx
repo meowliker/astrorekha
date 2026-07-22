@@ -112,6 +112,10 @@ export default function DashboardPage() {
             birthChart: userData.birth_chart,
             compatibilityTest: userData.compatibility_test,
             prediction2026: userData.prediction_2026,
+            soulmateSketch: userData.soulmate_sketch,
+            futurePartnerReport: userData.future_partner_report,
+            vastuShastraGuide: userData.vastu_shastra_guide,
+            auraColorReport: userData.aura_color_report,
             coins: userData.coins,
             purchasedBundle: userData.bundle_purchased || null,
           });
@@ -720,6 +724,76 @@ export default function DashboardPage() {
                       <h3 className="text-white font-semibold">Future Partner Report</h3>
                       <p className="text-white/50 text-xs mt-0.5">Name, marriage year, age and marriage compatibility</p>
                       {!unlockedFeatures.futurePartnerReport && (
+                        <button className="mt-1 px-3 py-1 bg-primary/20 text-primary text-xs rounded-full">
+                          Get Report
+                        </button>
+                      )}
+                    </div>
+                    <ChevronRight className="w-6 h-6 text-white/40" />
+                  </div>
+                </div>
+
+                {/* Aura Color Quiz */}
+                <div
+                  onClick={() => {
+                    if (unlockedFeatures.auraColorReport) {
+                      router.push("/aura-color");
+                      return;
+                    }
+                    setUpsellPopup({ isOpen: true, feature: "auraColorReport" });
+                  }}
+                  className="bg-[#1A2235] rounded-2xl border border-primary/20 p-3 cursor-pointer hover:border-primary/40 transition-colors relative"
+                >
+                  {!unlockedFeatures.auraColorReport && (
+                    <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
+                      <Lock className="w-3 h-3 text-white/60" />
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-cyan-500/20 via-fuchsia-500/20 to-amber-400/20 flex items-center justify-center flex-shrink-0 overflow-hidden border border-white/10">
+                      <img
+                        src="/aura-color-quiz.png"
+                        alt="Aura Color Quiz"
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-semibold">Aura Color Quiz</h3>
+                      <p className="text-white/50 text-xs mt-0.5">Discover your energy color, qualities, and aura pattern</p>
+                      {!unlockedFeatures.auraColorReport && (
+                        <button className="mt-1 px-3 py-1 bg-primary/20 text-primary text-xs rounded-full">
+                          Get Report
+                        </button>
+                      )}
+                    </div>
+                    <ChevronRight className="w-6 h-6 text-white/40" />
+                  </div>
+                </div>
+
+                {/* Astrocartography */}
+                <div
+                  onClick={() => {
+                    if (unlockedFeatures.astrocartographyReport) {
+                      router.push("/astrocartography");
+                      return;
+                    }
+                    setUpsellPopup({ isOpen: true, feature: "astrocartographyReport" });
+                  }}
+                  className="bg-[#1A2235] rounded-2xl border border-primary/20 p-3 cursor-pointer hover:border-primary/40 transition-colors relative"
+                >
+                  {!unlockedFeatures.astrocartographyReport && (
+                    <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
+                      <Lock className="w-3 h-3 text-white/60" />
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-sky-500/30 via-indigo-500/30 to-emerald-400/25 flex items-center justify-center flex-shrink-0 overflow-hidden border border-white/10">
+                      <span className="text-3xl">🗺️</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-semibold">Astrocartography</h3>
+                      <p className="text-white/50 text-xs mt-0.5">Find your best places for love, career, home, and growth</p>
+                      {!unlockedFeatures.astrocartographyReport && (
                         <button className="mt-1 px-3 py-1 bg-primary/20 text-primary text-xs rounded-full">
                           Get Report
                         </button>

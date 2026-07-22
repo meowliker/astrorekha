@@ -398,6 +398,7 @@ interface RevenueData {
     "palm-birth": { count: number; revenue: number };
     "palm-birth-compat": { count: number; revenue: number };
     "palm-birth-sketch": { count: number; revenue: number };
+    "palm-birth-sketch-aura-astro": { count: number; revenue: number };
   };
   arpu: string;
   totalPayments: number;
@@ -1316,9 +1317,10 @@ export default function AdminRevenuePage() {
   const maxRevenue = Math.max(...(data.revenueOverTime || []).map((d) => d.revenue), 1);
 
   // Bundle breakdown
-  const bb = data.bundleBreakdown || { "palm-reading": { count: 0, revenue: 0 }, "palm-birth": { count: 0, revenue: 0 }, "palm-birth-compat": { count: 0, revenue: 0 }, "palm-birth-sketch": { count: 0, revenue: 0 } };
-  const totalBundleRevenue = bb["palm-reading"].revenue + bb["palm-birth"].revenue + bb["palm-birth-compat"].revenue + bb["palm-birth-sketch"].revenue;
-  const totalBundleCount = bb["palm-reading"].count + bb["palm-birth"].count + bb["palm-birth-compat"].count + bb["palm-birth-sketch"].count;
+  const bb = data.bundleBreakdown || { "palm-reading": { count: 0, revenue: 0 }, "palm-birth": { count: 0, revenue: 0 }, "palm-birth-compat": { count: 0, revenue: 0 }, "palm-birth-sketch": { count: 0, revenue: 0 }, "palm-birth-sketch-aura-astro": { count: 0, revenue: 0 } };
+  bb["palm-birth-sketch-aura-astro"] ||= { count: 0, revenue: 0 };
+  const totalBundleRevenue = bb["palm-reading"].revenue + bb["palm-birth"].revenue + bb["palm-birth-compat"].revenue + bb["palm-birth-sketch"].revenue + bb["palm-birth-sketch-aura-astro"].revenue;
+  const totalBundleCount = bb["palm-reading"].count + bb["palm-birth"].count + bb["palm-birth-compat"].count + bb["palm-birth-sketch"].count + bb["palm-birth-sketch-aura-astro"].count;
 
   // Revenue by type
   const rbt = data.revenueByType || { bundle: 0, upsell: 0, coins: 0, report: 0 };
@@ -1506,6 +1508,7 @@ export default function AdminRevenuePage() {
                   <option value="palm-birth">Palm + Birth Chart</option>
                   <option value="palm-birth-compat">Palm + Birth + Compatibility + Future Partner</option>
                   <option value="palm-birth-sketch">Palm + Birth + Soulmate Sketch + Future Partner</option>
+                  <option value="palm-birth-sketch-aura-astro">Cosmic Bundle</option>
                 </select>
               </div>
               <div>
@@ -1848,6 +1851,7 @@ export default function AdminRevenuePage() {
                 <PlanBar label="Palm + Birth Chart" value={bb["palm-birth"].revenue} total={totalBundleRevenue} color="bg-purple-500" count={bb["palm-birth"].count} />
                 <PlanBar label="Palm + Birth + Compatibility + Future Partner" value={bb["palm-birth-compat"].revenue} total={totalBundleRevenue} color="bg-green-500" count={bb["palm-birth-compat"].count} />
                 <PlanBar label="Palm + Birth + Soulmate Sketch + Future Partner" value={bb["palm-birth-sketch"].revenue} total={totalBundleRevenue} color="bg-pink-500" count={bb["palm-birth-sketch"].count} />
+                <PlanBar label="Cosmic Bundle" value={bb["palm-birth-sketch-aura-astro"].revenue} total={totalBundleRevenue} color="bg-cyan-500" count={bb["palm-birth-sketch-aura-astro"].count} />
               </div>
               <div className="mt-3 pt-3 border-t border-white/10 flex justify-between">
                 <span className="text-white/50 text-xs">Total</span>
@@ -1880,6 +1884,7 @@ export default function AdminRevenuePage() {
                       { value: bb["palm-birth"].count, color: "#8B5CF6" },
                       { value: bb["palm-birth-compat"].count, color: "#22C55E" },
                       { value: bb["palm-birth-sketch"].count, color: "#EC4899" },
+                      { value: bb["palm-birth-sketch-aura-astro"].count, color: "#06B6D4" },
                     ].filter((s) => s.value > 0);
                     let offset = 0;
                     return segments.map((seg, i) => {
@@ -1927,6 +1932,12 @@ export default function AdminRevenuePage() {
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded-full bg-pink-500" />
                     <span className="text-white/70 text-sm">Palm + Birth + Soulmate Sketch + Future Partner: {bb["palm-birth-sketch"].count}</span>
+                  </div>
+                )}
+                {bb["palm-birth-sketch-aura-astro"].count > 0 && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-cyan-500" />
+                    <span className="text-white/70 text-sm">Cosmic Bundle: {bb["palm-birth-sketch-aura-astro"].count}</span>
                   </div>
                 )}
                 {totalBundleCount === 0 && (

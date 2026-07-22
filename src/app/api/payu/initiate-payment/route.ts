@@ -78,12 +78,14 @@ export async function POST(request: NextRequest) {
       userId?: string;
       email?: string;
         firstName?: string;
+        paywallTestId?: string;
+        paywallVariant?: "A" | "B";
         attribution?: PaymentAttributionPayload;
       };
-      const { type, bundleId, packageId, userId, email, firstName, attribution } = body;
+      const { type, bundleId, packageId, userId, email, firstName, paywallTestId, paywallVariant, attribution } = body;
       const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
-      const paywallTestId = null;
-      const paywallVariant = null;
+      const normalizedPaywallTestId = typeof paywallTestId === "string" ? paywallTestId.trim() || null : null;
+      const normalizedPaywallVariant = paywallVariant === "B" ? "B" : paywallVariant === "A" ? "A" : null;
       const shouldApplyExclusiveGst = type === "bundle";
       const sanitizedAttribution = sanitizePaymentAttribution(attribution);
     const requestReferrer = request.headers.get("referer") || undefined;
@@ -116,6 +118,8 @@ export async function POST(request: NextRequest) {
         userId: userId || "",
         type: type || "",
     };
+    if (normalizedPaywallTestId) metadata.paywallTestId = normalizedPaywallTestId;
+    if (normalizedPaywallVariant) metadata.paywallVariant = normalizedPaywallVariant;
 
     if (type === "bundle") {
       const bundle = pricing.bundles.find(b => b.id === bundleId);
@@ -223,8 +227,8 @@ export async function POST(request: NextRequest) {
       coins: metadata.coins ? parseInt(metadata.coins, 10) : null,
       customer_email: normalizedEmail || null,
         amount: toPaise(amount), // Store in paise for consistency
-        paywall_test_id: paywallTestId,
-        paywall_variant: paywallVariant,
+        paywall_test_id: normalizedPaywallTestId,
+        paywall_variant: normalizedPaywallVariant,
         tax_mode: taxMode,
         base_amount: baseAmount !== null ? toPaise(baseAmount) : null,
         gst_rate: gstRate,

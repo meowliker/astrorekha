@@ -7,6 +7,8 @@ import { DEFAULT_LAYOUT_B_CONFIG, normalizeLayoutBConfig } from "@/lib/layout-b-
 const SETTINGS_KEY = "funnel_layout_b_config";
 const PAYWALL_DEFAULT_PLAN_TEST_ID_PREFIX = "paywall-default-plan";
 const PAYWALL_GST_TEST_ID_PREFIX = "paywall-gst-exclusive";
+const PAYWALL_COSMIC_BUNDLE_TEST_ID = "paywall-cosmic-bundle-v1";
+const PAYWALL_COSMIC_BUNDLE_TEST_ID_PREFIX = "paywall-cosmic-bundle";
 
 function clampPercent(value: number): number {
   if (!Number.isFinite(value)) return 50;
@@ -25,6 +27,8 @@ function getNormalizedVariants(
 	    ? { pageA: "default-839", pageB: "default-1599" }
 	    : isPaywallGstTest
 	    ? { pageA: "tax-inclusive", pageB: "exclusive-gst" }
+	    : testData?.id?.startsWith?.(PAYWALL_COSMIC_BUNDLE_TEST_ID_PREFIX)
+	    ? { pageA: "current-bundles", pageB: "cosmic-bundle" }
 	    : { pageA: "step-17", pageB: "a-step-17" };
 
   const configA = Number(testData?.variants?.A?.weight);
@@ -93,6 +97,7 @@ async function persistUserFlowVariant(params: {
 }) {
   const { supabase, userId, variant, isOnboardingLayoutTest } = params;
   if (!userId) return;
+  if (!isOnboardingLayoutTest) return;
 
   const nowIso = new Date().toISOString();
   const payload: Record<string, unknown> = {
@@ -128,6 +133,7 @@ export async function GET(request: NextRequest) {
 	    const isOnboardingLayoutTest = testId.startsWith("onboarding-layout");
 	    const isPaywallDefaultPlanTest = testId.startsWith(PAYWALL_DEFAULT_PLAN_TEST_ID_PREFIX);
 	    const isPaywallGstTest = testId.startsWith(PAYWALL_GST_TEST_ID_PREFIX);
+	    const isPaywallCosmicBundleTest = testId.startsWith(PAYWALL_COSMIC_BUNDLE_TEST_ID_PREFIX);
 
     const defaultTest = {
       id: testId,
@@ -137,9 +143,11 @@ export async function GET(request: NextRequest) {
 	        ? "Paywall Default Plan A/B (₹839 vs ₹1599)"
 	        : isPaywallGstTest
 	        ? "Paywall GST Exclusive Price Test"
+	        : isPaywallCosmicBundleTest
+	        ? "Paywall Cosmic Bundle Test"
 	        : "Pricing Page A/B Test",
 	      status: isPaywallDefaultPlanTest || isPaywallGstTest ? "completed" : "active",
-      traffic_split: isPaywallDefaultPlanTest || isPaywallGstTest ? 1 : 0.5,
+      traffic_split: isPaywallDefaultPlanTest || isPaywallGstTest ? 1 : isPaywallCosmicBundleTest ? 0.3 : 0.5,
       variants: isOnboardingLayoutTest
         ? {
             A: { weight: 0, page: "bundle-pricing" },
@@ -155,6 +163,11 @@ export async function GET(request: NextRequest) {
 	            A: { weight: 0, page: "tax-inclusive" },
 	            B: { weight: 100, page: "exclusive-gst" },
 	          }
+	        : isPaywallCosmicBundleTest
+	        ? {
+	            A: { weight: 70, page: "current-bundles" },
+	            B: { weight: 30, page: "cosmic-bundle" },
+	          }
 	        : {
             A: { weight: 50, page: "step-17" },
             B: { weight: 50, page: "a-step-17" },
@@ -167,6 +180,7 @@ export async function GET(request: NextRequest) {
       name: defaultTest.name,
       status: defaultTest.status,
       traffic_split: defaultTest.traffic_split,
+      variants: defaultTest.variants,
       created_at: defaultTest.created_at,
       updated_at: defaultTest.updated_at,
     };
@@ -188,6 +202,13 @@ export async function GET(request: NextRequest) {
 	          return configured;
 	        }
 	        return variant === "B" ? "exclusive-gst" : "tax-inclusive";
+	      }
+	      if (isPaywallCosmicBundleTest) {
+	        const configured = test?.variants?.[variant]?.page;
+	        if (configured && typeof configured === "string") {
+	          return configured;
+	        }
+	        return variant === "B" ? "cosmic-bundle" : "current-bundles";
 	      }
       const configured = test?.variants?.[variant]?.page;
       if (configured && typeof configured === "string") {
@@ -218,6 +239,8 @@ export async function GET(request: NextRequest) {
       
 	      const variant = isOnboardingLayoutTest || isPaywallDefaultPlanTest || isPaywallGstTest
           ? "B"
+          : isPaywallCosmicBundleTest
+          ? Math.random() < 0.3 ? "B" : "A"
           : Math.random() < 0.5
           ? "A"
           : "B";
@@ -390,6 +413,7 @@ export async function POST(request: NextRequest) {
     };
 
     if (nextTrafficSplit !== null) updateData.traffic_split = nextTrafficSplit;
+    if (variants) updateData.variants = variants;
     if (status) updateData.status = status;
     if (name) updateData.name = name;
 

@@ -3,7 +3,13 @@
 import { create } from "zustand";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 
-export type PurchasedBundle = "palm-reading" | "palm-birth" | "palm-birth-compat" | "palm-birth-sketch" | null;
+export type PurchasedBundle =
+  | "palm-reading"
+  | "palm-birth"
+  | "palm-birth-compat"
+  | "palm-birth-sketch"
+  | "palm-birth-sketch-aura-astro"
+  | null;
 
 export interface UnlockedFeatures {
   palmReading: boolean;
@@ -13,6 +19,8 @@ export interface UnlockedFeatures {
   soulmateSketch: boolean;
   futurePartnerReport: boolean;
   vastuShastraGuide: boolean;
+  auraColorReport: boolean;
+  astrocartographyReport: boolean;
 }
 
 interface UserState {
@@ -57,6 +65,8 @@ interface UserState {
     soulmateSketch?: boolean;
     futurePartnerReport?: boolean;
     vastuShastraGuide?: boolean;
+    auraColorReport?: boolean;
+    astrocartographyReport?: boolean;
     coins?: number;
     purchasedBundle?: PurchasedBundle;
   }) => void;
@@ -70,6 +80,8 @@ const initialUnlockedFeatures: UnlockedFeatures = {
   soulmateSketch: false,
   futurePartnerReport: false,
   vastuShastraGuide: false,
+  auraColorReport: false,
+  astrocartographyReport: false,
 };
 
 const initialState = {
@@ -132,6 +144,8 @@ export const useUserStore = create<UserState>()(
             soulmateSketch: true,
             futurePartnerReport: true,
             vastuShastraGuide: true,
+            auraColorReport: true,
+            astrocartographyReport: true,
           },
         }),
 
@@ -188,6 +202,8 @@ export const useUserStore = create<UserState>()(
             soulmateSketch: true,
             futurePartnerReport: true,
             vastuShastraGuide: true,
+            auraColorReport: true,
+            astrocartographyReport: true,
           },
         }),
 
@@ -208,6 +224,10 @@ export const useUserStore = create<UserState>()(
             data.unlockedFeatures?.futurePartnerReport ?? data.futurePartnerReport ?? false,
           vastuShastraGuide:
             data.unlockedFeatures?.vastuShastraGuide ?? data.vastuShastraGuide ?? false,
+          auraColorReport:
+            data.unlockedFeatures?.auraColorReport ?? data.auraColorReport ?? false,
+          astrocartographyReport:
+            data.unlockedFeatures?.astrocartographyReport ?? data.astrocartographyReport ?? false,
         };
         updates.unlockedFeatures = features;
         
@@ -253,6 +273,8 @@ export const featureNames: Record<keyof UnlockedFeatures, string> = {
   soulmateSketch: "Soulmate Sketch",
   futurePartnerReport: "Future Partner Report",
   vastuShastraGuide: "Complete Vastu Shastra Guide Ebook",
+  auraColorReport: "Aura Color Quiz",
+  astrocartographyReport: "Astrocartography",
 };
 
 // Feature prices (INR)
@@ -264,4 +286,6 @@ export const featurePrices: Record<keyof UnlockedFeatures, number> = {
   soulmateSketch: 582,
   futurePartnerReport: 582,
   vastuShastraGuide: 297,
+  auraColorReport: 582,
+  astrocartographyReport: 582,
 };

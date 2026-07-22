@@ -5,6 +5,14 @@ const BUNDLE_FEATURES: Record<string, string[]> = {
   "palm-birth": ["palmReading", "birthChart"],
   "palm-birth-compat": ["palmReading", "birthChart", "compatibilityTest", "futurePartnerReport"],
   "palm-birth-sketch": ["palmReading", "birthChart", "soulmateSketch", "futurePartnerReport"],
+  "palm-birth-sketch-aura-astro": [
+    "palmReading",
+    "birthChart",
+    "soulmateSketch",
+    "futurePartnerReport",
+    "auraColorReport",
+    "astrocartographyReport",
+  ],
 };
 
 const BUNDLE_COIN_BONUS: Record<string, number> = {
@@ -12,6 +20,7 @@ const BUNDLE_COIN_BONUS: Record<string, number> = {
   "palm-birth": 15,
   "palm-birth-compat": 30,
   "palm-birth-sketch": 30,
+  "palm-birth-sketch-aura-astro": 60,
 };
 
 const OFFER_ID_TO_FEATURE: Record<string, string> = {
@@ -21,6 +30,10 @@ const OFFER_ID_TO_FEATURE: Record<string, string> = {
   "soulmate-sketch": "soulmateSketch",
   "future-partner": "futurePartnerReport",
   "report-future-partner": "futurePartnerReport",
+  "aura-color": "auraColorReport",
+  "report-aura-color": "auraColorReport",
+  astrocartography: "astrocartographyReport",
+  "report-astrocartography": "astrocartographyReport",
   "vastu-shastra-guide": "vastuShastraGuide",
   "report-vastu-shastra-guide": "vastuShastraGuide",
 };
@@ -52,6 +65,8 @@ function mergeFeatures(
     soulmateSketch: false,
     futurePartnerReport: false,
     vastuShastraGuide: false,
+    auraColorReport: false,
+    astrocartographyReport: false,
     ...(current || {}),
   };
 
