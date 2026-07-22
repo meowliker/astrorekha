@@ -2710,11 +2710,28 @@ function ProfitSheetTab({
   }
 
   const getSortValue = (row: ProfitSheetRow, key: ProfitSheetSortKey): string | number => {
+    const weekdayOrder: Record<string, number> = {
+      sun: 0,
+      sunday: 0,
+      mon: 1,
+      monday: 1,
+      tue: 2,
+      tuesday: 2,
+      wed: 3,
+      wednesday: 3,
+      thu: 4,
+      thursday: 4,
+      fri: 5,
+      friday: 5,
+      sat: 6,
+      saturday: 6,
+    };
+
     switch (key) {
       case "date":
         return new Date(`${row.date}T00:00:00`).getTime();
       case "day":
-        return row.day || "";
+        return weekdayOrder[String(row.day || "").trim().toLowerCase()] ?? 99;
       case "grossRevenue":
         return row.grossRevenue ?? row.revenue;
       case "refundAmount":
