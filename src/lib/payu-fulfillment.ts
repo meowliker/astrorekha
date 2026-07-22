@@ -148,6 +148,58 @@ async function resolveUserIdFromEmail(email?: string): Promise<string | null> {
   return user?.id || null;
 }
 
+async function ensureFulfillmentUser(params: {
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  userId: string | null;
+  email: string | null;
+}): Promise<string | null> {
+  const normalizedUserId = String(params.userId || "").trim();
+  if (!normalizedUserId) return null;
+
+  const { supabase, email } = params;
+  const { data: existingUser, error: lookupError } = await supabase
+    .from("users")
+    .select("id")
+    .eq("id", normalizedUserId)
+    .maybeSingle();
+
+  if (lookupError && lookupError.code !== "PGRST116") {
+    console.error("[payu-fulfillment] Failed to check user before fulfillment", {
+      userId: normalizedUserId,
+      error: lookupError,
+    });
+  }
+
+  if (existingUser?.id) return existingUser.id;
+
+  const nowIso = new Date().toISOString();
+  const baseUserRow = {
+    id: normalizedUserId,
+    payment_status: "pending",
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+
+  const { error: insertWithEmailError } = await supabase.from("users").insert({
+    ...baseUserRow,
+    email,
+  });
+
+  if (!insertWithEmailError) return normalizedUserId;
+
+  const { error: insertWithoutEmailError } = await supabase.from("users").insert(baseUserRow);
+  if (insertWithoutEmailError) {
+    console.error("[payu-fulfillment] Failed to create user before fulfillment", {
+      userId: normalizedUserId,
+      error: insertWithoutEmailError,
+      firstError: insertWithEmailError,
+    });
+    return null;
+  }
+
+  return normalizedUserId;
+}
+
 export async function fulfillPayUPayment(payload: PayUCallbackPayload): Promise<{
   success: boolean;
   alreadyPaid: boolean;
@@ -212,6 +264,11 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload): Promise<
     payload.udf1?.trim() ||
     existingPayment?.user_id ||
     (await resolveUserIdFromEmail(payload.email));
+  resolvedUserId = await ensureFulfillmentUser({
+    supabase,
+    userId: resolvedUserId,
+    email: normalizedEmail,
+  });
 
   const type = (payload.udf2 || existingPayment?.type || "bundle").trim();
   const bundleId = (payload.udf3 || existingPayment?.bundle_id || "").trim();

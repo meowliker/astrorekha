@@ -37,6 +37,58 @@ function toPaise(value: number): number {
   return Math.round(value * 100);
 }
 
+async function ensurePaymentUser(params: {
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  userId?: string;
+  email: string;
+}): Promise<string | null> {
+  const normalizedUserId = String(params.userId || "").trim();
+  if (!normalizedUserId) return null;
+
+  const { supabase, email } = params;
+  const { data: existingUser, error: lookupError } = await supabase
+    .from("users")
+    .select("id")
+    .eq("id", normalizedUserId)
+    .maybeSingle();
+
+  if (lookupError && lookupError.code !== "PGRST116") {
+    console.error("[payu/initiate-payment] Failed to check user before payment", {
+      userId: normalizedUserId,
+      error: lookupError,
+    });
+  }
+
+  if (existingUser?.id) return existingUser.id;
+
+  const nowIso = new Date().toISOString();
+  const baseUserRow = {
+    id: normalizedUserId,
+    payment_status: "pending",
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+
+  const { error: insertWithEmailError } = await supabase.from("users").insert({
+    ...baseUserRow,
+    email: email || null,
+  });
+
+  if (!insertWithEmailError) return normalizedUserId;
+
+  const { error: insertWithoutEmailError } = await supabase.from("users").insert(baseUserRow);
+  if (insertWithoutEmailError) {
+    console.error("[payu/initiate-payment] Failed to create user before payment", {
+      userId: normalizedUserId,
+      error: insertWithoutEmailError,
+      firstError: insertWithEmailError,
+    });
+    return null;
+  }
+
+  return normalizedUserId;
+}
+
 function extractAttributionFromReferer(referer: string | undefined): PaymentAttributionPayload {
   if (!referer) return {};
   try {
@@ -215,12 +267,18 @@ export async function POST(request: NextRequest) {
     // Generate hash
     const hash = generateHash(payuParams, merchantSalt);
 
-    // Save payment record (await to ensure it's created before returning)
     const supabase = getSupabaseAdmin();
+    const resolvedPaymentUserId = await ensurePaymentUser({
+      supabase,
+      userId,
+      email: normalizedEmail,
+    });
+
+    // Save payment record (await to ensure it's created before returning)
     const { error: paymentError } = await supabase.from("payments").insert({
       id: `pay_${txnId}`,
       payu_txn_id: txnId,
-      user_id: userId || null,
+      user_id: resolvedPaymentUserId,
       type,
       bundle_id: (bundleId || packageId || null),
       feature: metadata.feature || null,
@@ -258,12 +316,15 @@ export async function POST(request: NextRequest) {
     
     if (paymentError) {
       console.error("Failed to save payment record:", paymentError);
-      // Don't fail the request - payment can still proceed
+      return NextResponse.json(
+        { error: "Unable to create payment record. Please try again." },
+        { status: 500 }
+      );
     }
 
     await recordMarketingEvent({
       eventName: "checkout_started",
-      userId: userId || null,
+      userId: resolvedPaymentUserId,
       email: normalizedEmail || null,
       productType: type || null,
       productId: bundleId || packageId || null,
