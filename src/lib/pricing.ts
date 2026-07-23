@@ -390,10 +390,10 @@ export const DEFAULT_PRICING: PricingConfig = {
     },
   ],
   coinPackages: [
-    { id: "coins-50", coins: 50, price: 416, displayPrice: 416, originalPrice: 500, active: true },
+    { id: "coins-50", coins: 45, price: 416, displayPrice: 416, originalPrice: 500, active: true },
     { id: "coins-150", coins: 150, price: 1082, displayPrice: 1082, originalPrice: 1500, active: true },
     { id: "coins-300", coins: 300, price: 1666, displayPrice: 1666, originalPrice: 2500, active: true },
-    { id: "coins-500", coins: 500, price: 2499, displayPrice: 2499, originalPrice: 3500, active: true },
+    { id: "coins-500", coins: 450, price: 2499, displayPrice: 2499, originalPrice: 3500, active: true },
   ],
 };
 

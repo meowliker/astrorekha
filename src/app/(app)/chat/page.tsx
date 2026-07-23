@@ -59,10 +59,10 @@ function getQuestionPackageDisplayCount(packageId: string, coins: number, index:
 
 // Fallback packages still map to existing backend coin package IDs.
 const defaultCoinPackages = [
-  { id: 1, coins: 50, price: 416, discount: 17, popular: false },
+  { id: 1, coins: 45, price: 416, discount: 17, popular: false },
   { id: 2, coins: 150, price: 1082, discount: 28, popular: true },
   { id: 3, coins: 300, price: 1666, discount: 33, popular: false },
-  { id: 4, coins: 500, price: 2499, discount: 29, popular: false },
+  { id: 4, coins: 450, price: 2499, discount: 29, popular: false },
 ];
 
 const PENDING_PAYMENT_KEY = "astrorekha_pending_payu_payment";

@@ -37,6 +37,10 @@ function toPaise(value: number): number {
   return Math.round(value * 100);
 }
 
+function coinsToQuestionCount(coins: number): number {
+  return Math.floor(Math.max(0, coins) / 3);
+}
+
 async function ensurePaymentUser(params: {
   supabase: ReturnType<typeof getSupabaseAdmin>;
   userId?: string;
@@ -230,7 +234,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Invalid coin package" }, { status: 400 });
       }
       amount = coinPkg.price;
-      productInfo = `${coinPkg.coins} Coins`;
+      productInfo = `${coinsToQuestionCount(coinPkg.coins)} Questions`;
       metadata.coins = coinPkg.coins.toString();
     } else if (type === "report") {
       const report = pricing.reports.find(r => r.id === packageId);

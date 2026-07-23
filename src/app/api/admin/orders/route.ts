@@ -38,11 +38,15 @@ function formatType(value: unknown): string {
   const labels: Record<string, string> = {
     bundle_payment: "Bundle",
     upsell: "Upsell",
-    coins: "Coins",
+    coins: "Questions",
     report: "Report",
     unknown: "Unknown",
   };
   return labels[normalized] || normalized.replace(/_/g, " ");
+}
+
+function coinsToQuestionCount(coins: number): number {
+  return Math.floor(Math.max(0, coins) / 3);
 }
 
 function amountPaiseToInr(value: unknown): number {
@@ -113,11 +117,12 @@ function resolveItems(payment: PaymentRow, pricing: PricingConfig): string[] {
     const coins = Number(payment.coins || 0);
     const packageName = bundleTokens[0]
       ? findNameById(
-          pricing.coinPackages.map((pkg) => ({ id: pkg.id, name: `${pkg.coins} Coins` })),
+          pricing.coinPackages.map((pkg) => ({ id: pkg.id, name: `${coinsToQuestionCount(pkg.coins)} Questions` })),
           bundleTokens[0]
         )
       : null;
-    return [packageName || `${coins || "Coin"} Coins`];
+    const questions = coinsToQuestionCount(coins);
+    return [packageName || `${questions || "Question"} Questions`];
   }
 
   if (type === "report") {

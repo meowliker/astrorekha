@@ -5,6 +5,10 @@ import { sendEmailWithAttachments } from "./brevo";
 
 const PAID_STATUSES = new Set(["paid", "success", "captured"]);
 
+function coinsToQuestionCount(coins: number): number {
+  return Math.floor(Math.max(0, coins) / 3);
+}
+
 type PaymentRow = {
   id: string;
   user_id: string | null;
@@ -182,7 +186,8 @@ function resolvePaymentItemNames(payment: PaymentRow, pricing: PricingConfig): s
   }
 
   if (type === "coins") {
-    return [`${payment.coins || "Coin"} Coins`];
+    const questions = coinsToQuestionCount(Number(payment.coins || 0));
+    return [`${questions || "Question"} Questions`];
   }
 
   if (type === "upsell") {
