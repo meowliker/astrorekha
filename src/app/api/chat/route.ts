@@ -229,6 +229,140 @@ function isCareerIntent(text: string): boolean {
   );
 }
 
+const FOLLOW_UP_BLOCK_PATTERN = /<follow_up_questions>([\s\S]*?)<\/follow_up_questions>/i;
+
+const FOLLOW_UP_DIRECTIVE = `
+
+=== FOLLOW-UP BUTTONS RULE (MANDATORY) ===
+At the very end of every answer, after the visible user-facing response, append this hidden metadata block:
+<follow_up_questions>{"questions":["question 1","question 2","question 3"]}</follow_up_questions>
+
+Rules for the questions:
+- Provide 2 or 3 natural next questions the user might ask.
+- Phrase each as the user's direct next message to Elysia.
+- Keep each question short, specific, and under 90 characters.
+- Make them relevant to the user's latest message and your reply.
+- Avoid follow-up questions about already-past dates or elapsed windows.
+- Do not mention payments, coins, question packs, or the metadata block.
+- Do not show these questions in the visible answer outside the metadata block.
+- Do not ask a visible follow-up question in the normal answer text. The app will show follow-up buttons from the metadata block.`;
+
+function getCurrentDateContext(): string {
+  const now = new Date();
+  const formattedDate = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(now);
+
+  const year = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+  }).format(now);
+
+  return `
+
+=== CURRENT DATE AND TIMING RULES (MANDATORY) ===
+Current date: ${formattedDate} (Asia/Kolkata). Current year: ${year}.
+
+When giving timing:
+- Treat this current date as "now".
+- Never describe a date or window that already ended before today as a future prediction.
+- If a timing window started in the past but is still active, say it is active now and focus on the remaining window.
+- If a timing window has already passed, acknowledge that and move to the next upcoming supported window.
+- For 2026 questions, do not say "early 2026" as a future event after mid-2026. Use "rest of 2026", "late 2026", or the next future year if supported by the data.
+- Follow-up button questions must also be current-date aware.`;
+}
+
+function cleanFollowUpQuestion(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const question = value.replace(/\s+/g, " ").trim();
+  if (!question) return null;
+  return question.length > 90 ? `${question.slice(0, 87).trim()}...` : question;
+}
+
+function getFallbackFollowUps(userMessage: string): string[] {
+  const lower = (userMessage || "").toLowerCase();
+
+  if (isCareerIntent(userMessage)) {
+    return [
+      "Which career path suits me best?",
+      "When will my career improve?",
+      "What should I focus on next?",
+    ];
+  }
+
+  if (
+    lower.includes("love") ||
+    lower.includes("marriage") ||
+    lower.includes("relationship") ||
+    lower.includes("partner")
+  ) {
+    return [
+      "When will my love life improve?",
+      "What kind of partner suits me?",
+      "What should I know about this relationship?",
+    ];
+  }
+
+  if (
+    lower.includes("money") ||
+    lower.includes("finance") ||
+    lower.includes("wealth") ||
+    lower.includes("income")
+  ) {
+    return [
+      "When will my finances improve?",
+      "What blocks my money growth?",
+      "How can I attract better opportunities?",
+    ];
+  }
+
+  return [
+    "What should I focus on next?",
+    "What timing should I watch for?",
+    "What does my chart say about this?",
+  ];
+}
+
+function extractFollowUpQuestions(rawReply: string, userMessage: string) {
+  const match = rawReply.match(FOLLOW_UP_BLOCK_PATTERN);
+  const visibleReply = rawReply.replace(FOLLOW_UP_BLOCK_PATTERN, "").trim();
+  const questions: string[] = [];
+
+  if (match?.[1]) {
+    try {
+      const parsed = JSON.parse(match[1].trim());
+      const rawQuestions = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.questions)
+          ? parsed.questions
+          : [];
+
+      rawQuestions.forEach((question: unknown) => {
+        const cleaned = cleanFollowUpQuestion(question);
+        if (cleaned && !questions.includes(cleaned)) {
+          questions.push(cleaned);
+        }
+      });
+    } catch (error) {
+      console.warn("[chat] Failed to parse follow-up questions:", error);
+    }
+  }
+
+  for (const fallback of getFallbackFollowUps(userMessage)) {
+    if (questions.length >= 3) break;
+    if (!questions.includes(fallback)) questions.push(fallback);
+  }
+
+  return {
+    reply: visibleReply || rawReply.trim(),
+    followUpQuestions: questions.slice(0, 3),
+  };
+}
+
 export async function POST(request: NextRequest) {
   let userId: string | null = null;
 
@@ -266,7 +400,7 @@ If the user's question is about job/career/profession:
       : "";
 
     // Build full system prompt with loaded prompts + user data
-    const fullSystemPrompt = `${elysiaSystemPrompt}\n\n${interpretationRules}${careerDirective}\n\n=== THIS USER'S PERSONAL DATA ===\n${structuredContext}`;
+    const fullSystemPrompt = `${elysiaSystemPrompt}\n\n${interpretationRules}${careerDirective}${getCurrentDateContext()}${FOLLOW_UP_DIRECTIVE}\n\n=== THIS USER'S PERSONAL DATA ===\n${structuredContext}`;
 
     // Build messages array with chat history (last 20 messages for context)
     const messages: { role: "user" | "assistant"; content: string }[] = [];
@@ -312,10 +446,12 @@ If the user's question is about job/career/profession:
     });
 
     const textContent = response.content.find((block) => block.type === "text");
-    const reply = textContent && "text" in textContent ? textContent.text : "";
+    const rawReply = textContent && "text" in textContent ? textContent.text : "";
+    const { reply, followUpQuestions } = extractFollowUpQuestions(rawReply, String(message || ""));
 
     return NextResponse.json({
       reply,
+      followUpQuestions,
       usage: response.usage,
     });
   } catch (error) {

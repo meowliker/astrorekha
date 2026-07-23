@@ -44,10 +44,10 @@ const getBundleFeatures = (bundleId: string | null) => {
     features.push({ icon: "🗺️", title: "Astrocartography", description: "Interactive map for your strongest planetary places" });
   }
   
-  const coinCount = isCompleteBundle ? 60 : bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" ? 30 : 15;
+  const questionCount = isCompleteBundle ? 20 : bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" ? 10 : 5;
   features.push({
     icon: "💬",
-    title: isCompleteBundle ? "20 questions to chat with Elysia" : `${coinCount} AI Chat Coins`,
+    title: `${questionCount} questions to chat with Elysia`,
     description: "Ask Elysia anything about your destiny",
   });
   

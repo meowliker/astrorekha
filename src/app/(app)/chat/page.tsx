@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Coins, Send, HelpCircle, X, Loader2 } from "lucide-react";
+import { ArrowLeft, Send, HelpCircle, X, Loader2, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
@@ -20,6 +20,7 @@ interface Message {
   timestamp: Date | string;
   palmImage?: string;
   traits?: Array<{ name: string; value: number; color: string }>;
+  followUpQuestions?: string[];
 }
 
 interface StoredMessage {
@@ -28,6 +29,7 @@ interface StoredMessage {
   timestamp: string;
   palmImage?: string;
   traits?: Array<{ name: string; value: number; color: string }>;
+  followUpQuestions?: string[];
 }
 
 const suggestedQuestions = [
@@ -36,7 +38,26 @@ const suggestedQuestions = [
   "How can I improve my relationships?",
 ];
 
-// Fallback coin packages (used while loading from API)
+const COINS_PER_QUESTION = 3;
+
+function toQuestionCount(coins: number): number {
+  return Math.floor(Math.max(0, coins) / COINS_PER_QUESTION);
+}
+
+const QUESTION_PACKAGE_DISPLAY_COUNTS: Record<string, number> = {
+  "coins-50": 15,
+  "coins-150": 50,
+  "coins-300": 100,
+  "coins-500": 150,
+};
+
+const QUESTION_PACKAGE_FALLBACK_COUNTS = [15, 50, 100, 150];
+
+function getQuestionPackageDisplayCount(packageId: string, coins: number, index: number): number {
+  return QUESTION_PACKAGE_DISPLAY_COUNTS[packageId] ?? QUESTION_PACKAGE_FALLBACK_COUNTS[index] ?? toQuestionCount(coins);
+}
+
+// Fallback packages still map to existing backend coin package IDs.
 const defaultCoinPackages = [
   { id: 1, coins: 50, price: 416, discount: 17, popular: false },
   { id: 2, coins: 150, price: 1082, discount: 28, popular: true },
@@ -105,24 +126,34 @@ export default function ChatPage() {
   const [chatLoaded, setChatLoaded] = useState(false);
   const [showLowBalanceBubble, setShowLowBalanceBubble] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Get coins from user store
+  // Backend balance stays coin-based while the chat UI presents questions.
   const { coins, deductCoins } = useUserStore();
+  const questionBalance = toQuestionCount(coins);
   
   // Get dynamic pricing from API
   const { pricing } = usePricing();
   
-  // Build coin packages from dynamic pricing or use defaults
-  const coinPackages = pricing?.coinPackages?.filter(p => p.active).map((p, i) => ({
+  // Build question packages from the existing coin pricing model.
+  const questionPackages = pricing?.coinPackages?.filter(p => p.active).map((p, i) => ({
     id: i + 1,
     coins: p.coins,
+    questions: getQuestionPackageDisplayCount(p.id, p.coins, i),
     price: p.price,
     discount: p.originalPrice > p.price ? Math.round((1 - p.price / p.originalPrice) * 100) : null,
     popular: i === 1, // Second package is popular
     packageId: p.id,
-  })) || defaultCoinPackages.map(p => ({ ...p, packageId: `coins-${p.coins}` }));
+  })) || defaultCoinPackages.map((p, i) => {
+    const packageId = `coins-${p.coins}`;
+    return {
+      ...p,
+      questions: getQuestionPackageDisplayCount(packageId, p.coins, i),
+      packageId,
+    };
+  });
 
-  const handlePurchaseCoins = async (pkg: typeof coinPackages[0]) => {
+  const handlePurchaseQuestions = async (pkg: typeof questionPackages[0]) => {
     setPurchaseError("");
     setPurchasingPackage(pkg.id);
 
@@ -212,7 +243,7 @@ export default function ChatPage() {
         setPurchasingPackage(null);
       }
     } catch (error) {
-      console.error("Coin purchase error:", error);
+      console.error("Question purchase error:", error);
       setPurchaseError("Something went wrong. Please try again.");
       setPurchasingPackage(null);
     }
@@ -368,7 +399,7 @@ export default function ChatPage() {
     loadData();
   }, []);
 
-  // Show low balance bubble when coins < 3
+  // Show low balance bubble when no question is available.
   useEffect(() => {
     if (coins < 3) {
       setShowLowBalanceBubble(true);
@@ -395,6 +426,7 @@ export default function ChatPage() {
           // Only add optional fields if they exist
           if (m.palmImage) msg.palmImage = m.palmImage;
           if (m.traits) msg.traits = m.traits;
+          if (m.followUpQuestions?.length) msg.followUpQuestions = m.followUpQuestions;
           return msg;
         });
         
@@ -430,7 +462,7 @@ export default function ChatPage() {
     const textToSend = messageText || input;
     if (!textToSend.trim() || isLoading) return;
 
-    // Check if user has enough coins (3 coins per message)
+    // One visible question maps to the existing backend balance deduction.
     if (coins < 3) {
       setShowPricing(true);
       return;
@@ -442,7 +474,14 @@ export default function ChatPage() {
       timestamp: new Date(),
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages((prev) => [
+      ...prev.map((message) => (
+        message.followUpQuestions?.length
+          ? { ...message, followUpQuestions: undefined }
+          : message
+      )),
+      userMessage,
+    ]);
     setInput("");
     setIsLoading(true);
 
@@ -484,16 +523,19 @@ export default function ChatPage() {
           role: "assistant",
           content: data.reply,
           timestamp: new Date(),
+          followUpQuestions: Array.isArray(data.followUpQuestions)
+            ? data.followUpQuestions.filter((question: unknown) => typeof question === "string" && question.trim()).slice(0, 3)
+            : [],
         };
         setMessages((prev) => [...prev, assistantMessage]);
-        deductCoins(3); // Deduct 3 coins per message
+        deductCoins(COINS_PER_QUESTION);
 
         try {
           const userId = generateUserId();
           const { data: currentUser } = await supabase.from("users").select("coins").eq("id", userId).single();
           if (currentUser) {
             await supabase.from("users").update({
-              coins: Math.max(0, (currentUser.coins || 0) - 3),
+              coins: Math.max(0, (currentUser.coins || 0) - COINS_PER_QUESTION),
               updated_at: new Date().toISOString(),
             }).eq("id", userId);
           }
@@ -512,6 +554,11 @@ export default function ChatPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleFollowUpClick = (question: string) => {
+    setInput(question);
+    setTimeout(() => inputRef.current?.focus(), 0);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -609,10 +656,7 @@ export default function ChatPage() {
             }}
             className="flex items-center gap-2 px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
           >
-            <span className="text-white font-semibold">{coins}</span>
-            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center">
-              <Coins className="w-3.5 h-3.5 text-white" />
-            </div>
+            <span className="text-white font-semibold">{questionBalance} questions</span>
           </button>
 
           {/* Wallet Dropdown */}
@@ -639,11 +683,8 @@ export default function ChatPage() {
                     <X className="w-4 h-4 text-white" />
                   </button>
                   <div className="mb-4">
-                    <p className="text-white/60 text-sm mb-1">Wallet Balance</p>
-                    <div className="flex items-center gap-2">
-                      <Coins className="w-6 h-6 text-yellow-400" />
-                      <span className="text-white text-2xl font-bold">{coins}</span>
-                    </div>
+                    <p className="text-white text-4xl font-bold leading-none">{questionBalance}</p>
+                    <p className="mt-1 text-white/60 text-sm font-medium">questions left</p>
                   </div>
                   <Button
                     onClick={() => {
@@ -652,7 +693,7 @@ export default function ChatPage() {
                     }}
                     className="w-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
                   >
-                    Get More Coins
+                    Ask More Questions
                   </Button>
                 </motion.div>
               </>
@@ -671,12 +712,9 @@ export default function ChatPage() {
             className="mx-4 mt-2"
           >
             <div className="bg-[#1A2332] rounded-2xl p-4 flex items-center gap-3 border border-white/10 shadow-lg">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center flex-shrink-0">
-                <Coins className="w-5 h-5 text-white" />
-              </div>
               <div className="flex-1">
-                <p className="text-white font-medium text-sm">You're running out of balance</p>
-                <p className="text-white/60 text-xs">Refill to continue chatting.</p>
+                <p className="text-white font-medium text-sm">You're out of questions</p>
+                <p className="text-white/60 text-xs">Add more to continue chatting.</p>
               </div>
               <button
                 onClick={() => {
@@ -685,7 +723,7 @@ export default function ChatPage() {
                 }}
                 className="px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white text-sm font-medium rounded-full transition-colors"
               >
-                Refill
+                Add
               </button>
               <button
                 onClick={() => setShowLowBalanceBubble(false)}
@@ -707,60 +745,79 @@ export default function ChatPage() {
             animate={{ opacity: 1, y: 0 }}
             className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
           >
-            <div
-              className={`max-w-[85%] ${
-                message.role === "user"
-                  ? "bg-gradient-to-r from-primary to-purple-600 text-white"
-                  : "bg-[#1A1F2E] text-white"
-              } rounded-3xl px-5 py-3`}
-            >
-              {/* Palm Image with Traits */}
-              {message.palmImage && message.traits && (
-                <div className="mb-4 bg-[#0F1419] rounded-2xl p-4 flex gap-4">
-                  <div className="w-24 h-24 rounded-xl overflow-hidden flex-shrink-0">
-                    <Image
-                      src={message.palmImage}
-                      alt="Palm"
-                      width={96}
-                      height={96}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <div className="flex-1 space-y-3">
-                    {message.traits.map((trait, idx) => (
-                      <div key={idx}>
-                        <div className="flex items-center justify-between mb-1">
-                          <div className="flex items-center gap-2">
-                            <div
-                              className="w-2 h-2 rounded-full"
-                              style={{ backgroundColor: trait.color }}
-                            />
-                            <span className="text-white/80 text-sm">{trait.name}</span>
+            <div className="max-w-[85%]">
+              <div
+                className={`${
+                  message.role === "user"
+                    ? "bg-gradient-to-r from-primary to-purple-600 text-white"
+                    : "bg-[#1A1F2E] text-white"
+                } rounded-3xl px-5 py-3`}
+              >
+                {/* Palm Image with Traits */}
+                {message.palmImage && message.traits && (
+                  <div className="mb-4 bg-[#0F1419] rounded-2xl p-4 flex gap-4">
+                    <div className="w-24 h-24 rounded-xl overflow-hidden flex-shrink-0">
+                      <Image
+                        src={message.palmImage}
+                        alt="Palm"
+                        width={96}
+                        height={96}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex-1 space-y-3">
+                      {message.traits.map((trait, idx) => (
+                        <div key={idx}>
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="w-2 h-2 rounded-full"
+                                style={{ backgroundColor: trait.color }}
+                              />
+                              <span className="text-white/80 text-sm">{trait.name}</span>
+                            </div>
+                            <span className="text-white font-semibold text-sm">{trait.value}%</span>
                           </div>
-                          <span className="text-white font-semibold text-sm">{trait.value}%</span>
+                          <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{
+                                width: `${trait.value}%`,
+                                backgroundColor: trait.color,
+                              }}
+                            />
+                          </div>
                         </div>
-                        <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all duration-500"
-                            style={{
-                              width: `${trait.value}%`,
-                              backgroundColor: trait.color,
-                            }}
-                          />
-                        </div>
-                      </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">{formatMessage(message.content)}</p>
+
+                {message.role === "assistant" && message.followUpQuestions?.length ? (
+                  <div className="mt-3 flex flex-col items-start gap-1.5">
+                    {message.followUpQuestions.map((question, followUpIndex) => (
+                      <button
+                        key={`${index}-${followUpIndex}`}
+                        type="button"
+                        onClick={() => handleFollowUpClick(question)}
+                        className="group inline-flex max-w-full items-start gap-2 rounded-2xl border border-fuchsia-300/20 bg-gradient-to-r from-fuchsia-500/18 via-primary/12 to-cyan-400/10 px-3 py-1.5 text-left text-[11px] font-medium leading-snug text-white/90 shadow-[0_8px_22px_rgba(236,72,153,0.10),inset_0_1px_0_rgba(255,255,255,0.10)] backdrop-blur transition-all hover:-translate-y-0.5 hover:border-fuchsia-200/35 hover:from-fuchsia-500/24 hover:via-primary/18 hover:to-cyan-400/14"
+                      >
+                        <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-fuchsia-200 transition-transform group-hover:scale-110" />
+                        <span className="min-w-0">{question}</span>
+                      </button>
                     ))}
                   </div>
-                </div>
-              )}
+                ) : null}
 
-              <p className="text-sm leading-relaxed whitespace-pre-wrap">{formatMessage(message.content)}</p>
-              <p className="text-[10px] opacity-50 mt-2">
-                {(message.timestamp instanceof Date ? message.timestamp : new Date(message.timestamp)).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </p>
+                <p className="text-[10px] opacity-50 mt-2">
+                  {(message.timestamp instanceof Date ? message.timestamp : new Date(message.timestamp)).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </p>
+              </div>
             </div>
           </motion.div>
         ))}
@@ -807,6 +864,7 @@ export default function ChatPage() {
         <div className="flex gap-2 items-center">
           
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -845,8 +903,8 @@ export default function ChatPage() {
               {/* Header */}
               <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
                 <div className="flex-1 min-w-0">
-                  <h2 className="text-white text-lg sm:text-2xl font-bold mb-1 truncate">Get More Coins</h2>
-                  <p className="text-white/60 text-xs sm:text-sm">Choose a package to continue</p>
+                  <h2 className="text-white text-lg sm:text-2xl font-bold mb-1 truncate">Ask More Questions</h2>
+                  <p className="text-white/60 text-xs sm:text-sm">Choose a question pack to continue</p>
                 </div>
                 <button
                   onClick={() => {
@@ -873,14 +931,14 @@ export default function ChatPage() {
                 )}
               </AnimatePresence>
 
-              {/* Coin Packages Grid */}
+              {/* Question Packages Grid */}
               <div className="grid grid-cols-2 gap-2 sm:gap-4">
-                {coinPackages.map((pkg) => (
+                {questionPackages.map((pkg) => (
                   <motion.button
                     key={pkg.id}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
-                    onClick={() => handlePurchaseCoins(pkg)}
+                    onClick={() => handlePurchaseQuestions(pkg)}
                     disabled={purchasingPackage !== null}
                     className={`relative bg-gradient-to-br from-[#1A1F2E] to-[#0F1419] rounded-xl sm:rounded-2xl p-3 sm:p-6 border-2 transition-all ${
                       pkg.popular
@@ -902,17 +960,10 @@ export default function ChatPage() {
                       </div>
                     )}
 
-                    {/* Coin Icon */}
-                    <div className="flex justify-center mb-2 sm:mb-4 mt-2 sm:mt-0">
-                      <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center">
-                        <Coins className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
-                      </div>
-                    </div>
-
-                    {/* Coin Amount */}
-                    <div className="text-center mb-1 sm:mb-2">
-                      <p className="text-white text-xl sm:text-3xl font-bold">{pkg.coins}</p>
-                      <p className="text-white/60 text-[10px] sm:text-sm">Coins</p>
+                    {/* Question Amount */}
+                    <div className="text-center mb-3 sm:mb-5 mt-2">
+                      <p className="text-white text-xl sm:text-3xl font-bold">{pkg.questions}</p>
+                      <p className="text-white/60 text-[10px] sm:text-sm">Questions</p>
                     </div>
 
                     {/* Price */}
@@ -936,20 +987,10 @@ export default function ChatPage() {
                 ))}
               </div>
 
-              {/* Pricing Info */}
-              <div className="mt-4 sm:mt-6 text-center">
-                <p className="text-white/60 text-xs sm:text-sm mb-2 flex items-center justify-center gap-1">
-                  💬 1 question = 3
-                  <span className="inline-flex items-center">
-                    <Coins className="w-3 h-3 sm:w-4 sm:h-4 text-yellow-400" />
-                  </span>
-                </p>
-              </div>
-
               {/* Footer */}
               <div className="mt-2 sm:mt-3 text-center">
                 <p className="text-white/40 text-[10px] sm:text-xs">
-                  Secure payment powered by Razorpay
+                  Secure payment powered by PayU
                 </p>
               </div>
             </motion.div>

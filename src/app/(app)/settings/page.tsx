@@ -10,7 +10,7 @@ import { useUserStore } from "@/lib/user-store";
 const subscriptionBenefits = [
   { icon: "🔮", text: "Personal Horoscopes" },
   { icon: "💕", text: "Compatibility Report" },
-  { icon: "🚀", text: "Discounted Coin Prices" },
+  { icon: "🚀", text: "Discounted Packs to Chat with Elysia" },
   { icon: "🌙", text: "Your Birth Chart" },
   { icon: "🖐️", text: "Palm Readings" },
 ];
@@ -48,8 +48,7 @@ if (isCompleteBundle || unlockedFeatures?.astrocartographyReport) {
   benefits.push({ icon: "🗺️", text: "Astrocartography" });
 }
 
-const coinCount = isCompleteBundle ? 60 : bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" ? 30 : 15;
-  benefits.push({ icon: "💬", text: isCompleteBundle ? "20 questions to chat with Elysia" : `${coinCount} AI Chat Coins` });
+  benefits.push({ icon: "💬", text: "Question packs to Chat with Elysia" });
   
   return benefits;
 };
@@ -75,7 +74,9 @@ export default function SettingsPage() {
     }
   }, []);
 
-  const displayBenefits = getBundleBenefits(bundleId || purchasedBundle, unlockedFeatures);
+  const displayBenefits = isFlowB
+    ? getBundleBenefits(bundleId || purchasedBundle, unlockedFeatures)
+    : subscriptionBenefits;
 
   const handleLogout = () => {
     // Clear local storage
