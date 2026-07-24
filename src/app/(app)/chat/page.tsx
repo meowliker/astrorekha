@@ -126,7 +126,6 @@ export default function ChatPage() {
   const [chatLoaded, setChatLoaded] = useState(false);
   const [showLowBalanceBubble, setShowLowBalanceBubble] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   // Backend balance stays coin-based while the chat UI presents questions.
   const { coins, deductCoins } = useUserStore();
@@ -557,8 +556,7 @@ export default function ChatPage() {
   };
 
   const handleFollowUpClick = (question: string) => {
-    setInput(question);
-    setTimeout(() => inputRef.current?.focus(), 0);
+    sendMessage(question);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -864,7 +862,6 @@ export default function ChatPage() {
         <div className="flex gap-2 items-center">
           
           <input
-            ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
