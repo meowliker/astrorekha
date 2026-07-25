@@ -751,9 +751,7 @@ export default function AdminRevenuePage() {
   );
   const [selectedStartTime, setSelectedStartTime] = useState<string>("11:30");
   const [selectedEndTime, setSelectedEndTime] = useState<string>("11:30");
-  const [selectedTimezone, setSelectedTimezone] = useState<string>("ist");
   const [dateLoading, setDateLoading] = useState(false);
-  const [usePayU, setUsePayU] = useState<boolean>(true); // Default to PayU for accurate data
 
   // Sorting
   const [sortField, setSortField] = useState<string>("date");
@@ -863,7 +861,7 @@ export default function AdminRevenuePage() {
     });
   };
 
-  const fetchData = async () => {
+  const fetchData = async (syncLastTwoDays: boolean = false) => {
     try {
       setRefreshing(true);
       setDateLoading(true);
@@ -878,18 +876,21 @@ export default function AdminRevenuePage() {
         return;
       }
 
-      let url: string;
-      if (usePayU) {
-        url = `/api/admin/revenue-payu?token=${token}&_t=${Date.now()}`;
-        url += `&startDate=${selectedStartDate}&endDate=${selectedEndDate}`;
-        url += `&startTime=${selectedStartTime}&endTime=${selectedEndTime}`;
-        url += `&timezone=${selectedTimezone}`;
-      } else {
-        url = `/api/admin/revenue?token=${token}&_t=${Date.now()}`;
-        if (selectedStartDate) {
-          url += `&startDate=${selectedStartDate}&endDate=${selectedEndDate}`;
-          url += `&startTime=${selectedStartTime}&endTime=${selectedEndTime}`;
+      if (syncLastTwoDays) {
+        const syncUrl = `/api/admin/profit-sheet?token=${encodeURIComponent(token)}&startDate=${encodeURIComponent(
+          selectedStartDate
+        )}&endDate=${encodeURIComponent(selectedEndDate)}&sync=last2`;
+        const syncResponse = await fetch(syncUrl, { cache: "no-store" });
+        if (!syncResponse.ok) {
+          const syncError = await syncResponse.json().catch(() => ({ error: "Failed to sync profit sheet" }));
+          throw new Error(syncError.error || "Failed to sync profit sheet");
         }
+      }
+
+      let url = `/api/admin/revenue?token=${encodeURIComponent(token)}&_t=${Date.now()}`;
+      if (selectedStartDate) {
+        url += `&startDate=${encodeURIComponent(selectedStartDate)}&endDate=${encodeURIComponent(selectedEndDate)}`;
+        url += `&startTime=${encodeURIComponent(selectedStartTime)}&endTime=${encodeURIComponent(selectedEndTime)}`;
       }
       const response = await fetch(url, { cache: "no-store" });
 
@@ -1078,12 +1079,23 @@ export default function AdminRevenuePage() {
     }
   };
 
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = async (syncLastTwoDays: boolean = false) => {
     try {
       setAnalyticsLoading(true);
       setAnalyticsError(null);
       const token = localStorage.getItem("admin_session_token");
       if (!token) return;
+
+      if (syncLastTwoDays) {
+        const syncUrl = `/api/admin/profit-sheet?token=${encodeURIComponent(token)}&startDate=${encodeURIComponent(
+          analyticsStartDate
+        )}&endDate=${encodeURIComponent(analyticsEndDate)}&sync=last2`;
+        const syncRes = await fetch(syncUrl, { cache: "no-store" });
+        if (!syncRes.ok) {
+          const err = await syncRes.json().catch(() => ({ error: "Failed to sync profit sheet" }));
+          throw new Error(err.error || "Failed to sync profit sheet");
+        }
+      }
 
       const url = `/api/admin/analytics?token=${encodeURIComponent(token)}&startDate=${encodeURIComponent(
         analyticsStartDate
@@ -1140,7 +1152,7 @@ export default function AdminRevenuePage() {
   useEffect(() => {
     fetchData();
     fetchMetaAds();
-  }, [router, selectedStartDate, selectedEndDate, selectedStartTime, selectedEndTime, selectedTimezone, usePayU]);
+  }, [router, selectedStartDate, selectedEndDate, selectedStartTime, selectedEndTime]);
 
   useEffect(() => {
     fetchMetaAds(metaDatePreset);
@@ -1354,11 +1366,11 @@ export default function AdminRevenuePage() {
               )}
               <button
                 onClick={() => {
-                  if (activeTab === "dashboard") fetchData();
+                  if (activeTab === "dashboard") fetchData(true);
                   else if (activeTab === "profit-sheet") fetchProfitSheet(undefined, true);
                   else if (activeTab === "meta-details") fetchMetaBreakdown();
                   else if (activeTab === "attribution") fetchAttribution();
-                  else if (activeTab === "analytics") fetchAnalytics();
+                  else if (activeTab === "analytics") fetchAnalytics(true);
                 }}
                 disabled={refreshing || profitSheetLoading || metaLoading || metaBreakdownLoading || attributionLoading || analyticsLoading}
                 className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
@@ -1576,7 +1588,7 @@ export default function AdminRevenuePage() {
               subtitle="All time"
               icon={<IndianRupee className="w-4 h-4" />}
               color="text-green-400"
-              tooltip="Total revenue from all paid Razorpay payments."
+              tooltip="Total revenue from the synced Supabase profit_sheet ledger."
             />
             <KPICard
               title="ARPU"
@@ -1605,19 +1617,16 @@ export default function AdminRevenuePage() {
           </div>
         </section>
 
-        {/* Date Range Selector with Time & Timezone */}
+        {/* Date Range Selector */}
         <section className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-white/70 text-sm font-medium flex items-center gap-2">
               <Calendar className="w-4 h-4" /> Date Range & Data Source
             </h2>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setUsePayU(!usePayU)}
-                className={`px-3 py-1.5 rounded-lg text-xs transition-colors ${usePayU ? 'bg-green-500/20 text-green-400' : 'bg-white/10 text-white/60'}`}
-              >
-                {usePayU ? '✓ PayU (Live)' : '✓ Supabase'}
-              </button>
+              <span className="px-3 py-1.5 rounded-lg text-xs bg-green-500/20 text-green-400">
+                Supabase Profit Sheet
+              </span>
             </div>
           </div>
           
@@ -1665,18 +1674,11 @@ export default function AdminRevenuePage() {
             </div>
           </div>
           
-          {/* Timezone & Quick Presets */}
+          {/* Ledger Window & Quick Presets */}
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2">
-              <label className="text-white/50 text-xs">Timezone:</label>
-              <select
-                value={selectedTimezone}
-                onChange={(e) => setSelectedTimezone(e.target.value)}
-                className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-primary/50"
-              >
-                <option value="costa_rica">Costa Rica (UTC-6)</option>
-                <option value="ist">India (IST UTC+5:30)</option>
-              </select>
+            <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5">
+              <span className="text-white/50 text-xs">Ledger window:</span>
+              <span className="text-white/70 text-xs">Profit Sheet day (11:30 IST to next 11:29)</span>
             </div>
             
             <div className="flex items-center gap-2 ml-auto">
@@ -1734,16 +1736,9 @@ export default function AdminRevenuePage() {
             </div>
           </div>
           
-          {/* Info about timezone */}
-          {selectedTimezone === "costa_rica" && (
-            <div className="mt-3 p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-              <p className="text-blue-400 text-xs">
-                📍 Times are in Costa Rica timezone (UTC-6). IST is 11.5 hours ahead.
-                <br />
-                Example: 11:30 AM Costa Rica = 11:00 PM IST (same day) → 12:00 AM IST (next day)
-              </p>
-            </div>
-          )}
+          <p className="text-white/35 text-xs mt-3">
+            Revenue totals come from synced profit_sheet rows. Time fields only narrow the transaction detail list below.
+          </p>
         </section>
 
         {/* Revenue by Period */}
@@ -2312,7 +2307,7 @@ export default function AdminRevenuePage() {
             setEndDate={setAnalyticsEndDate}
             dayMode={analyticsDayMode}
             setDayMode={setAnalyticsDayMode}
-            onRefresh={fetchAnalytics}
+            onRefresh={() => fetchAnalytics(true)}
           />
         )}
       </div>
@@ -5419,7 +5414,7 @@ function AnalyticsTab({
     : [];
 
   const trafficSourceBadge = data?.sources.googleAnalytics.connected ? "GA4" : "Internal";
-  const salesSourceBadge = data?.sources.sales.connected ? "PayU" : "Supabase";
+  const salesSourceBadge = "Supabase";
   const dayModeShortLabel = dayMode === "business_1130_ist" ? "CST" : "IST";
   const dayModeDetailLabel =
     dayMode === "business_1130_ist"
@@ -5484,7 +5479,7 @@ function AnalyticsTab({
   const totalDropOffRate = data?.funnel?.dropOffRate ?? (totalVisitors > 0 ? (totalDropOff / totalVisitors) * 100 : 0);
 
   const profitabilityRows = matrixRows;
-  const profitabilitySourceBadge = matrixAdsSource === "meta" ? "Meta + PayU" : "PayU";
+  const profitabilitySourceBadge = matrixAdsSource === "meta" ? "Meta + Supabase" : "Supabase";
 
   const profitabilityMatrix = useMemo(() => {
     if (!profitabilityRows.length) return null;

@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { classifyPayUEvent } from "@/lib/finance-events";
-import { getPayUTransactions } from "@/lib/payu-api";
-import { getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -40,6 +37,25 @@ interface HourlyProfitabilityPoint {
   profitInr: number;
   roas: number;
 }
+
+interface ProfitSheetRow {
+  date: string;
+  day: string;
+  revenue: number;
+  grossRevenue: number;
+  refundAmount: number;
+  gst: number;
+  adsCostUSD: number;
+  adsCostINR: number;
+  netRevenue: number;
+  profitPercent: number;
+  roas: number;
+  bundleRevenue: number;
+  transactionCount: number;
+  bundlePurchases: number;
+  salesCount: number;
+  refundCount: number;
+}
 type MatrixDayMode = "calendar_ist" | "business_1130_ist";
 const IST_TIMEZONE = "Asia/Kolkata";
 const DEFAULT_GA4_PROPERTY_TIMEZONE = "America/Costa_Rica";
@@ -73,6 +89,80 @@ function normalizeStatus(status: unknown): string {
 function normalizeBounceRate(rawValue: number): number {
   if (!Number.isFinite(rawValue) || rawValue < 0) return 0;
   return rawValue <= 1 ? rawValue * 100 : rawValue;
+}
+
+function fromProfitSheetDbRow(row: any): ProfitSheetRow {
+  return {
+    date: String(row.date || ""),
+    day: String(row.day || ""),
+    revenue: toNumber(row.revenue),
+    grossRevenue: toNumber(row.gross_revenue),
+    refundAmount: toNumber(row.refund_amount),
+    gst: toNumber(row.gst),
+    adsCostUSD: toNumber(row.ads_cost_usd),
+    adsCostINR: toNumber(row.ads_cost_inr),
+    netRevenue: toNumber(row.net_revenue),
+    profitPercent: toNumber(row.profit_percent),
+    roas: toNumber(row.roas),
+    bundleRevenue: toNumber(row.bundle_revenue),
+    transactionCount: toNumber(row.transaction_count),
+    bundlePurchases: toNumber(row.bundle_purchases),
+    salesCount: toNumber(row.sales_count || row.transaction_count),
+    refundCount: toNumber(row.refund_count),
+  };
+}
+
+async function readProfitSheetRows(supabase: any, startDate: string, endDate: string): Promise<ProfitSheetRow[]> {
+  const { data, error } = await supabase
+    .from("profit_sheet")
+    .select("*")
+    .gte("date", startDate)
+    .lte("date", endDate)
+    .order("date", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message || "Failed to read profit sheet");
+  }
+
+  return (data || []).map(fromProfitSheetDbRow);
+}
+
+function sumProfitSheetRows(rows: ProfitSheetRow[]) {
+  const totals = rows.reduce(
+    (acc, row) => ({
+      revenue: acc.revenue + row.revenue,
+      grossRevenue: acc.grossRevenue + row.grossRevenue,
+      refundAmount: acc.refundAmount + row.refundAmount,
+      gst: acc.gst + row.gst,
+      adsCostUSD: acc.adsCostUSD + row.adsCostUSD,
+      adsCostINR: acc.adsCostINR + row.adsCostINR,
+      netRevenue: acc.netRevenue + row.netRevenue,
+      bundleRevenue: acc.bundleRevenue + row.bundleRevenue,
+      transactionCount: acc.transactionCount + row.transactionCount,
+      bundlePurchases: acc.bundlePurchases + row.bundlePurchases,
+      salesCount: acc.salesCount + row.salesCount,
+      refundCount: acc.refundCount + row.refundCount,
+    }),
+    {
+      revenue: 0,
+      grossRevenue: 0,
+      refundAmount: 0,
+      gst: 0,
+      adsCostUSD: 0,
+      adsCostINR: 0,
+      netRevenue: 0,
+      bundleRevenue: 0,
+      transactionCount: 0,
+      bundlePurchases: 0,
+      salesCount: 0,
+      refundCount: 0,
+    }
+  );
+
+  return {
+    ...totals,
+    paidOrders: totals.salesCount || totals.transactionCount,
+  };
 }
 
 function getModeShortLabel(mode: MatrixDayMode): "IST" | "CST" {
@@ -215,37 +305,6 @@ async function fetchExchangeRate(): Promise<number> {
     return Number.isFinite(inr) && inr > 0 ? inr : 85;
   } catch {
     return 85;
-  }
-}
-
-async function fetchMetaAdsDailySpend(startDate: string, endDate: string): Promise<Map<string, number>> {
-  const credentials = getMetaAccountCredentialsFromEnv();
-
-  if (credentials.length === 0) {
-    return new Map();
-  }
-
-  try {
-    const dateParams = `time_range={"since":"${startDate}","until":"${endDate}"}`;
-    const spendMap = new Map<string, number>();
-    for (const { accountId: adAccountId, accessToken } of credentials) {
-      const dailyUrl = `https://graph.facebook.com/v21.0/act_${adAccountId}/insights?fields=spend&time_increment=1&${dateParams}&limit=90&access_token=${accessToken}`;
-      const response = await fetch(dailyUrl);
-      const data = await response.json();
-      if (Array.isArray(data?.data)) {
-        for (const day of data.data) {
-          const date = String(day?.date_start || "");
-          const spend = Number(day?.spend || 0);
-          if (date) {
-            const current = spendMap.get(date) || 0;
-            spendMap.set(date, current + (Number.isFinite(spend) ? spend : 0));
-          }
-        }
-      }
-    }
-    return spendMap;
-  } catch {
-    return new Map();
   }
 }
 
@@ -734,6 +793,8 @@ export async function GET(request: NextRequest) {
     const startIso = `${startDate}T00:00:00.000Z`;
     const endDateForMode = dayMode === "business_1130_ist" ? shiftIsoDate(endDate, 1) : endDate;
     const endIso = `${endDateForMode}T23:59:59.999Z`;
+    const profitSheetRows = await readProfitSheetRows(supabase, startDate, endDate);
+    const profitTotals = sumProfitSheetRows(profitSheetRows);
 
     const { data: paymentRows } = await supabase
       .from("payments")
@@ -751,179 +812,39 @@ export async function GET(request: NextRequest) {
 
     const inRange = (dayKey: string) => dayKey >= startDate && dayKey <= endDate;
 
-    type AggregatedSalesRow = {
-      dayKey: string;
-      hour: number;
-      weekday: string;
-      kind: "sale" | "refund";
-      signedAmount: number;
-    };
-
-    const payuFetchEndForDayMode = dayMode === "business_1130_ist" ? shiftIsoDate(endDate, 1) : endDate;
-    const payuFetchEndForMatrixMode = matrixDayMode === "business_1130_ist" ? shiftIsoDate(endDate, 1) : endDate;
-    const payuFetchEnd = payuFetchEndForDayMode > payuFetchEndForMatrixMode
-      ? payuFetchEndForDayMode
-      : payuFetchEndForMatrixMode;
-    const payuTxns = await getPayUTransactions(startDate, payuFetchEnd);
-
-    type PayUFinancialRow = {
-      created: Date;
-      kind: "sale" | "refund";
-      signedAmount: number;
-    };
-
-    const payuFinancialRows: PayUFinancialRow[] = payuTxns
-      .map((txn) => {
-        const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
-        if (financial.kind === "ignore" || !txn.addedon) return null;
-        const created = new Date(String(txn.addedon).replace(" ", "T") + "+05:30");
-        if (Number.isNaN(created.getTime())) return null;
-        return {
-          created,
-          kind: financial.kind,
-          signedAmount: financial.signedAmount,
-        } as PayUFinancialRow;
-      })
-      .filter((row): row is PayUFinancialRow => !!row);
-
-    const salesRows: AggregatedSalesRow[] = payuFinancialRows
-      .map((row) => {
-        const grouped = getMatrixDateGroup(row.created, dayMode);
-        if (!inRange(grouped.dayKey)) return null;
-        return {
-          dayKey: grouped.dayKey,
-          hour: grouped.hour,
-          weekday: grouped.weekday,
-          kind: row.kind,
-          signedAmount: row.signedAmount,
-        } as AggregatedSalesRow;
-      })
-      .filter((row): row is AggregatedSalesRow => !!row);
-
-    const hasLivePayUSalesData = payuFinancialRows.length > 0;
-    const refundRows = salesRows.filter((row) => row.kind === "refund");
-
     const salesHourlyMap = new Map<string, { count: number; revenueInr: number }>();
     const salesDailyMap = new Map<string, { count: number; revenueInr: number }>();
     const salesWeekdayMap = new Map<string, { count: number; revenueInr: number }>();
-    const salesDayHourMap = new Map<string, { count: number; revenueInr: number }>();
-    let totalRevenueInr = 0;
-    let paidOrders = 0;
-    let refundedOrders = 0;
 
-    for (const row of salesRows) {
-      const hourLabel = formatHourLabel(row.hour, dayMode);
-      const amount = row.signedAmount;
-      const countDelta = row.kind === "refund" ? -1 : 1;
-      totalRevenueInr += amount;
-      if (row.kind === "sale") paidOrders += 1;
-      if (row.kind === "refund") refundedOrders += 1;
+    for (const row of profitSheetRows) {
+      if (!inRange(row.date)) continue;
+      const weekday = getWeekdayFromIsoDate(row.date);
+      const count = row.salesCount || row.transactionCount || 0;
 
-      const hourEntry = salesHourlyMap.get(hourLabel) || { count: 0, revenueInr: 0 };
-      hourEntry.count += countDelta;
-      hourEntry.revenueInr += amount;
-      salesHourlyMap.set(hourLabel, hourEntry);
+      const dayEntry = salesDailyMap.get(row.date) || { count: 0, revenueInr: 0 };
+      dayEntry.count += count;
+      dayEntry.revenueInr += row.revenue;
+      salesDailyMap.set(row.date, dayEntry);
 
-      const dayEntry = salesDailyMap.get(row.dayKey) || { count: 0, revenueInr: 0 };
-      dayEntry.count += countDelta;
-      dayEntry.revenueInr += amount;
-      salesDailyMap.set(row.dayKey, dayEntry);
-
-      const dayHourKey = `${row.dayKey}|${row.hour}`;
-      const dayHourEntry = salesDayHourMap.get(dayHourKey) || { count: 0, revenueInr: 0 };
-      dayHourEntry.count += countDelta;
-      dayHourEntry.revenueInr += amount;
-      salesDayHourMap.set(dayHourKey, dayHourEntry);
-
-      const weekdayEntry = salesWeekdayMap.get(row.weekday) || { count: 0, revenueInr: 0 };
-      weekdayEntry.count += countDelta;
-      weekdayEntry.revenueInr += amount;
-      salesWeekdayMap.set(row.weekday, weekdayEntry);
+      const weekdayEntry = salesWeekdayMap.get(weekday) || { count: 0, revenueInr: 0 };
+      weekdayEntry.count += count;
+      weekdayEntry.revenueInr += row.revenue;
+      salesWeekdayMap.set(weekday, weekdayEntry);
     }
 
     const peakSalesHour = pickTopSalesMetric(salesHourlyMap, "N/A");
     const peakSalesDay = pickTopSalesMetric(salesWeekdayMap, "N/A");
-    const salesHourlySeries = buildHourlySalesSeriesByMode(salesHourlyMap, dayMode);
+    const salesHourlySeries: SalesSeriesPoint[] = [];
     const salesDailySeries = buildDailySalesSeries(salesDailyMap, startDate, endDate);
     const salesWeekdaySeries = buildWeekdaySalesSeries(salesWeekdayMap);
 
-    const exchangeRate = await fetchExchangeRate();
-    const metaSpendUsdMap = await fetchMetaAdsDailySpend(startDate, endDate);
-    const hasMetaSpend = metaSpendUsdMap.size > 0;
+    const exchangeSourceRow = profitSheetRows.find((row) => row.adsCostUSD > 0 && row.adsCostINR > 0);
+    const exchangeRate = exchangeSourceRow
+      ? Number((exchangeSourceRow.adsCostINR / exchangeSourceRow.adsCostUSD).toFixed(2))
+      : await fetchExchangeRate();
+    const hasMetaSpend = profitTotals.adsCostINR > 0;
+    // The profit_sheet ledger is daily, so Analytics must not invent hour-level revenue/profit.
     const hourlyProfitabilityRows: HourlyProfitabilityPoint[] = [];
-
-    const dateKeys: string[] = [];
-    const cursor = new Date(`${startDate}T00:00:00.000Z`);
-    const rangeEnd = new Date(`${endDate}T00:00:00.000Z`);
-    while (cursor <= rangeEnd) {
-      dateKeys.push(cursor.toISOString().split("T")[0]);
-      cursor.setUTCDate(cursor.getUTCDate() + 1);
-    }
-
-    const matrixDailyRevenueMap = new Map<string, number>();
-    const matrixDayHourMap = new Map<string, { count: number; revenueInr: number }>();
-    type AggregatedMatrixRow = {
-      dayKey: string;
-      hour: number;
-      kind: "sale" | "refund";
-      signedAmount: number;
-    };
-
-    const matrixRows: AggregatedMatrixRow[] = payuFinancialRows
-      .map((row) => {
-        const grouped = getMatrixDateGroup(row.created, matrixDayMode);
-        if (!inRange(grouped.dayKey)) return null;
-        return {
-          dayKey: grouped.dayKey,
-          hour: grouped.hour,
-          kind: row.kind,
-          signedAmount: row.signedAmount,
-        } as AggregatedMatrixRow;
-      })
-      .filter((row): row is AggregatedMatrixRow => !!row);
-
-    for (const row of matrixRows) {
-      const countDelta = row.kind === "refund" ? -1 : 1;
-      matrixDailyRevenueMap.set(row.dayKey, (matrixDailyRevenueMap.get(row.dayKey) || 0) + row.signedAmount);
-      const key = `${row.dayKey}|${row.hour}`;
-      const prev = matrixDayHourMap.get(key) || { count: 0, revenueInr: 0 };
-      prev.count += countDelta;
-      prev.revenueInr += row.signedAmount;
-      matrixDayHourMap.set(key, prev);
-    }
-
-    for (const dayKey of dateKeys) {
-      const dailyRevenue = matrixDailyRevenueMap.get(dayKey) || 0;
-      const adsCostInr = (metaSpendUsdMap.get(dayKey) || 0) * exchangeRate;
-      const weekday = getWeekdayFromIsoDate(dayKey);
-
-      for (let hour = 0; hour < 24; hour++) {
-        const hourLabel = formatHourLabel(hour, matrixDayMode);
-        const dayHour = matrixDayHourMap.get(`${dayKey}|${hour}`) || { count: 0, revenueInr: 0 };
-        const hourRevenue = dayHour.revenueInr;
-        const hourCount = dayHour.count;
-
-        const allocatedAdsCostInr = dailyRevenue > 0
-          ? adsCostInr * (hourRevenue / dailyRevenue)
-          : adsCostInr > 0
-          ? adsCostInr / 24
-          : 0;
-
-        const hourProfitInr = (hourRevenue * 0.95) - allocatedAdsCostInr;
-        const hourRoas = allocatedAdsCostInr > 0 ? hourRevenue / allocatedAdsCostInr : 0;
-
-        hourlyProfitabilityRows.push({
-          date: dayKey,
-          weekday,
-          hour,
-          label: hourLabel,
-          orderCount: hourCount,
-          revenueInr: Number(hourRevenue.toFixed(2)),
-          profitInr: Number(hourProfitInr.toFixed(2)),
-          roas: Number(hourRoas.toFixed(4)),
-        });
-      }
-    }
 
     const gaData = await fetchGoogleAnalyticsData(startDate, endDate, dayMode);
     const internalRouteData = await fetchInternalRouteAnalytics(startIso, endIso, dayMode, startDate, endDate);
@@ -940,46 +861,15 @@ export async function GET(request: NextRequest) {
     };
 
     const paymentStarts = paymentRows?.length || 0;
-    const conversionBundleIds = new Set([
-      "palm-reading",
-      "palm-birth",
-      "palm-birth-compat",
-      "palm-birth-sketch",
-      "palm-birth-sketch-aura-astro",
-    ]);
-    const successfulStatuses = new Set(["paid", "success", "captured"]);
-    const uniqueBundleBuyers = new Set<string>();
-
-    const getSafeId = (value: unknown): string => {
-      if (value === null || value === undefined) return "";
-      const normalized = String(value).trim().toLowerCase();
-      return normalized && normalized !== "0" ? normalized : "";
-    };
-
-    for (const row of paymentRows || []) {
-      const status = normalizeStatus(row.payment_status);
-      if (!successfulStatuses.has(status)) continue;
-
-      const paymentType = String((row as { type?: string | null }).type || "").trim().toLowerCase();
-      const bundleId = String((row as { bundle_id?: string | null }).bundle_id || "").trim();
-      if ((paymentType !== "bundle" && paymentType !== "bundle_payment") || !conversionBundleIds.has(bundleId)) {
-        continue;
-      }
-
-      const userId = getSafeId(row.user_id);
-      const email = getSafeId((row as { customer_email?: string | null }).customer_email || "");
-      const txnId = getSafeId((row as { payu_txn_id?: string | null }).payu_txn_id || "");
-      const paymentId = getSafeId(row.id);
-      const dedupeKey = userId || email || txnId || paymentId;
-      if (dedupeKey) uniqueBundleBuyers.add(dedupeKey);
-    }
-
-    const uniqueBundleBuyerCount = uniqueBundleBuyers.size;
+    const paidOrders = profitTotals.paidOrders;
+    const refundedOrders = profitTotals.refundCount;
+    const totalRevenueInr = profitTotals.revenue;
+    const ledgerBundlePurchaseCount = profitTotals.bundlePurchases || paidOrders;
     const paywallSignal = inferPaywallVisitors(selectedRouteData.routeMetrics);
     const totalVisitors = selectedRouteData.totalSessions > 0 ? selectedRouteData.totalSessions : paymentStarts;
     const paywallVisitors = paywallSignal.visitors > 0 ? paywallSignal.visitors : paymentStarts;
-    const exitedWithoutPaying = Math.max(totalVisitors - uniqueBundleBuyerCount, 0);
-    const conversionRateRaw = totalVisitors > 0 ? (uniqueBundleBuyerCount / totalVisitors) * 100 : 0;
+    const exitedWithoutPaying = Math.max(totalVisitors - ledgerBundlePurchaseCount, 0);
+    const conversionRateRaw = totalVisitors > 0 ? (ledgerBundlePurchaseCount / totalVisitors) * 100 : 0;
     const conversionRate = Math.min(conversionRateRaw, 100);
     const dropOffRate = totalVisitors > 0 ? (exitedWithoutPaying / totalVisitors) * 100 : 0;
 
@@ -1002,7 +892,7 @@ export async function GET(request: NextRequest) {
       funnel: {
         totalVisitors,
         paywallVisitors,
-        paidOrders: uniqueBundleBuyerCount,
+        paidOrders: ledgerBundlePurchaseCount,
         exitedWithoutPaying,
         conversionRate: Number(conversionRate.toFixed(2)),
         dropOffRate: Number(dropOffRate.toFixed(2)),
@@ -1046,10 +936,10 @@ export async function GET(request: NextRequest) {
       sources: {
         sales: {
           configured: true,
-          connected: hasLivePayUSalesData,
-          message: hasLivePayUSalesData
-            ? "Sales are sourced from PayU live API for the full selected date range."
-            : "PayU live returned no sales data for the selected date range.",
+          connected: profitSheetRows.length > 0,
+          message: profitSheetRows.length > 0
+            ? "Sales are sourced from the synced Supabase profit_sheet ledger."
+            : "No synced profit_sheet rows were found for the selected date range.",
         },
         googleAnalytics: gaData.sourceStatus,
         clarity: {
@@ -1067,7 +957,7 @@ export async function GET(request: NextRequest) {
         internal: {
           configured: true,
           connected: true,
-          message: "Sales + internal fallback metrics are active.",
+          message: "Internal fallback route metrics are active when GA4 is unavailable.",
         },
       },
       notes: [
@@ -1077,16 +967,14 @@ export async function GET(request: NextRequest) {
         paywallSignal.matchedRoute
           ? `Paywall audience inferred from route: ${paywallSignal.matchedRoute}.`
           : "Paywall audience inferred from payment starts because paywall route traffic was unavailable.",
-        "Checkout funnel conversion is calculated using unique site viewers and unique buyers of active bundle purchases.",
-        hasLivePayUSalesData
-          ? "Sales metrics are sourced from PayU live with refund/chargeback events subtracted."
-          : "PayU live did not return sales rows for this range.",
-        refundRows.length > 0 || refundedOrders > 0
+        "Checkout funnel conversion uses route viewers and bundle purchases from the synced profit_sheet ledger.",
+        "Sales, revenue, refunds, and paid-order KPIs are sourced from Supabase profit_sheet, not the live PayU API.",
+        refundedOrders > 0
           ? "Refund and chargeback events are subtracted from revenue metrics."
           : "No refund events were detected in this range.",
         hasMetaSpend
-          ? "Profitability matrix uses Meta Ads daily spend (USD→INR) with proportional hourly cost allocation."
-          : "Profitability matrix has no ads spend for this range, so it reflects revenue after GST only.",
+          ? "Profitability totals use synced Meta Ads cost from profit_sheet."
+          : "No synced Meta ad spend exists in profit_sheet for this range.",
         matrixDayMode === "business_1130_ist"
           ? "Matrix day mode: CST (11:30 AM IST to next day 11:29 AM IST, where 11:30 AM IST is treated as 12:00 AM CST)."
           : "Matrix day mode: IST calendar day (00:00 to 23:59 IST).",

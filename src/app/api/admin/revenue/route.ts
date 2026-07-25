@@ -8,6 +8,27 @@ import {
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const APP_LAUNCH_DATE = "2026-03-13";
+
+interface ProfitSheetRow {
+  date: string;
+  day: string;
+  revenue: number;
+  grossRevenue: number;
+  refundAmount: number;
+  gst: number;
+  adsCostUSD: number;
+  adsCostINR: number;
+  netRevenue: number;
+  profitPercent: number;
+  roas: number;
+  bundleRevenue: number;
+  transactionCount: number;
+  bundlePurchases: number;
+  salesCount: number;
+  refundCount: number;
+}
+
 const UPSELL_LABELS: Record<string, string> = {
   "2026-predictions": "2026 Future Predictions",
   prediction2026: "2026 Future Predictions",
@@ -21,6 +42,82 @@ const UPSELL_LABELS: Record<string, string> = {
   "report-vastu-shastra-guide": "Complete Vastu Shastra Guide Ebook",
   vastuShastraGuide: "Complete Vastu Shastra Guide Ebook",
 };
+
+function addDaysToIsoDate(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().split("T")[0];
+}
+
+function fromProfitSheetDbRow(row: any): ProfitSheetRow {
+  return {
+    date: String(row.date || ""),
+    day: String(row.day || ""),
+    revenue: Number(row.revenue || 0),
+    grossRevenue: Number(row.gross_revenue || 0),
+    refundAmount: Number(row.refund_amount || 0),
+    gst: Number(row.gst || 0),
+    adsCostUSD: Number(row.ads_cost_usd || 0),
+    adsCostINR: Number(row.ads_cost_inr || 0),
+    netRevenue: Number(row.net_revenue || 0),
+    profitPercent: Number(row.profit_percent || 0),
+    roas: Number(row.roas || 0),
+    bundleRevenue: Number(row.bundle_revenue || 0),
+    transactionCount: Number(row.transaction_count || 0),
+    bundlePurchases: Number(row.bundle_purchases || 0),
+    salesCount: Number(row.sales_count || row.transaction_count || 0),
+    refundCount: Number(row.refund_count || 0),
+  };
+}
+
+async function readProfitSheetRows(supabase: any, startDate: string, endDate: string): Promise<ProfitSheetRow[]> {
+  const { data, error } = await supabase
+    .from("profit_sheet")
+    .select("*")
+    .gte("date", startDate)
+    .lte("date", endDate)
+    .order("date", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message || "Failed to read profit sheet");
+  }
+
+  return (data || []).map(fromProfitSheetDbRow);
+}
+
+function sumProfitRows(rows: ProfitSheetRow[]) {
+  const totals = rows.reduce(
+    (acc, row) => ({
+      revenue: acc.revenue + row.revenue,
+      grossRevenue: acc.grossRevenue + row.grossRevenue,
+      refundAmount: acc.refundAmount + row.refundAmount,
+      bundleRevenue: acc.bundleRevenue + row.bundleRevenue,
+      transactionCount: acc.transactionCount + row.transactionCount,
+      bundlePurchases: acc.bundlePurchases + row.bundlePurchases,
+      salesCount: acc.salesCount + row.salesCount,
+      refundCount: acc.refundCount + row.refundCount,
+    }),
+    {
+      revenue: 0,
+      grossRevenue: 0,
+      refundAmount: 0,
+      bundleRevenue: 0,
+      transactionCount: 0,
+      bundlePurchases: 0,
+      salesCount: 0,
+      refundCount: 0,
+    }
+  );
+
+  return {
+    ...totals,
+    paidOrders: totals.salesCount || totals.transactionCount,
+  };
+}
+
+function filterProfitRows(rows: ProfitSheetRow[], startDate: string, endDate: string) {
+  return rows.filter((row) => row.date >= startDate && row.date <= endDate);
+}
 
 function getPaymentUserKey(payment: any): string {
   return String(payment?.userId || payment?.user_id || payment?.customerEmail || payment?.customer_email || "")
@@ -161,20 +258,32 @@ export async function GET(request: NextRequest) {
     }
 
     const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfWeek = new Date(startOfToday);
-    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfYear = new Date(now.getFullYear(), 0, 1);
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    const todayIso = now.toISOString().split("T")[0];
+    const startOfTodayIso = todayIso;
+    const startOfWeekDate = new Date(`${todayIso}T00:00:00.000Z`);
+    startOfWeekDate.setUTCDate(startOfWeekDate.getUTCDate() - startOfWeekDate.getUTCDay());
+    const startOfWeekIso = startOfWeekDate.toISOString().split("T")[0];
+    const startOfMonthIso = `${todayIso.slice(0, 8)}01`;
+    const startOfYearIso = `${todayIso.slice(0, 4)}-01-01`;
+    const startOfLastMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+    const endOfLastMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0));
+    const startOfLastMonthIso = startOfLastMonthDate.toISOString().split("T")[0];
+    const endOfLastMonthIso = endOfLastMonthDate.toISOString().split("T")[0];
 
-    // Fetch all payments (explicitly set high limit to get all records)
+    const profitSheetRows = await readProfitSheetRows(supabase, APP_LAUNCH_DATE, todayIso);
+    const allTimeLedger = sumProfitRows(profitSheetRows);
+    const todayLedger = sumProfitRows(filterProfitRows(profitSheetRows, startOfTodayIso, todayIso));
+    const weekLedger = sumProfitRows(filterProfitRows(profitSheetRows, startOfWeekIso, todayIso));
+    const monthLedger = sumProfitRows(filterProfitRows(profitSheetRows, startOfMonthIso, todayIso));
+    const yearLedger = sumProfitRows(filterProfitRows(profitSheetRows, startOfYearIso, todayIso));
+    const lastMonthLedger = sumProfitRows(filterProfitRows(profitSheetRows, startOfLastMonthIso, endOfLastMonthIso));
+
+    // Fetch payment rows for transaction/breakdown context. Revenue totals come from profit_sheet.
     const { data: allPaymentsRaw, error: paymentsError } = await supabase
       .from("payments")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(1000);
+      .limit(10000);
 
     if (paymentsError) {
       console.error("Payments fetch error:", paymentsError);
@@ -222,36 +331,16 @@ export async function GET(request: NextRequest) {
     const refunds = ledgerEntries.filter((p) => p.financialKind === "refund");
     const financialEvents = ledgerEntries.filter((p) => p.financialKind !== "ignore");
 
-    const grossRevenue = sales.reduce((sum, p) => sum + p.amountInrAbs, 0);
-    const refundAmount = refunds.reduce((sum, p) => sum + p.amountInrAbs, 0);
-
     console.log("Sales count:", sales.length, "Refund count:", refunds.length);
 
-    // Net revenue = sales - refunds
-    const totalRevenue = financialEvents.reduce((sum, p) => sum + p.signedAmountInr, 0);
-
-    const revenueToday = financialEvents
-      .filter((p) => new Date(p.createdAt) >= startOfToday)
-      .reduce((sum, p) => sum + p.signedAmountInr, 0);
-
-    const revenueThisWeek = financialEvents
-      .filter((p) => new Date(p.createdAt) >= startOfWeek)
-      .reduce((sum, p) => sum + p.signedAmountInr, 0);
-
-    const revenueThisMonth = financialEvents
-      .filter((p) => new Date(p.createdAt) >= startOfMonth)
-      .reduce((sum, p) => sum + p.signedAmountInr, 0);
-
-    const revenueThisYear = financialEvents
-      .filter((p) => new Date(p.createdAt) >= startOfYear)
-      .reduce((sum, p) => sum + p.signedAmountInr, 0);
-
-    const revenueLastMonth = financialEvents
-      .filter((p) => {
-        const date = new Date(p.createdAt);
-        return date >= startOfLastMonth && date <= endOfLastMonth;
-      })
-      .reduce((sum, p) => sum + p.signedAmountInr, 0);
+    const grossRevenue = allTimeLedger.grossRevenue;
+    const refundAmount = allTimeLedger.refundAmount;
+    const totalRevenue = allTimeLedger.revenue;
+    const revenueToday = todayLedger.revenue;
+    const revenueThisWeek = weekLedger.revenue;
+    const revenueThisMonth = monthLedger.revenue;
+    const revenueThisYear = yearLedger.revenue;
+    const revenueLastMonth = lastMonthLedger.revenue;
 
     const momGrowth = revenueLastMonth > 0
       ? ((revenueThisMonth - revenueLastMonth) / revenueLastMonth * 100).toFixed(1)
@@ -330,8 +419,8 @@ export async function GET(request: NextRequest) {
     const upsellAttachment = buildUpsellAttachmentSummary(sales);
 
     // Payment status breakdown
-    const successfulPayments = sales.length;
-    const refundedPayments = refunds.length;
+    const successfulPayments = allTimeLedger.paidOrders || sales.length;
+    const refundedPayments = allTimeLedger.refundCount || refunds.length;
     const failedPayments = ledgerEntries.filter((p) => p.normalizedStatus === "failed").length;
     const pendingPayments = ledgerEntries.filter(
       (p) => p.normalizedStatus === "created" || p.normalizedStatus === "pending"
@@ -340,21 +429,9 @@ export async function GET(request: NextRequest) {
     // Revenue over time (last 30 days)
     const revenueOverTime: { date: string; revenue: number }[] = [];
     for (let i = 29; i >= 0; i--) {
-      const date = new Date(now);
-      date.setDate(date.getDate() - i);
-      date.setHours(0, 0, 0, 0);
-      const dayStart = new Date(date);
-      const dayEnd = new Date(date);
-      dayEnd.setHours(23, 59, 59, 999);
-      const dateStr = dayStart.toISOString().split("T")[0];
-      const dayRevenue = financialEvents
-        .filter((p) => {
-          if (!p.createdAt) return false;
-          const pd = new Date(p.createdAt);
-          return pd >= dayStart && pd <= dayEnd;
-        })
-        .reduce((sum, p) => sum + p.signedAmountInr, 0);
-      revenueOverTime.push({ date: dateStr, revenue: dayRevenue });
+      const dateStr = addDaysToIsoDate(todayIso, -i);
+      const dayLedger = sumProfitRows(filterProfitRows(profitSheetRows, dateStr, dateStr));
+      revenueOverTime.push({ date: dateStr, revenue: dayLedger.revenue });
     }
 
     // User map for transactions
@@ -385,10 +462,15 @@ export async function GET(request: NextRequest) {
     let customDateTransactions: any[] = [];
 
     if (startDateParam) {
-      // Use time parameters for precise filtering
+      const customEndDate = endDateParam || startDateParam;
+      const customLedger = sumProfitRows(filterProfitRows(profitSheetRows, startDateParam, customEndDate));
+      customDateRevenue = customLedger.revenue;
+      customDatePaymentCount = customLedger.paidOrders;
+
+      // Transaction list still comes from Supabase payments so admins can inspect rows.
       const customStart = new Date(`${startDateParam}T${startTimeParam}:00`);
-      const customEnd = endDateParam
-        ? new Date(`${endDateParam}T${endTimeParam}:59.999`)
+      const customEnd = customEndDate
+        ? new Date(`${customEndDate}T${endTimeParam}:59.999`)
         : new Date(`${startDateParam}T${endTimeParam}:59.999`);
 
       const customPayments = financialEvents.filter((p) => {
@@ -397,8 +479,6 @@ export async function GET(request: NextRequest) {
         return d >= customStart && d <= customEnd;
       });
 
-      customDateRevenue = customPayments.reduce((sum, p) => sum + p.signedAmountInr, 0);
-      customDatePaymentCount = customPayments.filter((p) => p.financialKind === "sale").length;
       customDateTransactions = customPayments.map((p) => {
         const ud = userMap.get(p.userId) || {};
         return {
@@ -460,6 +540,7 @@ export async function GET(request: NextRequest) {
         customDateTransactions,
         customDateRange: { start: startDateParam, end: endDateParam || startDateParam },
       }),
+      source: "supabase_profit_sheet",
     }, {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
