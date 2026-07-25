@@ -86,6 +86,13 @@ function normalizePaymentStatus(status?: string): string {
   return normalized || "created";
 }
 
+function paymentStatusPriority(status: string): number {
+  if (status === "paid") return 3;
+  if (status.includes("refund") || status.includes("chargeback") || status.includes("reversal")) return 2;
+  if (status === "created" || status === "pending" || status === "in progress") return 1;
+  return 0;
+}
+
 function stablePaymentEventId(txn: PayUTransaction): string | null {
   const txnid = String(txn.txnid || "").trim();
   if (!txnid) return null;
@@ -111,19 +118,17 @@ function stablePaymentEventId(txn: PayUTransaction): string | null {
 }
 
 function buildSyncedPaymentRows(transactions: PayUTransaction[]): SyncedPaymentRow[] {
-  const rows: SyncedPaymentRow[] = [];
-  const seenIds = new Set<string>();
+  const rowsById = new Map<string, SyncedPaymentRow>();
 
   for (const txn of transactions) {
     const txnid = String(txn.txnid || "").trim();
     const id = stablePaymentEventId(txn);
     const createdAt = parsePayUAddedOnToIso(txn.addedon);
     const amount = resolvePayUAmountToPaise(txn);
-    if (!txnid || !id || !createdAt || amount <= 0 || seenIds.has(id)) continue;
+    if (!txnid || !id || !createdAt || amount <= 0) continue;
 
-    seenIds.add(id);
     const paymentStatus = normalizePaymentStatus(txn.status);
-    rows.push({
+    const row: SyncedPaymentRow = {
       id,
       payu_txn_id: txnid,
       payu_payment_id: String(txn.mihpayid || txn.id || "").trim() || null,
@@ -140,10 +145,15 @@ function buildSyncedPaymentRows(transactions: PayUTransaction[]): SyncedPaymentR
       payment_status: paymentStatus,
       fulfilled_at: paymentStatus === "paid" ? createdAt : null,
       created_at: createdAt,
-    });
+    };
+
+    const existing = rowsById.get(id);
+    if (!existing || paymentStatusPriority(paymentStatus) >= paymentStatusPriority(existing.payment_status)) {
+      rowsById.set(id, row);
+    }
   }
 
-  return rows;
+  return Array.from(rowsById.values());
 }
 
 // Fetch exchange rate
