@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { classifyPayUEvent } from "@/lib/finance-events";
 import { getPayUTransactions } from "@/lib/payu-api";
+import type { PayUTransaction } from "@/lib/payu-api";
 import { getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +38,22 @@ interface DailyMetaSpend {
   inr: number;
 }
 
+interface SyncedPaymentRow {
+  id: string;
+  payu_txn_id: string;
+  payu_payment_id: string | null;
+  type: string;
+  bundle_id: string | null;
+  feature: string | null;
+  coins: number | null;
+  customer_email: string | null;
+  amount: number;
+  currency: "INR";
+  payment_status: string;
+  fulfilled_at: string | null;
+  created_at: string;
+}
+
 function normalizePurchaseType(value: string | null | undefined): string {
   const normalized = String(value || "").trim().toLowerCase();
   return normalized || "bundle";
@@ -45,6 +62,88 @@ function normalizePurchaseType(value: string | null | undefined): string {
 function isBundlePurchaseType(value: string | null | undefined): boolean {
   const normalized = normalizePurchaseType(value);
   return normalized === "bundle" || normalized === "bundle_payment";
+}
+
+function parsePayUAddedOnToIso(addedon?: string): string | null {
+  if (!addedon) return null;
+  const dt = new Date(addedon.replace(" ", "T") + "+05:30");
+  return Number.isNaN(dt.getTime()) ? null : dt.toISOString();
+}
+
+function resolvePayUAmountToPaise(txn: PayUTransaction): number {
+  const grossAmount = Math.abs(Number.parseFloat(String(txn.amount || "0")));
+  const transactionFee = Math.abs(Number.parseFloat(String(txn.transaction_fee || "0")));
+  const netAmount = Math.abs(Number.parseFloat(String(txn.net_amount_debit || "0")));
+  const resolved = grossAmount > 0 ? grossAmount : transactionFee > 0 ? transactionFee : netAmount;
+  return Number.isFinite(resolved) && resolved > 0 ? Math.round(resolved * 100) : 0;
+}
+
+function normalizePaymentStatus(status?: string): string {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (normalized === "success" || normalized === "captured" || normalized === "settled" || normalized === "paid") {
+    return "paid";
+  }
+  return normalized || "created";
+}
+
+function stablePaymentEventId(txn: PayUTransaction): string | null {
+  const txnid = String(txn.txnid || "").trim();
+  if (!txnid) return null;
+
+  const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
+  if (financial.kind !== "refund") {
+    return `pay_${txnid}`;
+  }
+
+  const refundKey = [
+    txnid,
+    txn.mihpayid || txn.id || "",
+    txn.amount || "",
+    txn.addedon || "",
+    txn.field9 || "",
+    txn.unmappedstatus || "",
+  ]
+    .join("_")
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
+    .slice(0, 180);
+
+  return `pay_refund_${refundKey}`;
+}
+
+function buildSyncedPaymentRows(transactions: PayUTransaction[]): SyncedPaymentRow[] {
+  const rows: SyncedPaymentRow[] = [];
+  const seenIds = new Set<string>();
+
+  for (const txn of transactions) {
+    const txnid = String(txn.txnid || "").trim();
+    const id = stablePaymentEventId(txn);
+    const createdAt = parsePayUAddedOnToIso(txn.addedon);
+    const amount = resolvePayUAmountToPaise(txn);
+    if (!txnid || !id || !createdAt || amount <= 0 || seenIds.has(id)) continue;
+
+    seenIds.add(id);
+    const paymentStatus = normalizePaymentStatus(txn.status);
+    rows.push({
+      id,
+      payu_txn_id: txnid,
+      payu_payment_id: String(txn.mihpayid || txn.id || "").trim() || null,
+      type: normalizePurchaseType(txn.udf2),
+      bundle_id: String(txn.udf3 || "").trim() || null,
+      feature: String(txn.udf4 || "").trim() || null,
+      coins: (() => {
+        const parsed = Number.parseInt(String(txn.udf5 || ""), 10);
+        return Number.isFinite(parsed) ? parsed : null;
+      })(),
+      customer_email: String(txn.email || "").trim().toLowerCase() || null,
+      amount,
+      currency: "INR",
+      payment_status: paymentStatus,
+      fulfilled_at: paymentStatus === "paid" ? createdAt : null,
+      created_at: createdAt,
+    });
+  }
+
+  return rows;
 }
 
 // Fetch exchange rate
@@ -365,7 +464,7 @@ async function buildProfitSheetRows(
   startDate: string,
   endDate: string,
   exchangeRate: number
-): Promise<{ rows: ProfitSheetRow[]; source: string }> {
+): Promise<{ rows: ProfitSheetRow[]; source: string; paymentRows: SyncedPaymentRow[] }> {
   console.log(`Using exchange rate: ${exchangeRate}`);
 
   const metaSpendMap = await fetchMetaAdsDailySpend(startDate, endDate, exchangeRate);
@@ -390,6 +489,7 @@ async function buildProfitSheetRows(
 
   const payuFetchEnd = addDaysToIsoDate(endDate, 1);
   const payuTransactions = await getPayUTransactions(startDate, payuFetchEnd);
+  const paymentRows = buildSyncedPaymentRows(payuTransactions);
   const financialRows: FinancialRow[] = payuTransactions
     .map((txn) => {
       const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
@@ -459,7 +559,7 @@ async function buildProfitSheetRows(
     };
   });
 
-  return { rows, source: sourceUsed };
+  return { rows, source: sourceUsed, paymentRows };
 }
 
 function toDbRow(row: ProfitSheetRow, exchangeRate: number, source: string) {
@@ -531,6 +631,19 @@ async function syncProfitSheetRows(
   exchangeRate: number
 ): Promise<{ rows: ProfitSheetRow[]; source: string }> {
   const result = await buildProfitSheetRows(startDate, endDate, exchangeRate);
+  if (result.paymentRows.length > 0) {
+    for (let i = 0; i < result.paymentRows.length; i += 500) {
+      const batch = result.paymentRows.slice(i, i + 500);
+      const { error } = await supabase
+        .from("payments")
+        .upsert(batch, { onConflict: "id" });
+
+      if (error) {
+        throw new Error(error.message || "Failed to sync PayU payment rows");
+      }
+    }
+  }
+
   if (result.rows.length > 0) {
     const { error } = await supabase
       .from("profit_sheet")

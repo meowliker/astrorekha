@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { classifyStoredPaymentEvent } from "@/lib/finance-events";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -55,6 +56,19 @@ interface ProfitSheetRow {
   bundlePurchases: number;
   salesCount: number;
   refundCount: number;
+}
+
+interface StoredPaymentRow {
+  id: string;
+  amount: number | string | null;
+  payment_status: string | null;
+  created_at: string | null;
+  type?: string | null;
+  bundle_id?: string | null;
+  currency?: string | null;
+  user_id?: string | null;
+  customer_email?: string | null;
+  payu_txn_id?: string | null;
 }
 type MatrixDayMode = "calendar_ist" | "business_1130_ist";
 const IST_TIMEZONE = "Asia/Kolkata";
@@ -125,6 +139,33 @@ async function readProfitSheetRows(supabase: any, startDate: string, endDate: st
   }
 
   return (data || []).map(fromProfitSheetDbRow);
+}
+
+async function readPaymentRows(supabase: any, startIso: string, endIso: string): Promise<StoredPaymentRow[]> {
+  const rows: StoredPaymentRow[] = [];
+  const pageSize = 1000;
+
+  for (let from = 0; ; from += pageSize) {
+    const to = from + pageSize - 1;
+    const { data, error } = await supabase
+      .from("payments")
+      .select("id, amount, payment_status, created_at, type, bundle_id, currency, user_id, customer_email, payu_txn_id")
+      .gte("created_at", startIso)
+      .lte("created_at", endIso)
+      .order("created_at", { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      throw new Error(error.message || "Failed to read payments");
+    }
+
+    const pageRows = (data || []) as StoredPaymentRow[];
+    rows.push(...pageRows);
+
+    if (pageRows.length < pageSize) break;
+  }
+
+  return rows;
 }
 
 function sumProfitSheetRows(rows: ProfitSheetRow[]) {
@@ -467,6 +508,18 @@ function buildDailySalesSeries(
   return rows;
 }
 
+function addSalesEntry(
+  map: Map<string, { count: number; revenueInr: number }>,
+  key: string,
+  countDelta: number,
+  revenueDelta: number
+) {
+  const entry = map.get(key) || { count: 0, revenueInr: 0 };
+  entry.count += countDelta;
+  entry.revenueInr += revenueDelta;
+  map.set(key, entry);
+}
+
 async function fetchGoogleAnalyticsData(
   startDate: string,
   endDate: string,
@@ -793,28 +846,32 @@ export async function GET(request: NextRequest) {
     const startIso = `${startDate}T00:00:00.000Z`;
     const endDateForMode = dayMode === "business_1130_ist" ? shiftIsoDate(endDate, 1) : endDate;
     const endIso = `${endDateForMode}T23:59:59.999Z`;
+    const paymentFetchStart = `${shiftIsoDate(startDate, -1)}T00:00:00.000Z`;
+    const paymentFetchEnd = `${shiftIsoDate(endDate, 1)}T23:59:59.999Z`;
     const profitSheetRows = await readProfitSheetRows(supabase, startDate, endDate);
     const profitTotals = sumProfitSheetRows(profitSheetRows);
+    const inRange = (dayKey: string) => dayKey >= startDate && dayKey <= endDate;
 
-    const { data: paymentRows } = await supabase
-      .from("payments")
-      .select("id, amount, payment_status, created_at, type, bundle_id, currency, user_id, customer_email, payu_txn_id")
-      .gte("created_at", startIso)
-      .lte("created_at", endIso)
-      .order("created_at", { ascending: false })
-      .limit(10000);
+    const paymentRows = await readPaymentRows(supabase, paymentFetchStart, paymentFetchEnd);
 
-    const pendingRows = (paymentRows || []).filter((row) => {
+    const selectedPaymentRows = paymentRows.filter((row) => {
+      if (!row.created_at) return false;
+      const createdAt = new Date(row.created_at);
+      if (Number.isNaN(createdAt.getTime())) return false;
+      return inRange(getMatrixDateGroup(createdAt, dayMode).dayKey);
+    });
+
+    const pendingRows = selectedPaymentRows.filter((row) => {
       const status = normalizeStatus(row.payment_status);
       return status === "created" || status === "pending";
     });
-    const failedRows = (paymentRows || []).filter((row) => normalizeStatus(row.payment_status) === "failed");
-
-    const inRange = (dayKey: string) => dayKey >= startDate && dayKey <= endDate;
+    const failedRows = selectedPaymentRows.filter((row) => normalizeStatus(row.payment_status) === "failed");
 
     const salesHourlyMap = new Map<string, { count: number; revenueInr: number }>();
     const salesDailyMap = new Map<string, { count: number; revenueInr: number }>();
     const salesWeekdayMap = new Map<string, { count: number; revenueInr: number }>();
+    const matrixDayHourMap = new Map<string, { count: number; revenueInr: number }>();
+    const matrixDailyPaymentRevenueMap = new Map<string, number>();
 
     for (const row of profitSheetRows) {
       if (!inRange(row.date)) continue;
@@ -832,9 +889,32 @@ export async function GET(request: NextRequest) {
       salesWeekdayMap.set(weekday, weekdayEntry);
     }
 
+    for (const row of selectedPaymentRows) {
+      if (!row.created_at) continue;
+      const financial = classifyStoredPaymentEvent(row.payment_status, row.amount);
+      if (financial.kind !== "sale") continue;
+
+      const createdAt = new Date(row.created_at);
+      if (Number.isNaN(createdAt.getTime())) continue;
+      const grouped = getMatrixDateGroup(createdAt, dayMode);
+      if (!inRange(grouped.dayKey)) continue;
+
+      const hourLabel = formatHourLabel(grouped.hour, dayMode);
+      addSalesEntry(salesHourlyMap, hourLabel, 1, financial.amount);
+
+      const matrixGrouped = getMatrixDateGroup(createdAt, matrixDayMode);
+      if (!inRange(matrixGrouped.dayKey)) continue;
+      const matrixKey = `${matrixGrouped.dayKey}|${matrixGrouped.hour}`;
+      addSalesEntry(matrixDayHourMap, matrixKey, 1, financial.amount);
+      matrixDailyPaymentRevenueMap.set(
+        matrixGrouped.dayKey,
+        (matrixDailyPaymentRevenueMap.get(matrixGrouped.dayKey) || 0) + financial.amount
+      );
+    }
+
     const peakSalesHour = pickTopSalesMetric(salesHourlyMap, "N/A");
     const peakSalesDay = pickTopSalesMetric(salesWeekdayMap, "N/A");
-    const salesHourlySeries: SalesSeriesPoint[] = [];
+    const salesHourlySeries = buildHourlySalesSeriesByMode(salesHourlyMap, dayMode);
     const salesDailySeries = buildDailySalesSeries(salesDailyMap, startDate, endDate);
     const salesWeekdaySeries = buildWeekdaySalesSeries(salesWeekdayMap);
 
@@ -843,8 +923,34 @@ export async function GET(request: NextRequest) {
       ? Number((exchangeSourceRow.adsCostINR / exchangeSourceRow.adsCostUSD).toFixed(2))
       : await fetchExchangeRate();
     const hasMetaSpend = profitTotals.adsCostINR > 0;
-    // The profit_sheet ledger is daily, so Analytics must not invent hour-level revenue/profit.
     const hourlyProfitabilityRows: HourlyProfitabilityPoint[] = [];
+    for (const row of profitSheetRows) {
+      if (!inRange(row.date)) continue;
+      const dailyPaymentRevenue = matrixDailyPaymentRevenueMap.get(row.date) || 0;
+      const weekday = getWeekdayFromIsoDate(row.date);
+
+      for (let hour = 0; hour < 24; hour++) {
+        const hourLabel = formatHourLabel(hour, matrixDayMode);
+        const dayHour = matrixDayHourMap.get(`${row.date}|${hour}`) || { count: 0, revenueInr: 0 };
+        const revenueShare = dailyPaymentRevenue > 0
+          ? Math.max(dayHour.revenueInr, 0) / dailyPaymentRevenue
+          : 0;
+        const allocatedRevenue = row.revenue * revenueShare;
+        const allocatedProfit = row.netRevenue * revenueShare;
+        const allocatedAdsCostInr = row.adsCostINR * revenueShare;
+
+        hourlyProfitabilityRows.push({
+          date: row.date,
+          weekday,
+          hour,
+          label: hourLabel,
+          orderCount: dayHour.count,
+          revenueInr: Number(allocatedRevenue.toFixed(2)),
+          profitInr: Number(allocatedProfit.toFixed(2)),
+          roas: allocatedAdsCostInr > 0 ? Number((allocatedRevenue / allocatedAdsCostInr).toFixed(4)) : 0,
+        });
+      }
+    }
 
     const gaData = await fetchGoogleAnalyticsData(startDate, endDate, dayMode);
     const internalRouteData = await fetchInternalRouteAnalytics(startIso, endIso, dayMode, startDate, endDate);
@@ -860,7 +966,7 @@ export async function GET(request: NextRequest) {
       } as SourceStatus,
     };
 
-    const paymentStarts = paymentRows?.length || 0;
+    const paymentStarts = selectedPaymentRows.length;
     const paidOrders = profitTotals.paidOrders;
     const refundedOrders = profitTotals.refundCount;
     const totalRevenueInr = profitTotals.revenue;
