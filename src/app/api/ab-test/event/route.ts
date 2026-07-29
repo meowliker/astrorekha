@@ -22,12 +22,12 @@ async function ensureTestRowExists(supabase: ReturnType<typeof getSupabaseAdmin>
   const row = {
     id: testId,
     name: isCosmicBundleTest ? "Paywall Cosmic Bundle Test" : "Onboarding Layout A/B (QA)",
-    status: "active",
-    traffic_split: isCosmicBundleTest ? 0.3 : 0.5,
+    status: isCosmicBundleTest ? "completed" : "active",
+    traffic_split: isCosmicBundleTest ? 0 : 0.5,
     variants: isCosmicBundleTest
       ? {
-          A: { weight: 70, page: "current-bundles" },
-          B: { weight: 30, page: "cosmic-bundle" },
+          A: { weight: 100, page: "current-bundles" },
+          B: { weight: 0, page: "cosmic-bundle" },
         }
       : undefined,
     updated_at: now,
@@ -55,11 +55,23 @@ async function ensureTestRowExists(supabase: ReturnType<typeof getSupabaseAdmin>
 
   const patch: Record<string, unknown> = {};
   if (!existing.name) patch.name = row.name;
-  if (!existing.status) patch.status = row.status;
-  if (existing.traffic_split === null || existing.traffic_split === undefined) {
+  if (!existing.status || (isCosmicBundleTest && existing.status !== row.status)) patch.status = row.status;
+  if (
+    existing.traffic_split === null ||
+    existing.traffic_split === undefined ||
+    (isCosmicBundleTest && Number(existing.traffic_split) !== row.traffic_split)
+  ) {
     patch.traffic_split = row.traffic_split;
   }
-  if (isCosmicBundleTest && (!existing.variants?.A || !existing.variants?.B)) {
+  if (
+    isCosmicBundleTest &&
+    (
+      Number(existing.variants?.A?.weight) !== row.variants?.A.weight ||
+      Number(existing.variants?.B?.weight) !== row.variants?.B.weight ||
+      existing.variants?.A?.page !== row.variants?.A.page ||
+      existing.variants?.B?.page !== row.variants?.B.page
+    )
+  ) {
     patch.variants = row.variants;
   }
 

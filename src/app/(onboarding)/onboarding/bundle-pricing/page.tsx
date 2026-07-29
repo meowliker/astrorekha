@@ -14,14 +14,8 @@ import Link from "next/link";
 import Script from "next/script";
 import { usePricing } from "@/hooks/usePricing";
 import { getPaymentAttributionPayload } from "@/lib/attribution-client";
-import {
-  getABVisitorId,
-  shouldTrackRouteImpressionOnce,
-  trackABEvent,
-  type LayoutVariant,
-} from "@/lib/ab-test-tracking";
+type LayoutVariant = "A" | "B";
 
-const PAYWALL_COSMIC_BUNDLE_TEST_ID = "paywall-cosmic-bundle-v1";
 const COSMIC_BUNDLE_ID = "palm-birth-sketch-aura-astro";
 
 const predictionLabels = [
@@ -254,69 +248,12 @@ export default function BundlePricingPage() {
   }, [router]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const assignPaywallVariant = async () => {
-      const visitorId = getABVisitorId();
-      const resolvedUserId = userId || localStorage.getItem("astrorekha_user_id") || visitorId;
-
-      try {
-        const params = new URLSearchParams({
-          testId: PAYWALL_COSMIC_BUNDLE_TEST_ID,
-          visitorId,
-        });
-        if (resolvedUserId) params.set("userId", resolvedUserId);
-
-        const response = await fetch(`/api/ab-test?${params.toString()}`, { cache: "no-store" });
-        const data = await response.json();
-        const assignedVariant: LayoutVariant = data?.variant === "B" ? "B" : "A";
-        if (cancelled) return;
-
-        localStorage.setItem("astrorekha_ab_test_id", PAYWALL_COSMIC_BUNDLE_TEST_ID);
-        localStorage.setItem("astrorekha_layout_variant", assignedVariant);
-        localStorage.setItem("astrorekha_paywall_test_id", PAYWALL_COSMIC_BUNDLE_TEST_ID);
-        localStorage.setItem("astrorekha_paywall_variant", assignedVariant);
-        setPaywallVariant(assignedVariant);
-        setPaywallAssignmentReady(true);
-
-        if (
-          shouldTrackRouteImpressionOnce({
-            testId: PAYWALL_COSMIC_BUNDLE_TEST_ID,
-            variant: assignedVariant,
-            visitorId,
-            route: "/onboarding/bundle-pricing",
-          })
-        ) {
-          trackABEvent({
-            testId: PAYWALL_COSMIC_BUNDLE_TEST_ID,
-            variant: assignedVariant,
-            visitorId,
-            route: "/onboarding/bundle-pricing",
-            eventType: "impression",
-            metadata: {
-              source: "paywall-cosmic-bundle-test",
-              page: "/onboarding/bundle-pricing",
-            },
-          }).catch(() => {});
-        }
-      } catch (error) {
-        console.error("Failed to assign paywall variant:", error);
-        if (cancelled) return;
-        localStorage.setItem("astrorekha_ab_test_id", PAYWALL_COSMIC_BUNDLE_TEST_ID);
-        localStorage.setItem("astrorekha_layout_variant", "A");
-        localStorage.setItem("astrorekha_paywall_test_id", PAYWALL_COSMIC_BUNDLE_TEST_ID);
-        localStorage.setItem("astrorekha_paywall_variant", "A");
-        setPaywallVariant("A");
-        setPaywallAssignmentReady(true);
-      }
-    };
-
-    assignPaywallVariant();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [userId]);
+    localStorage.setItem("astrorekha_layout_variant", "A");
+    localStorage.removeItem("astrorekha_paywall_test_id");
+    localStorage.removeItem("astrorekha_paywall_variant");
+    setPaywallVariant("A");
+    setPaywallAssignmentReady(true);
+  }, []);
 
   // Load saved palm image and generate stats
   useEffect(() => {
@@ -525,8 +462,6 @@ export default function BundlePricingPage() {
           userId: userId || generateUserId(),
           email: localStorage.getItem("astrorekha_email") || "",
           firstName: localStorage.getItem("astrorekha_name") || "Customer",
-          paywallTestId: PAYWALL_COSMIC_BUNDLE_TEST_ID,
-          paywallVariant,
           attribution: getPaymentAttributionPayload(),
         }),
       });
@@ -543,19 +478,6 @@ export default function BundlePricingPage() {
         });
         pixelEvents.initiateCheckout(chargedAmountInr, [plan.name], data.txnId);
         pixelEvents.addPaymentInfo(chargedAmountInr, plan.name, data.txnId);
-        trackABEvent({
-          testId: PAYWALL_COSMIC_BUNDLE_TEST_ID,
-          variant: paywallVariant,
-          visitorId: getABVisitorId(),
-          route: "/onboarding/bundle-pricing",
-          eventType: "checkout_started",
-          metadata: {
-            bundleId: selectedPlan,
-            amount: chargedAmountInr,
-            currency: "INR",
-          },
-        }).catch(() => {});
-        
         // Open PayU Bolt checkout
         const bolt = (window as Window & { bolt?: PayUBolt }).bolt;
         if (!bolt) {

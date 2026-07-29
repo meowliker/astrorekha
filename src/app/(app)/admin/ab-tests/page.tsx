@@ -590,10 +590,10 @@ export default function ABTestsPage() {
         body: JSON.stringify({
           testId: PAYWALL_COSMIC_BUNDLE_TEST_ID,
           name: "Paywall Cosmic Bundle Test",
-          status: "active",
+          status: "completed",
           variants: {
-            A: { weight: 70, page: "current-bundles" },
-            B: { weight: 30, page: "cosmic-bundle" },
+            A: { weight: 100, page: "current-bundles" },
+            B: { weight: 0, page: "cosmic-bundle" },
           },
         }),
       });

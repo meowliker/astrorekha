@@ -54,6 +54,48 @@ function getNormalizedVariants(
   };
 }
 
+function getCompletedCosmicBundleTest(testData: any = {}) {
+  const now = new Date().toISOString();
+  return {
+    ...testData,
+    id: testData?.id || PAYWALL_COSMIC_BUNDLE_TEST_ID,
+    name: testData?.name || "Paywall Cosmic Bundle Test",
+    status: "completed",
+    traffic_split: 0,
+    variants: {
+      A: { weight: 100, page: "current-bundles" },
+      B: { weight: 0, page: "cosmic-bundle" },
+    },
+    created_at: testData?.created_at || now,
+    updated_at: now,
+  };
+}
+
+async function completeCosmicBundleTest(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  testData: any
+) {
+  const completedTest = getCompletedCosmicBundleTest(testData);
+  const { error } = await supabase.from("ab_tests").upsert(
+    {
+      id: completedTest.id,
+      name: completedTest.name,
+      status: completedTest.status,
+      traffic_split: completedTest.traffic_split,
+      variants: completedTest.variants,
+      created_at: completedTest.created_at,
+      updated_at: completedTest.updated_at,
+    },
+    { onConflict: "id" }
+  );
+
+  if (error) {
+    console.error("[ab-test] failed to complete cosmic bundle test", { error });
+  }
+
+  return completedTest;
+}
+
 function normalizeVariant(variant: unknown, isOnboardingLayoutTest: boolean): "A" | "B" {
   if (isOnboardingLayoutTest) return "B";
   return variant === "B" ? "B" : "A";
@@ -146,8 +188,8 @@ export async function GET(request: NextRequest) {
 	        : isPaywallCosmicBundleTest
 	        ? "Paywall Cosmic Bundle Test"
 	        : "Pricing Page A/B Test",
-	      status: isPaywallDefaultPlanTest || isPaywallGstTest ? "completed" : "active",
-      traffic_split: isPaywallDefaultPlanTest || isPaywallGstTest ? 1 : isPaywallCosmicBundleTest ? 0.3 : 0.5,
+	      status: isPaywallDefaultPlanTest || isPaywallGstTest || isPaywallCosmicBundleTest ? "completed" : "active",
+      traffic_split: isPaywallDefaultPlanTest || isPaywallGstTest ? 1 : isPaywallCosmicBundleTest ? 0 : 0.5,
       variants: isOnboardingLayoutTest
         ? {
             A: { weight: 0, page: "bundle-pricing" },
@@ -165,8 +207,8 @@ export async function GET(request: NextRequest) {
 	          }
 	        : isPaywallCosmicBundleTest
 	        ? {
-	            A: { weight: 70, page: "current-bundles" },
-	            B: { weight: 30, page: "cosmic-bundle" },
+	            A: { weight: 100, page: "current-bundles" },
+	            B: { weight: 0, page: "cosmic-bundle" },
 	          }
 	        : {
             A: { weight: 50, page: "step-17" },
@@ -240,7 +282,7 @@ export async function GET(request: NextRequest) {
 	      const variant = isOnboardingLayoutTest || isPaywallDefaultPlanTest || isPaywallGstTest
           ? "B"
           : isPaywallCosmicBundleTest
-          ? Math.random() < 0.3 ? "B" : "A"
+          ? "A"
           : Math.random() < 0.5
           ? "A"
           : "B";
@@ -250,6 +292,17 @@ export async function GET(request: NextRequest) {
         variant,
         page: pageForVariant(variant, defaultTest),
         test: defaultTest,
+      });
+    }
+
+    if (isPaywallCosmicBundleTest) {
+      const completedTest = await completeCosmicBundleTest(supabase, testData);
+      return NextResponse.json({
+        testId,
+        variant: "A",
+        page: pageForVariant("A", completedTest),
+        test: completedTest,
+        message: "Test is completed, defaulting to winning variant A",
       });
     }
 
