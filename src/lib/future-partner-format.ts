@@ -1,11 +1,8 @@
-export function toPartnerInitial(value: unknown): string {
+export function toPartnerDisplayName(value: unknown): string {
   const raw = String(value || "").trim();
-  if (!raw) return "A.";
+  if (!raw) return "Aarav";
 
   const normalized = raw.replace(/\s+/g, " ").trim();
-  const firstToken = normalized.split(" ")[0] || "";
-  const match = firstToken.match(/[A-Za-z]/);
-  const firstLetter = match?.[0]?.toUpperCase();
-
-  return firstLetter ? `${firstLetter}.` : "A.";
+  const firstName = normalized.split(" ")[0]?.replace(/[^A-Za-z]/g, "") || "";
+  return firstName || "Aarav";
 }

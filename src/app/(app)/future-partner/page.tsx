@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Heart, Loader2, Sparkles, CalendarDays, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { toPartnerInitial } from "@/lib/future-partner-format";
+import { toPartnerDisplayName } from "@/lib/future-partner-format";
 import { useUserStore } from "@/lib/user-store";
 import type { FuturePartnerReportData } from "@/lib/future-partner-report";
 import ReportDisclaimer from "@/components/ReportDisclaimer";
@@ -19,6 +19,7 @@ interface FuturePartnerStatusResponse {
 export default function FuturePartnerPage() {
   const router = useRouter();
   const { unlockedFeatures } = useUserStore();
+  const bootStartedRef = useRef(false);
 
   const [status, setStatus] = useState<FuturePartnerStatusResponse["status"]>("not_started");
   const [report, setReport] = useState<FuturePartnerReportData | null>(null);
@@ -45,6 +46,26 @@ export default function FuturePartnerPage() {
     []
   );
 
+  const waitForGeneratedReport = useCallback(
+    async (uid: string) => {
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const latestStatus = await fetchStatus(uid);
+
+        if (latestStatus.status === "complete" && latestStatus.report) {
+          return latestStatus.report;
+        }
+
+        if (latestStatus.status === "failed") {
+          throw new Error("Failed to generate report.");
+        }
+      }
+
+      throw new Error("Report is taking longer than expected. Please try again.");
+    },
+    [fetchStatus]
+  );
+
   const generateReport = useCallback(
     async (uid: string) => {
       setError("");
@@ -58,11 +79,25 @@ export default function FuturePartnerPage() {
         });
 
         const json = await response.json().catch(() => ({}));
+        if (response.status === 202 || json?.status === "generating") {
+          const generatedReport = await waitForGeneratedReport(uid);
+          setStatus("complete");
+          setReport(generatedReport);
+          return;
+        }
+
         if (!response.ok) {
           throw new Error(json?.message || "Failed to generate report.");
         }
 
         const nextReport = (json?.report || null) as FuturePartnerReportData | null;
+        if (!nextReport) {
+          const generatedReport = await waitForGeneratedReport(uid);
+          setStatus("complete");
+          setReport(generatedReport);
+          return;
+        }
+
         setStatus("complete");
         setReport(nextReport);
       } catch (err: any) {
@@ -72,10 +107,13 @@ export default function FuturePartnerPage() {
         setIsGenerating(false);
       }
     },
-    []
+    [waitForGeneratedReport]
   );
 
   useEffect(() => {
+    if (bootStartedRef.current) return;
+    bootStartedRef.current = true;
+
     const boot = async () => {
       try {
         setLoading(true);
@@ -143,9 +181,6 @@ export default function FuturePartnerPage() {
             </div>
             <div>
               <h1 className="text-2xl font-semibold text-white">Future Partner Report</h1>
-              <p className="text-xs text-white/60">
-                Entertainment-only cosmic prediction for your marriage journey
-              </p>
             </div>
           </div>
 
@@ -176,8 +211,8 @@ export default function FuturePartnerPage() {
               className="space-y-4"
             >
               <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 to-fuchsia-500/10 p-4">
-                <p className="text-xs uppercase tracking-wide text-white/60">Predicted Partner Initial</p>
-                <p className="mt-1 text-2xl font-bold text-white">{toPartnerInitial(report.partnerName)}</p>
+                <p className="text-xs uppercase tracking-wide text-white/60">Predicted Partner Name</p>
+                <p className="mt-1 text-2xl font-bold text-white">{toPartnerDisplayName(report.partnerName)}</p>
 
                 <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                   <div className="rounded-xl border border-white/10 bg-black/20 p-2">
@@ -241,7 +276,7 @@ export default function FuturePartnerPage() {
             </motion.div>
           ) : null}
 
-          <ReportDisclaimer />
+          <ReportDisclaimer text="The predictions are not 100% accurate and should not be treated as professional advice." />
         </div>
       </div>
     </div>

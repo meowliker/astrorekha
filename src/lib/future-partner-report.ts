@@ -1,6 +1,6 @@
 import { anthropic } from "@/lib/anthropic";
 import { logClaudeUsage } from "@/lib/ai-usage-logger";
-import { toPartnerInitial } from "@/lib/future-partner-format";
+import { toPartnerDisplayName } from "@/lib/future-partner-format";
 
 export interface FuturePartnerReportData {
   partnerName: string;
@@ -123,7 +123,7 @@ function parseReportJson(raw: string): FuturePartnerReportData {
     ? Math.max(0, Math.min(100, Math.round(scoreRaw)))
     : 72;
 
-  const partnerName = toPartnerInitial(requireText(parsed.partnerName, "partnerName"));
+  const partnerName = toPartnerDisplayName(requireText(parsed.partnerName, "partnerName"));
   const marriageYear = requireText(parsed.marriageYear, "marriageYear");
   const partnerAgeAtMarriage = requireText(parsed.partnerAgeAtMarriage, "partnerAgeAtMarriage");
   const relationshipTheme = requireText(parsed.relationshipTheme, "relationshipTheme");
@@ -217,7 +217,7 @@ Strict requirements:
 1. Return VALID JSON only. No markdown, no explanation.
 2. Output keys exactly:
 {
-  "partnerName": "single uppercase initial only, formatted like A.",
+  "partnerName": "one plausible Indian first name only, formatted like Aarav",
   "marriageYear": "YYYY",
   "partnerAgeAtMarriage": "number",
   "relationshipTheme": "short phrase",
@@ -228,7 +228,7 @@ Strict requirements:
   "growthAreas": ["point", "point"],
   "guidance": "2-3 sentences"
 }
-3. Use only one plausible initial for the future partner name, formatted like A.
+3. Use one plausible future partner first name only. Do not include a surname, last initial, or initials-only output.
 4. Keep tone warm and practical. This is an entertainment-style astrological insight.
 5. Do not include uncertainty language like "cannot predict".`;
 

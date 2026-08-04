@@ -35,6 +35,15 @@ function getSessionUserId(request: NextRequest): string | null {
   return null;
 }
 
+function isRecentGeneratingRow(row: any): boolean {
+  if (row?.status !== "generating") return false;
+
+  const updatedAtMs = Date.parse(String(row?.updated_at || row?.created_at || ""));
+  if (!Number.isFinite(updatedAtMs)) return true;
+
+  return Date.now() - updatedAtMs < 2 * 60 * 1000;
+}
+
 export async function POST(request: NextRequest) {
   const userId = getSessionUserId(request);
   if (!userId) {
@@ -80,6 +89,67 @@ export async function POST(request: NextRequest) {
   }
 
   const nowIso = new Date().toISOString();
+  if (isRecentGeneratingRow(existingRow)) {
+    return NextResponse.json(
+      {
+        success: true,
+        status: "generating",
+        message: "Future partner report generation is already in progress.",
+      },
+      { status: 202 }
+    );
+  }
+
+  let generationRow = existingRow;
+  if (!existingRow) {
+    const { data: insertedRow, error: insertError } = await supabase
+      .from("future_partner_reports")
+      .insert({
+        user_id: userId,
+        status: "generating",
+        report_data: {},
+        created_at: nowIso,
+        updated_at: nowIso,
+      })
+      .select("*")
+      .maybeSingle();
+
+    if (insertError) {
+      if (insertError.code === "23505") {
+        return NextResponse.json(
+          {
+            success: true,
+            status: "generating",
+            message: "Future partner report generation is already in progress.",
+          },
+          { status: 202 }
+        );
+      }
+
+      console.error("[future-partner/generate] insert lock error", insertError);
+      return NextResponse.json({ error: "generation_failed" }, { status: 500 });
+    }
+
+    generationRow = insertedRow;
+  } else {
+    const { data: updatedRow, error: lockError } = await supabase
+      .from("future_partner_reports")
+      .update({
+        status: "generating",
+        report_data: existingRow.report_data || {},
+        updated_at: nowIso,
+      })
+      .eq("user_id", userId)
+      .select("*")
+      .maybeSingle();
+
+    if (lockError || !updatedRow) {
+      console.error("[future-partner/generate] update lock error", lockError);
+      return NextResponse.json({ error: "generation_failed" }, { status: 500 });
+    }
+
+    generationRow = updatedRow;
+  }
 
   const { data: userProfileById } = await supabase
     .from("user_profiles")
@@ -119,24 +189,6 @@ export async function POST(request: NextRequest) {
     ...(birthChart || {}),
   };
 
-  const { error: upsertError } = await supabase
-    .from("future_partner_reports")
-    .upsert(
-      {
-        user_id: userId,
-        status: "generating",
-        report_data: existingRow?.report_data || {},
-        created_at: existingRow?.created_at || nowIso,
-        updated_at: nowIso,
-      },
-      { onConflict: "user_id" }
-    );
-
-  if (upsertError) {
-    console.error("[future-partner/generate] upsert error", upsertError);
-    return NextResponse.json({ error: "generation_failed" }, { status: 500 });
-  }
-
   try {
     const report = await generateFuturePartnerReport({
       user,
@@ -144,7 +196,7 @@ export async function POST(request: NextRequest) {
       chartData,
       usageLogContext: {
         userId,
-        reportId: existingRow?.id || null,
+        reportId: generationRow?.id || null,
       },
     });
 
