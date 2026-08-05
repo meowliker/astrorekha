@@ -184,10 +184,10 @@ export async function sendEmail(
   to: { email: string; name?: string },
   subject: string,
   htmlContent: string
-) {
+): Promise<boolean> {
   if (!BREVO_API_KEY) {
     console.warn("[Brevo] API key not configured, skipping sendEmail");
-    return;
+    return false;
   }
 
   const api = getTransactionalApi();
@@ -200,8 +200,10 @@ export async function sendEmail(
 
   try {
     await api.sendTransacEmail(email);
+    return true;
   } catch (err: any) {
     console.error("[Brevo] sendEmail error:", err?.body || err?.message || err);
+    return false;
   }
 }
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { sendEmail } from "@/lib/brevo";
 import nodemailer from "nodemailer";
 
 // Generate 6-digit OTP
@@ -65,99 +66,88 @@ export async function POST(request: NextRequest) {
         created_at: new Date().toISOString(),
       }, { onConflict: "email" });
 
-    // Send email with OTP
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      </head>
+      <body bgcolor="#0f0a1a" style="margin: 0; padding: 0; background: linear-gradient(180deg, #0f0a1a 0%, #1a0f2e 50%, #0f0a1a 100%); background-color: #0f0a1a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; -webkit-font-smoothing: antialiased;">
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#0f0a1a" style="background: linear-gradient(180deg, #0f0a1a 0%, #1a0f2e 50%, #0f0a1a 100%); background-color: #0f0a1a;">
+          <tr>
+            <td align="center" valign="top" style="padding: 40px 20px;">
+              <table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 480px;">
+                <tr>
+                  <td align="center" style="padding-bottom: 32px;">
+                    <h1 style="color: #ffffff; font-size: 28px; margin: 0; font-weight: 600;">✨ AstroRekha</h1>
+                    <p style="color: #9CA3AF; font-size: 14px; margin: 8px 0 0 0;">Your Cosmic Journey Awaits</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td bgcolor="#1a1525" style="background-color: #1a1525; border-radius: 16px; padding: 32px; border: 1px solid #2d2640;">
+                    <table width="100%" border="0" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td align="center">
+                          <h2 style="color: #c4b5fd; font-size: 18px; margin: 0 0 8px 0; font-weight: 500;">Your Verification Code</h2>
+                          <p style="color: #9CA3AF; font-size: 14px; margin: 0 0 24px 0;">
+                            Enter this code to sign in to your AstroRekha account
+                          </p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td align="center" style="padding: 16px 0 24px 0;">
+                          <table border="0" cellpadding="0" cellspacing="0" bgcolor="#251d35" style="background-color: #251d35; border: 2px solid #A855F7; border-radius: 12px;">
+                            <tr>
+                              <td align="center" style="padding: 20px 32px;">
+                                <span style="font-size: 32px; font-weight: bold; color: #A855F7; letter-spacing: 6px; font-family: 'Courier New', monospace;">${otp}</span>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td align="center">
+                          <p style="color: #6B7280; font-size: 12px; margin: 0; line-height: 1.5;">
+                            This code expires in 10 minutes.<br>If you didn't request this code, please ignore this email.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="padding-top: 32px;">
+                    <p style="color: #4B5563; font-size: 12px; margin: 0;">
+                      © ${new Date().getFullYear()} AstroRekha. All rights reserved.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `;
+
+    // Send email with OTP. Prefer Brevo so delivery is traceable in the dashboard.
+    const sentViaBrevo = await sendEmail(
+      { email: normalizedEmail },
+      "Your AstroRekha Verification Code",
+      html
+    );
+
+    if (!sentViaBrevo && process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
       const transporter = createTransporter();
       
       await transporter.sendMail({
         from: `"AstroRekha" <${process.env.EMAIL_USER}>`,
         to: normalizedEmail,
         subject: "Your AstroRekha Verification Code",
-        html: `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          </head>
-          <body bgcolor="#0f0a1a" style="margin: 0; padding: 0; background: linear-gradient(180deg, #0f0a1a 0%, #1a0f2e 50%, #0f0a1a 100%); background-color: #0f0a1a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; -webkit-font-smoothing: antialiased;">
-            <table width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#0f0a1a" style="background: linear-gradient(180deg, #0f0a1a 0%, #1a0f2e 50%, #0f0a1a 100%); background-color: #0f0a1a;">
-              <tr>
-                <td align="center" valign="top" style="padding: 40px 20px;">
-                  <table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 480px;">
-                    <!-- Header -->
-                    <tr>
-                      <td align="center" style="padding-bottom: 32px;">
-                        <table border="0" cellpadding="0" cellspacing="0">
-                          <tr>
-                            <td align="center">
-                              <h1 style="color: #ffffff; font-size: 28px; margin: 0; font-weight: 600;">✨ AstroRekha</h1>
-                            </td>
-                          </tr>
-                          <tr>
-                            <td align="center" style="padding-top: 8px;">
-                              <p style="color: #9CA3AF; font-size: 14px; margin: 0;">Your Cosmic Journey Awaits</p>
-                            </td>
-                          </tr>
-                        </table>
-                      </td>
-                    </tr>
-                    
-                    <!-- Main Card -->
-                    <tr>
-                      <td bgcolor="#1a1525" style="background-color: #1a1525; border-radius: 16px; padding: 32px; border: 1px solid #2d2640;">
-                        <table width="100%" border="0" cellpadding="0" cellspacing="0">
-                          <tr>
-                            <td align="center">
-                              <h2 style="color: #c4b5fd; font-size: 18px; margin: 0 0 8px 0; font-weight: 500;">Your Verification Code</h2>
-                            </td>
-                          </tr>
-                          <tr>
-                            <td align="center" style="padding-bottom: 24px;">
-                              <p style="color: #9CA3AF; font-size: 14px; margin: 0;">
-                                Enter this code to sign in to your AstroRekha account
-                              </p>
-                            </td>
-                          </tr>
-                          <tr>
-                            <td align="center" style="padding: 16px 0 24px 0;">
-                              <table border="0" cellpadding="0" cellspacing="0" bgcolor="#251d35" style="background-color: #251d35; border: 2px solid #A855F7; border-radius: 12px;">
-                                <tr>
-                                  <td align="center" style="padding: 20px 32px;">
-                                    <span style="font-size: 32px; font-weight: bold; color: #A855F7; letter-spacing: 6px; font-family: 'Courier New', monospace;">${otp}</span>
-                                  </td>
-                                </tr>
-                              </table>
-                            </td>
-                          </tr>
-                          <tr>
-                            <td align="center">
-                              <p style="color: #6B7280; font-size: 12px; margin: 0; line-height: 1.5;">
-                                This code expires in 10 minutes.<br>If you didn't request this code, please ignore this email.
-                              </p>
-                            </td>
-                          </tr>
-                        </table>
-                      </td>
-                    </tr>
-                    
-                    <!-- Footer -->
-                    <tr>
-                      <td align="center" style="padding-top: 32px;">
-                        <p style="color: #4B5563; font-size: 12px; margin: 0;">
-                          © ${new Date().getFullYear()} AstroRekha. All rights reserved.
-                        </p>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-            </table>
-          </body>
-          </html>
-        `,
+        html,
       });
-    } else {
+    } else if (!sentViaBrevo) {
       if (process.env.NODE_ENV === "production") {
         return NextResponse.json(
           { success: false, error: "EMAIL_NOT_CONFIGURED", message: "Email sending is not configured" },
