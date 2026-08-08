@@ -25,6 +25,15 @@ CREATE TABLE IF NOT EXISTS public.users (
   
   -- Onboarding
   onboarding_flow TEXT,
+  gender TEXT,
+  relationship_status TEXT,
+  birth_month TEXT,
+  birth_day TEXT,
+  birth_year TEXT,
+  birth_hour TEXT,
+  birth_minute TEXT,
+  birth_period TEXT,
+  birth_place TEXT,
   scans_used INTEGER DEFAULT 0,
   scans_allowed INTEGER,
   
@@ -43,6 +52,8 @@ CREATE TABLE IF NOT EXISTS public.users (
   
   -- Sun sign (for horoscope emails)
   sun_sign TEXT,
+  moon_sign TEXT,
+  ascendant_sign TEXT,
 
   -- WhatsApp marketing consent
   whatsapp_number TEXT,
@@ -126,6 +137,8 @@ CREATE TABLE IF NOT EXISTS public.payments (
   feature TEXT,                           -- specific feature unlocked (e.g. 'prediction2026')
   coins INTEGER,                          -- coins purchased (for coin purchases)
   customer_email TEXT,
+  birth_details_snapshot JSONB,
+  birth_details_complete BOOLEAN NOT NULL DEFAULT FALSE,
   amount INTEGER NOT NULL,                -- amount in paise (INR smallest unit)
   paywall_test_id TEXT,
   paywall_variant TEXT,
@@ -143,6 +156,7 @@ CREATE TABLE IF NOT EXISTS public.payments (
 CREATE INDEX IF NOT EXISTS idx_payments_user_id ON public.payments(user_id);
 CREATE INDEX IF NOT EXISTS idx_payments_razorpay_order ON public.payments(razorpay_order_id);
 CREATE INDEX IF NOT EXISTS idx_payments_paywall_test ON public.payments(paywall_test_id, paywall_variant);
+CREATE INDEX IF NOT EXISTS idx_payments_birth_details_complete ON public.payments(birth_details_complete) WHERE birth_details_complete = TRUE;
 
 -- ============================================================
 -- 5. LEADS TABLE (abandoned checkout leads)

@@ -4,6 +4,12 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing, type PricingConfig } from "@/lib/pricing";
 import { sanitizePaymentAttribution, type PaymentAttributionPayload } from "@/lib/attribution";
 import { recordMarketingEvent } from "@/lib/marketing-events";
+import {
+  birthSnapshotToDbFields,
+  birthSnapshotToUserDbFields,
+  normalizeBirthDetailsSnapshot,
+  type BirthDetailsInput,
+} from "@/lib/birth-details";
 
 const GST_RATE_PERCENT = 18;
 
@@ -137,13 +143,15 @@ export async function POST(request: NextRequest) {
         paywallTestId?: string;
         paywallVariant?: "A" | "B";
         attribution?: PaymentAttributionPayload;
+        birthDetails?: BirthDetailsInput;
       };
-      const { type, bundleId, packageId, userId, email, firstName, paywallTestId, paywallVariant, attribution } = body;
+      const { type, bundleId, packageId, userId, email, firstName, paywallTestId, paywallVariant, attribution, birthDetails } = body;
       const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
       const normalizedPaywallTestId = typeof paywallTestId === "string" ? paywallTestId.trim() || null : null;
       const normalizedPaywallVariant = paywallVariant === "B" ? "B" : paywallVariant === "A" ? "A" : null;
       const shouldApplyExclusiveGst = type === "bundle";
       const sanitizedAttribution = sanitizePaymentAttribution(attribution);
+      const birthDetailsSnapshot = normalizeBirthDetailsSnapshot(birthDetails, "payu_initiate");
     const requestReferrer = request.headers.get("referer") || undefined;
     const refererAttribution = extractAttributionFromReferer(requestReferrer);
     const finalAttribution: PaymentAttributionPayload = {
@@ -278,6 +286,34 @@ export async function POST(request: NextRequest) {
       email: normalizedEmail,
     });
 
+    if (resolvedPaymentUserId && birthDetailsSnapshot) {
+      const nowIso = new Date().toISOString();
+      const birthFields = birthSnapshotToDbFields(birthDetailsSnapshot);
+      const userBirthFields = birthSnapshotToUserDbFields(birthDetailsSnapshot);
+
+      if (Object.keys(birthFields).length > 0) {
+        await supabase.from("user_profiles").upsert(
+          {
+            id: resolvedPaymentUserId,
+            email: normalizedEmail || null,
+            ...birthFields,
+            updated_at: nowIso,
+          },
+          { onConflict: "id" }
+        );
+      }
+
+      if (Object.keys(userBirthFields).length > 0) {
+        await supabase
+          .from("users")
+          .update({
+            ...userBirthFields,
+            updated_at: nowIso,
+          })
+          .eq("id", resolvedPaymentUserId);
+      }
+    }
+
     // Save payment record (await to ensure it's created before returning)
     const { error: paymentError } = await supabase.from("payments").insert({
       id: `pay_${txnId}`,
@@ -298,6 +334,8 @@ export async function POST(request: NextRequest) {
         total_amount: toPaise(amount),
         currency: "INR",
       payment_status: "created",
+      birth_details_snapshot: birthDetailsSnapshot,
+      birth_details_complete: birthDetailsSnapshot?.completeForBirthChart || false,
       fbclid: finalAttribution.fbclid || null,
       fbc: finalAttribution.fbc || null,
       fbp: finalAttribution.fbp || null,

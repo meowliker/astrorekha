@@ -5,6 +5,7 @@ import {
   type AstrocartographyBirthData,
 } from "@/lib/astrocartography-report";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getBirthDateParts, getBirthTime24 } from "@/lib/birth-details";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -146,11 +147,13 @@ function buildBirthData(userProfile: AnyRecord | null, user: AnyRecord | null): 
   const yearRaw = user?.birth_year || userProfile?.birth_year || "";
   const place = String(user?.birth_place || userProfile?.birth_place || "").trim();
 
-  const month = getMonthNumber(String(monthRaw));
-  const day = parseInt(String(dayRaw), 10);
-  const year = parseInt(String(yearRaw), 10);
+  const birthDate = getBirthDateParts({
+    birthMonth: monthRaw,
+    birthDay: dayRaw,
+    birthYear: yearRaw,
+  });
 
-  if (!month || !Number.isFinite(day) || !Number.isFinite(year) || !place) {
+  if (!birthDate || !place) {
     return null;
   }
 
@@ -159,20 +162,23 @@ function buildBirthData(userProfile: AnyRecord | null, user: AnyRecord | null): 
       ? !!userProfile.knows_birth_time
       : true;
 
-  const time = knowsBirthTime
-    ? to24HourParts(
-        String(user?.birth_hour || userProfile?.birth_hour || "12"),
-        String(user?.birth_minute || userProfile?.birth_minute || "0"),
-        String(user?.birth_period || userProfile?.birth_period || "PM")
-      )
-    : { hour: 12, minute: 0 };
+  const timeValue = knowsBirthTime
+    ? getBirthTime24({
+        birthHour: user?.birth_hour || userProfile?.birth_hour,
+        birthMinute: user?.birth_minute || userProfile?.birth_minute,
+        birthPeriod: user?.birth_period || userProfile?.birth_period,
+        knowsBirthTime,
+      })
+    : "12:00";
+  if (!timeValue) return null;
+  const [hour, minute] = timeValue.split(":").map((value) => Number(value));
 
   return {
-    day,
-    month,
-    year,
-    hour: time.hour,
-    minute: time.minute,
+    day: birthDate.day,
+    month: birthDate.month,
+    year: birthDate.year,
+    hour,
+    minute,
     place,
   };
 }

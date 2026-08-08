@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 // Two different APIs for different content
 const OHMANDA_API_URL = "https://ohmanda.com/api/horoscope";
 const NEWASTRO_API_URL = "https://newastro.vercel.app";
+const FREE_HOROSCOPE_API_URL = "https://freehoroscopeapi.com/api/v1/get-horoscope/daily";
 
 const ZODIAC_SIGNS = [
   "aries", "taurus", "gemini", "cancer", "leo", "virgo",
@@ -25,17 +26,34 @@ function getTomorrowDate(): string {
 
 // Fetch TODAY's horoscope from ohmanda.com
 async function fetchTodayHoroscope(sign: string): Promise<string> {
-  const response = await fetch(`${OHMANDA_API_URL}/${sign.toLowerCase()}/`, {
+  try {
+    const response = await fetch(`${OHMANDA_API_URL}/${sign.toLowerCase()}/`, {
+      method: "GET",
+      headers: { "Accept": "application/json" },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Ohmanda API request failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const horoscope = typeof data.horoscope === "string" ? data.horoscope.trim() : "";
+    if (horoscope) return horoscope;
+  } catch (error) {
+    console.warn("Primary horoscope provider failed:", error);
+  }
+
+  const fallbackResponse = await fetch(`${FREE_HOROSCOPE_API_URL}?sign=${encodeURIComponent(sign)}&day=TODAY`, {
     method: "GET",
     headers: { "Accept": "application/json" },
   });
 
-  if (!response.ok) {
-    throw new Error(`Ohmanda API request failed: ${response.status}`);
+  if (!fallbackResponse.ok) {
+    throw new Error(`Fallback horoscope API request failed: ${fallbackResponse.status}`);
   }
 
-  const data = await response.json();
-  return data.horoscope || "";
+  const fallbackData = await fallbackResponse.json();
+  return fallbackData.data?.horoscope || "";
 }
 
 // Fetch TOMORROW's horoscope from newastro.vercel.app (different source for different content)

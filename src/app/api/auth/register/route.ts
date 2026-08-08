@@ -57,10 +57,12 @@ export async function POST(request: NextRequest) {
 
     const supabase = getSupabaseAdmin();
 
+    const normalizedAnonId = typeof anonId === "string" ? anonId.trim() : "";
+
     // Check if user already exists
     const { data: existing, error: checkError } = await supabase
       .from("users")
-      .select("id")
+      .select("id, password_hash")
       .eq("email", normalizedEmail)
       .maybeSingle();
 
@@ -68,7 +70,13 @@ export async function POST(request: NextRequest) {
       console.error("Error checking existing user:", checkError);
     }
 
-    if (existing) {
+    const canCompleteExistingAnonAccount =
+      !!existing?.id &&
+      !existing.password_hash &&
+      !!normalizedAnonId &&
+      existing.id === normalizedAnonId;
+
+    if (existing && !canCompleteExistingAnonAccount) {
       return NextResponse.json(
         { success: false, error: "auth/email-already-in-use", message: "An account with this email already exists" },
         { status: 409 }
@@ -78,18 +86,19 @@ export async function POST(request: NextRequest) {
     // Hash password
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // Generate a unique user ID
-    const uid = crypto.randomUUID();
+    // Generate a unique user ID, or complete the paid anonymous account
+    // that was created before checkout finished.
+    const uid = canCompleteExistingAnonAccount ? existing.id : crypto.randomUUID();
     const now = new Date().toISOString();
 
     // If there's an anonymous user, migrate their data
     let migratedData: MigratedData = {};
 
-    if (anonId) {
+    if (normalizedAnonId) {
       const { data: anonUser } = await supabase
         .from("users")
         .select("*")
-        .eq("id", anonId)
+        .eq("id", normalizedAnonId)
         .maybeSingle();
 
       if (anonUser) {
@@ -119,7 +128,7 @@ export async function POST(request: NextRequest) {
       const { data: anonProfile } = await supabase
         .from("user_profiles")
         .select("*")
-        .eq("id", anonId)
+        .eq("id", normalizedAnonId)
         .single();
 
       if (anonProfile) {
@@ -134,10 +143,13 @@ export async function POST(request: NextRequest) {
       id: uid,
       email: normalizedEmail,
       password_hash: passwordHash,
-      created_at: now,
       updated_at: now,
       ...migratedData,
     };
+
+    if (!canCompleteExistingAnonAccount) {
+      userData.created_at = now;
+    }
 
     // Remove null/undefined values
     Object.keys(userData).forEach(key => {
@@ -169,14 +181,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Migrate related tables in background (non-blocking for faster registration)
-    if (anonId && anonId !== uid) {
+    if (normalizedAnonId && normalizedAnonId !== uid) {
       (async () => {
         try {
           await Promise.all([
-            supabase.from("payments").update({ user_id: uid }).eq("user_id", anonId),
-            supabase.from("palm_readings").update({ id: uid }).eq("id", anonId),
-            supabase.from("daily_insights").update({ id: uid }).eq("id", anonId),
-            supabase.from("soulmate_sketches").update({ user_id: uid }).eq("user_id", anonId),
+            supabase.from("payments").update({ user_id: uid }).eq("user_id", normalizedAnonId),
+            supabase.from("palm_readings").update({ id: uid }).eq("id", normalizedAnonId),
+            supabase.from("daily_insights").update({ id: uid }).eq("id", normalizedAnonId),
+            supabase.from("soulmate_sketches").update({ user_id: uid }).eq("user_id", normalizedAnonId),
           ]);
 
           // Migrate chat history from anon id -> registered uid.
@@ -184,7 +196,7 @@ export async function POST(request: NextRequest) {
           const { data: anonChat } = await supabase
             .from("chat_messages")
             .select("messages, created_at, updated_at")
-            .eq("id", anonId)
+            .eq("id", normalizedAnonId)
             .maybeSingle();
 
           if (anonChat?.messages?.length) {
@@ -208,11 +220,11 @@ export async function POST(request: NextRequest) {
               { onConflict: "id" }
             );
 
-            await supabase.from("chat_messages").delete().eq("id", anonId);
+            await supabase.from("chat_messages").delete().eq("id", normalizedAnonId);
           }
 
-          await supabase.from("user_profiles").delete().eq("id", anonId);
-          await supabase.from("users").delete().eq("id", anonId);
+          await supabase.from("user_profiles").delete().eq("id", normalizedAnonId);
+          await supabase.from("users").delete().eq("id", normalizedAnonId);
         } catch (err) {
           console.error("Background migration error:", err);
         }

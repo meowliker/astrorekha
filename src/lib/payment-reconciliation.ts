@@ -1,3 +1,10 @@
+import {
+  birthSnapshotToDbFields,
+  birthSnapshotToUserDbFields,
+  isDefaultBirthDate,
+  normalizeBirthDetailsSnapshot,
+} from "@/lib/birth-details";
+
 const SUCCESS_STATUSES = new Set(["paid", "success", "captured"]);
 
 const BUNDLE_FEATURES: Record<string, string[]> = {
@@ -47,6 +54,7 @@ interface PaymentRow {
   coins: number | null;
   payment_status: string | null;
   created_at: string | null;
+  birth_details_snapshot?: unknown | null;
 }
 
 function normalizeStatus(status?: string | null): string {
@@ -123,6 +131,30 @@ function getCoinContribution(row: PaymentRow): number {
   return 0;
 }
 
+function isBlank(value: unknown): boolean {
+  return value === null || value === undefined || String(value).trim() === "" || String(value).trim() === "--";
+}
+
+function pickMissingBirthFields(snapshotFields: Record<string, unknown>, existing: Record<string, any> | null | undefined) {
+  const picked: Record<string, unknown> = {};
+  const existingHasDefaultBirthDate = isDefaultBirthDate({
+    birthMonth: existing?.birth_month,
+    birthDay: existing?.birth_day,
+    birthYear: existing?.birth_year,
+  });
+
+  for (const [key, value] of Object.entries(snapshotFields)) {
+    if (value === null || value === undefined || value === "") continue;
+    if (key === "birth_month" || key === "birth_day" || key === "birth_year") {
+      if (existingHasDefaultBirthDate || isBlank(existing?.[key])) picked[key] = value;
+      continue;
+    }
+    if (isBlank(existing?.[key])) picked[key] = value;
+  }
+
+  return picked;
+}
+
 export async function reconcilePaidPaymentsForEmail({
   supabase,
   userId,
@@ -139,7 +171,7 @@ export async function reconcilePaidPaymentsForEmail({
 
   const { data: paidRows, error: paidRowsError } = await supabase
     .from("payments")
-    .select("id, user_id, type, bundle_id, feature, coins, payment_status, created_at")
+    .select("id, user_id, type, bundle_id, feature, coins, payment_status, created_at, birth_details_snapshot")
     .eq("customer_email", normalizedEmail)
     .in("payment_status", ["paid", "success", "captured"]);
 
@@ -165,7 +197,13 @@ export async function reconcilePaidPaymentsForEmail({
 
   const { data: userData } = await supabase
     .from("users")
-    .select("unlocked_features, coins, bundle_purchased")
+    .select("unlocked_features, coins, bundle_purchased, gender, relationship_status, birth_month, birth_day, birth_year, birth_hour, birth_minute, birth_period, birth_place, timezone, sun_sign, moon_sign, ascendant_sign")
+    .eq("id", userId)
+    .maybeSingle();
+
+  const { data: profileData } = await supabase
+    .from("user_profiles")
+    .select("gender, relationship_status, birth_month, birth_day, birth_year, birth_hour, birth_minute, birth_period, birth_place, knows_birth_time, timezone, sun_sign, moon_sign, ascendant_sign")
     .eq("id", userId)
     .maybeSingle();
 
@@ -213,7 +251,31 @@ export async function reconcilePaidPaymentsForEmail({
     updatePayload.bundle_purchased = latestBundleId;
   }
 
+  const latestSnapshotRow = [...rowsSorted]
+    .reverse()
+    .find((row) => !!row.birth_details_snapshot);
+  const birthSnapshot = normalizeBirthDetailsSnapshot(
+    latestSnapshotRow?.birth_details_snapshot as any,
+    "payment_reconciliation"
+  );
+  const snapshotFields = birthSnapshotToDbFields(birthSnapshot);
+  const userSnapshotFields = birthSnapshotToUserDbFields(birthSnapshot);
+  Object.assign(updatePayload, pickMissingBirthFields(userSnapshotFields, userData));
+
   await supabase.from("users").update(updatePayload).eq("id", userId);
+
+  const profileBirthFields = pickMissingBirthFields(snapshotFields, profileData);
+  if (Object.keys(profileBirthFields).length > 0) {
+    await supabase.from("user_profiles").upsert(
+      {
+        id: userId,
+        email: normalizedEmail,
+        ...profileBirthFields,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id" }
+    );
+  }
 
   return { hasPaidPayment: true, relinkedCount, latestBundleId };
 }

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import ReportCTA from "@/components/ReportCTA";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { supabase } from "@/lib/supabase";
+import { getBirthDateIso, getBirthTime24 } from "@/lib/birth-details";
 
 const MONTH_MAP: Record<string, number> = {
   January: 1, February: 2, March: 3, April: 4, May: 5, June: 6,
@@ -82,23 +83,18 @@ export default function BirthChartPage() {
     setBirthDate, setBirthTime, setBirthPlace
   } = useOnboardingStore();
   
-  const isMissingRequiredData = !birthMonth || !birthDay || !birthYear;
+  const validBirthDate = getBirthDateIso({ birthMonth, birthDay, birthYear });
+  const validBirthTime = getBirthTime24({ birthHour, birthMinute, birthPeriod, knowsBirthTime });
+  const isMissingRequiredData = !validBirthDate || !birthPlace.trim() || (knowsBirthTime && !validBirthTime);
   const ascendantLagna = getAscendantLagna(chartData);
 
   const getBirthDate = () => {
-    const month = getMonthNumber(birthMonth);
-    const day = parseInt(birthDay) || 1;
-    const year = parseInt(birthYear) || 2000;
-    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return getBirthDateIso({ birthMonth, birthDay, birthYear }) || "";
   };
 
   const getBirthTime = () => {
     if (!knowsBirthTime) return "12:00";
-    let hour = parseInt(birthHour) || 12;
-    const minute = birthMinute || "00";
-    if (birthPeriod === "PM" && hour !== 12) hour += 12;
-    if (birthPeriod === "AM" && hour === 12) hour = 0;
-    return `${String(hour).padStart(2, '0')}:${minute}`;
+    return getBirthTime24({ birthHour, birthMinute, birthPeriod, knowsBirthTime }) || "";
   };
 
   const getUserChartId = () => {
@@ -212,6 +208,12 @@ export default function BirthChartPage() {
   const generateChart = async (cacheKey: string) => {
     const birthDate = getBirthDate();
     const birthTime = getBirthTime();
+    if (!birthDate || !birthTime || !birthPlace.trim()) {
+      setShowMissingDataForm(true);
+      setError("Please complete your birth date, time, and place before generating an accurate birth chart.");
+      setLoading(false);
+      return;
+    }
     let latitude = 28.6139, longitude = 77.209, timezone = 5.5;
 
     if (birthPlace) {

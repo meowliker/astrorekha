@@ -14,6 +14,7 @@ import { TrialStatusBanner } from "@/components/TrialStatusBanner";
 import { supabase } from "@/lib/supabase";
 import { UserAvatar, cacheUserInfo } from "@/components/UserAvatar";
 import { BirthChartTimer } from "@/components/BirthChartTimer";
+import { resolveStoredUserSession } from "@/lib/session-recovery";
 
 // Removed unused DailyData interface - these API calls were failing and not displayed in UI
 
@@ -96,10 +97,11 @@ export default function DashboardPage() {
 
   const loadUserZodiac = async () => {
     try {
-      const userId = localStorage.getItem("astrorekha_user_id");
+      const sessionUser = await resolveStoredUserSession();
+      const userId = sessionUser?.id || localStorage.getItem("astrorekha_user_id");
 
       if (userId) {
-        const { data: userData } = await supabase.from("users").select("*").eq("id", userId).single();
+        const userData = sessionUser || (await supabase.from("users").select("*").eq("id", userId).single()).data;
 
         if (userData) {
           if (userData.name) setUserName(userData.name);
@@ -135,7 +137,7 @@ export default function DashboardPage() {
 
           if (!sunSignName && userId) {
             try {
-              const { data: profile } = await supabase.from("user_profiles").select("sun_sign").eq("id", userId).single();
+              const { data: profile } = await supabase.from("user_profiles").select("sun_sign").eq("id", userId).maybeSingle();
               if (profile) {
                 sunSignName = extractStoredSignName(profile.sun_sign);
               }
@@ -232,7 +234,8 @@ export default function DashboardPage() {
   const fetchDailyInsightsV2 = async () => {
     try {
       setInsightsLoading(true);
-      const userId = localStorage.getItem("astrorekha_user_id");
+      const sessionUser = await resolveStoredUserSession();
+      const userId = sessionUser?.id || localStorage.getItem("astrorekha_user_id");
       if (!userId) return;
 
       const response = await fetch(`/api/horoscope/daily-insights-v2?userId=${userId}`);

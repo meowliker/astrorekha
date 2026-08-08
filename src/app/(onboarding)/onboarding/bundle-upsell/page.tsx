@@ -12,6 +12,7 @@ import { generateUserId } from "@/lib/user-profile";
 import { pixelEvents } from "@/lib/pixel-events";
 import Script from "next/script";
 import { getPaymentAttributionPayload } from "@/lib/attribution-client";
+import { useOnboardingStore } from "@/lib/onboarding-store";
 
 const progressSteps = [
   { label: "Order submitted", completed: true },
@@ -257,6 +258,7 @@ function BundleUpsellContent() {
           type: "upsell",
           email: localStorage.getItem("astrorekha_email") || "",
           firstName: localStorage.getItem("astrorekha_name") || "Customer",
+          birthDetails: useOnboardingStore.getState(),
           attribution: getPaymentAttributionPayload(),
         }),
       });

@@ -166,6 +166,7 @@ export default function ChatPage() {
           type: "coins",
           email: localStorage.getItem("astrorekha_email") || "",
           firstName: localStorage.getItem("astrorekha_name") || "Customer",
+          birthDetails: useOnboardingStore.getState(),
           attribution: getPaymentAttributionPayload(),
         }),
       });

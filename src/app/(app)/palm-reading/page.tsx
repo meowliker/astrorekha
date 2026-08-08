@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { supabase } from "@/lib/supabase";
 import { calculateZodiacSign, generateUserId } from "@/lib/user-profile";
+import { getBirthDateIso, normalizeBirthDetailsSnapshot } from "@/lib/birth-details";
 import ReportDisclaimer from "@/components/ReportDisclaimer";
 
 type TabKey = "ageTimeline" | "wealth" | "mounts" | "love";
@@ -38,8 +39,21 @@ export default function PalmReadingPage() {
 
   const { birthMonth, birthDay, birthYear, gender } = useOnboardingStore();
 
-  const zodiacSign = calculateZodiacSign(birthMonth, birthDay);
-  const birthDate = `${birthYear}-${birthMonth}-${birthDay}`;
+  const birthSnapshot = normalizeBirthDetailsSnapshot(
+    { birthMonth, birthDay, birthYear, gender },
+    "palm_reading_page"
+  );
+  const birthDate = getBirthDateIso({ birthMonth, birthDay, birthYear }) || "";
+  const zodiacSign = birthSnapshot?.completeForPalm ? calculateZodiacSign(birthMonth, birthDay) : "";
+
+  const isStoredReadingUsable = (storedBirthDate: unknown): boolean => {
+    const [storedYear, storedMonth, storedDay] = String(storedBirthDate || "").split("-");
+    const storedSnapshot = normalizeBirthDetailsSnapshot(
+      { birthYear: storedYear, birthMonth: storedMonth, birthDay: storedDay },
+      "palm_reading_stored"
+    );
+    return !!storedSnapshot?.completeForPalm;
+  };
 
   useEffect(() => {
     loadExistingReading();
@@ -75,7 +89,7 @@ export default function PalmReadingPage() {
       const userId = generateUserId();
       const { data: palmData } = await supabase.from("palm_readings").select("*").eq("id", userId).single();
       
-      if (palmData?.reading) {
+      if (palmData?.reading && isStoredReadingUsable(palmData.birth_date)) {
         setReading(palmData.reading);
         setCapturedImage(palmData.palm_image_url || null);
         setLoading(false);
@@ -88,7 +102,7 @@ export default function PalmReadingPage() {
         setCapturedImage(savedPalmImage);
         // For Flow B users, auto-analyze if they have a palm image but no reading
         const flow = localStorage.getItem("astrorekha_onboarding_flow");
-        if (flow === "flow-b") {
+        if (flow === "flow-b" && birthSnapshot?.completeForPalm) {
           setLoading(false);
           // Auto-analyze the palm image
           analyzePalm(savedPalmImage);
@@ -157,6 +171,11 @@ export default function PalmReadingPage() {
   };
 
   const analyzePalm = async (imageData: string) => {
+    if (!birthSnapshot?.completeForPalm || !birthDate || !zodiacSign) {
+      setError("Please complete your birth details before generating an accurate palm reading.");
+      return;
+    }
+
     setAnalyzing(true);
     setAnalysisProgress(2);
     setError(null);

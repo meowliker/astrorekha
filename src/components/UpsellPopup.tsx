@@ -8,6 +8,7 @@ import { useUserStore, featureNames, featurePrices, UnlockedFeatures } from "@/l
 import { generateUserId } from "@/lib/user-profile";
 import { getPaymentAttributionPayload } from "@/lib/attribution-client";
 import Script from "next/script";
+import { useOnboardingStore } from "@/lib/onboarding-store";
 
 // Map feature keys to report IDs for PayU checkout
 const featureToReportId: Record<keyof UnlockedFeatures, string> = {
@@ -88,6 +89,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
           type: "report",
           email: localStorage.getItem("astrorekha_email") || "",
           firstName: localStorage.getItem("astrorekha_name") || "Customer",
+          birthDetails: useOnboardingStore.getState(),
           attribution: getPaymentAttributionPayload(),
         }),
       });

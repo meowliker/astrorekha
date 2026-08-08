@@ -14,6 +14,7 @@ import Link from "next/link";
 import Script from "next/script";
 import { usePricing } from "@/hooks/usePricing";
 import { getPaymentAttributionPayload } from "@/lib/attribution-client";
+import { useOnboardingStore } from "@/lib/onboarding-store";
 type LayoutVariant = "A" | "B";
 
 const COSMIC_BUNDLE_ID = "palm-birth-sketch-aura-astro";
@@ -462,6 +463,7 @@ export default function BundlePricingPage() {
           userId: userId || generateUserId(),
           email: localStorage.getItem("astrorekha_email") || "",
           firstName: localStorage.getItem("astrorekha_name") || "Customer",
+          birthDetails: useOnboardingStore.getState(),
           attribution: getPaymentAttributionPayload(),
         }),
       });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { generateBirthChartReport } from "@/lib/birth-chart-report-generator";
+import { getBirthDateIso, getBirthTime24 } from "@/lib/birth-details";
 
 export const maxDuration = 60;
 
@@ -63,9 +64,12 @@ function makeBirthChartCacheKey(userProfile: AnyRecord | null, user: AnyRecord |
     return null;
   }
 
-  const month = getMonthNumber(String(monthRaw));
-  const day = parseInt(String(dayRaw), 10) || 1;
-  const year = parseInt(String(yearRaw), 10) || 2000;
+  const birthDate = getBirthDateIso({
+    birthMonth: monthRaw,
+    birthDay: dayRaw,
+    birthYear: yearRaw,
+  });
+  if (!birthDate) return null;
 
   const knowsBirthTime =
     userProfile?.knows_birth_time !== undefined
@@ -73,15 +77,17 @@ function makeBirthChartCacheKey(userProfile: AnyRecord | null, user: AnyRecord |
       : true;
 
   const birthTime = knowsBirthTime
-    ? to24HourTime(
-        String(userProfile?.birth_hour || user?.birth_hour || "12"),
-        String(userProfile?.birth_minute || user?.birth_minute || "00"),
-        String(userProfile?.birth_period || user?.birth_period || "PM")
-      )
+    ? getBirthTime24({
+        birthHour: userProfile?.birth_hour || user?.birth_hour,
+        birthMinute: userProfile?.birth_minute || user?.birth_minute,
+        birthPeriod: userProfile?.birth_period || user?.birth_period,
+        knowsBirthTime,
+      })
     : "12:00";
+  if (!birthTime) return null;
 
-  const birthDate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-  const birthPlace = String(userProfile?.birth_place || user?.birth_place || "unknown");
+  const birthPlace = String(userProfile?.birth_place || user?.birth_place || "").trim();
+  if (!birthPlace) return null;
 
   const base = `chart_${birthDate}_${birthTime}_${birthPlace}`.replace(/[^a-zA-Z0-9_]/g, "_");
   return `${base}_vedic`;
@@ -153,16 +159,23 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     const birthChartCacheKey = makeBirthChartCacheKey(userProfile || null, user || null);
+    if (!birthChartCacheKey) {
+      return NextResponse.json(
+        {
+          error: "birth_details_required",
+          message: "Please complete birth date, time, and place before generating the report.",
+        },
+        { status: 400 }
+      );
+    }
 
     let birthChart: AnyRecord | null = null;
-    if (birthChartCacheKey) {
-      const { data } = await supabaseAdmin
-        .from("birth_charts")
-        .select("*")
-        .eq("id", birthChartCacheKey)
-        .maybeSingle();
-      birthChart = data;
-    }
+    const { data } = await supabaseAdmin
+      .from("birth_charts")
+      .select("*")
+      .eq("id", birthChartCacheKey)
+      .maybeSingle();
+    birthChart = data;
 
     const { data: natalChart } = await supabaseAdmin
       .from("natal_charts")

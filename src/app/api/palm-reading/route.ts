@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { logClaudeUsage } from "@/lib/ai-usage-logger";
+import { normalizeBirthDetailsSnapshot } from "@/lib/birth-details";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -122,10 +123,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const [birthYear, birthMonth, birthDay] = String(birthDate || "").split("-");
+    const birthSnapshot = normalizeBirthDetailsSnapshot(
+      { birthYear, birthMonth, birthDay, gender },
+      "palm_reading_api"
+    );
+
+    if (!birthSnapshot?.completeForPalm || !zodiacSign || String(zodiacSign).trim().toLowerCase() === "unknown") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Please complete your birth details before generating an accurate palm reading.",
+          code: "BIRTH_DETAILS_REQUIRED",
+        },
+        { status: 400 }
+      );
+    }
+
     // Prepare the prompt with user data
     const prompt = PALM_READING_PROMPT
-      .replace("{birthDate}", birthDate || "Not provided")
-      .replace("{zodiacSign}", zodiacSign || "Unknown")
+      .replace("{birthDate}", birthDate)
+      .replace("{zodiacSign}", zodiacSign)
       .replace("{gender}", gender || "Not specified")
       + PREGNANCY_WINDOW_GUIDANCE;
 

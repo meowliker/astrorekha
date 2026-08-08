@@ -8,6 +8,7 @@ import { getZodiacSign, getZodiacSymbol } from "@/lib/astrology-api";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { supabase } from "@/lib/supabase";
 import { extractStoredSignName } from "@/lib/zodiac-utils";
+import { resolveStoredUserSession } from "@/lib/session-recovery";
 
 const ZODIAC_SIGNS = [
   { sign: "Aries", symbol: "♈", gradient: "from-red-500 to-orange-500", element: "Fire" },
@@ -64,10 +65,11 @@ export default function HoroscopePage() {
 
   const loadUserSign = async () => {
     try {
-      const userId = localStorage.getItem("astrorekha_user_id");
+      const sessionUser = await resolveStoredUserSession();
+      const userId = sessionUser?.id || localStorage.getItem("astrorekha_user_id");
 
       if (userId) {
-        const { data: userData } = await supabase.from("users").select("*").eq("id", userId).single();
+        const userData = sessionUser || (await supabase.from("users").select("*").eq("id", userId).single()).data;
 
         if (userData) {
           const storedSunSign = extractStoredSignName(userData.sun_sign);
@@ -78,7 +80,7 @@ export default function HoroscopePage() {
           }
 
           try {
-            const { data: profile } = await supabase.from("user_profiles").select("sun_sign").eq("id", userId).single();
+            const { data: profile } = await supabase.from("user_profiles").select("sun_sign").eq("id", userId).maybeSingle();
             if (profile) {
               const profileSunSign = extractStoredSignName(profile.sun_sign);
               if (profileSunSign) {

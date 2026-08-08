@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { generateFuturePartnerReport } from "@/lib/future-partner-report";
+import { normalizeBirthDetailsSnapshot } from "@/lib/birth-details";
 
 export const maxDuration = 60;
 
@@ -166,6 +167,39 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     userProfile = userProfileByUserId;
+  }
+
+  const birthSnapshot = normalizeBirthDetailsSnapshot(
+    {
+      birthMonth: userProfile?.birth_month || user.birth_month,
+      birthDay: userProfile?.birth_day || user.birth_day,
+      birthYear: userProfile?.birth_year || user.birth_year,
+      birthHour: userProfile?.birth_hour || user.birth_hour,
+      birthMinute: userProfile?.birth_minute || user.birth_minute,
+      birthPeriod: userProfile?.birth_period || user.birth_period,
+      birthPlace: userProfile?.birth_place || user.birth_place,
+      knowsBirthTime: userProfile?.knows_birth_time,
+      gender: userProfile?.gender || user.gender,
+    },
+    "future_partner_generate"
+  );
+
+  if (!birthSnapshot?.completeForBirthChart) {
+    await supabase
+      .from("future_partner_reports")
+      .update({
+        status: "failed",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", userId);
+
+    return NextResponse.json(
+      {
+        error: "birth_details_required",
+        message: "Please complete birth date, time, and place before generating the report.",
+      },
+      { status: 400 }
+    );
   }
 
   const { data: birthChart } = await supabase

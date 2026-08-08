@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getBirthDateIso, getBirthTime24 } from "@/lib/birth-details";
 
 function getSessionUserId(request: NextRequest, fallbackUserId?: string | null): string | null {
   const accessCookie = request.cookies.get("ar_access")?.value;
@@ -174,9 +175,12 @@ function makeBirthChartCacheKey(userProfile: Record<string, any> | null, user: R
 
   if (!monthRaw || !dayRaw || !yearRaw) return null;
 
-  const month = getMonthNumber(String(monthRaw));
-  const day = parseInt(String(dayRaw), 10) || 1;
-  const year = parseInt(String(yearRaw), 10) || 2000;
+  const birthDate = getBirthDateIso({
+    birthMonth: monthRaw,
+    birthDay: dayRaw,
+    birthYear: yearRaw,
+  });
+  if (!birthDate) return null;
 
   const knowsBirthTime =
     userProfile?.knows_birth_time !== undefined
@@ -184,15 +188,17 @@ function makeBirthChartCacheKey(userProfile: Record<string, any> | null, user: R
       : true;
 
   const birthTime = knowsBirthTime
-    ? to24HourTime(
-        String(userProfile?.birth_hour || user?.birth_hour || "12"),
-        String(userProfile?.birth_minute || user?.birth_minute || "00"),
-        String(userProfile?.birth_period || user?.birth_period || "PM")
-      )
+    ? getBirthTime24({
+        birthHour: userProfile?.birth_hour || user?.birth_hour,
+        birthMinute: userProfile?.birth_minute || user?.birth_minute,
+        birthPeriod: userProfile?.birth_period || user?.birth_period,
+        knowsBirthTime,
+      })
     : "12:00";
+  if (!birthTime) return null;
 
-  const birthDate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-  const birthPlace = String(userProfile?.birth_place || user?.birth_place || "unknown");
+  const birthPlace = String(userProfile?.birth_place || user?.birth_place || "").trim();
+  if (!birthPlace) return null;
   const base = `chart_${birthDate}_${birthTime}_${birthPlace}`.replace(/[^a-zA-Z0-9_]/g, "_");
   return `${base}_vedic`;
 }
@@ -203,13 +209,14 @@ function getBirthDateFromProfile(userProfile: Record<string, any> | null, user: 
   const yearRaw = userProfile?.birth_year || user?.birth_year || "";
   if (!monthRaw || !dayRaw || !yearRaw) return null;
 
-  const month = getMonthNumber(String(monthRaw));
-  const day = parseInt(String(dayRaw), 10) || 1;
-  const year = parseInt(String(yearRaw), 10) || 2000;
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return getBirthDateIso({
+    birthMonth: monthRaw,
+    birthDay: dayRaw,
+    birthYear: yearRaw,
+  });
 }
 
-function getBirthTimeFromProfile(userProfile: Record<string, any> | null, user: Record<string, any> | null): string {
+function getBirthTimeFromProfile(userProfile: Record<string, any> | null, user: Record<string, any> | null): string | null {
   const knowsBirthTime =
     userProfile?.knows_birth_time !== undefined
       ? !!userProfile.knows_birth_time
@@ -217,11 +224,12 @@ function getBirthTimeFromProfile(userProfile: Record<string, any> | null, user: 
 
   if (!knowsBirthTime) return "12:00";
 
-  return to24HourTime(
-    String(userProfile?.birth_hour || user?.birth_hour || "12"),
-    String(userProfile?.birth_minute || user?.birth_minute || "00"),
-    String(userProfile?.birth_period || user?.birth_period || "PM")
-  );
+  return getBirthTime24({
+    birthHour: userProfile?.birth_hour || user?.birth_hour,
+    birthMinute: userProfile?.birth_minute || user?.birth_minute,
+    birthPeriod: userProfile?.birth_period || user?.birth_period,
+    knowsBirthTime,
+  });
 }
 
 async function hydrateBirthChartFromApi(
@@ -236,7 +244,9 @@ async function hydrateBirthChartFromApi(
   if (!birthDate) return null;
 
   const birthTime = getBirthTimeFromProfile(userProfile, user);
+  if (!birthTime) return null;
   const birthPlace = String(userProfile?.birth_place || user?.birth_place || "").trim();
+  if (!birthPlace) return null;
 
   let latitude = 28.6139;
   let longitude = 77.209;

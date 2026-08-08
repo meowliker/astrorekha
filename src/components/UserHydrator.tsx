@@ -66,16 +66,38 @@ export default function UserHydrator() {
 
   const hydrate = useCallback(async () => {
     const storedId = localStorage.getItem("astrorekha_user_id");
-    if (!storedId) return;
+    const storedEmail = (
+      localStorage.getItem("astrorekha_email") ||
+      localStorage.getItem("astrorekha_checkout_email") ||
+      ""
+    ).trim().toLowerCase();
+    if (!storedId && !storedEmail) return;
 
-    const userId = storedId;
+    let userId = storedId || "";
 
     try {
-      const { data, error } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", userId)
-        .single();
+      let data = null;
+      let error = null;
+
+      if (storedEmail) {
+        const result = await supabase
+          .from("users")
+          .select("*")
+          .eq("email", storedEmail)
+          .maybeSingle();
+        data = result.data;
+        error = result.error;
+      }
+
+      if (!data && userId) {
+        const result = await supabase
+          .from("users")
+          .select("*")
+          .eq("id", userId)
+          .maybeSingle();
+        data = result.data;
+        error = result.error;
+      }
 
       // User not found in database - clear localStorage and redirect to login
       if (error || !data) {
@@ -101,6 +123,16 @@ export default function UserHydrator() {
         // Redirect to welcome
         router.replace("/welcome");
         return;
+      }
+
+      userId = data.id;
+      if (data.id !== storedId) {
+        localStorage.setItem("astrorekha_user_id", data.id);
+      }
+      if (data.email && data.email !== storedEmail) {
+        const normalizedEmail = String(data.email).trim().toLowerCase();
+        localStorage.setItem("astrorekha_email", normalizedEmail);
+        localStorage.setItem("astrorekha_checkout_email", normalizedEmail);
       }
 
       setUserId(userId);
