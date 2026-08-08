@@ -229,8 +229,9 @@ Strict requirements:
   "guidance": "2-3 sentences"
 }
 3. Use one plausible future partner first name only. Do not include a surname, last initial, or initials-only output.
-4. Keep tone warm and practical. This is an entertainment-style astrological insight.
-5. Do not include uncertainty language like "cannot predict".`;
+4. Match the partner name to the user's stated gender and likely relationship context: if the user is female, use a masculine Indian first name; if the user is male, use a feminine Indian first name; if gender is not specified, use a neutral/plausible Indian first name.
+5. Keep tone warm and practical. This is an entertainment-style astrological insight.
+6. Do not include uncertainty language like "cannot predict".`;
 
   let lastError: unknown = null;
 
