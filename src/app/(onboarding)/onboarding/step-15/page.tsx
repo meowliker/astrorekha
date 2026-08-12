@@ -197,11 +197,11 @@ export default function Step15Page() {
       variants={fadeUp}
       className="flex-1 flex flex-col min-h-screen bg-background"
     >
-      <div className="flex-1 flex flex-col items-center px-6 py-8 overflow-y-auto">
+      <div className="flex-1 flex flex-col items-center px-5 pt-5 pb-3 overflow-y-auto">
         <motion.h1
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-xl md:text-2xl font-bold text-center mb-6"
+          className="text-xl md:text-2xl font-bold text-center mb-4 leading-tight"
           style={{ fontFamily: "var(--font-philosopher, serif)" }}
         >
           Your palm reading report is ready
@@ -212,15 +212,15 @@ export default function Step15Page() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="w-full max-w-sm bg-card border border-border rounded-2xl p-4 mb-6"
+          className="w-full max-w-sm bg-card border border-border rounded-2xl p-4 mb-5"
         >
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
             OVERVIEW
           </h2>
 
-          <div className="flex gap-4 mb-4">
+          <div className="flex gap-3 mb-4">
             {/* Palm image - use captured photo if available */}
-            <div className="w-24 h-28 rounded-lg overflow-hidden flex-shrink-0 bg-muted">
+            <div className="w-20 h-24 rounded-lg overflow-hidden flex-shrink-0 bg-muted">
               {palmImage ? (
                 <img
                   src={palmImage}
@@ -235,7 +235,7 @@ export default function Step15Page() {
             </div>
 
             {/* Stats */}
-            <div className="flex-1 space-y-3">
+            <div className="flex-1 space-y-2.5">
               {readingStats.map((stat, index) => (
                 <div key={stat.label} className="space-y-1">
                   <div className="flex justify-between text-xs">
@@ -257,7 +257,7 @@ export default function Step15Page() {
           </div>
 
           {/* Reading descriptions */}
-          <div className="space-y-3 text-sm text-muted-foreground">
+          <div className="space-y-2.5 text-sm leading-relaxed text-muted-foreground">
             <p>
               Your <span className="text-[#EF6B6B] font-medium">Heart Line</span> shows that you are very passionate and freely express your thoughts and feelings.
             </p>
@@ -274,7 +274,7 @@ export default function Step15Page() {
           transition={{ delay: 0.4 }}
           className="w-full max-w-sm"
         >
-          <h2 className="text-lg font-semibold text-center mb-4">
+          <h2 className="text-base font-semibold text-center mb-3 leading-snug">
             Sign up to understand yourself better with AstroRekha
           </h2>
 
@@ -314,7 +314,7 @@ export default function Step15Page() {
             <p className="text-red-400 text-sm mb-4 text-center">{whatsappError}</p>
           )}
 
-          <div className="flex items-start gap-2 text-xs text-muted-foreground mb-6">
+          <div className="flex items-start gap-2 text-xs text-muted-foreground mb-2">
             <Shield className="w-4 h-4 mt-0.5 text-primary flex-shrink-0" />
             <p>
               Your personal data is safe with us. We&apos;ll use your email and WhatsApp number for order confirmation, invoices, and report updates.
@@ -323,7 +323,7 @@ export default function Step15Page() {
         </motion.div>
       </div>
 
-      <div className="onboarding-cta bg-background">
+      <div className="shrink-0 bg-background px-5 pt-2 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
         <Button
           onClick={handleContinue}
           className="w-full h-14 text-lg font-semibold"
