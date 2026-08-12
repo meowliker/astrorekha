@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing, type PricingConfig } from "@/lib/pricing";
+import { CHAT_UNLIMITED_PASS_NAME, CHAT_UNLIMITED_PASS_TYPE } from "@/lib/chat-unlimited-pass";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -39,6 +40,7 @@ function formatType(value: unknown): string {
     bundle_payment: "Bundle",
     upsell: "Upsell",
     coins: "Questions",
+    chat_pass: "Chat Pass",
     report: "Report",
     unknown: "Unknown",
   };
@@ -123,6 +125,10 @@ function resolveItems(payment: PaymentRow, pricing: PricingConfig): string[] {
       : null;
     const questions = coinsToQuestionCount(coins);
     return [packageName || `${questions || "Question"} Questions`];
+  }
+
+  if (type === CHAT_UNLIMITED_PASS_TYPE) {
+    return [CHAT_UNLIMITED_PASS_NAME];
   }
 
   if (type === "report") {

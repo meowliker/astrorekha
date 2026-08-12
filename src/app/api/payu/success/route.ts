@@ -16,6 +16,7 @@ function toPayloadFromFormData(formData: FormData): PayUCallbackPayload {
     productinfo: get("productinfo"),
     firstname: get("firstname"),
     email: get("email"),
+    phone: get("phone"),
     udf1: get("udf1"),
     udf2: get("udf2"),
     udf3: get("udf3"),

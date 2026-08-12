@@ -2,6 +2,7 @@ import { jsPDF } from "jspdf";
 import { getSupabaseAdmin } from "./supabase-admin";
 import { DEFAULT_PRICING, normalizePricing, type PricingConfig } from "./pricing";
 import { sendEmailWithAttachments } from "./brevo";
+import { CHAT_UNLIMITED_PASS_NAME, CHAT_UNLIMITED_PASS_TYPE } from "./chat-unlimited-pass";
 
 const PAID_STATUSES = new Set(["paid", "success", "captured"]);
 
@@ -188,6 +189,10 @@ function resolvePaymentItemNames(payment: PaymentRow, pricing: PricingConfig): s
   if (type === "coins") {
     const questions = coinsToQuestionCount(Number(payment.coins || 0));
     return [`${questions || "Question"} Questions`];
+  }
+
+  if (type === CHAT_UNLIMITED_PASS_TYPE) {
+    return [CHAT_UNLIMITED_PASS_NAME];
   }
 
   if (type === "upsell") {

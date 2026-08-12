@@ -8,6 +8,7 @@ import { useUserStore, featureNames, featurePrices, UnlockedFeatures } from "@/l
 import { generateUserId } from "@/lib/user-profile";
 import { getPaymentAttributionPayload } from "@/lib/attribution-client";
 import Script from "next/script";
+import { normalizeIndianWhatsappNumber, toPayUPhoneNumber } from "@/lib/whatsapp";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 
 // Map feature keys to report IDs for PayU checkout
@@ -79,6 +80,9 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
 
     try {
       const reportId = featureToReportId[feature];
+      const checkoutWhatsappNumber = normalizeIndianWhatsappNumber(
+        localStorage.getItem("astrorekha_whatsapp_number")
+      );
       
       const response = await fetch("/api/payu/initiate-payment", {
         method: "POST",
@@ -89,6 +93,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
           type: "report",
           email: localStorage.getItem("astrorekha_email") || "",
           firstName: localStorage.getItem("astrorekha_name") || "Customer",
+          whatsappNumber: checkoutWhatsappNumber,
           birthDetails: useOnboardingStore.getState(),
           attribution: getPaymentAttributionPayload(),
         }),
@@ -117,7 +122,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
           amount: data.amount,
           firstname: data.firstName,
           email: data.email,
-          phone: "",
+          phone: data.phone || toPayUPhoneNumber(checkoutWhatsappNumber),
           productinfo: data.productInfo,
           udf1: data.udf1,
           udf2: data.udf2,
@@ -141,6 +146,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
                   productinfo: data.productInfo,
                   firstname: data.firstName,
                   email: data.email,
+                  phone: data.phone || toPayUPhoneNumber(checkoutWhatsappNumber),
                   udf1: data.udf1,
                   udf2: data.udf2,
                   udf3: data.udf3,

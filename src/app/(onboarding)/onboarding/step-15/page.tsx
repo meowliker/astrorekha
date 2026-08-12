@@ -9,8 +9,8 @@ import { Shield } from "lucide-react";
 import { useHaptic } from "@/hooks/useHaptic";
 import { pixelEvents } from "@/lib/pixel-events";
 import { useOnboardingStore } from "@/lib/onboarding-store";
-import { supabase } from "@/lib/supabase";
-import { generateUserId } from "@/lib/user-profile";
+import { calculateZodiacSign, generateUserId } from "@/lib/user-profile";
+import { normalizeIndianWhatsappNumber } from "@/lib/whatsapp";
 
 // Fixed stats to avoid hydration mismatch (server vs client random values)
 const READING_STATS = [
@@ -20,19 +20,26 @@ const READING_STATS = [
   { label: "Career", color: "#8B5CF6", value: 65 },
 ];
 
-const SHOW_WHATSAPP_CAPTURE = false;
-
 export default function Step15Page() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState<string | null>(null);
   const [whatsappNumber, setWhatsappNumber] = useState("");
-  const [whatsappOptIn, setWhatsappOptIn] = useState(false);
   const [whatsappError, setWhatsappError] = useState<string | null>(null);
   const [palmImage, setPalmImage] = useState<string | null>(null);
 
   // Get user data from onboarding store
-  const { gender, birthYear, relationshipStatus, goals } = useOnboardingStore();
+  const {
+    gender,
+    birthMonth,
+    birthDay,
+    birthYear,
+    relationshipStatus,
+    goals,
+    sunSign,
+    moonSign,
+    ascendantSign,
+  } = useOnboardingStore();
 
   // Use fixed stats to avoid hydration mismatch
   const readingStats = READING_STATS;
@@ -49,13 +56,6 @@ export default function Step15Page() {
 
   const isValidEmail = (value: string) => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-  };
-
-  const normalizeIndianWhatsappNumber = (value: string) => {
-    const digits = value.replace(/\D/g, "");
-    if (digits.length === 10) return `+91${digits}`;
-    if (digits.length === 12 && digits.startsWith("91")) return `+${digits}`;
-    return "";
   };
 
   const { triggerLight } = useHaptic();
@@ -116,13 +116,8 @@ export default function Step15Page() {
       return;
     }
 
-    if (trimmedWhatsapp && !normalizedWhatsapp) {
+    if (!normalizedWhatsapp) {
       setWhatsappError("Please enter a valid 10-digit WhatsApp number.");
-      return;
-    }
-
-    if (normalizedWhatsapp && !whatsappOptIn) {
-      setWhatsappError("Please allow WhatsApp updates to save this number.");
       return;
     }
 
@@ -132,15 +127,9 @@ export default function Step15Page() {
     // Store email first so restore/login paths can use it.
     localStorage.setItem("astrorekha_email", trimmed);
     localStorage.setItem("astrorekha_checkout_email", trimmed);
-    if (normalizedWhatsapp && whatsappOptIn) {
-      localStorage.setItem("astrorekha_whatsapp_number", normalizedWhatsapp);
-      localStorage.setItem("astrorekha_whatsapp_opt_in", "true");
-      localStorage.setItem("astrorekha_whatsapp_opt_in_at", new Date().toISOString());
-    } else {
-      localStorage.removeItem("astrorekha_whatsapp_number");
-      localStorage.removeItem("astrorekha_whatsapp_opt_in");
-      localStorage.removeItem("astrorekha_whatsapp_opt_in_at");
-    }
+    localStorage.setItem("astrorekha_whatsapp_number", normalizedWhatsapp);
+    localStorage.setItem("astrorekha_whatsapp_opt_in", "true");
+    localStorage.setItem("astrorekha_whatsapp_opt_in_at", new Date().toISOString());
     pixelEvents.addToWishlist("Personalized Palm Reading Report");
 
     // Recovery path: if user already paid earlier, skip repurchase flow.
@@ -168,64 +157,35 @@ export default function Step15Page() {
     const userId = generateUserId();
     const currentYear = new Date().getFullYear();
     const age = birthYear ? currentYear - parseInt(birthYear) : null;
-    const leadId = `lead_${Date.now()}_${userId.slice(-6)}`;
-    const whatsappOptInAt = normalizedWhatsapp && whatsappOptIn ? new Date().toISOString() : null;
     
     (async () => {
       try {
-        const leadPayload: Record<string, unknown> = {
-          id: leadId,
-          email: trimmed,
-          gender: gender || "not specified",
-          age: age,
-          relationship_status: relationshipStatus || "not specified",
-          goals: goals || [],
-          subscription_status: "no",
-          user_id: userId,
-          created_at: new Date().toISOString(),
-          source: "onboarding_step_15",
-        };
-
-        if (normalizedWhatsapp && whatsappOptIn) {
-          leadPayload.whatsapp_number = normalizedWhatsapp;
-          leadPayload.whatsapp_opt_in = true;
-          leadPayload.whatsapp_opt_in_at = whatsappOptInAt;
-          leadPayload.whatsapp_opt_in_source = "onboarding_step_15";
-        }
-
-        const { error: leadError } = await supabase.from("leads").insert(leadPayload);
-        if (leadError && normalizedWhatsapp && whatsappOptIn) {
-          const fallbackLeadPayload = { ...leadPayload };
-          delete fallbackLeadPayload.whatsapp_number;
-          delete fallbackLeadPayload.whatsapp_opt_in;
-          delete fallbackLeadPayload.whatsapp_opt_in_at;
-          delete fallbackLeadPayload.whatsapp_opt_in_source;
-          await supabase.from("leads").insert(fallbackLeadPayload);
-        }
-        
-        await supabase.from("users").upsert({
-          id: userId,
-          email: trimmed,
-          gender: gender || null,
-          age: age,
-          relationship_status: relationshipStatus || null,
-          goals: goals || [],
-          updated_at: new Date().toISOString(),
-        }, { onConflict: "id" });
-
-        if (normalizedWhatsapp && whatsappOptIn) {
-          await supabase
-            .from("users")
-            .update({
-              whatsapp_number: normalizedWhatsapp,
-              whatsapp_opt_in: true,
-              whatsapp_opt_in_at: whatsappOptInAt,
-              whatsapp_opt_in_source: "onboarding_step_15",
-            })
-            .eq("id", userId);
-        }
+        await fetch("/api/whatsapp/contact", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: trimmed,
+            userId,
+            whatsappNumber: normalizedWhatsapp,
+            gender: gender || "not specified",
+            age,
+            birthMonth,
+            birthDay,
+            birthYear,
+            relationshipStatus: relationshipStatus || "not specified",
+            goals: goals || [],
+            zodiacSign: calculateZodiacSign(birthMonth, birthDay),
+            sunSign,
+            moonSign,
+            ascendantSign,
+            onboardingFlow: "flow-a",
+            abVariant: "A",
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata",
+            source: "onboarding_step_15",
+          }),
+        });
       } catch (err) {
-        console.error("Failed to save lead data:", err);
+        console.error("Failed to save WhatsApp contact data:", err);
       }
     })();
   };
@@ -333,50 +293,31 @@ export default function Step15Page() {
             <p className="text-red-400 text-sm mb-4 text-center">{emailError}</p>
           )}
 
-          {SHOW_WHATSAPP_CAPTURE && (
-            <>
-              <div className="flex h-12 overflow-hidden rounded-lg border border-primary/30 bg-white/10 focus-within:ring-2 focus-within:ring-primary/50 mb-3">
-                <div className="flex items-center px-3 border-r border-primary/20 text-sm text-muted-foreground">
-                  +91
-                </div>
-                <input
-                  type="tel"
-                  inputMode="numeric"
-                  placeholder="WhatsApp number"
-                  value={whatsappNumber}
-                  onChange={(e) => {
-                    setWhatsappNumber(e.target.value.replace(/[^\d\s-]/g, ""));
-                    if (whatsappError) setWhatsappError(null);
-                  }}
-                  className="min-w-0 flex-1 px-4 bg-transparent text-white placeholder:text-muted-foreground focus:outline-none"
-                />
-              </div>
+          <div className="flex h-12 overflow-hidden rounded-lg border border-primary/30 bg-white/10 focus-within:ring-2 focus-within:ring-primary/50 mb-2">
+            <div className="flex items-center px-3 border-r border-primary/20 text-sm text-muted-foreground">
+              +91
+            </div>
+            <input
+              type="tel"
+              inputMode="numeric"
+              placeholder="Enter WhatsApp number"
+              value={whatsappNumber}
+              onChange={(e) => {
+                setWhatsappNumber(e.target.value.replace(/[^\d\s-]/g, ""));
+                if (whatsappError) setWhatsappError(null);
+              }}
+              className="min-w-0 flex-1 px-4 bg-transparent text-white placeholder:text-muted-foreground focus:outline-none"
+            />
+          </div>
 
-              <label className="flex items-start gap-3 text-xs text-muted-foreground mb-3">
-                <input
-                  type="checkbox"
-                  checked={whatsappOptIn}
-                  onChange={(e) => {
-                    setWhatsappOptIn(e.target.checked);
-                    if (whatsappError) setWhatsappError(null);
-                  }}
-                  className="mt-0.5 h-4 w-4 rounded border-primary/40 accent-primary"
-                />
-                <span>
-                  Send me my reading updates, reminders, and offers from AstroRekha on WhatsApp. I can opt out anytime.
-                </span>
-              </label>
-
-              {whatsappError && (
-                <p className="text-red-400 text-sm mb-4 text-center">{whatsappError}</p>
-              )}
-            </>
+          {whatsappError && (
+            <p className="text-red-400 text-sm mb-4 text-center">{whatsappError}</p>
           )}
 
           <div className="flex items-start gap-2 text-xs text-muted-foreground mb-6">
             <Shield className="w-4 h-4 mt-0.5 text-primary flex-shrink-0" />
             <p>
-              Your personal data is safe with us. We&apos;ll use your email for updates, receipts, and subscription details.
+              Your personal data is safe with us. We&apos;ll use your email and WhatsApp number for order confirmation, invoices, and report updates.
             </p>
           </div>
         </motion.div>

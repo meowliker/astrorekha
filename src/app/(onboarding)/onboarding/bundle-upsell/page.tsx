@@ -12,6 +12,7 @@ import { generateUserId } from "@/lib/user-profile";
 import { pixelEvents } from "@/lib/pixel-events";
 import Script from "next/script";
 import { getPaymentAttributionPayload } from "@/lib/attribution-client";
+import { normalizeIndianWhatsappNumber, toPayUPhoneNumber } from "@/lib/whatsapp";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 
 const progressSteps = [
@@ -249,6 +250,9 @@ function BundleUpsellContent() {
     pixelEvents.addToCart(selectedOfferPrice, selectedOfferLabel);
 
     try {
+      const checkoutWhatsappNumber = normalizeIndianWhatsappNumber(
+        localStorage.getItem("astrorekha_whatsapp_number")
+      );
       const response = await fetch("/api/payu/initiate-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -258,6 +262,7 @@ function BundleUpsellContent() {
           type: "upsell",
           email: localStorage.getItem("astrorekha_email") || "",
           firstName: localStorage.getItem("astrorekha_name") || "Customer",
+          whatsappNumber: checkoutWhatsappNumber,
           birthDetails: useOnboardingStore.getState(),
           attribution: getPaymentAttributionPayload(),
         }),
@@ -308,7 +313,7 @@ function BundleUpsellContent() {
             amount: data.amount,
             firstname: data.firstName,
             email: data.email,
-            phone: "",
+            phone: data.phone || toPayUPhoneNumber(checkoutWhatsappNumber),
             productinfo: data.productInfo,
             udf1: data.udf1,
             udf2: data.udf2,
@@ -345,6 +350,7 @@ function BundleUpsellContent() {
                   productinfo: data.productInfo,
                   firstname: data.firstName,
                   email: data.email,
+                  phone: data.phone || toPayUPhoneNumber(checkoutWhatsappNumber),
                   udf1: data.udf1,
                   udf2: data.udf2,
                   udf3: data.udf3,

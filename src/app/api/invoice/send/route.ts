@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildCombinedOrderInvoice, sendCombinedOrderInvoiceEmail } from "@/lib/order-invoice";
+import { sendInvoiceDeliveryWhatsapp } from "@/lib/whatsapp-invoice";
 
 export const dynamic = "force-dynamic";
 
@@ -37,12 +38,17 @@ export async function POST(request: NextRequest) {
     }
 
     const sentInvoice = await sendCombinedOrderInvoiceEmail(txnIds);
+    const whatsappResult = await sendInvoiceDeliveryWhatsapp(sentInvoice, txnIds).catch((error) => {
+      console.error("[invoice/send] whatsapp invoice failed:", error);
+      return { success: false, status: "failed" as const, reason: "unexpected_error" };
+    });
 
     return NextResponse.json({
       success: true,
       invoiceNumber: sentInvoice.invoiceNumber,
       itemCount: sentInvoice.items.length,
       total: sentInvoice.total,
+      whatsapp: whatsappResult.status,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to send invoice";

@@ -59,6 +59,9 @@ function resolveReturnTo(status: PaymentStatusResponse, pending: PendingPayment 
   if (type === "upsell") {
     return "/onboarding/step-19";
   }
+  if (type === "chat_pass") {
+    return "/chat";
+  }
   return pending?.returnTo || "/reports";
 }
 
@@ -117,7 +120,7 @@ function PaymentProcessingContent() {
           const pending = getStoredPendingPayment() || storedPending;
           const paymentType = normalizeStatus(data.type || pending?.type || "");
           const bundleId = data.bundleId || pending?.bundleId || "";
-          if (bundleId) {
+          if (bundleId && (paymentType === "bundle" || paymentType === "bundle_payment")) {
             window.localStorage.setItem("astrorekha_bundle_id", bundleId);
             window.localStorage.setItem("astrorekha_selected_plan", bundleId);
           }
@@ -131,7 +134,9 @@ function PaymentProcessingContent() {
             window.localStorage.setItem("astrorekha_user_id", data.userId);
           }
           window.localStorage.setItem("astrorekha_payment_completed", "true");
-          window.localStorage.setItem("astrorekha_purchase_type", "one-time");
+          if (paymentType !== "chat_pass") {
+            window.localStorage.setItem("astrorekha_purchase_type", "one-time");
+          }
           clearPendingPayment(txnid);
           setStatusText("Payment confirmed. Opening your next step...");
           router.replace(resolveReturnTo(data, pending));

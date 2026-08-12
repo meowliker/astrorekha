@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import bcrypt from "bcryptjs";
 import { reconcilePaidPaymentsForEmail } from "@/lib/payment-reconciliation";
+import { upsertWhatsappSubscriber } from "@/lib/whatsapp-subscriber";
 
 type MigratedData = {
   coins?: number;
@@ -168,6 +169,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (migratedData.whatsapp_number) {
+      upsertWhatsappSubscriber({
+        supabase,
+        userId: uid,
+        email: normalizedEmail,
+        whatsappNumber: migratedData.whatsapp_number,
+        source: migratedData.whatsapp_opt_in_source || "registration",
+        unlockedFeatures: migratedData.unlocked_features || {},
+      }).catch((error) => {
+        console.error("WhatsApp subscriber sync error during register:", error);
+      });
+    }
+
     // Re-link and reconcile any successful payments for this email.
     // This recovers users who paid but dropped before finishing registration.
     try {
@@ -189,15 +203,17 @@ export async function POST(request: NextRequest) {
             supabase.from("palm_readings").update({ id: uid }).eq("id", normalizedAnonId),
             supabase.from("daily_insights").update({ id: uid }).eq("id", normalizedAnonId),
             supabase.from("soulmate_sketches").update({ user_id: uid }).eq("user_id", normalizedAnonId),
+            supabase.from("whatsapp_subscribers").update({ user_id: uid, email: normalizedEmail, updated_at: now }).eq("user_id", normalizedAnonId),
+            supabase.from("whatsapp_messages").update({ user_id: uid, email: normalizedEmail, updated_at: now }).eq("user_id", normalizedAnonId),
           ]);
 
           // Migrate chat history from anon id -> registered uid.
           // chat_messages schema uses `id` as the user key.
           const { data: anonChat } = await supabase
-            .from("chat_messages")
-            .select("messages, created_at, updated_at")
-            .eq("id", normalizedAnonId)
-            .maybeSingle();
+              .from("chat_messages")
+              .select("messages, created_at, updated_at")
+              .eq("id", normalizedAnonId)
+              .maybeSingle();
 
           if (anonChat?.messages?.length) {
             const { data: existingUidChat } = await supabase

@@ -13,6 +13,7 @@ import {
   Shield,
   Tag,
   ShoppingBag,
+  MessageCircle,
   type LucideIcon,
 } from "lucide-react";
 
@@ -44,6 +45,15 @@ const adminOptions: AdminOption[] = [
     href: "/admin/orders",
     color: "text-cyan-400",
     bgColor: "bg-cyan-500/20",
+  },
+  {
+    id: "whatsapp",
+    title: "WhatsApp Sends",
+    description: "Track AiSensy invoice messages and resend failed deliveries",
+    icon: MessageCircle,
+    href: "/admin/whatsapp",
+    color: "text-emerald-400",
+    bgColor: "bg-emerald-500/20",
   },
   {
     id: "pricing",
@@ -167,7 +177,14 @@ export default function AdminDashboardPage() {
             <TrendingUp className="w-5 h-5 text-primary" />
             Quick Actions
           </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <button
+              onClick={() => router.push("/admin/whatsapp")}
+              className="p-4 bg-white/5 hover:bg-white/10 rounded-xl text-center transition-colors"
+            >
+              <MessageCircle className="w-6 h-6 text-emerald-400 mx-auto mb-2" />
+              <span className="text-white/70 text-sm">WhatsApp</span>
+            </button>
             <button
               onClick={() => router.push("/admin/revenue")}
               className="p-4 bg-white/5 hover:bg-white/10 rounded-xl text-center transition-colors"

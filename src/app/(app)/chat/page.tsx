@@ -13,6 +13,15 @@ import { generateUserId } from "@/lib/user-profile";
 import Script from "next/script";
 import { usePricing } from "@/hooks/usePricing";
 import { getPaymentAttributionPayload } from "@/lib/attribution-client";
+import { trackMarketingEvent } from "@/lib/marketing-events-client";
+import { normalizeIndianWhatsappNumber, toPayUPhoneNumber } from "@/lib/whatsapp";
+import {
+  CHAT_UNLIMITED_OFFER_EVENT_NAMES,
+  CHAT_UNLIMITED_PASS_ID,
+  CHAT_UNLIMITED_PASS_NAME,
+  CHAT_UNLIMITED_PASS_PRICE_INR,
+  CHAT_UNLIMITED_PASS_TYPE,
+} from "@/lib/chat-unlimited-pass";
 
 interface Message {
   role: "user" | "assistant";
@@ -66,6 +75,16 @@ const defaultCoinPackages = [
 ];
 
 const PENDING_PAYMENT_KEY = "astrorekha_pending_payu_payment";
+
+function getUnlimitedOfferSeenKey(userId: string | null): string {
+  return `astrorekha_chat_unlimited_offer_seen:${userId || "anon"}`;
+}
+
+function formatPassCountdown(totalSeconds: number): string {
+  const minutes = Math.floor(Math.max(0, totalSeconds) / 60);
+  const seconds = Math.max(0, totalSeconds) % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
 
 function savePendingPayUPayment(payment: {
   txnid: string;
@@ -126,10 +145,19 @@ export default function ChatPage() {
   const [chatLoaded, setChatLoaded] = useState(false);
   const [showLowBalanceBubble, setShowLowBalanceBubble] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [showUnlimitedOffer, setShowUnlimitedOffer] = useState(false);
+  const [unlimitedOfferAlreadyShown, setUnlimitedOfferAlreadyShown] = useState(false);
+  const [unlimitedPassEndsAt, setUnlimitedPassEndsAt] = useState<string | null>(null);
+  const [purchasingUnlimitedPass, setPurchasingUnlimitedPass] = useState(false);
+  const [countdownNow, setCountdownNow] = useState(() => Date.now());
 
   // Backend balance stays coin-based while the chat UI presents questions.
-  const { coins, deductCoins } = useUserStore();
+  const { coins, deductCoins, setCoins } = useUserStore();
   const questionBalance = toQuestionCount(coins);
+  const unlimitedPassRemainingSeconds = unlimitedPassEndsAt
+    ? Math.max(0, Math.floor((new Date(unlimitedPassEndsAt).getTime() - countdownNow) / 1000))
+    : 0;
+  const hasActiveUnlimitedPass = unlimitedPassRemainingSeconds > 0;
   
   // Get dynamic pricing from API
   const { pricing } = usePricing();
@@ -152,11 +180,127 @@ export default function ChatPage() {
     };
   });
 
+  const refreshUnlimitedPassStatus = async (userId: string | null = currentUserId) => {
+    if (!userId) return null;
+
+    try {
+      const response = await fetch(`/api/chat/unlimited-pass/status?userId=${encodeURIComponent(userId)}`, {
+        cache: "no-store",
+      });
+      const data = await response.json();
+      const endsAt = typeof data?.pass?.endsAt === "string" ? data.pass.endsAt : null;
+      setUnlimitedPassEndsAt(endsAt);
+
+      const localSeen = localStorage.getItem(getUnlimitedOfferSeenKey(userId)) === "1";
+      const serverSeen = !!data?.shown;
+      setUnlimitedOfferAlreadyShown(localSeen || serverSeen);
+      if (serverSeen && !localSeen) {
+        localStorage.setItem(getUnlimitedOfferSeenKey(userId), "1");
+      }
+
+      return data;
+    } catch (error) {
+      console.error("[Chat] Failed to refresh unlimited pass:", error);
+      return null;
+    }
+  };
+
+  const refreshQuestionBalance = async (userId: string | null = currentUserId): Promise<number | null> => {
+    if (!userId) return null;
+
+    try {
+      const storedEmail = String(
+        localStorage.getItem("astrorekha_email") ||
+        localStorage.getItem("astrorekha_checkout_email") ||
+        ""
+      )
+        .trim()
+        .toLowerCase();
+      const params = new URLSearchParams({ userId });
+      if (storedEmail) params.set("email", storedEmail);
+
+      const response = await fetch(`/api/user/chat-balance?${params.toString()}`, {
+        cache: "no-store",
+      });
+
+      if (!response.ok) return null;
+
+      const data = await response.json();
+      const resolvedUserId = typeof data?.userId === "string" ? data.userId : userId;
+      const resolvedEmail = typeof data?.email === "string" ? data.email.trim().toLowerCase() : "";
+
+      if (resolvedUserId && resolvedUserId !== userId) {
+        localStorage.setItem("astrorekha_user_id", resolvedUserId);
+        setCurrentUserId(resolvedUserId);
+      }
+
+      if (resolvedEmail && !storedEmail) {
+        localStorage.setItem("astrorekha_email", resolvedEmail);
+        localStorage.setItem("astrorekha_checkout_email", resolvedEmail);
+      }
+
+      if (typeof data?.coins === "number") {
+        setCoins(data.coins);
+        return data.coins;
+      }
+    } catch (error) {
+      console.error("[Chat] Failed to refresh question balance:", error);
+    }
+
+    return null;
+  };
+
+  const recordUnlimitedOfferShown = async (userId: string | null = currentUserId) => {
+    if (!userId) return;
+    const storageKey = getUnlimitedOfferSeenKey(userId);
+    if (localStorage.getItem(storageKey) === "1") return;
+
+    localStorage.setItem(storageKey, "1");
+    setUnlimitedOfferAlreadyShown(true);
+    await trackMarketingEvent({
+      eventName: CHAT_UNLIMITED_OFFER_EVENT_NAMES.shown,
+      productType: CHAT_UNLIMITED_PASS_TYPE,
+      productId: CHAT_UNLIMITED_PASS_ID,
+      productName: CHAT_UNLIMITED_PASS_NAME,
+      amount: CHAT_UNLIMITED_PASS_PRICE_INR * 100,
+      metadata: {
+        trigger: "questions_exhausted",
+      },
+    });
+  };
+
+  const handleOutOfQuestions = async () => {
+    setPurchaseError("");
+    setShowLowBalanceBubble(false);
+    setShowWallet(false);
+
+    const userId = currentUserId || generateUserId();
+    const status = await refreshUnlimitedPassStatus(userId);
+    if (status?.active) return;
+
+    const alreadyShown =
+      unlimitedOfferAlreadyShown ||
+      localStorage.getItem(getUnlimitedOfferSeenKey(userId)) === "1" ||
+      !!status?.shown;
+
+    if (!alreadyShown) {
+      setShowPricing(false);
+      setShowUnlimitedOffer(true);
+      await recordUnlimitedOfferShown(userId);
+      return;
+    }
+
+    setShowPricing(true);
+  };
+
   const handlePurchaseQuestions = async (pkg: typeof questionPackages[0]) => {
     setPurchaseError("");
     setPurchasingPackage(pkg.id);
 
     try {
+      const checkoutWhatsappNumber = normalizeIndianWhatsappNumber(
+        localStorage.getItem("astrorekha_whatsapp_number")
+      );
       const response = await fetch("/api/payu/initiate-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -166,6 +310,7 @@ export default function ChatPage() {
           type: "coins",
           email: localStorage.getItem("astrorekha_email") || "",
           firstName: localStorage.getItem("astrorekha_name") || "Customer",
+          whatsappNumber: checkoutWhatsappNumber,
           birthDetails: useOnboardingStore.getState(),
           attribution: getPaymentAttributionPayload(),
         }),
@@ -188,7 +333,7 @@ export default function ChatPage() {
           amount: data.amount,
           firstname: data.firstName,
           email: data.email,
-          phone: "",
+          phone: data.phone || toPayUPhoneNumber(checkoutWhatsappNumber),
           productinfo: data.productInfo,
           udf1: data.udf1,
           udf2: data.udf2,
@@ -212,6 +357,7 @@ export default function ChatPage() {
                   productinfo: data.productInfo,
                   firstname: data.firstName,
                   email: data.email,
+                  phone: data.phone || toPayUPhoneNumber(checkoutWhatsappNumber),
                   udf1: data.udf1,
                   udf2: data.udf2,
                   udf3: data.udf3,
@@ -249,6 +395,123 @@ export default function ChatPage() {
     }
   };
 
+  const handlePurchaseUnlimitedPass = async () => {
+    setPurchaseError("");
+    setPurchasingUnlimitedPass(true);
+
+    try {
+      const checkoutWhatsappNumber = normalizeIndianWhatsappNumber(
+        localStorage.getItem("astrorekha_whatsapp_number")
+      );
+      const response = await fetch("/api/payu/initiate-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: currentUserId || generateUserId(),
+          packageId: CHAT_UNLIMITED_PASS_ID,
+          type: CHAT_UNLIMITED_PASS_TYPE,
+          email: localStorage.getItem("astrorekha_email") || "",
+          firstName: localStorage.getItem("astrorekha_name") || "Customer",
+          whatsappNumber: checkoutWhatsappNumber,
+          birthDetails: useOnboardingStore.getState(),
+          attribution: getPaymentAttributionPayload(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.txnId) {
+        await trackMarketingEvent({
+          eventName: CHAT_UNLIMITED_OFFER_EVENT_NAMES.checkoutStarted,
+          productType: CHAT_UNLIMITED_PASS_TYPE,
+          productId: CHAT_UNLIMITED_PASS_ID,
+          productName: CHAT_UNLIMITED_PASS_NAME,
+          paymentId: `pay_${data.txnId}`,
+          payuTxnId: data.txnId,
+          amount: Math.round(Number(data.amount || CHAT_UNLIMITED_PASS_PRICE_INR) * 100),
+          metadata: {
+            durationMinutes: 20,
+          },
+        });
+
+        savePendingPayUPayment({
+          txnid: data.txnId,
+          type: CHAT_UNLIMITED_PASS_TYPE,
+          bundleId: CHAT_UNLIMITED_PASS_ID,
+          returnTo: "/chat",
+        });
+        const bolt = (window as any).bolt;
+        bolt.launch({
+          key: data.key,
+          txnid: data.txnId,
+          hash: data.hash,
+          amount: data.amount,
+          firstname: data.firstName,
+          email: data.email,
+          phone: data.phone || toPayUPhoneNumber(checkoutWhatsappNumber),
+          productinfo: data.productInfo,
+          udf1: data.udf1,
+          udf2: data.udf2,
+          udf3: data.udf3,
+          udf4: data.udf4,
+          udf5: data.udf5,
+          surl: `${window.location.origin}/api/payu/success`,
+          furl: `${window.location.origin}/api/payu/failure`,
+        }, {
+          responseHandler: async (response: any) => {
+            if (response.response.txnStatus === "SUCCESS") {
+              await fetch("/api/payu/verify-payment", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  txnid: response.response.txnid,
+                  mihpayid: response.response.mihpayid,
+                  status: "success",
+                  hash: response.response.hash,
+                  amount: data.amount,
+                  productinfo: data.productInfo,
+                  firstname: data.firstName,
+                  email: data.email,
+                  phone: data.phone || toPayUPhoneNumber(checkoutWhatsappNumber),
+                  udf1: data.udf1,
+                  udf2: data.udf2,
+                  udf3: data.udf3,
+                  udf4: data.udf4,
+                  udf5: data.udf5,
+                  key: data.key,
+                }),
+              });
+              localStorage.removeItem(PENDING_PAYMENT_KEY);
+              setPurchasingUnlimitedPass(false);
+              setShowUnlimitedOffer(false);
+              setShowLowBalanceBubble(false);
+              await refreshUnlimitedPassStatus(currentUserId || generateUserId());
+            } else if (isPayUCancelOrFailure(response.response.txnStatus)) {
+              localStorage.removeItem(PENDING_PAYMENT_KEY);
+              setPurchaseError("Payment was cancelled. You can try again whenever you're ready.");
+              setPurchasingUnlimitedPass(false);
+            } else {
+              window.location.href = `/payment/processing?txnid=${encodeURIComponent(data.txnId)}&source=chat_pass`;
+            }
+          },
+          catchException: (error: any) => {
+            console.error("PayU Bolt error:", error);
+            localStorage.removeItem(PENDING_PAYMENT_KEY);
+            setPurchaseError("Payment was cancelled. You can try again whenever you're ready.");
+            setPurchasingUnlimitedPass(false);
+          }
+        });
+      } else {
+        setPurchaseError(data.error || "Unable to start checkout. Please try again.");
+        setPurchasingUnlimitedPass(false);
+      }
+    } catch (error) {
+      console.error("Unlimited chat purchase error:", error);
+      setPurchaseError("Something went wrong. Please try again.");
+      setPurchasingUnlimitedPass(false);
+    }
+  };
+
   // Get user data from onboarding store
   const {
     gender,
@@ -279,6 +542,8 @@ export default function ChatPage() {
     const loadData = async () => {
       const userId = localStorage.getItem("astrorekha_user_id") || generateUserId();
       setCurrentUserId(userId);
+      await refreshQuestionBalance(userId);
+      refreshUnlimitedPassStatus(userId);
 
       // Load palm reading from Supabase
       try {
@@ -399,12 +664,45 @@ export default function ChatPage() {
     loadData();
   }, []);
 
-  // Show low balance bubble when no question is available.
   useEffect(() => {
-    if (coins < 3) {
-      setShowLowBalanceBubble(true);
-    }
-  }, [coins]);
+    if (!unlimitedPassEndsAt) return;
+    const interval = window.setInterval(() => {
+      setCountdownNow(Date.now());
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [unlimitedPassEndsAt]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const refreshChatEntitlements = () => {
+      refreshQuestionBalance(currentUserId);
+      refreshUnlimitedPassStatus(currentUserId);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshChatEntitlements();
+      }
+    };
+
+    refreshChatEntitlements();
+    window.addEventListener("pageshow", refreshChatEntitlements);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("pageshow", refreshChatEntitlements);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [currentUserId]);
+
+  // If an unlimited pass becomes active, hide any exhausted-balance UI.
+  useEffect(() => {
+    if (!hasActiveUnlimitedPass) return;
+    setShowLowBalanceBubble(false);
+    setShowPricing(false);
+    setShowUnlimitedOffer(false);
+  }, [hasActiveUnlimitedPass]);
 
   // Save chat messages to Supabase whenever they change
   useEffect(() => {
@@ -463,8 +761,14 @@ export default function ChatPage() {
     if (!textToSend.trim() || isLoading) return;
 
     // One visible question maps to the existing backend balance deduction.
-    if (coins < 3) {
-      setShowPricing(true);
+    const unlimitedActiveForThisMessage = hasActiveUnlimitedPass;
+    const initialUserId = currentUserId || generateUserId();
+    const freshCoins = await refreshQuestionBalance(initialUserId);
+    const userIdForMessage = localStorage.getItem("astrorekha_user_id") || initialUserId;
+    const availableCoins = typeof freshCoins === "number" ? freshCoins : coins;
+
+    if (!unlimitedActiveForThisMessage && availableCoins < COINS_PER_QUESTION) {
+      await handleOutOfQuestions();
       return;
     }
 
@@ -505,7 +809,7 @@ export default function ChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: textToSend,
-          userId: currentUserId,
+          userId: userIdForMessage,
           userProfile,
           palmImageBase64: palmImage,
           palmReading: palmReading,
@@ -518,6 +822,12 @@ export default function ChatPage() {
 
       const data = await response.json();
 
+      if (response.status === 402 || data.error === "NO_QUESTIONS_LEFT") {
+        await handleOutOfQuestions();
+        setMessages((prev) => prev.filter((message) => message !== userMessage));
+        return;
+      }
+
       if (data.reply) {
         const assistantMessage: Message = {
           role: "assistant",
@@ -528,19 +838,25 @@ export default function ChatPage() {
             : [],
         };
         setMessages((prev) => [...prev, assistantMessage]);
-        deductCoins(COINS_PER_QUESTION);
+        if (data.unlimitedPassEndsAt) {
+          setUnlimitedPassEndsAt(data.unlimitedPassEndsAt);
+        }
 
-        try {
-          const userId = generateUserId();
-          const { data: currentUser } = await supabase.from("users").select("coins").eq("id", userId).single();
-          if (currentUser) {
-            await supabase.from("users").update({
-              coins: Math.max(0, (currentUser.coins || 0) - COINS_PER_QUESTION),
-              updated_at: new Date().toISOString(),
-            }).eq("id", userId);
+        if (!unlimitedActiveForThisMessage && !data.unlimitedPassActive) {
+          deductCoins(COINS_PER_QUESTION);
+
+          try {
+            const userId = userIdForMessage;
+            const { data: currentUser } = await supabase.from("users").select("coins").eq("id", userId).single();
+            if (currentUser) {
+              await supabase.from("users").update({
+                coins: Math.max(0, (currentUser.coins || 0) - COINS_PER_QUESTION),
+                updated_at: new Date().toISOString(),
+              }).eq("id", userId);
+            }
+          } catch (err) {
+            console.error("Failed to persist question deduction:", err);
           }
-        } catch (err) {
-          console.error("Failed to persist coin deduction:", err);
         }
       }
     } catch (error) {
@@ -653,9 +969,15 @@ export default function ChatPage() {
               setShowWallet(!showWallet);
               setShowChatInfo(false);
             }}
-            className="flex items-center gap-2 px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+            className={`flex items-center gap-2 px-3 py-2 rounded-full transition-colors ${
+              hasActiveUnlimitedPass
+                ? "bg-gradient-to-r from-emerald-500/25 to-cyan-500/20 border border-emerald-300/25 text-white"
+                : "bg-white/10 hover:bg-white/20"
+            }`}
           >
-            <span className="text-white font-semibold">{questionBalance} questions</span>
+            <span className="text-white font-semibold">
+              {hasActiveUnlimitedPass ? `${formatPassCountdown(unlimitedPassRemainingSeconds)} unlimited` : `${questionBalance} questions`}
+            </span>
           </button>
 
           {/* Wallet Dropdown */}
@@ -682,17 +1004,23 @@ export default function ChatPage() {
                     <X className="w-4 h-4 text-white" />
                   </button>
                   <div className="mb-4">
-                    <p className="text-white text-4xl font-bold leading-none">{questionBalance}</p>
-                    <p className="mt-1 text-white/60 text-sm font-medium">questions left</p>
+                    <p className="text-white text-4xl font-bold leading-none">
+                      {hasActiveUnlimitedPass ? formatPassCountdown(unlimitedPassRemainingSeconds) : questionBalance}
+                    </p>
+                    <p className="mt-1 text-white/60 text-sm font-medium">
+                      {hasActiveUnlimitedPass ? "unlimited chat left" : "questions left"}
+                    </p>
                   </div>
                   <Button
                     onClick={() => {
                       setShowWallet(false);
+                      if (hasActiveUnlimitedPass) return;
                       setShowPricing(true);
                     }}
+                    disabled={hasActiveUnlimitedPass}
                     className="w-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
                   >
-                    Ask More Questions
+                    {hasActiveUnlimitedPass ? "Pass Active" : "Ask More Questions"}
                   </Button>
                 </motion.div>
               </>
@@ -703,7 +1031,7 @@ export default function ChatPage() {
 
       {/* Low Balance Bubble */}
       <AnimatePresence>
-        {showLowBalanceBubble && coins < 3 && (
+        {showLowBalanceBubble && coins < COINS_PER_QUESTION && !hasActiveUnlimitedPass && (
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -880,6 +1208,109 @@ export default function ChatPage() {
           </button>
         </div>
       </div>
+
+      {/* One-Time Unlimited Chat Offer */}
+      <AnimatePresence>
+        {showUnlimitedOffer && !hasActiveUnlimitedPass && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => {
+              setShowUnlimitedOffer(false);
+              trackMarketingEvent({
+                eventName: CHAT_UNLIMITED_OFFER_EVENT_NAMES.dismissed,
+                productType: CHAT_UNLIMITED_PASS_TYPE,
+                productId: CHAT_UNLIMITED_PASS_ID,
+                productName: CHAT_UNLIMITED_PASS_NAME,
+                amount: CHAT_UNLIMITED_PASS_PRICE_INR * 100,
+              });
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: 18 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 18 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-sm overflow-hidden rounded-3xl border border-fuchsia-300/20 bg-[#0A0E1A] shadow-2xl shadow-primary/20"
+            >
+              <div className="relative px-6 pt-7 pb-5 text-center">
+                <button
+                  onClick={() => {
+                    setShowUnlimitedOffer(false);
+                    trackMarketingEvent({
+                      eventName: CHAT_UNLIMITED_OFFER_EVENT_NAMES.dismissed,
+                      productType: CHAT_UNLIMITED_PASS_TYPE,
+                      productId: CHAT_UNLIMITED_PASS_ID,
+                      productName: CHAT_UNLIMITED_PASS_NAME,
+                      amount: CHAT_UNLIMITED_PASS_PRICE_INR * 100,
+                    });
+                  }}
+                  className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white/70 transition hover:bg-white/20 hover:text-white"
+                  aria-label="Close unlimited chat offer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary via-fuchsia-500 to-cyan-400 shadow-lg shadow-primary/25">
+                  <Sparkles className="h-7 w-7 text-white" />
+                </div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200/80">One-time offer</p>
+                <h2 className="text-2xl font-bold text-white">Unlock 20 minutes of unlimited chat</h2>
+                <p className="mt-3 text-sm leading-6 text-white/65">
+                  Your questions are finished. Continue asking Elysia anything for the next 20 minutes.
+                </p>
+
+                <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                  <div className="flex items-end justify-center gap-2">
+                    <span className="text-4xl font-bold text-white">₹{CHAT_UNLIMITED_PASS_PRICE_INR}</span>
+                    <span className="pb-1 text-sm font-medium text-white/50">for 20 minutes</span>
+                  </div>
+                </div>
+
+                <AnimatePresence>
+                  {purchaseError && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3"
+                    >
+                      <p className="text-center text-sm text-red-300">{purchaseError}</p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <Button
+                  onClick={handlePurchaseUnlimitedPass}
+                  disabled={purchasingUnlimitedPass}
+                  className="mt-5 h-12 w-full rounded-2xl bg-gradient-to-r from-primary to-purple-600 text-base font-bold text-white hover:from-primary/90 hover:to-purple-600/90"
+                >
+                  {purchasingUnlimitedPass ? <Loader2 className="h-5 w-5 animate-spin" /> : "Get Unlimited Chat"}
+                </Button>
+                <button
+                  onClick={() => {
+                    setShowUnlimitedOffer(false);
+                    setShowPricing(true);
+                    trackMarketingEvent({
+                      eventName: CHAT_UNLIMITED_OFFER_EVENT_NAMES.dismissed,
+                      productType: CHAT_UNLIMITED_PASS_TYPE,
+                      productId: CHAT_UNLIMITED_PASS_ID,
+                      productName: CHAT_UNLIMITED_PASS_NAME,
+                      amount: CHAT_UNLIMITED_PASS_PRICE_INR * 100,
+                      metadata: { action: "view_question_packs" },
+                    });
+                  }}
+                  className="mt-3 text-sm font-medium text-white/50 transition hover:text-white/75"
+                >
+                  See question packs instead
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Pricing Modal */}
       <AnimatePresence>

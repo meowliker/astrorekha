@@ -15,6 +15,8 @@ type PayUTransaction = {
   productinfo?: string;
   firstname?: string;
   email?: string;
+  phone?: string;
+  phone_number?: string;
   udf1?: string;
   udf2?: string;
   udf3?: string;
@@ -130,6 +132,7 @@ async function runReconciliation(lookbackDays: number, maxRows: number, includeF
           productinfo: payuTxn.productinfo,
           firstname: payuTxn.firstname,
           email: payuTxn.email || row.customer_email || undefined,
+          phone: payuTxn.phone || payuTxn.phone_number || undefined,
           udf1: payuTxn.udf1 || row.user_id || undefined,
           udf2: payuTxn.udf2 || row.type || undefined,
           udf3: payuTxn.udf3 || row.bundle_id || undefined,

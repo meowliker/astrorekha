@@ -4,6 +4,11 @@ import {
   classifyStoredPaymentEvent,
   normalizeFinanceStatus,
 } from "@/lib/finance-events";
+import {
+  CHAT_UNLIMITED_OFFER_EVENT_NAMES,
+  CHAT_UNLIMITED_PASS_ID,
+  CHAT_UNLIMITED_PASS_TYPE,
+} from "@/lib/chat-unlimited-pass";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -330,6 +335,43 @@ export async function GET(request: NextRequest) {
     const sales = ledgerEntries.filter((p) => p.financialKind === "sale");
     const refunds = ledgerEntries.filter((p) => p.financialKind === "refund");
     const financialEvents = ledgerEntries.filter((p) => p.financialKind !== "ignore");
+    const chatPassSales = sales.filter(
+      (p) => p.type === CHAT_UNLIMITED_PASS_TYPE && p.bundle_id === CHAT_UNLIMITED_PASS_ID
+    );
+
+    const { data: chatPassEventsRaw, error: chatPassEventsError } = await supabase
+      .from("marketing_events")
+      .select("event_name, user_id, visitor_id, email, created_at")
+      .in("event_name", [
+        CHAT_UNLIMITED_OFFER_EVENT_NAMES.shown,
+        CHAT_UNLIMITED_OFFER_EVENT_NAMES.dismissed,
+        CHAT_UNLIMITED_OFFER_EVENT_NAMES.checkoutStarted,
+        CHAT_UNLIMITED_OFFER_EVENT_NAMES.purchaseSuccess,
+      ])
+      .limit(20000);
+
+    if (chatPassEventsError) {
+      console.warn("[admin/revenue] chat pass event fetch failed:", chatPassEventsError.message);
+    }
+
+    const chatPassEvents = chatPassEventsRaw || [];
+    const uniqueShownKeys = new Set(
+      chatPassEvents
+        .filter((event: any) => event.event_name === CHAT_UNLIMITED_OFFER_EVENT_NAMES.shown)
+        .map((event: any) =>
+          String(event.user_id || event.email || event.visitor_id || "")
+            .trim()
+            .toLowerCase()
+        )
+        .filter(Boolean)
+    );
+    const chatPassShown = chatPassEvents.filter((event: any) => event.event_name === CHAT_UNLIMITED_OFFER_EVENT_NAMES.shown).length;
+    const chatPassCheckoutStarted = chatPassEvents.filter(
+      (event: any) => event.event_name === CHAT_UNLIMITED_OFFER_EVENT_NAMES.checkoutStarted
+    ).length;
+    const chatPassDismissed = chatPassEvents.filter((event: any) => event.event_name === CHAT_UNLIMITED_OFFER_EVENT_NAMES.dismissed).length;
+    const chatPassPurchases = chatPassSales.length;
+    const chatPassRevenue = chatPassSales.reduce((sum, payment) => sum + payment.amountInrAbs, 0);
 
     console.log("Sales count:", sales.length, "Refund count:", refunds.length);
 
@@ -359,6 +401,9 @@ export async function GET(request: NextRequest) {
         .reduce((sum, p) => sum + p.signedAmountInr, 0),
       report: financialEvents
         .filter((p) => p.type === "report")
+        .reduce((sum, p) => sum + p.signedAmountInr, 0),
+      chatPass: financialEvents
+        .filter((p) => p.type === CHAT_UNLIMITED_PASS_TYPE && p.bundle_id === CHAT_UNLIMITED_PASS_ID)
         .reduce((sum, p) => sum + p.signedAmountInr, 0),
     };
 
@@ -510,6 +555,16 @@ export async function GET(request: NextRequest) {
 
       // Revenue breakdown
       revenueByType,
+      chatUnlimitedPass: {
+        shown: chatPassShown,
+        uniqueShown: uniqueShownKeys.size,
+        checkoutStarted: chatPassCheckoutStarted,
+        dismissed: chatPassDismissed,
+        purchases: chatPassPurchases,
+        revenue: Number(chatPassRevenue.toFixed(2)),
+        conversionRate:
+          uniqueShownKeys.size > 0 ? Number(((chatPassPurchases / uniqueShownKeys.size) * 100).toFixed(2)) : 0,
+      },
       bundleBreakdown,
       upsellAttachment,
       arpu,

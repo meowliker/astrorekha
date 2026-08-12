@@ -4,12 +4,21 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing, type PricingConfig } from "@/lib/pricing";
 import { sanitizePaymentAttribution, type PaymentAttributionPayload } from "@/lib/attribution";
 import { recordMarketingEvent } from "@/lib/marketing-events";
+import { normalizeIndianWhatsappNumber, toPayUPhoneNumber } from "@/lib/whatsapp";
+import { upsertWhatsappSubscriber } from "@/lib/whatsapp-subscriber";
 import {
   birthSnapshotToDbFields,
   birthSnapshotToUserDbFields,
   normalizeBirthDetailsSnapshot,
   type BirthDetailsInput,
 } from "@/lib/birth-details";
+import {
+  CHAT_UNLIMITED_PASS_FEATURE,
+  CHAT_UNLIMITED_PASS_ID,
+  CHAT_UNLIMITED_PASS_NAME,
+  CHAT_UNLIMITED_PASS_PRICE_INR,
+  CHAT_UNLIMITED_PASS_TYPE,
+} from "@/lib/chat-unlimited-pass";
 
 const GST_RATE_PERCENT = 18;
 
@@ -50,12 +59,15 @@ function coinsToQuestionCount(coins: number): number {
 async function ensurePaymentUser(params: {
   supabase: ReturnType<typeof getSupabaseAdmin>;
   userId?: string;
-  email: string;
+  email?: string;
+  whatsappNumber?: string;
 }): Promise<string | null> {
   const normalizedUserId = String(params.userId || "").trim();
   if (!normalizedUserId) return null;
 
-  const { supabase, email } = params;
+  const { supabase } = params;
+  const normalizedEmail = String(params.email || "").trim().toLowerCase();
+  const normalizedWhatsapp = normalizeIndianWhatsappNumber(params.whatsappNumber);
   const { data: existingUser, error: lookupError } = await supabase
     .from("users")
     .select("id")
@@ -69,34 +81,66 @@ async function ensurePaymentUser(params: {
     });
   }
 
-  if (existingUser?.id) return existingUser.id;
+  if (existingUser?.id) {
+    if (normalizedWhatsapp || normalizedEmail) {
+      const updatePayload: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+      };
+      if (normalizedEmail) updatePayload.email = normalizedEmail;
+      if (normalizedWhatsapp) {
+        updatePayload.whatsapp_number = normalizedWhatsapp;
+        updatePayload.whatsapp_opt_in = true;
+        updatePayload.whatsapp_opt_in_at = new Date().toISOString();
+        updatePayload.whatsapp_opt_in_source = "payu_initiate";
+      }
+      await supabase.from("users").update(updatePayload).eq("id", normalizedUserId);
+    }
+    return existingUser.id;
+  }
 
   const nowIso = new Date().toISOString();
   const baseUserRow = {
     id: normalizedUserId,
+    ...(normalizedEmail ? { email: normalizedEmail } : {}),
+    ...(normalizedWhatsapp
+      ? {
+          whatsapp_number: normalizedWhatsapp,
+          whatsapp_opt_in: true,
+          whatsapp_opt_in_at: nowIso,
+          whatsapp_opt_in_source: "payu_initiate",
+        }
+      : {}),
     payment_status: "pending",
     created_at: nowIso,
     updated_at: nowIso,
   };
 
-  const { error: insertWithEmailError } = await supabase.from("users").insert({
-    ...baseUserRow,
-    email: email || null,
-  });
-
-  if (!insertWithEmailError) return normalizedUserId;
-
-  const { error: insertWithoutEmailError } = await supabase.from("users").insert(baseUserRow);
-  if (insertWithoutEmailError) {
+  const { error: insertError } = await supabase.from("users").insert(baseUserRow);
+  if (insertError) {
     console.error("[payu/initiate-payment] Failed to create user before payment", {
       userId: normalizedUserId,
-      error: insertWithoutEmailError,
-      firstError: insertWithEmailError,
+      error: insertError,
     });
     return null;
   }
 
   return normalizedUserId;
+}
+
+async function getExistingWhatsappNumber(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  userId?: string
+): Promise<string> {
+  const normalizedUserId = String(userId || "").trim();
+  if (!normalizedUserId) return "";
+
+  const { data } = await supabase
+    .from("users")
+    .select("whatsapp_number")
+    .eq("id", normalizedUserId)
+    .maybeSingle();
+
+  return normalizeIndianWhatsappNumber(data?.whatsapp_number);
 }
 
 function extractAttributionFromReferer(referer: string | undefined): PaymentAttributionPayload {
@@ -140,13 +184,29 @@ export async function POST(request: NextRequest) {
       userId?: string;
       email?: string;
         firstName?: string;
+        whatsappNumber?: string;
+        phone?: string;
         paywallTestId?: string;
         paywallVariant?: "A" | "B";
         attribution?: PaymentAttributionPayload;
         birthDetails?: BirthDetailsInput;
       };
-      const { type, bundleId, packageId, userId, email, firstName, paywallTestId, paywallVariant, attribution, birthDetails } = body;
+      const {
+        type,
+        bundleId,
+        packageId,
+        userId,
+        email,
+        firstName,
+        whatsappNumber,
+        phone,
+        paywallTestId,
+        paywallVariant,
+        attribution,
+        birthDetails,
+      } = body;
       const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+      const requestedWhatsappNumber = normalizeIndianWhatsappNumber(whatsappNumber || phone);
       const normalizedPaywallTestId = typeof paywallTestId === "string" ? paywallTestId.trim() || null : null;
       const normalizedPaywallVariant = paywallVariant === "B" ? "B" : paywallVariant === "A" ? "A" : null;
       const shouldApplyExclusiveGst = type === "bundle";
@@ -244,6 +304,14 @@ export async function POST(request: NextRequest) {
       amount = coinPkg.price;
       productInfo = `${coinsToQuestionCount(coinPkg.coins)} Questions`;
       metadata.coins = coinPkg.coins.toString();
+    } else if (type === CHAT_UNLIMITED_PASS_TYPE) {
+      if (packageId && packageId !== CHAT_UNLIMITED_PASS_ID) {
+        return NextResponse.json({ error: "Invalid chat pass" }, { status: 400 });
+      }
+      amount = CHAT_UNLIMITED_PASS_PRICE_INR;
+      productInfo = CHAT_UNLIMITED_PASS_NAME;
+      metadata.feature = CHAT_UNLIMITED_PASS_FEATURE;
+      metadata.chatPassMinutes = "20";
     } else if (type === "report") {
       const report = pricing.reports.find(r => r.id === packageId);
       if (!report) {
@@ -257,6 +325,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid purchase type" }, { status: 400 });
     }
 
+    const supabase = getSupabaseAdmin();
+    const checkoutWhatsappNumber =
+      requestedWhatsappNumber || (await getExistingWhatsappNumber(supabase, userId));
+    const payuPhone = toPayUPhoneNumber(checkoutWhatsappNumber);
+
+    if (type === "bundle" && !payuPhone) {
+      return NextResponse.json(
+        { error: "WhatsApp number is required to continue checkout." },
+        { status: 400 }
+      );
+    }
+
     // Generate unique transaction ID
     const txnId = `TXN_${Date.now()}_${(userId || "anon").slice(-6)}`;
 
@@ -268,7 +348,7 @@ export async function POST(request: NextRequest) {
       productinfo: productInfo,
       firstname: firstName || "Customer",
       email: normalizedEmail || "customer@astrorekha.com",
-      phone: "",
+      phone: payuPhone,
       udf1: userId || "",
       udf2: type || "",
       udf3: bundleId || packageId || "",
@@ -279,15 +359,15 @@ export async function POST(request: NextRequest) {
     // Generate hash
     const hash = generateHash(payuParams, merchantSalt);
 
-    const supabase = getSupabaseAdmin();
     const resolvedPaymentUserId = await ensurePaymentUser({
       supabase,
       userId,
       email: normalizedEmail,
+      whatsappNumber: checkoutWhatsappNumber,
     });
+    const nowIso = new Date().toISOString();
 
     if (resolvedPaymentUserId && birthDetailsSnapshot) {
-      const nowIso = new Date().toISOString();
       const birthFields = birthSnapshotToDbFields(birthDetailsSnapshot);
       const userBirthFields = birthSnapshotToUserDbFields(birthDetailsSnapshot);
 
@@ -312,6 +392,18 @@ export async function POST(request: NextRequest) {
           })
           .eq("id", resolvedPaymentUserId);
       }
+    }
+
+    if (checkoutWhatsappNumber) {
+      upsertWhatsappSubscriber({
+        supabase,
+        userId: resolvedPaymentUserId || userId || null,
+        email: normalizedEmail || null,
+        whatsappNumber: checkoutWhatsappNumber,
+        source: "payu_initiate",
+      }).catch((error) => {
+        console.error("[payu/initiate-payment] WhatsApp subscriber sync failed", error);
+      });
     }
 
     // Save payment record (await to ensure it's created before returning)
@@ -352,8 +444,8 @@ export async function POST(request: NextRequest) {
       landing_path: finalAttribution.landing_path || null,
       landing_url: finalAttribution.landing_url || null,
       referrer_url: finalAttribution.referrer_url || requestReferrer || null,
-      attribution_captured_at: finalAttribution.captured_at || new Date().toISOString(),
-      created_at: new Date().toISOString(),
+      attribution_captured_at: finalAttribution.captured_at || nowIso,
+      created_at: nowIso,
     });
     
     if (paymentError) {
@@ -390,6 +482,7 @@ export async function POST(request: NextRequest) {
       key: merchantKey,
       firstName: payuParams.firstname,
       email: payuParams.email,
+      phone: payuParams.phone,
       udf1: payuParams.udf1,
       udf2: payuParams.udf2,
       udf3: payuParams.udf3,

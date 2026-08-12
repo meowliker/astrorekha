@@ -3,8 +3,17 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { logClaudeUsage } from "@/lib/ai-usage-logger";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import {
+  CHAT_UNLIMITED_PASS_ID,
+  CHAT_UNLIMITED_PASS_TYPE,
+  getChatUnlimitedPassEndsAt,
+  getChatUnlimitedRemainingSeconds,
+} from "@/lib/chat-unlimited-pass";
 
 const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
+const COINS_PER_QUESTION = 3;
+const SUCCESS_STATUSES = ["paid", "success", "captured"];
 
 // Load prompt files from prompts/ directory
 function loadPrompt(filename: string): string {
@@ -363,6 +372,68 @@ function extractFollowUpQuestions(rawReply: string, userMessage: string) {
   };
 }
 
+async function getActiveUnlimitedChatPass(userId: string | null) {
+  if (!userId) return null;
+
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("payments")
+      .select("id, fulfilled_at, created_at")
+      .eq("user_id", userId)
+      .eq("type", CHAT_UNLIMITED_PASS_TYPE)
+      .eq("bundle_id", CHAT_UNLIMITED_PASS_ID)
+      .in("payment_status", SUCCESS_STATUSES)
+      .order("fulfilled_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .limit(3);
+
+    if (error) {
+      console.warn("[chat] unlimited pass lookup failed:", error.message);
+      return null;
+    }
+
+    for (const row of data || []) {
+      const startedAt = row.fulfilled_at || row.created_at || null;
+      const endsAt = getChatUnlimitedPassEndsAt(startedAt);
+      const remainingSeconds = getChatUnlimitedRemainingSeconds(endsAt);
+      if (endsAt && remainingSeconds > 0) {
+        return {
+          id: row.id,
+          startedAt,
+          endsAt: endsAt.toISOString(),
+          remainingSeconds,
+        };
+      }
+    }
+  } catch (error) {
+    console.warn("[chat] unlimited pass lookup failed:", error);
+  }
+
+  return null;
+}
+
+async function getUserCoins(userId: string | null): Promise<number> {
+  if (!userId) return 0;
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("users")
+      .select("coins")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("[chat] coin lookup failed:", error.message);
+      return 0;
+    }
+
+    const coins = Number(data?.coins || 0);
+    return Number.isFinite(coins) ? coins : 0;
+  } catch (error) {
+    console.warn("[chat] coin lookup failed:", error);
+    return 0;
+  }
+}
+
 export async function POST(request: NextRequest) {
   let userId: string | null = null;
 
@@ -375,6 +446,21 @@ export async function POST(request: NextRequest) {
         { error: "Message is required" },
         { status: 400 }
       );
+    }
+
+    const activeUnlimitedPass = await getActiveUnlimitedChatPass(userId);
+    if (!activeUnlimitedPass) {
+      const coins = await getUserCoins(userId);
+      if (coins < COINS_PER_QUESTION) {
+        return NextResponse.json(
+          {
+            error: "NO_QUESTIONS_LEFT",
+            message: "No questions left",
+            unlimitedPassActive: false,
+          },
+          { status: 402 }
+        );
+      }
     }
 
     // Load prompt files
@@ -453,6 +539,8 @@ If the user's question is about job/career/profession:
       reply,
       followUpQuestions,
       usage: response.usage,
+      unlimitedPassActive: !!activeUnlimitedPass,
+      unlimitedPassEndsAt: activeUnlimitedPass?.endsAt || null,
     });
   } catch (error) {
     console.error("Chat API error:", error);

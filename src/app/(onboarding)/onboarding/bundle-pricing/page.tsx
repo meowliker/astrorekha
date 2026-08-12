@@ -14,6 +14,7 @@ import Link from "next/link";
 import Script from "next/script";
 import { usePricing } from "@/hooks/usePricing";
 import { getPaymentAttributionPayload } from "@/lib/attribution-client";
+import { normalizeIndianWhatsappNumber, toPayUPhoneNumber } from "@/lib/whatsapp";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 type LayoutVariant = "A" | "B";
 
@@ -450,8 +451,14 @@ export default function BundlePricingPage() {
 
     try {
       const checkoutEmail = (localStorage.getItem("astrorekha_email") || "").trim().toLowerCase();
+      const checkoutWhatsappNumber = normalizeIndianWhatsappNumber(
+        localStorage.getItem("astrorekha_whatsapp_number")
+      );
       if (checkoutEmail) {
         localStorage.setItem("astrorekha_checkout_email", checkoutEmail);
+      }
+      if (checkoutWhatsappNumber) {
+        localStorage.setItem("astrorekha_whatsapp_number", checkoutWhatsappNumber);
       }
 
       const response = await fetch("/api/payu/initiate-payment", {
@@ -463,6 +470,7 @@ export default function BundlePricingPage() {
           userId: userId || generateUserId(),
           email: localStorage.getItem("astrorekha_email") || "",
           firstName: localStorage.getItem("astrorekha_name") || "Customer",
+          whatsappNumber: checkoutWhatsappNumber,
           birthDetails: useOnboardingStore.getState(),
           attribution: getPaymentAttributionPayload(),
         }),
@@ -515,7 +523,7 @@ export default function BundlePricingPage() {
           amount: data.amount,
           firstname: data.firstName,
           email: data.email,
-          phone: "",
+          phone: data.phone || toPayUPhoneNumber(checkoutWhatsappNumber),
           productinfo: data.productInfo,
           udf1: data.udf1,
           udf2: data.udf2,
@@ -541,6 +549,7 @@ export default function BundlePricingPage() {
                   productinfo: data.productInfo,
                   firstname: data.firstName,
                   email: data.email,
+                  phone: data.phone || toPayUPhoneNumber(checkoutWhatsappNumber),
                   udf1: data.udf1,
                   udf2: data.udf2,
                   udf3: data.udf3,

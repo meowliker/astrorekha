@@ -372,7 +372,16 @@ interface RevenueData {
   revenueThisYear: string;
   revenueLastMonth: string;
   momGrowth: string;
-  revenueByType: { bundle: number; upsell: number; coins: number; report: number };
+  revenueByType: { bundle: number; upsell: number; coins: number; report: number; chatPass?: number };
+  chatUnlimitedPass?: {
+    shown: number;
+    uniqueShown: number;
+    checkoutStarted: number;
+    dismissed: number;
+    purchases: number;
+    revenue: number;
+    conversionRate: number;
+  };
   upsellAttachment?: {
     bundleBuyerCount: number;
     upsellBuyerCount: number;
@@ -1338,7 +1347,16 @@ export default function AdminRevenuePage() {
 
   // Revenue by type
   const rbt = data.revenueByType || { bundle: 0, upsell: 0, coins: 0, report: 0 };
-  const totalTypeRevenue = rbt.bundle + rbt.upsell + rbt.coins + rbt.report;
+  const chatPassAnalytics = data.chatUnlimitedPass || {
+    shown: 0,
+    uniqueShown: 0,
+    checkoutStarted: 0,
+    dismissed: 0,
+    purchases: 0,
+    revenue: 0,
+    conversionRate: 0,
+  };
+  const totalTypeRevenue = rbt.bundle + rbt.upsell + rbt.coins + rbt.report + (rbt.chatPass || 0);
 
   return (
     <div className="min-h-screen bg-[#0A0E1A] pb-24">
@@ -1507,6 +1525,7 @@ export default function AdminRevenuePage() {
                   <option value="bundle">Bundle</option>
                   <option value="upsell">Upsell</option>
                   <option value="coins">Coins</option>
+                  <option value="chat_pass">Chat Pass</option>
                   <option value="report">Report</option>
                 </select>
               </div>
@@ -1820,6 +1839,47 @@ export default function AdminRevenuePage() {
             </div>
           )}
         </section>
+
+        {/* Unlimited Chat Pass Test */}
+        <section>
+          <h2 className="text-white/70 text-sm font-medium mb-3 flex items-center gap-2">
+            <Activity className="w-4 h-4" /> Unlimited Chat Pass
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <KPICard
+              title="Popup Shown"
+              value={chatPassAnalytics.uniqueShown.toString()}
+              subtitle={`${chatPassAnalytics.shown} total impressions`}
+              icon={<Eye className="w-4 h-4" />}
+              color="text-cyan-300"
+              tooltip="Unique users or visitors who saw the one-time unlimited chat offer."
+            />
+            <KPICard
+              title="Checkout Starts"
+              value={chatPassAnalytics.checkoutStarted.toString()}
+              subtitle="₹349 pass"
+              icon={<MousePointerClick className="w-4 h-4" />}
+              color="text-amber-300"
+              tooltip="Users who clicked checkout for the 20-minute unlimited Elysia chat pass."
+            />
+            <KPICard
+              title="Pass Purchases"
+              value={chatPassAnalytics.purchases.toString()}
+              subtitle={formatCurrency(chatPassAnalytics.revenue)}
+              icon={<CreditCard className="w-4 h-4" />}
+              color="text-green-400"
+              tooltip="Successful PayU payments for the 20-minute unlimited chat pass."
+            />
+            <KPICard
+              title="Offer CVR"
+              value={`${chatPassAnalytics.conversionRate}%`}
+              subtitle={`${chatPassAnalytics.dismissed} dismissed`}
+              icon={<Target className="w-4 h-4" />}
+              color="text-purple-300"
+              tooltip="Pass purchases divided by unique popup viewers."
+            />
+          </div>
+        </section>
         
         {/* Meta / Facebook Ads */}
         <MetaAdsSection
@@ -1863,6 +1923,7 @@ export default function AdminRevenuePage() {
                 <PlanBar label="Bundles" value={rbt.bundle} total={totalTypeRevenue} color="bg-indigo-500" />
                 <PlanBar label="Upsells" value={rbt.upsell} total={totalTypeRevenue} color="bg-cyan-500" />
                 <PlanBar label="Coins" value={rbt.coins} total={totalTypeRevenue} color="bg-amber-500" />
+                <PlanBar label="20-min Chat Pass" value={rbt.chatPass || 0} total={totalTypeRevenue} color="bg-emerald-500" />
                 <PlanBar label="Reports" value={rbt.report} total={totalTypeRevenue} color="bg-pink-500" />
               </div>
             </div>

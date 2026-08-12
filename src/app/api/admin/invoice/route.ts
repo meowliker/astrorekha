@@ -3,6 +3,7 @@ import { jsPDF } from "jspdf";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing, type PricingConfig } from "@/lib/pricing";
 import { getPayUPaymentId, getPayUTransactions } from "@/lib/payu-api";
+import { CHAT_UNLIMITED_PASS_NAME, CHAT_UNLIMITED_PASS_TYPE } from "@/lib/chat-unlimited-pass";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -293,6 +294,10 @@ function resolvePaymentItems(payment: PaymentRow, pricing: PricingConfig): strin
   if (type === "coins") {
     const coins = Number(payment.coins || 0);
     return [`${coins || "Coin"} Coins`];
+  }
+
+  if (type === CHAT_UNLIMITED_PASS_TYPE) {
+    return [CHAT_UNLIMITED_PASS_NAME];
   }
 
   if (type === "upsell") {

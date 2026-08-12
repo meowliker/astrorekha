@@ -18,6 +18,8 @@ type PayUTransaction = {
   productinfo?: string;
   firstname?: string;
   email?: string;
+  phone?: string;
+  phone_number?: string;
   udf1?: string;
   udf2?: string;
   udf3?: string;
@@ -98,6 +100,7 @@ export async function GET(request: NextRequest) {
       productinfo: payuTxn.productinfo,
       firstname: payuTxn.firstname,
       email: payuTxn.email || payment?.customer_email || undefined,
+      phone: payuTxn.phone || payuTxn.phone_number || undefined,
       udf1: payuTxn.udf1 || payment?.user_id || undefined,
       udf2: payuTxn.udf2 || payment?.type || undefined,
       udf3: payuTxn.udf3 || payment?.bundle_id || undefined,
