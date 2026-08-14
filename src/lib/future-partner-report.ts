@@ -1,19 +1,8 @@
 import { anthropic } from "@/lib/anthropic";
 import { logClaudeUsage } from "@/lib/ai-usage-logger";
 import { toPartnerDisplayName } from "@/lib/future-partner-format";
-
-export interface FuturePartnerReportData {
-  partnerName: string;
-  marriageYear: string;
-  partnerAgeAtMarriage: string;
-  relationshipTheme: string;
-  compatibilityScore: number;
-  compatibilitySummary: string;
-  marriageOutlook: string;
-  strengths: string[];
-  growthAreas: string[];
-  guidance: string;
-}
+import type { FuturePartnerReportData } from "@/lib/future-partner-report-data";
+export type { FuturePartnerReportData } from "@/lib/future-partner-report-data";
 
 const PARTNER_REPORT_MAX_RETRIES = 4;
 const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";

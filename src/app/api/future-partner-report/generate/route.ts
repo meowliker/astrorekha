@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { generateFuturePartnerReport } from "@/lib/future-partner-report";
+import { normalizeFuturePartnerReportData } from "@/lib/future-partner-report-data";
 import { normalizeBirthDetailsSnapshot } from "@/lib/birth-details";
 
 export const maxDuration = 60;
@@ -79,11 +80,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "generation_failed" }, { status: 500 });
   }
 
-  if (existingRow?.status === "complete" && existingRow?.report_data) {
+  const cachedReport = normalizeFuturePartnerReportData(existingRow?.report_data);
+  if (existingRow?.status === "complete" && cachedReport) {
     return NextResponse.json({
       success: true,
       cached: true,
-      report: existingRow.report_data,
+      report: cachedReport,
       generated_at: existingRow.generated_at,
       status: "complete",
     });
@@ -137,7 +139,7 @@ export async function POST(request: NextRequest) {
       .from("future_partner_reports")
       .update({
         status: "generating",
-        report_data: existingRow.report_data || {},
+        report_data: cachedReport || {},
         updated_at: nowIso,
       })
       .eq("user_id", userId)
@@ -169,20 +171,43 @@ export async function POST(request: NextRequest) {
     userProfile = userProfileByUserId;
   }
 
-  const birthSnapshot = normalizeBirthDetailsSnapshot(
+  const profileBirthSnapshot = normalizeBirthDetailsSnapshot(
     {
-      birthMonth: userProfile?.birth_month || user.birth_month,
-      birthDay: userProfile?.birth_day || user.birth_day,
-      birthYear: userProfile?.birth_year || user.birth_year,
-      birthHour: userProfile?.birth_hour || user.birth_hour,
-      birthMinute: userProfile?.birth_minute || user.birth_minute,
-      birthPeriod: userProfile?.birth_period || user.birth_period,
-      birthPlace: userProfile?.birth_place || user.birth_place,
+      birthMonth: userProfile?.birth_month,
+      birthDay: userProfile?.birth_day,
+      birthYear: userProfile?.birth_year,
+      birthHour: userProfile?.birth_hour,
+      birthMinute: userProfile?.birth_minute,
+      birthPeriod: userProfile?.birth_period,
+      birthPlace: userProfile?.birth_place,
       knowsBirthTime: userProfile?.knows_birth_time,
-      gender: userProfile?.gender || user.gender,
+      gender: userProfile?.gender,
+      relationshipStatus: userProfile?.relationship_status,
     },
-    "future_partner_generate"
+    "future_partner_generate_profile"
   );
+
+  const userBirthSnapshot = normalizeBirthDetailsSnapshot(
+    {
+      birthMonth: user.birth_month,
+      birthDay: user.birth_day,
+      birthYear: user.birth_year,
+      birthHour: user.birth_hour,
+      birthMinute: user.birth_minute,
+      birthPeriod: user.birth_period,
+      birthPlace: user.birth_place,
+      knowsBirthTime: true,
+      gender: user.gender,
+      relationshipStatus: user.relationship_status,
+    },
+    "future_partner_generate_user"
+  );
+
+  const birthSnapshot = profileBirthSnapshot?.completeForBirthChart
+    ? profileBirthSnapshot
+    : userBirthSnapshot?.completeForBirthChart
+      ? userBirthSnapshot
+      : profileBirthSnapshot || userBirthSnapshot;
 
   if (!birthSnapshot?.completeForBirthChart) {
     await supabase

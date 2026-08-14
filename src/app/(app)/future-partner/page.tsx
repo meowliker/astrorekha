@@ -7,7 +7,10 @@ import { ArrowLeft, Heart, Loader2, Sparkles, CalendarDays, UserRound } from "lu
 import { Button } from "@/components/ui/button";
 import { toPartnerDisplayName } from "@/lib/future-partner-format";
 import { useUserStore } from "@/lib/user-store";
-import type { FuturePartnerReportData } from "@/lib/future-partner-report";
+import {
+  normalizeFuturePartnerReportData,
+  type FuturePartnerReportData,
+} from "@/lib/future-partner-report-data";
 import ReportDisclaimer from "@/components/ReportDisclaimer";
 
 interface FuturePartnerStatusResponse {
@@ -40,7 +43,7 @@ export default function FuturePartnerPage() {
 
       const json = (await response.json()) as FuturePartnerStatusResponse;
       setStatus(json.status);
-      setReport(json.report || null);
+      setReport(normalizeFuturePartnerReportData(json.report));
       return json;
     },
     []
@@ -52,8 +55,9 @@ export default function FuturePartnerPage() {
         await new Promise((resolve) => setTimeout(resolve, 1500));
         const latestStatus = await fetchStatus(uid);
 
-        if (latestStatus.status === "complete" && latestStatus.report) {
-          return latestStatus.report;
+        const latestReport = normalizeFuturePartnerReportData(latestStatus.report);
+        if (latestStatus.status === "complete" && latestReport) {
+          return latestReport;
         }
 
         if (latestStatus.status === "failed") {
@@ -90,7 +94,7 @@ export default function FuturePartnerPage() {
           throw new Error(json?.message || "Failed to generate report.");
         }
 
-        const nextReport = (json?.report || null) as FuturePartnerReportData | null;
+        const nextReport = normalizeFuturePartnerReportData(json?.report);
         if (!nextReport) {
           const generatedReport = await waitForGeneratedReport(uid);
           setStatus("complete");
