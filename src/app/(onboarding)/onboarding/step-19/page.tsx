@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { useHaptic } from "@/hooks/useHaptic";
 import { pixelEvents } from "@/lib/pixel-events";
 import { useSearchParams } from "next/navigation";
+import { getBirthDateIso } from "@/lib/birth-details";
 
 const progressSteps = [
   { label: "Order submitted", completed: true },
@@ -326,7 +327,13 @@ function Step19Content() {
 
       // Pre-generate palm reading in background (so it's instant on dashboard)
       const bundleId = localStorage.getItem("astrorekha_bundle_id");
-      const birthDate = `${onboardingData.birthYear}-${onboardingData.birthMonth}-${onboardingData.birthDay}`;
+      const rawBirthDate = `${onboardingData.birthYear}-${onboardingData.birthMonth}-${onboardingData.birthDay}`;
+      const birthDate =
+        getBirthDateIso({
+          birthMonth: onboardingData.birthMonth,
+          birthDay: onboardingData.birthDay,
+          birthYear: onboardingData.birthYear,
+        }) || rawBirthDate;
       const zodiacSign = calculateZodiacSign(onboardingData.birthMonth, onboardingData.birthDay);
 
       if (palmImage) {
