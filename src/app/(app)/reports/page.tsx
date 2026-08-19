@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { ChevronRight, Star, Sun, Moon, Sparkles, Loader2, Lock, MessageCircle, Lightbulb, CheckCircle, XCircle, Clock } from "lucide-react";
 import Image from "next/image";
+import { ASTROREKHA_ASSETS } from "@/lib/assets";
 import { getZodiacSign, getZodiacSymbol, getZodiacColor } from "@/lib/astrology-api";
 import { extractStoredSignName } from "@/lib/zodiac-utils";
 import { useOnboardingStore } from "@/lib/onboarding-store";
@@ -295,10 +296,11 @@ export default function DashboardPage() {
                   <div className="absolute inset-0 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 animate-ping opacity-20" />
                   <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/50 overflow-hidden">
                     <Image
-                      src="/elysia.png"
+                      src={ASTROREKHA_ASSETS.elysia}
                       alt="Elysia"
                       width={64}
                       height={64}
+                      unoptimized
                       className="w-full h-full object-cover"
                       priority
                     />

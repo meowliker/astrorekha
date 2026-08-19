@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { ArrowLeft, Mail, Lock, Eye, EyeOff, Loader2, X, KeyRound, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ASTROREKHA_ASSETS } from "@/lib/assets";
 import { useUserStore } from "@/lib/user-store";
 import { OnboardingSidebar } from "@/components/OnboardingSidebar";
 
@@ -368,10 +369,11 @@ export default function LoginPage() {
             <div className="absolute inset-0 blur-xl bg-primary/20 rounded-full scale-150" />
             <div className="relative w-20 h-20 rounded-2xl overflow-hidden border border-primary/30">
               <Image
-                src="/logo.png"
+                src={ASTROREKHA_ASSETS.logo}
                 alt="AstroRekha"
                 width={80}
                 height={80}
+                unoptimized
                 className="object-cover w-full h-full"
               />
             </div>

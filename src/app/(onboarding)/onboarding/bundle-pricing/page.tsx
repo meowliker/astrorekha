@@ -16,6 +16,7 @@ import { usePricing } from "@/hooks/usePricing";
 import { getPaymentAttributionPayload } from "@/lib/attribution-client";
 import { normalizeIndianWhatsappNumber, toPayUPhoneNumber } from "@/lib/whatsapp";
 import { useOnboardingStore } from "@/lib/onboarding-store";
+import { ASTROREKHA_ASSETS } from "@/lib/assets";
 type LayoutVariant = "A" | "B";
 
 const COSMIC_BUNDLE_ID = "palm-birth-sketch-aura-astro";
@@ -659,7 +660,7 @@ export default function BundlePricingPage() {
           animate={{ opacity: 1, y: 0 }}
           className="flex flex-col items-center gap-1 mb-2"
         >
-          <img src="/logo.png" alt="AstroRekha" className="w-20 h-20 object-contain" />
+          <img src={ASTROREKHA_ASSETS.logo} alt="AstroRekha" className="w-20 h-20 object-contain" />
           <span className="text-sm text-muted-foreground">AstroRekha</span>
         </motion.div>
 
@@ -1066,11 +1067,11 @@ export default function BundlePricingPage() {
               <div className="relative w-28 h-28 rounded-full bg-gradient-to-b from-amber-600/80 via-amber-700/60 to-purple-900/80 p-1 border border-amber-500/50">
                 <div className="w-full h-full rounded-full overflow-hidden">
                   <img
-                    src="/elysia.png"
+                    src={ASTROREKHA_ASSETS.elysia}
                     alt="Elysia"
                     className="w-full h-full object-cover"
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = "/logo.png";
+                      (e.target as HTMLImageElement).src = ASTROREKHA_ASSETS.logo;
                     }}
                   />
                 </div>
@@ -1281,11 +1282,11 @@ export default function BundlePricingPage() {
             <div className="flex justify-center mb-6">
               <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-amber-500/50">
                 <img
-                  src="/elysia.png"
+                  src={ASTROREKHA_ASSETS.elysia}
                   alt="Elysia"
                   className="w-full h-full object-cover"
                   onError={(e) => {
-                    (e.target as HTMLImageElement).src = "/logo.png";
+                    (e.target as HTMLImageElement).src = ASTROREKHA_ASSETS.logo;
                   }}
                 />
               </div>
@@ -1383,7 +1384,7 @@ export default function BundlePricingPage() {
           {/* Logo */}
           <div className="flex flex-col items-center mb-6">
             <img
-              src="/logo.png"
+              src={ASTROREKHA_ASSETS.logo}
               alt="AstroRekha"
               className="w-12 h-12 mb-2"
             />

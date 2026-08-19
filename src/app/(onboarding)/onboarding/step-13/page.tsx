@@ -6,6 +6,7 @@ import { fadeUp } from "@/lib/motion";
 import { OnboardingHeader, ProgressBar } from "@/components/onboarding/OnboardingHeader";
 import { Button } from "@/components/ui/button";
 import { PalmAnalysis } from "@/components/onboarding/PalmAnalysis";
+import { ASTROREKHA_ASSETS } from "@/lib/assets";
 import { detectPalmFeatures as detectPalmFeaturesFromImage } from "@/lib/palm-detection";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -261,11 +262,12 @@ export default function Step13Page() {
               >
                 <div className="w-[240px] h-[240px] rounded-2xl overflow-hidden bg-black/20">
                   <video
-                    src="/palmscanner.mp4"
+                    src={ASTROREKHA_ASSETS.palmScanner}
                     autoPlay
                     loop
                     muted
                     playsInline
+                    preload="metadata"
                     className="w-full h-full"
                   />
                 </div>
@@ -363,13 +365,14 @@ export default function Step13Page() {
               />
             )}
 
-            {/* Hand outline overlay using palmoutline.png */}
+            {/* Hand outline overlay */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <Image
-                src="/palmoutline.png"
+                src={ASTROREKHA_ASSETS.palmOutline}
                 alt="Palm outline"
                 width={380}
                 height={470}
+                unoptimized
                 className="object-contain opacity-70"
                 style={{ transform: "scaleX(-1) scale(1.15)" }}
               />

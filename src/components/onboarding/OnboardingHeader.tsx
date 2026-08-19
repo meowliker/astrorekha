@@ -5,6 +5,7 @@ import { ArrowLeft, Menu } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { OnboardingSidebar } from "@/components/OnboardingSidebar";
+import { ASTROREKHA_ASSETS } from "@/lib/assets";
 
 interface OnboardingHeaderProps {
   showBack?: boolean;
@@ -48,10 +49,11 @@ export function OnboardingHeader({
 
         <div className="flex items-center gap-2">
           <Image
-            src="/logo.png"
+            src={ASTROREKHA_ASSETS.logo}
             alt="AstroRekha"
             width={28}
             height={28}
+            unoptimized
             className="rounded-lg"
             onError={(e) => {
               e.currentTarget.style.display = "none";

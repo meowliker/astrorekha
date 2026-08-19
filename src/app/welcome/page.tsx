@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Menu } from "lucide-react";
 import { OnboardingSidebar } from "@/components/OnboardingSidebar";
 import Image from "next/image";
+import { ASTROREKHA_ASSETS } from "@/lib/assets";
 import { captureAttributionFromPage } from "@/lib/attribution-client";
 
 export default function WelcomePage() {
@@ -277,10 +278,11 @@ export default function WelcomePage() {
             <div className="absolute inset-0 blur-2xl bg-primary/30 rounded-full scale-150" />
             <div className="relative w-28 h-28 ">
               <Image
-                src="/logo.png"
+                src={ASTROREKHA_ASSETS.logo}
                 alt="AstroRekha"
                 width={112}
                 height={112}
+                unoptimized
                 className="object-cover w-full h-full"
               />
             </div>

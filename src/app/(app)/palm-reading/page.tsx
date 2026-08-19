@@ -10,6 +10,7 @@ import { supabase } from "@/lib/supabase";
 import { calculateZodiacSign, generateUserId } from "@/lib/user-profile";
 import { getBirthDateIso, normalizeBirthDetailsSnapshot } from "@/lib/birth-details";
 import ReportDisclaimer from "@/components/ReportDisclaimer";
+import { ASTROREKHA_ASSETS } from "@/lib/assets";
 
 type TabKey = "ageTimeline" | "wealth" | "mounts" | "love";
 
@@ -508,10 +509,10 @@ export default function PalmReadingPage() {
               className="w-full h-full object-cover"
             />
 
-            {/* Hand outline overlay using palmoutline.png - flipped and sized like onboarding */}
+            {/* Hand outline overlay - flipped and sized like onboarding */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <img
-                src="/palmoutline.png"
+                src={ASTROREKHA_ASSETS.palmOutline}
                 alt="Palm outline"
                 width={380}
                 height={470}

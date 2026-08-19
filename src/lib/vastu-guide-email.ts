@@ -1,4 +1,5 @@
 import { sendEmail, sendEmailWithAttachments } from "@/lib/brevo";
+import { ASTROREKHA_ASSETS } from "@/lib/assets";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 const VASTU_GUIDE_BUCKET = process.env.VASTU_GUIDE_BUCKET || "digital-products";
@@ -17,7 +18,9 @@ const APP_URL =
   configuredAppUrl && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(configuredAppUrl)
     ? configuredAppUrl
     : "https://astrorekha.com";
-const ASTROREKHA_LOGO_URL = `${APP_URL}/logo.png`;
+const ASTROREKHA_LOGO_URL = ASTROREKHA_ASSETS.logo.startsWith("http")
+  ? ASTROREKHA_ASSETS.logo
+  : `${APP_URL}${ASTROREKHA_ASSETS.logo}`;
 
 function buildVastuGuideEmailHtml(name?: string, downloadUrl?: string | null): string {
   const firstName = (name || "there").trim().split(/\s+/)[0] || "there";

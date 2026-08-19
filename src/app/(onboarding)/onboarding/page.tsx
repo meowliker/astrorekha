@@ -9,6 +9,7 @@ import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { Menu } from "lucide-react";
 import { OnboardingSidebar } from "@/components/OnboardingSidebar";
+import { ASTROREKHA_ASSETS } from "@/lib/assets";
 import { pixelEvents } from "@/lib/pixel-events";
 
 const genderOptions: { value: Gender; label: string; icon: string }[] = [
@@ -64,10 +65,11 @@ export default function OnboardingPage() {
       <div className="flex-1 flex flex-col items-center px-6">
         <motion.div variants={staggerItem} className="flex flex-col items-center gap-2 mb-6">
           <Image
-            src="/logo.png"
+            src={ASTROREKHA_ASSETS.logo}
             alt="AstroRekha"
             width={48}
             height={48}
+            unoptimized
             className="rounded-xl"
             onError={(e) => {
               e.currentTarget.style.display = "none";

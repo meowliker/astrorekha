@@ -46,3 +46,11 @@ DEPLOYMENT_CHECKLIST.md
 
 # Local-only mock page gallery. Do not deploy.
 /src/app/page-previews/
+
+# Heavy original assets are stored locally/R2 only. Use optimized public assets in app code.
+/public/elysia.png
+/public/logo.png
+/public/palmscanner.mp4
+/public/palmoutline.png
+/public/male.png
+/public/female.png

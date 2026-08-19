@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { fadeUp } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
+import { ASTROREKHA_ASSETS } from "@/lib/assets";
 import { detectHandLandmarks } from "@/lib/palm-detection";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -108,7 +109,7 @@ export default function Step16Page() {
           animate={{ opacity: 1, y: 0 }}
           className="flex flex-col items-center gap-1 mb-2"
         >
-          <img src="/logo.png" alt="AstroRekha" className="w-20 h-20 object-contain" />
+          <img src={ASTROREKHA_ASSETS.logo} alt="AstroRekha" className="w-20 h-20 object-contain" />
           <span className="text-sm text-muted-foreground">AstroRekha</span>
         </motion.div>
 

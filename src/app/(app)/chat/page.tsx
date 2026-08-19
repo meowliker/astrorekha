@@ -6,6 +6,7 @@ import { ArrowLeft, Send, HelpCircle, X, Loader2, Sparkles } from "lucide-react"
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
+import { ASTROREKHA_ASSETS } from "@/lib/assets";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { useUserStore } from "@/lib/user-store";
 import { supabase } from "@/lib/supabase";
@@ -898,10 +899,11 @@ export default function ChatPage() {
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center overflow-hidden shadow-lg shadow-purple-500/30">
               <Image
-                src="/elysia.png"
+                src={ASTROREKHA_ASSETS.elysia}
                 alt="Elysia"
                 width={48}
                 height={48}
+                unoptimized
                 className="w-full h-full object-cover"
                 priority
               />
