@@ -11,6 +11,7 @@ const PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID;
 function PageViewTracker() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const search = searchParams.toString();
 
   useEffect(() => {
     const attribution = captureMarketingAttribution();
@@ -19,7 +20,7 @@ function PageViewTracker() {
       attribution,
       metadata: {
         pathname,
-        search: searchParams.toString(),
+        search,
       },
     });
 
@@ -27,7 +28,7 @@ function PageViewTracker() {
     if (typeof window !== "undefined" && (window as any).fbq) {
       (window as any).fbq("track", "PageView");
     }
-  }, [pathname, searchParams]);
+  }, [pathname, search]);
 
   return null;
 }

@@ -9,6 +9,8 @@ const DEFAULT_TEST_ID = DEFAULT_LAYOUT_B_CONFIG.testId;
 const VISITOR_KEY = "astrorekha_ab_visitor_id";
 const TEST_ID_KEY = "astrorekha_ab_test_id";
 const VARIANT_KEY = "astrorekha_layout_variant";
+const EVENT_DEDUPE_PREFIX = "astrorekha_ab_event_seen";
+const CHECKOUT_STARTED_DEDUPE_TTL_MS = 5 * 60 * 1000;
 
 function canUseBrowserStorage() {
   return typeof window !== "undefined" && typeof localStorage !== "undefined";
@@ -43,11 +45,66 @@ type TrackABEventPayload = {
   keepalive?: boolean;
 };
 
+function getEventRoute(payload: TrackABEventPayload): string {
+  const route = payload.route?.trim();
+  if (route) return route;
+
+  const metadataRoute = payload.metadata?.route;
+  return typeof metadataRoute === "string" ? metadataRoute.trim() : "";
+}
+
+function getABEventDedupeKey(params: {
+  payload: TrackABEventPayload;
+  testId: string;
+  variant: LayoutVariant;
+  visitorId: string;
+}): string | null {
+  if (params.payload.eventType === "conversion") return null;
+
+  const route = getEventRoute(params.payload) || "unknown";
+  return `${params.payload.eventType}:${params.testId}:${params.variant}:${params.visitorId}:${route}`;
+}
+
+function shouldSkipDedupedABEvent(params: {
+  payload: TrackABEventPayload;
+  testId: string;
+  variant: LayoutVariant;
+  visitorId: string;
+}): boolean {
+  if (typeof window === "undefined" || typeof sessionStorage === "undefined") return false;
+
+  const dedupeKey = getABEventDedupeKey(params);
+  if (!dedupeKey) return false;
+
+  try {
+    const storageKey = `${EVENT_DEDUPE_PREFIX}:${dedupeKey}`;
+    const now = Date.now();
+    const lastSeen = Number(sessionStorage.getItem(storageKey) || 0);
+
+    if (lastSeen > 0) {
+      if (params.payload.eventType === "checkout_started") {
+        if (now - lastSeen < CHECKOUT_STARTED_DEDUPE_TTL_MS) {
+          return true;
+        }
+      } else {
+        return true;
+      }
+    }
+
+    sessionStorage.setItem(storageKey, String(now));
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
 export async function trackABEvent(payload: TrackABEventPayload): Promise<void> {
   const variant = payload.variant || getABVariant("A");
   const testId = payload.testId || getABTestId();
   const visitorId = payload.visitorId || getABVisitorId();
   if (!variant || !testId || !visitorId) return;
+  if (shouldSkipDedupedABEvent({ payload, testId, variant, visitorId })) return;
 
   const route = payload.route?.trim();
   const mergedMetadata = {

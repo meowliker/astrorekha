@@ -5,6 +5,8 @@ import { captureAttributionFromPage, getPaymentAttributionPayload } from "@/lib/
 
 const VISITOR_KEY = "astrorekha_marketing_visitor_id";
 const SESSION_KEY = "astrorekha_marketing_session_id";
+const EVENT_DEDUPE_PREFIX = "astrorekha_marketing_event_seen";
+const PAGE_VIEW_DEDUPE_TTL_MS = 30 * 60 * 1000;
 
 export type ClientMarketingEventInput = {
   eventName: string;
@@ -18,6 +20,8 @@ export type ClientMarketingEventInput = {
   metadata?: Record<string, unknown> | null;
   attribution?: PaymentAttributionPayload | null;
   keepalive?: boolean;
+  dedupeKey?: string | null;
+  dedupeTtlMs?: number | null;
 };
 
 function createTrackingId(prefix: string): string {
@@ -63,6 +67,37 @@ function getOrCreateSessionStorageValue(key: string, prefix: string): string | n
   }
 }
 
+function getMarketingEventDedupeKey(input: ClientMarketingEventInput, route: string): string | null {
+  const configuredKey = input.dedupeKey?.trim();
+  if (configuredKey) return configuredKey;
+  if (input.eventName === "page_view") return `page_view:${route}`;
+  return null;
+}
+
+function shouldSkipDedupedMarketingEvent(input: ClientMarketingEventInput, route: string): boolean {
+  if (typeof window === "undefined") return false;
+
+  const dedupeKey = getMarketingEventDedupeKey(input, route);
+  if (!dedupeKey) return false;
+
+  try {
+    const storageKey = `${EVENT_DEDUPE_PREFIX}:${dedupeKey}`;
+    const now = Date.now();
+    const lastSeen = Number(window.sessionStorage.getItem(storageKey) || 0);
+    const ttlMs = input.dedupeTtlMs ?? PAGE_VIEW_DEDUPE_TTL_MS;
+
+    if (lastSeen > 0 && (ttlMs <= 0 || now - lastSeen < ttlMs)) {
+      return true;
+    }
+
+    window.sessionStorage.setItem(storageKey, String(now));
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
 export function getMarketingVisitorId(): string | null {
   return getOrCreateLocalStorageValue(VISITOR_KEY, "visitor");
 }
@@ -81,6 +116,7 @@ export async function trackMarketingEvent(input: ClientMarketingEventInput): Pro
   const attribution = input.attribution || getPaymentAttributionPayload();
   const path = window.location.pathname;
   const route = `${path}${window.location.search}`;
+  if (shouldSkipDedupedMarketingEvent(input, route)) return;
 
   const body = {
     eventName: input.eventName,
