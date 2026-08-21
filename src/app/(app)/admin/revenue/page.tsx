@@ -38,6 +38,9 @@ import {
   Facebook,
   TrendingDown,
   GripVertical,
+  Settings,
+  Plus,
+  Save,
 } from "lucide-react";
 
 import React from "react";
@@ -503,6 +506,21 @@ interface MetaAdsData {
   activeCampaignCount?: number;
 }
 
+interface MetaAdAccountAdminRow {
+  accountId: string;
+  label: string;
+  startDate: string;
+  startTime: string;
+  endDate: string;
+  endTime: string;
+  active: boolean;
+  accessToken: string;
+  hasAccessToken?: boolean;
+  accessTokenPreview?: string;
+  accountCurrency?: string;
+  accountTimezone?: string;
+}
+
 const META_IST_TIMEZONE = "Asia/Kolkata";
 const META_BUSINESS_BOUNDARY_HOUR = 11;
 const META_BUSINESS_BOUNDARY_MINUTE = 30;
@@ -737,6 +755,73 @@ function getStoredAnalyticsRange(): AnalyticsDateRangeSettings | null {
   return null;
 }
 
+function createBlankMetaAdAccountRow(): MetaAdAccountAdminRow {
+  return {
+    accountId: "",
+    label: "",
+    startDate: getCurrentBusinessDateIso(),
+    startTime: "00:00",
+    endDate: "",
+    endTime: "23:59",
+    active: true,
+    accessToken: "",
+  };
+}
+
+function getMetaAccountWindowKey(row: Pick<MetaAdAccountAdminRow, "startDate" | "startTime" | "endDate" | "endTime" | "active">): {
+  start: string;
+  end: string | null;
+} {
+  return {
+    start: `${row.startDate || ""}T${row.startTime || "00:00"}`,
+    end: row.active ? null : `${row.endDate || ""}T${row.endTime || "23:59"}`,
+  };
+}
+
+function formatMetaAccountWindow(row: MetaAdAccountAdminRow): string {
+  const start = `${row.startDate || "No start"} ${row.startTime || "00:00"}`;
+  if (row.active) return `${start} -> Active`;
+  return `${start} -> ${row.endDate || "No end"} ${row.endTime || "23:59"}`;
+}
+
+function getMetaAccountRuntimeStatus(row: MetaAdAccountAdminRow, now: Date = new Date()): "active" | "scheduled" | "historical" {
+  if (!row.accountId.trim() || !row.startDate) return "historical";
+  const start = new Date(`${row.startDate}T${row.startTime || "00:00"}:00+05:30`);
+  if (Number.isNaN(start.getTime())) return "historical";
+  const end = row.active
+    ? null
+    : row.endDate
+    ? new Date(`${row.endDate}T${row.endTime || "23:59"}:00+05:30`)
+    : null;
+
+  if (now < start) return "scheduled";
+  if (!end || Number.isNaN(end.getTime()) || now <= end) return "active";
+  return "historical";
+}
+
+function formatMetaAccountRuntimeStatus(status: ReturnType<typeof getMetaAccountRuntimeStatus>): string {
+  if (status === "active") return "Active";
+  if (status === "scheduled") return "Scheduled";
+  return "Historical";
+}
+
+function mapMetaAccountForAdmin(account: any): MetaAdAccountAdminRow {
+  return {
+    accountId: account.accountId || "",
+    label: account.label || account.accountName || "",
+    startDate: account.startDate || "",
+    startTime: account.startTime || "00:00",
+    endDate: account.active ? "" : account.endDate || "",
+    endTime: account.active ? "23:59" : account.endTime || "23:59",
+    active: Boolean(account.active),
+    accessToken: account.accessToken || "",
+    hasAccessToken: Boolean(account.hasAccessToken || account.accessToken),
+    accessTokenPreview: account.accessTokenPreview,
+    accountCurrency: account.accountCurrency,
+    accountTimezone: account.accountTimezone,
+  };
+}
+
 export default function AdminRevenuePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -771,6 +856,14 @@ export default function AdminRevenuePage() {
   const [metaLoading, setMetaLoading] = useState(false);
   const [metaDatePreset, setMetaDatePreset] = useState<string>("last_30d");
   const [showMetaCampaigns, setShowMetaCampaigns] = useState(false);
+  const [showMetaAccountSettings, setShowMetaAccountSettings] = useState(false);
+  const [metaAccountRows, setMetaAccountRows] = useState<MetaAdAccountAdminRow[]>([]);
+  const [metaEnvAccountRows, setMetaEnvAccountRows] = useState<MetaAdAccountAdminRow[]>([]);
+  const [visibleMetaAccessTokenRows, setVisibleMetaAccessTokenRows] = useState<Set<number>>(new Set());
+  const [metaAccountSettingsLoading, setMetaAccountSettingsLoading] = useState(false);
+  const [metaAccountSettingsSaving, setMetaAccountSettingsSaving] = useState(false);
+  const [metaAccountSettingsMessage, setMetaAccountSettingsMessage] = useState<string | null>(null);
+  const [metaAccountSettingsError, setMetaAccountSettingsError] = useState<string | null>(null);
 
   // Tabs
   const [activeTab, setActiveTab] = useState<TabType>("dashboard");
@@ -868,6 +961,193 @@ export default function AdminRevenuePage() {
       minute: "2-digit",
       hour12: true,
     });
+  };
+
+  const fetchMetaAccountSettings = async () => {
+    try {
+      setMetaAccountSettingsLoading(true);
+      setMetaAccountSettingsError(null);
+      const token = localStorage.getItem("admin_session_token");
+      if (!token) return;
+
+      const res = await fetch(`/api/admin/meta-ad-accounts?token=${encodeURIComponent(token)}`, { cache: "no-store" });
+      const result = await res.json().catch(() => null);
+      if (!res.ok || !result?.success) {
+        throw new Error(result?.error || "Failed to load Meta ad accounts");
+      }
+
+      const accounts = Array.isArray(result.config?.accounts) ? result.config.accounts : [];
+      const envAccounts = Array.isArray(result.envAccounts) ? result.envAccounts : [];
+      const envRows = envAccounts.map(mapMetaAccountForAdmin);
+      const savedRows = accounts.map(mapMetaAccountForAdmin);
+      const shouldLoadEnvRows = envRows.length > savedRows.length;
+      setMetaEnvAccountRows(envRows);
+      setMetaAccountRows(
+        shouldLoadEnvRows
+          ? envRows
+          : savedRows.length > 0
+          ? savedRows
+          : [createBlankMetaAdAccountRow()]
+      );
+      if (shouldLoadEnvRows) {
+        setMetaAccountSettingsMessage("Loaded existing env accounts. Set the correct active/history windows and save.");
+      }
+      setVisibleMetaAccessTokenRows(new Set());
+    } catch (err) {
+      console.error("Meta ad account settings fetch error:", err);
+      setMetaAccountSettingsError(err instanceof Error ? err.message : "Failed to load Meta ad accounts");
+      setMetaAccountRows((rows) => (rows.length > 0 ? rows : [createBlankMetaAdAccountRow()]));
+    } finally {
+      setMetaAccountSettingsLoading(false);
+    }
+  };
+
+  const updateMetaAccountRow = (index: number, patch: Partial<MetaAdAccountAdminRow>) => {
+    setMetaAccountRows((rows) =>
+      rows.map((row, rowIndex) =>
+        rowIndex === index
+          ? {
+              ...row,
+              ...patch,
+              endDate: patch.active === true ? "" : patch.endDate ?? row.endDate,
+              endTime: patch.active === true ? "23:59" : patch.endTime ?? row.endTime,
+            }
+          : row
+      )
+    );
+  };
+
+  const revealMetaAccessToken = async (index: number) => {
+    if (visibleMetaAccessTokenRows.has(index)) {
+      setVisibleMetaAccessTokenRows((current) => {
+        const next = new Set(current);
+        next.delete(index);
+        return next;
+      });
+      return;
+    }
+
+    if (!metaAccountRows[index]?.accessToken && metaAccountRows[index]?.hasAccessToken) {
+      const token = localStorage.getItem("admin_session_token");
+      if (token) {
+        const res = await fetch(
+          `/api/admin/meta-ad-accounts?token=${encodeURIComponent(token)}&includeAccessTokens=true`,
+          { cache: "no-store" }
+        );
+        const result = await res.json().catch(() => null);
+        if (res.ok && result?.success) {
+          const tokenAccounts = Array.isArray(result.config?.accounts) ? result.config.accounts : [];
+          const tokenEnvAccounts = Array.isArray(result.envAccounts) ? result.envAccounts : [];
+          const allTokenAccounts = [...tokenAccounts, ...tokenEnvAccounts];
+          setMetaAccountRows((rows) =>
+            rows.map((row) => {
+              const match = allTokenAccounts.find((account: any) => account.accountId === row.accountId);
+              return match?.accessToken ? { ...row, accessToken: match.accessToken } : row;
+            })
+          );
+        }
+      }
+    }
+
+    setVisibleMetaAccessTokenRows((current) => new Set(current).add(index));
+  };
+
+  const importMetaEnvAccounts = () => {
+    if (metaEnvAccountRows.length === 0) return;
+    setMetaAccountRows(metaEnvAccountRows.map((row) => ({ ...row, active: true })));
+    setVisibleMetaAccessTokenRows(new Set());
+    setMetaAccountSettingsMessage("Imported existing env accounts as active. Set the correct active/history windows and save.");
+    setMetaAccountSettingsError(null);
+  };
+
+  const saveMetaAccountSettings = async () => {
+    try {
+      setMetaAccountSettingsSaving(true);
+      setMetaAccountSettingsError(null);
+      setMetaAccountSettingsMessage(null);
+      const token = localStorage.getItem("admin_session_token");
+      if (!token) return;
+
+      const rowsToSave = metaAccountRows
+        .map((row) => ({
+          ...row,
+          accountId: row.accountId.trim().replace(/^act_/i, ""),
+          label: row.label.trim(),
+          accessToken: row.accessToken.trim(),
+          startTime: row.startTime || "00:00",
+          endTime: row.endTime || "23:59",
+        }))
+        .filter((row) => row.accountId);
+
+      const duplicateAccountIds = rowsToSave
+        .map((row) => row.accountId)
+        .filter((accountId, index, accountIds) => accountIds.indexOf(accountId) !== index);
+      if (duplicateAccountIds.length > 0) {
+        throw new Error(`Remove duplicate ad account IDs: ${Array.from(new Set(duplicateAccountIds)).join(", ")}`);
+      }
+
+      const activeRows = rowsToSave.filter((row) => row.active);
+      if (rowsToSave.length > 0 && activeRows.length === 0) {
+        throw new Error("Keep at least one account marked Active.");
+      }
+
+      for (const row of rowsToSave) {
+        const accountLabel = row.label || `act_${row.accountId}`;
+        if (!row.startDate) {
+          throw new Error(`${accountLabel}: start date is required.`);
+        }
+        if (!row.accessToken && !row.hasAccessToken) {
+          throw new Error(`${accountLabel}: access token is required the first time you add the account.`);
+        }
+        if (!row.active && !row.endDate) {
+          throw new Error(`${accountLabel}: end date is required when the account is not active.`);
+        }
+        const windowKey = getMetaAccountWindowKey(row);
+        if (windowKey.end && windowKey.end <= windowKey.start) {
+          throw new Error(`${accountLabel}: end date/time must be after start date/time.`);
+        }
+      }
+
+      const accounts = rowsToSave.map((row) => ({
+        accountId: row.accountId,
+        label: row.label,
+        startDate: row.startDate || undefined,
+        startTime: row.startTime,
+        endDate: row.active ? undefined : row.endDate || undefined,
+        endTime: row.active ? undefined : row.endTime,
+        active: row.active,
+        accessToken: row.accessToken || undefined,
+      }));
+
+      const res = await fetch(`/api/admin/meta-ad-accounts?token=${encodeURIComponent(token)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: { accounts } }),
+      });
+      const result = await res.json().catch(() => null);
+      if (!res.ok || !result?.success) {
+        throw new Error(result?.error || "Failed to save Meta ad accounts");
+      }
+
+      const savedAccounts = Array.isArray(result.config?.accounts) ? result.config.accounts : [];
+      setMetaAccountRows(
+        savedAccounts.length > 0
+          ? savedAccounts.map(mapMetaAccountForAdmin)
+          : [createBlankMetaAdAccountRow()]
+      );
+      setVisibleMetaAccessTokenRows(new Set());
+      setMetaAccountSettingsMessage("Meta ad account windows saved.");
+      fetchMetaAds(metaDatePreset);
+      if (activeTab === "profit-sheet") fetchProfitSheet(undefined, true);
+      if (activeTab === "meta-details") fetchMetaBreakdown();
+      if (activeTab === "attribution") fetchAttribution();
+      if (activeTab === "analytics") fetchAnalytics(true);
+    } catch (err) {
+      console.error("Meta ad account settings save error:", err);
+      setMetaAccountSettingsError(err instanceof Error ? err.message : "Failed to save Meta ad accounts");
+    } finally {
+      setMetaAccountSettingsSaving(false);
+    }
   };
 
   const fetchData = async (syncLastTwoDays: boolean = false) => {
@@ -1164,6 +1444,10 @@ export default function AdminRevenuePage() {
   }, [router, selectedStartDate, selectedEndDate, selectedStartTime, selectedEndTime]);
 
   useEffect(() => {
+    fetchMetaAccountSettings();
+  }, [router]);
+
+  useEffect(() => {
     fetchMetaAds(metaDatePreset);
   }, [metaDatePreset]);
 
@@ -1357,9 +1641,268 @@ export default function AdminRevenuePage() {
     conversionRate: 0,
   };
   const totalTypeRevenue = rbt.bundle + rbt.upsell + rbt.coins + rbt.report + (rbt.chatPass || 0);
+  const configuredMetaAccountCount = metaAccountRows.filter((row) => row.accountId.trim()).length;
+  const activeMetaAccountCount = metaAccountRows.filter((row) => getMetaAccountRuntimeStatus(row) === "active").length;
 
   return (
     <div className="min-h-screen bg-[#0A0E1A] pb-24">
+      {showMetaAccountSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/70 px-4 py-6">
+          <div className="w-[min(96vw,72rem)] max-h-[90vh] overflow-y-auto overflow-x-hidden rounded-2xl border border-primary/25 bg-[#071327] shadow-2xl shadow-primary/10">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-primary/20 bg-[#071327]/95 px-5 py-4 backdrop-blur">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-semibold text-white">Meta Ad Accounts</h2>
+                  <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                    {configuredMetaAccountCount} configured
+                  </span>
+                  <span
+                    className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                      activeMetaAccountCount >= 1
+                        ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                        : "border-amber-400/30 bg-amber-400/10 text-amber-300"
+                    }`}
+                  >
+                    {activeMetaAccountCount} active
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-white/50">
+                  These windows power Profit Sheet, Meta Details, Attribution, and Analytics.
+                </p>
+                <p className="mt-1 text-xs text-white/40">
+                  Profit Sheet spend is grouped by AstroRekha day: 11:30 AM IST to 11:29 AM IST. Currency is fetched from Meta automatically.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowMetaAccountSettings(false)}
+                className="rounded-lg p-2 text-white/45 transition-colors hover:bg-white/10 hover:text-white"
+                aria-label="Close Meta ad account settings"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 p-5">
+              {metaAccountSettingsError && (
+                <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                  {metaAccountSettingsError}
+                </div>
+              )}
+              {metaAccountSettingsMessage && (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+                  {metaAccountSettingsMessage}
+                </div>
+              )}
+              {metaEnvAccountRows.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/10 px-4 py-3">
+                  <p className="min-w-0 text-sm text-white/70">
+                    Found {metaEnvAccountRows.length} existing env account{metaEnvAccountRows.length === 1 ? "" : "s"} available to import.
+                  </p>
+                  <button
+                    onClick={importMetaEnvAccounts}
+                    className="rounded-lg border border-primary/30 px-3 py-1.5 text-sm text-primary transition-colors hover:bg-primary/15"
+                  >
+                    Import Existing Accounts
+                  </button>
+                </div>
+              )}
+
+              {metaAccountSettingsLoading ? (
+                <div className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] py-10 text-white/60">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                  Loading ad accounts...
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {metaAccountRows.map((row, index) => {
+                    const runtimeStatus = getMetaAccountRuntimeStatus(row);
+                    return (
+                    <div
+                      key={`${row.accountId || "new"}-${index}`}
+                      className={`overflow-hidden rounded-xl border p-4 ${
+                        runtimeStatus === "active"
+                          ? "border-primary/35 bg-primary/[0.07]"
+                          : "border-white/10 bg-white/[0.03]"
+                      }`}
+                    >
+                      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <span className="min-w-0 max-w-full truncate text-sm font-semibold text-white">
+                            {row.label || row.accountId || `Ad account ${index + 1}`}
+                          </span>
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[11px] ${
+                              runtimeStatus === "active"
+                                ? "border-primary/40 bg-primary/15 text-primary"
+                                : runtimeStatus === "scheduled"
+                                ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
+                                : "border-white/10 bg-white/5 text-white/55"
+                            }`}
+                          >
+                            {formatMetaAccountRuntimeStatus(runtimeStatus)}
+                          </span>
+                        </div>
+                        <span className="max-w-full truncate text-xs text-white/45">{formatMetaAccountWindow(row)}</span>
+                      </div>
+
+                      <div className="mb-3 flex flex-wrap items-center gap-2">
+                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/55">
+                          Spend day: 11:30 AM {"->"} 11:29 AM IST
+                        </span>
+                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/55">
+                          Currency: {row.accountCurrency || "Auto from Meta"}
+                        </span>
+                        {row.accountTimezone && (
+                          <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/55">
+                            Meta timezone: {row.accountTimezone}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-12">
+                        <label className="min-w-0 space-y-1 xl:col-span-2">
+                          <span className="text-xs text-white/45">Label</span>
+                          <input
+                            value={row.label}
+                            onChange={(event) => updateMetaAccountRow(index, { label: event.target.value })}
+                            placeholder="Primary India"
+                            className="h-10 w-full min-w-0 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white outline-none focus:border-primary/50"
+                          />
+                        </label>
+                        <label className="min-w-0 space-y-1 xl:col-span-3">
+                          <span className="text-xs text-white/45">Ad account ID</span>
+                          <input
+                            value={row.accountId}
+                            onChange={(event) => updateMetaAccountRow(index, { accountId: event.target.value })}
+                            placeholder="act_123..."
+                            className="h-10 w-full min-w-0 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white outline-none focus:border-primary/50"
+                          />
+                        </label>
+                        <label className="min-w-0 space-y-1 xl:col-span-2">
+                          <span className="text-xs text-white/45">Start date</span>
+                          <input
+                            type="date"
+                            value={row.startDate}
+                            onChange={(event) => updateMetaAccountRow(index, { startDate: event.target.value })}
+                            className="h-10 w-full min-w-0 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white outline-none focus:border-primary/50"
+                          />
+                        </label>
+                        <label className="min-w-0 space-y-1 xl:col-span-2">
+                          <span className="text-xs text-white/45">Start time</span>
+                          <input
+                            type="time"
+                            value={row.startTime}
+                            onChange={(event) => updateMetaAccountRow(index, { startTime: event.target.value })}
+                            className="h-10 w-full min-w-0 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white outline-none focus:border-primary/50"
+                          />
+                        </label>
+                        <label className="min-w-0 space-y-1 xl:col-span-2">
+                          <span className="text-xs text-white/45">End date</span>
+                          <input
+                            type="date"
+                            value={row.endDate}
+                            disabled={row.active}
+                            onChange={(event) => updateMetaAccountRow(index, { endDate: event.target.value })}
+                            className="h-10 w-full min-w-0 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white outline-none disabled:opacity-40 focus:border-primary/50"
+                          />
+                        </label>
+                        <label className="min-w-0 space-y-1 xl:col-span-2">
+                          <span className="text-xs text-white/45">End time</span>
+                          <input
+                            type="time"
+                            value={row.endTime}
+                            disabled={row.active}
+                            onChange={(event) => updateMetaAccountRow(index, { endTime: event.target.value })}
+                            className="h-10 w-full min-w-0 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white outline-none disabled:opacity-40 focus:border-primary/50"
+                          />
+                        </label>
+                        <div className="flex min-w-0 items-end xl:col-span-1">
+                          <label className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 text-sm text-primary">
+                            <input
+                              type="checkbox"
+                              checked={row.active}
+                              onChange={(event) => updateMetaAccountRow(index, { active: event.target.checked })}
+                              className="h-4 w-4 accent-primary"
+                            />
+                            Active
+                          </label>
+                        </div>
+                        <div className="flex min-w-0 items-end justify-end xl:col-span-2">
+                          <button
+                            onClick={() =>
+                              setMetaAccountRows((rows) =>
+                                rows.length > 1 ? rows.filter((_, rowIndex) => rowIndex !== index) : [createBlankMetaAdAccountRow()]
+                              )
+                            }
+                            className="h-10 w-full rounded-lg border border-red-400/20 px-3 text-sm text-red-300 transition-colors hover:bg-red-500/10 sm:w-auto"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        <div className="min-w-0 space-y-1 md:col-span-2 xl:col-span-12">
+                          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                            <span className="min-w-0 truncate text-xs text-white/45">
+                              Access token {row.hasAccessToken && row.accessTokenPreview ? `(${row.accessTokenPreview})` : ""}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => revealMetaAccessToken(index)}
+                              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-primary transition-colors hover:bg-primary/10"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              {visibleMetaAccessTokenRows.has(index) ? "Hide token" : "View token"}
+                            </button>
+                          </div>
+                          <input
+                            type={visibleMetaAccessTokenRows.has(index) ? "text" : "password"}
+                            value={row.accessToken}
+                            onChange={(event) => updateMetaAccountRow(index, { accessToken: event.target.value })}
+                            placeholder={row.hasAccessToken ? "Leave blank to keep saved token" : "Paste Meta access token"}
+                            className="h-10 w-full min-w-0 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white outline-none focus:border-primary/50"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                  })}
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
+                <button
+                  onClick={() =>
+                    setMetaAccountRows((rows) => [
+                      ...rows,
+                      { ...createBlankMetaAdAccountRow(), active: rows.length === 0 },
+                    ])
+                  }
+                  className="flex items-center gap-2 rounded-lg border border-primary/25 bg-primary/10 px-3 py-2 text-sm text-primary transition-colors hover:bg-primary/20"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Account
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowMetaAccountSettings(false)}
+                    className="rounded-lg border border-white/10 px-4 py-2 text-sm text-white/65 transition-colors hover:bg-white/10"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={saveMetaAccountSettings}
+                    disabled={metaAccountSettingsSaving || metaAccountSettingsLoading}
+                    className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+                  >
+                    {metaAccountSettingsSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Save
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-gradient-to-b from-[#1A1F2E] to-transparent px-4 pt-12 pb-6">
         <div className="max-w-6xl mx-auto">
@@ -1382,6 +1925,23 @@ export default function AdminRevenuePage() {
                   Recover Payments
                 </button>
               )}
+              <button
+                onClick={() => {
+                  setMetaAccountSettingsMessage(null);
+                  setMetaAccountSettingsError(null);
+                  setShowMetaAccountSettings(true);
+                  if (metaAccountRows.length === 0) fetchMetaAccountSettings();
+                }}
+                className="px-3 py-2 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 transition-colors text-primary text-sm flex items-center gap-2"
+              >
+                <Settings className="w-4 h-4" />
+                Ad Accounts
+                {configuredMetaAccountCount > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground">
+                    {configuredMetaAccountCount}
+                  </span>
+                )}
+              </button>
               <button
                 onClick={() => {
                   if (activeTab === "dashboard") fetchData(true);
@@ -7319,12 +7879,11 @@ function MetaAdsSection({
       )}
 
       {metaAds && !metaAds.configured && (
-        <div className="bg-[#1A2235] rounded-xl p-6 border border-white/10 text-center">
-          <Megaphone className="w-10 h-10 text-blue-400/40 mx-auto mb-3" />
+        <div className="bg-[#1A2235] rounded-xl p-6 border border-primary/20 text-center">
+          <Megaphone className="w-10 h-10 text-primary/50 mx-auto mb-3" />
           <p className="text-white/60 text-sm mb-2">Meta Ads not configured</p>
           <p className="text-white/40 text-xs">
-            Add <code className="bg-white/10 px-1.5 py-0.5 rounded text-blue-300">META_ACCESS_TOKEN</code> and{" "}
-            <code className="bg-white/10 px-1.5 py-0.5 rounded text-blue-300">META_AD_ACCOUNT_IDS</code> (comma-separated), and optionally <code className="bg-white/10 px-1.5 py-0.5 rounded text-blue-300">META_ACCESS_TOKENS_BY_ACCOUNT</code> for per-account tokens.
+            Open <span className="text-primary">Ad Accounts</span> in the Revenue Dashboard header, add the Meta account, token, and running window, then save.
           </p>
         </div>
       )}

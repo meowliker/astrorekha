@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
+import { getMetaAccountCredentialsForRange, getMetaAccountDateRangeForRequest } from "@/lib/meta-ad-accounts";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +13,45 @@ const PURCHASE_ACTION_PRIORITY = [
   "omni_purchase",
   "purchase",
 ];
+
+function formatIsoDate(date: Date): string {
+  return date.toISOString().split("T")[0];
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function getMetaPresetDateRange(datePreset: string): { startDate: string; endDate: string } {
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const endDate = formatIsoDate(today);
+
+  if (datePreset === "today") {
+    return { startDate: endDate, endDate };
+  }
+  if (datePreset === "yesterday") {
+    const yesterday = formatIsoDate(addDays(today, -1));
+    return { startDate: yesterday, endDate: yesterday };
+  }
+  if (datePreset === "this_month") {
+    return {
+      startDate: formatIsoDate(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1))),
+      endDate,
+    };
+  }
+  if (datePreset === "last_month") {
+    const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
+    const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 0));
+    return { startDate: formatIsoDate(start), endDate: formatIsoDate(end) };
+  }
+
+  const match = datePreset.match(/^last_(\d+)d$/);
+  const days = match ? Number(match[1]) : 30;
+  return { startDate: formatIsoDate(addDays(today, -(Math.max(days, 1) - 1))), endDate };
+}
 
 type AccountMetrics = {
   spend: number;
@@ -180,22 +219,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Session expired" }, { status: 401 });
     }
 
-    const credentials = getMetaAccountCredentialsFromEnv();
+    const requestedRange =
+      customStartDate && customEndDate
+        ? { startDate: customStartDate, endDate: customEndDate }
+        : getMetaPresetDateRange(datePreset);
+    const credentials = await getMetaAccountCredentialsForRange(supabase, requestedRange);
 
     if (credentials.length === 0) {
       return NextResponse.json({
         configured: false,
-        error: "Meta Ads not configured. Add META_AD_ACCOUNT_IDS and either META_ACCESS_TOKENS_BY_ACCOUNT or shared META_ACCESS_TOKEN.",
+        error: "Meta Ads not configured. Add the active Meta ad account in Admin Revenue > Ad Accounts.",
       });
     }
 
-    const dateParams =
-      customStartDate && customEndDate
-        ? `time_range={"since":"${customStartDate}","until":"${customEndDate}"}`
-        : `date_preset=${datePreset}`;
-
     const accountResponses = await Promise.all(
-      credentials.map(async ({ accountId: adAccountId, accessToken }) => {
+      credentials.map(async (credential) => {
+        const { accountId: adAccountId, accessToken } = credential;
+        const accountDateRange = getMetaAccountDateRangeForRequest(
+          credential,
+          requestedRange.startDate,
+          requestedRange.endDate
+        );
+        if (!accountDateRange) return null;
+        const dateParams = `time_range={"since":"${accountDateRange.startDate}","until":"${accountDateRange.endDate}"}`;
         const accountBase = `${META_BASE_URL}/act_${adAccountId}`;
         const [insightsData, campaignsData, dailyData, activeCampaignsData, accountMeta] = await Promise.all([
           fetchMetaJson(
@@ -264,7 +310,7 @@ export async function GET(request: NextRequest) {
 
         return {
           accountId: adAccountId,
-          accountName: accountMeta?.name || `act_${adAccountId}`,
+          accountName: credential.label || accountMeta?.name || `act_${adAccountId}`,
           accountMeta,
           metrics,
           campaigns,
@@ -274,8 +320,12 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    const mergedMetrics = mergeAccountMetrics(accountResponses.map((item) => item.metrics));
-    const campaigns = accountResponses
+    const validAccountResponses = accountResponses.filter(
+      (item): item is Exclude<(typeof accountResponses)[number], null> => Boolean(item)
+    );
+
+    const mergedMetrics = mergeAccountMetrics(validAccountResponses.map((item) => item.metrics));
+    const campaigns = validAccountResponses
       .flatMap((item) => item.campaigns)
       .sort((a, b) => b.spend - a.spend);
 
@@ -283,7 +333,7 @@ export async function GET(request: NextRequest) {
       string,
       { date: string; spend: number; impressions: number; clicks: number; reach: number; linkClicks: number }
     >();
-    accountResponses.forEach((item) => {
+    validAccountResponses.forEach((item) => {
       item.dailyBreakdown.forEach((row: {
         date: string;
         spend: number;
@@ -310,17 +360,18 @@ export async function GET(request: NextRequest) {
     });
 
     const dailyBreakdown = Array.from(dailyByDate.values()).sort((a, b) => a.date.localeCompare(b.date));
-    const activeCampaigns = accountResponses.flatMap((item) => item.activeCampaigns);
+    const activeCampaigns = validAccountResponses.flatMap((item) => item.activeCampaigns);
 
     return NextResponse.json({
       configured: true,
       datePreset,
       customDateRange: customStartDate && customEndDate ? { start: customStartDate, end: customEndDate } : null,
+      requestedRange,
       timezone: "Ad Account Timezone (typically IST for India accounts)",
       accountCount: credentials.length,
       accountIds: credentials.map((entry) => entry.accountId),
       account: mergedMetrics,
-      accounts: accountResponses.map((item) => ({
+      accounts: validAccountResponses.map((item) => ({
         id: item.accountId,
         name: item.accountName,
         metrics: item.metrics,

@@ -4,7 +4,7 @@ import {
   META_TRACKING_URL_PARAMETERS,
   type MarketingEventName,
 } from "@/lib/marketing-events";
-import { getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
+import { getMetaAccountCredentialsForRange } from "@/lib/meta-ad-accounts";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -181,13 +181,13 @@ async function fetchUsdInrRate(): Promise<number> {
   }
 }
 
-async function fetchMetaSpend(startDate: string, endDate: string): Promise<{
+async function fetchMetaSpend(supabase: any, startDate: string, endDate: string): Promise<{
   configured: boolean;
   adSpend: Map<string, SpendMetrics>;
   adsetSpend: Map<string, SpendMetrics>;
   campaignSpend: Map<string, SpendMetrics>;
 }> {
-  const credentials = getMetaAccountCredentialsFromEnv();
+  const credentials = await getMetaAccountCredentialsForRange(supabase, { startDate, endDate });
   const adSpend = new Map<string, SpendMetrics>();
   const adsetSpend = new Map<string, SpendMetrics>();
   const campaignSpend = new Map<string, SpendMetrics>();
@@ -293,7 +293,7 @@ export async function GET(request: NextRequest) {
         .lte("created_at", endIso)
         .order("created_at", { ascending: false })
         .limit(10000),
-      fetchMetaSpend(range.startDate, range.endDate),
+      fetchMetaSpend(supabase, range.startDate, range.endDate),
     ]);
 
     const eventsAvailable = !eventsResult.error;

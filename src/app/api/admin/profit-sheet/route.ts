@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { classifyPayUEvent } from "@/lib/finance-events";
 import { getPayUTransactions } from "@/lib/payu-api";
 import type { PayUTransaction } from "@/lib/payu-api";
-import { getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
+import { getMetaAccountCredentialsForRange, getMetaAccountWindowForRequest } from "@/lib/meta-ad-accounts";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -218,6 +218,30 @@ function addConvertedMetaSpend(
   spendMap.set(dayKey, current);
 }
 
+function isAccountLocalDayAlignedToBusinessDay(timezoneOffsetHoursUtc: number): boolean {
+  // 00:00 in UTC-6 is 11:30 IST, matching AstroRekha's reporting day.
+  return Math.abs(timezoneOffsetHoursUtc - -6) < 0.01;
+}
+
+function getBusinessDayWindowMillis(dayKey: string): { startMillis: number; endMillis: number } | null {
+  const startMillis = new Date(`${dayKey}T11:30:00+05:30`).getTime();
+  if (!Number.isFinite(startMillis)) return null;
+  return {
+    startMillis,
+    endMillis: startMillis + 24 * 60 * 60 * 1000,
+  };
+}
+
+function isFullBusinessDayCovered(
+  dayKey: string,
+  accountWindow?: { startMillis: number; endMillis: number } | null
+): boolean {
+  if (!accountWindow) return true;
+  const dayWindow = getBusinessDayWindowMillis(dayKey);
+  if (!dayWindow) return false;
+  return accountWindow.startMillis <= dayWindow.startMillis && accountWindow.endMillis >= dayWindow.endMillis;
+}
+
 function addHourlySpendToBusinessWindow(
   spendMap: Map<string, DailyMetaSpend>,
   row: {
@@ -229,7 +253,8 @@ function addHourlySpendToBusinessWindow(
   currency: string,
   exchangeRate: number,
   startDate: string,
-  endDate: string
+  endDate: string,
+  accountWindow?: { startMillis: number; endMillis: number } | null
 ) {
   const spend = parseFloat(String(row.spend || "0"));
   if (!Number.isFinite(spend) || spend <= 0) return;
@@ -240,13 +265,21 @@ function addHourlySpendToBusinessWindow(
   const bucketStart = toUtcFromAccountLocalHour(dateStart, hour, timezoneOffsetHoursUtc);
   if (!bucketStart || Number.isNaN(bucketStart.getTime())) return;
 
-  const bucketEnd = new Date(bucketStart.getTime() + 60 * 60 * 1000);
-  const startDay = getCostaRicaBusinessDayKeyFromDate(bucketStart);
-  const endDay = getCostaRicaBusinessDayKeyFromDate(new Date(bucketEnd.getTime() - 1));
+  const rawBucketStartMillis = bucketStart.getTime();
+  const rawBucketEndMillis = rawBucketStartMillis + 60 * 60 * 1000;
+  const bucketStartMillis = Math.max(rawBucketStartMillis, accountWindow?.startMillis ?? rawBucketStartMillis);
+  const bucketEndMillis = Math.min(rawBucketEndMillis, accountWindow?.endMillis ?? rawBucketEndMillis);
+  if (bucketStartMillis >= bucketEndMillis) return;
+
+  const adjustedSpend = spend * ((bucketEndMillis - bucketStartMillis) / (60 * 60 * 1000));
+  const clippedBucketStart = new Date(bucketStartMillis);
+  const clippedBucketEnd = new Date(bucketEndMillis);
+  const startDay = getCostaRicaBusinessDayKeyFromDate(clippedBucketStart);
+  const endDay = getCostaRicaBusinessDayKeyFromDate(new Date(clippedBucketEnd.getTime() - 1));
 
   if (startDay === endDay) {
     if (isWithinRequestedRange(startDay, startDate, endDate)) {
-      addConvertedMetaSpend(spendMap, startDay, spend, currency, exchangeRate);
+      addConvertedMetaSpend(spendMap, startDay, adjustedSpend, currency, exchangeRate);
     }
     return;
   }
@@ -254,15 +287,15 @@ function addHourlySpendToBusinessWindow(
   // Only the 11:30 IST boundary can split one hourly bucket into two business days.
   const splitBoundary = new Date(`${endDay}T11:30:00+05:30`);
   const splitMillis = splitBoundary.getTime();
-  const startMillis = bucketStart.getTime();
-  const endMillis = bucketEnd.getTime();
+  const startMillis = clippedBucketStart.getTime();
+  const endMillis = clippedBucketEnd.getTime();
   const leftMillis = Math.max(0, Math.min(endMillis, splitMillis) - startMillis);
   const rightMillis = Math.max(0, endMillis - Math.max(startMillis, splitMillis));
   const totalMillis = leftMillis + rightMillis;
   if (totalMillis <= 0) return;
 
-  const leftSpend = spend * (leftMillis / totalMillis);
-  const rightSpend = spend - leftSpend;
+  const leftSpend = adjustedSpend * (leftMillis / totalMillis);
+  const rightSpend = adjustedSpend - leftSpend;
 
   if (leftSpend > 0 && isWithinRequestedRange(startDay, startDate, endDate)) {
     addConvertedMetaSpend(spendMap, startDay, leftSpend, currency, exchangeRate);
@@ -274,11 +307,12 @@ function addHourlySpendToBusinessWindow(
 
 // Fetch Meta Ads daily spend for a date range, normalized to 11:30 AM IST business-day windows.
 async function fetchMetaAdsDailySpend(
+  supabase: any,
   startDate: string,
   endDate: string,
   exchangeRate: number
 ): Promise<Map<string, DailyMetaSpend>> {
-  const credentials = getMetaAccountCredentialsFromEnv();
+  const credentials = await getMetaAccountCredentialsForRange(supabase, { startDate, endDate });
 
   if (credentials.length === 0) {
     return new Map();
@@ -291,7 +325,10 @@ async function fetchMetaAdsDailySpend(
     const dateParams = `time_range={"since":"${queryStartDate}","until":"${queryEndDate}"}`;
     const spendMap = new Map<string, DailyMetaSpend>();
 
-    for (const { accountId: adAccountId, accessToken } of credentials) {
+    for (const credential of credentials) {
+      const { accountId: adAccountId, accessToken } = credential;
+      const accountWindow = getMetaAccountWindowForRequest(credential, startDate, endDate);
+      if (!accountWindow) continue;
       const accountUrl = `${META_BASE_URL}/act_${adAccountId}?fields=id,name,currency,timezone_name,timezone_offset_hours_utc&access_token=${accessToken}`;
       const hourlyUrl =
         `${META_BASE_URL}/act_${adAccountId}/insights` +
@@ -302,9 +339,14 @@ async function fetchMetaAdsDailySpend(
         `${META_BASE_URL}/act_${adAccountId}/insights` +
         `?fields=date_start,spend&time_increment=1&${dateParams}&limit=500&access_token=${accessToken}`;
 
-      const [accountResponse, hourlyResponse] = await Promise.all([fetch(accountUrl), fetch(hourlyUrl)]);
+      const [accountResponse, hourlyResponse, dailyResponse] = await Promise.all([
+        fetch(accountUrl),
+        fetch(hourlyUrl),
+        fetch(dailyFallbackUrl),
+      ]);
       const accountData = await accountResponse.json().catch(() => null);
       const hourlyData = await hourlyResponse.json().catch(() => null);
+      const dailyData = await dailyResponse.json().catch(() => null);
 
       if (!accountResponse.ok || accountData?.error) {
         console.error(`Meta account fetch failed for act_${adAccountId}:`, accountData?.error || accountResponse.status);
@@ -320,9 +362,27 @@ async function fetchMetaAdsDailySpend(
         spend?: string;
         hourly_stats_aggregated_by_advertiser_time_zone?: string;
       }> = Array.isArray(hourlyData?.data) ? hourlyData.data : [];
+      const dailyRows: Array<{ date_start?: string; spend?: string }> = Array.isArray(dailyData?.data)
+        ? dailyData.data
+        : [];
+      const dailyAppliedDays = new Set<string>();
+
+      if (isAccountLocalDayAlignedToBusinessDay(timezoneOffsetHoursUtc)) {
+        dailyRows.forEach((day) => {
+          const spend = parseFloat(String(day.spend || "0"));
+          if (!Number.isFinite(spend) || spend <= 0) return;
+          const dayKey = String(day.date_start || "");
+          if (!isWithinRequestedRange(dayKey, startDate, endDate)) return;
+          if (dayKey < accountWindow.startDate || dayKey > accountWindow.endDate) return;
+          if (!isFullBusinessDayCovered(dayKey, accountWindow)) return;
+          addConvertedMetaSpend(spendMap, dayKey, spend, currency, exchangeRate);
+          dailyAppliedDays.add(dayKey);
+        });
+      }
 
       if (hourlyRows.length > 0) {
-        hourlyRows.forEach((row) =>
+        hourlyRows.forEach((row) => {
+          if (dailyAppliedDays.has(String(row.date_start || ""))) return;
           addHourlySpendToBusinessWindow(
             spendMap,
             row,
@@ -330,28 +390,26 @@ async function fetchMetaAdsDailySpend(
             currency,
             exchangeRate,
             startDate,
-            endDate
-          )
-        );
+            endDate,
+            accountWindow
+          );
+        });
         continue;
       }
 
       // Fallback in case hourly breakdown is unavailable for an account.
-      const fallbackResponse = await fetch(dailyFallbackUrl);
-      const fallbackData = await fallbackResponse.json().catch(() => null);
-      const dailyRows: Array<{ date_start?: string; spend?: string }> = Array.isArray(fallbackData?.data)
-        ? fallbackData.data
-        : [];
       dailyRows.forEach((day) => {
         const spend = parseFloat(String(day.spend || "0"));
         if (!Number.isFinite(spend) || spend <= 0) return;
         const dayKey = String(day.date_start || "");
+        if (dailyAppliedDays.has(dayKey)) return;
         if (!isWithinRequestedRange(dayKey, startDate, endDate)) return;
+        if (dayKey < accountWindow.startDate || dayKey > accountWindow.endDate) return;
         addConvertedMetaSpend(spendMap, dayKey, spend, currency, exchangeRate);
       });
 
-      if (!Array.isArray(fallbackData?.data)) {
-        console.error(`Meta fallback fetch returned no data for act_${adAccountId}`, fallbackData?.error || fallbackData);
+      if (!Array.isArray(dailyData?.data)) {
+        console.error(`Meta fallback fetch returned no data for act_${adAccountId}`, dailyData?.error || dailyData);
       }
     }
 
@@ -471,13 +529,14 @@ function calculateTotals(profitSheet: ProfitSheetRow[]) {
 }
 
 async function buildProfitSheetRows(
+  supabase: any,
   startDate: string,
   endDate: string,
   exchangeRate: number
 ): Promise<{ rows: ProfitSheetRow[]; source: string; paymentRows: SyncedPaymentRow[] }> {
   console.log(`Using exchange rate: ${exchangeRate}`);
 
-  const metaSpendMap = await fetchMetaAdsDailySpend(startDate, endDate, exchangeRate);
+  const metaSpendMap = await fetchMetaAdsDailySpend(supabase, startDate, endDate, exchangeRate);
   console.log(`Fetched Meta Ads spend for ${metaSpendMap.size} days`);
 
   const dates: string[] = [];
@@ -640,7 +699,7 @@ async function syncProfitSheetRows(
   endDate: string,
   exchangeRate: number
 ): Promise<{ rows: ProfitSheetRow[]; source: string }> {
-  const result = await buildProfitSheetRows(startDate, endDate, exchangeRate);
+  const result = await buildProfitSheetRows(supabase, startDate, endDate, exchangeRate);
   if (result.paymentRows.length > 0) {
     for (let i = 0; i < result.paymentRows.length; i += 500) {
       const batch = result.paymentRows.slice(i, i + 500);

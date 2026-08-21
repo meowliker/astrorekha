@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import crypto from "crypto";
-import { classifyPayUEvent } from "@/lib/finance-events";
-import { getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
+import { classifyPayUEvent, classifyStoredPaymentEvent } from "@/lib/finance-events";
+import { getMetaAccountCredentialsForRange } from "@/lib/meta-ad-accounts";
 
 export const dynamic = "force-dynamic";
 
@@ -549,6 +549,14 @@ function mergeAccountLevelMetrics(
   };
 }
 
+function convertMetaSpendToInr(spend: number, currency: string | null | undefined, exchangeRate: number): number {
+  const normalizedCurrency = String(currency || "USD").trim().toUpperCase();
+  if (normalizedCurrency === "INR") {
+    return spend;
+  }
+  return spend * exchangeRate;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = getSupabaseAdmin();
@@ -575,15 +583,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Session expired" }, { status: 401 });
     }
 
-    const credentials = getMetaAccountCredentialsFromEnv();
-
-    if (credentials.length === 0) {
-      return NextResponse.json({
-        configured: false,
-        error: "Meta Ads not configured",
-      });
-    }
-
     // Get exchange rate
     const exchangeRate = customExchangeRate ? parseFloat(customExchangeRate) : await fetchExchangeRate();
 
@@ -601,55 +600,72 @@ export async function GET(request: NextRequest) {
       ? resolveCustomBusinessWindow(customStartDateValue, customEndDate, now)
       : resolvePresetBusinessWindow(datePreset, now);
 
-    const payuFetchStartDate = businessWindow.startDateIso;
-    const payuFetchEndDate = shiftIsoDate(businessWindow.endDateIso, 1);
+    const credentials = await getMetaAccountCredentialsForRange(supabase, {
+      startDate: businessWindow.startDateIso,
+      endDate: businessWindow.endDateIso,
+      startMillis: businessWindow.start.getTime(),
+      endMillis: businessWindow.end.getTime(),
+    });
 
-    // Fetch PayU transactions for the date range to get actual revenue
-    console.log(
-      `Fetching PayU transactions from ${payuFetchStartDate} to ${payuFetchEndDate} for business window ${formatIstDateTime(
-        businessWindow.start
-      )} -> ${formatIstDateTime(businessWindow.end)}`
-    );
-    const payuTransactions = await fetchPayUTransactions(payuFetchStartDate, payuFetchEndDate);
-    
-    // Debug: log first transaction to see field names
-    if (payuTransactions.length > 0) {
-      console.log("Sample PayU transaction:", JSON.stringify(payuTransactions[0]));
+    if (credentials.length === 0) {
+      return NextResponse.json({
+        configured: false,
+        error: "Meta Ads not configured",
+      });
     }
-    
-    const classifiedPayu = payuTransactions
-      .map((txn: any) => ({
-        txn,
-        financial: classifyPayUEvent(txn as Record<string, unknown>),
-        timestamp: parsePayUAddedOnTimestamp(txn?.addedon),
-        dayKey: null as string | null,
-      }))
-      .map((row) => ({
-        ...row,
-        dayKey: row.timestamp ? getBusinessDayKeyFromDate(row.timestamp) : null,
-      }))
-      .filter(
-        (row) =>
-          row.financial.kind !== "ignore" &&
-          !!row.timestamp &&
-          !!row.dayKey &&
-          row.dayKey >= businessWindow.startDateIso &&
-          row.dayKey <= businessWindow.endDateIso
-      );
 
-    const grossRevenue = classifiedPayu
-      .filter((row) => row.financial.kind === "sale")
-      .reduce((sum, row) => sum + row.financial.amount, 0);
-    const refundAmount = classifiedPayu
-      .filter((row) => row.financial.kind === "refund")
-      .reduce((sum, row) => sum + row.financial.amount, 0);
+    const paidStatuses = ["paid", "success", "captured"];
+    const attributionFetchStart = new Date(
+      businessWindow.start.getTime() - 48 * 60 * 60 * 1000
+    ).toISOString();
+    const attributionFetchEnd = new Date(
+      businessWindow.end.getTime() + 24 * 60 * 60 * 1000
+    ).toISOString();
+
+    type PaymentRevenueRow = {
+      id: string;
+      amount: number | null;
+      type: string | null;
+      payment_status: string | null;
+      created_at: string | null;
+      fulfilled_at: string | null;
+    };
+
+    const { data: revenuePayments, error: revenuePaymentsError } = await supabase
+      .from("payments")
+      .select("id, amount, type, payment_status, created_at, fulfilled_at")
+      .gte("created_at", attributionFetchStart)
+      .lte("created_at", attributionFetchEnd);
+
+    let grossRevenue = 0;
+    let refundAmount = 0;
+    let totalSales = 0;
+    let totalRefunds = 0;
+    let bundleSales = 0;
+
+    if (revenuePaymentsError) {
+      console.warn("Meta Details revenue ledger unavailable:", revenuePaymentsError.message);
+    } else {
+      for (const payment of (revenuePayments || []) as PaymentRevenueRow[]) {
+        const eventTime = parsePayUTimestamp(payment.fulfilled_at || payment.created_at);
+        if (!eventTime) continue;
+        if (eventTime < businessWindow.start || eventTime > businessWindow.end) continue;
+
+        const financial = classifyStoredPaymentEvent(payment.payment_status, payment.amount);
+        if (financial.kind === "sale") {
+          grossRevenue += financial.amount;
+          totalSales += 1;
+          if (isBundlePurchaseType(payment.type)) {
+            bundleSales += 1;
+          }
+        } else if (financial.kind === "refund") {
+          refundAmount += financial.amount;
+          totalRefunds += 1;
+        }
+      }
+    }
+
     const totalRevenue = grossRevenue - refundAmount;
-    const totalSales = classifiedPayu.filter((row) => row.financial.kind === "sale").length;
-    const totalRefunds = classifiedPayu.filter((row) => row.financial.kind === "refund").length;
-    const bundleSales = classifiedPayu.filter(
-      (row) => row.financial.kind === "sale" && isBundlePurchaseType(row.txn?.udf2)
-    ).length;
-    console.log(`PayU: ${totalSales} sales, ₹${totalRevenue.toFixed(2)} revenue`);
 
     type PaymentAttributionRow = {
       id: string;
@@ -659,14 +675,6 @@ export async function GET(request: NextRequest) {
       meta_campaign_id: string | null;
       utm_campaign: string | null;
     };
-
-    const paidStatuses = ["paid", "success", "captured"];
-    const attributionFetchStart = new Date(
-      businessWindow.start.getTime() - 48 * 60 * 60 * 1000
-    ).toISOString();
-    const attributionFetchEnd = new Date(
-      businessWindow.end.getTime() + 24 * 60 * 60 * 1000
-    ).toISOString();
 
     let firstPartyCampaignAttributionAvailable = true;
     const liveAttributionEvents: Array<{
@@ -1029,14 +1037,20 @@ export async function GET(request: NextRequest) {
     );
     const organicOrUnattributedSales = clampNonNegative(firstPartySales - attributionBaseline);
 
-    const totalSpendINR = mergedTotals.spend * exchangeRate;
+    const accountSpendInrById = new Map(
+      accountBreakdowns.map((account) => [
+        account.normalizedAdAccountId,
+        convertMetaSpendToInr(account.totals.spend, account.account.currency, exchangeRate),
+      ])
+    );
+    const totalSpendINR = Array.from(accountSpendInrById.values()).reduce((sum, spend) => sum + spend, 0);
     const gst = totalRevenue * 0.05;
     const netRevenue = totalRevenue - gst;
     const profit = netRevenue - totalSpendINR;
     const roas = totalSpendINR > 0 ? totalRevenue / totalSpendINR : 0;
 
     const accounts = accountBreakdowns.map((account) => {
-      const accountSpendInr = account.totals.spend * exchangeRate;
+      const accountSpendInr = accountSpendInrById.get(account.normalizedAdAccountId) || 0;
       const accountAttributed = firstPartyAttributedByAccount.get(account.normalizedAdAccountId) || {
         sales: 0,
         revenue: 0,
@@ -1073,7 +1087,7 @@ export async function GET(request: NextRequest) {
       account: {
         id: "combined",
         name: mergedAccountLabel,
-        currency: accountBreakdowns[0].account.currency,
+        currency: accountBreakdowns.length > 1 ? "Mixed" : accountBreakdowns[0].account.currency,
         timezone: accountBreakdowns.length > 1 ? "Mixed" : accountBreakdowns[0].account.timezone,
       },
       accounts,
