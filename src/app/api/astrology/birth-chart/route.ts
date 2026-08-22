@@ -8,6 +8,16 @@ const PROKERALA_CLIENT_SECRET = process.env.PROKERALA_CLIENT_SECRET;
 // Cache for Prokerala access token
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
+type PlanetPosition = {
+  name?: string;
+  rasi?: {
+    name?: string;
+    lord?: {
+      name?: string;
+    };
+  };
+};
+
 // Get OAuth2 access token from Prokerala
 async function getProkeralaAccessToken(): Promise<string> {
   // Return cached token if still valid
@@ -64,6 +74,16 @@ async function fetchProkeralaAPI(endpoint: string, params: Record<string, string
   return response.json();
 }
 
+function formatTimezoneOffset(timezone: number): string {
+  const safeTimezone = Number.isFinite(timezone) ? timezone : 5.5;
+  const sign = safeTimezone >= 0 ? "+" : "-";
+  const absolute = Math.abs(safeTimezone);
+  const hours = Math.floor(absolute);
+  const minutes = Math.round((absolute - hours) * 60);
+
+  return `${sign}${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { birthDate, birthTime, latitude, longitude, timezone, chartType } = await request.json();
@@ -80,7 +100,7 @@ export async function POST(request: NextRequest) {
     const [hours, minutes] = (birthTime || "12:00").split(":").map(Number);
 
     // Format datetime for Prokerala API (ISO 8601 format)
-    const datetime = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${String(hours || 12).padStart(2, '0')}:${String(minutes || 0).padStart(2, '0')}:00${timezone >= 0 ? '+' : ''}${String(Math.floor(timezone)).padStart(2, '0')}:${String(Math.abs((timezone % 1) * 60)).padStart(2, '0')}`;
+    const datetime = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${String(hours || 12).padStart(2, '0')}:${String(minutes || 0).padStart(2, '0')}:00${formatTimezoneOffset(Number(timezone))}`;
 
     const coordinates = `${latitude || 28.6139},${longitude || 77.209}`;
     const isWestern = chartType === "western";
@@ -137,12 +157,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const planetPositions = Array.isArray(planetPositionData?.data?.planet_position)
+    const planetPositions: PlanetPosition[] = Array.isArray(planetPositionData?.data?.planet_position)
       ? planetPositionData.data.planet_position
       : [];
 
     // Extract key planet data
-    const planets: Record<string, any> = {};
+    const planets: Record<string, unknown> = {};
     if (kundliData?.data?.nakshatra_details) {
       const nd = kundliData.data.nakshatra_details;
       if (nd.nakshatra) {
@@ -166,7 +186,7 @@ export async function POST(request: NextRequest) {
       }
       // IMPORTANT: use planet-position Ascendant as Lagna source.
       // `nakshatra_details.zodiac` often represents western zodiac for date.
-      const ascendantFromPlanetPosition = planetPositions.find((p: any) => p?.name === "Ascendant");
+      const ascendantFromPlanetPosition = planetPositions.find((p) => p?.name === "Ascendant");
       if (ascendantFromPlanetPosition?.rasi?.name) {
         planets["Ascendant"] = {
           zodiac_sign: ascendantFromPlanetPosition.rasi.name,
