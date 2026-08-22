@@ -557,6 +557,170 @@ function convertMetaSpendToInr(spend: number, currency: string | null | undefine
   return spend * exchangeRate;
 }
 
+interface ClippedAccountWindow {
+  startMillis: number;
+  endMillis: number;
+  since: string;
+  until: string;
+}
+
+function getIsoOffsetFromHours(offsetHours: unknown): string {
+  const parsed = Number(offsetHours);
+  const offset = Number.isFinite(parsed) ? parsed : 5.5;
+  const sign = offset >= 0 ? "+" : "-";
+  const absMinutes = Math.round(Math.abs(offset) * 60);
+  const hours = Math.floor(absMinutes / 60);
+  const minutes = absMinutes % 60;
+  return `${sign}${pad2(hours)}:${pad2(minutes)}`;
+}
+
+function getDateInFixedOffset(millis: number, offsetHours: unknown): string {
+  const parsed = Number(offsetHours);
+  const offset = Number.isFinite(parsed) ? parsed : 5.5;
+  const shifted = new Date(millis + Math.round(offset * 60 * 60 * 1000));
+  return shifted.toISOString().split("T")[0];
+}
+
+function getAccountBoundaryMillis(
+  date: string | undefined,
+  time: string | undefined,
+  fallback: number,
+  boundary: "start" | "end"
+): number {
+  if (!date) return fallback;
+  const normalizedDate = isIsoDate(date) ? date : null;
+  if (!normalizedDate) return fallback;
+
+  const normalizedTime = /^(\d{2}):(\d{2})$/.test(String(time || ""))
+    ? String(time)
+    : boundary === "start"
+    ? "00:00"
+    : "23:59";
+  const millis = new Date(`${normalizedDate}T${normalizedTime}:00+05:30`).getTime();
+  if (!Number.isFinite(millis)) return fallback;
+  return boundary === "end" && normalizedTime === "23:59" ? millis + 60 * 1000 : millis;
+}
+
+function getClippedAccountWindow(
+  account: {
+    startDate?: string;
+    startTime?: string;
+    endDate?: string;
+    endTime?: string;
+  },
+  businessWindow: BusinessWindow,
+  timezoneOffsetHours: unknown
+): ClippedAccountWindow | null {
+  const businessStartMillis = businessWindow.start.getTime();
+  const businessEndMillis = businessWindow.end.getTime();
+  const accountStartMillis = getAccountBoundaryMillis(
+    account.startDate,
+    account.startTime,
+    businessStartMillis,
+    "start"
+  );
+  const accountEndMillis = getAccountBoundaryMillis(account.endDate, account.endTime, businessEndMillis, "end");
+
+  const startMillis = Math.max(businessStartMillis, accountStartMillis);
+  const endMillis = Math.min(businessEndMillis, accountEndMillis);
+  if (startMillis >= endMillis) return null;
+
+  return {
+    startMillis,
+    endMillis,
+    since: getDateInFixedOffset(startMillis, timezoneOffsetHours),
+    until: getDateInFixedOffset(endMillis - 1, timezoneOffsetHours),
+  };
+}
+
+function parseHourlyInsightStartMillis(row: any, timezoneOffsetHours: unknown): number | null {
+  const date = String(row?.date_start || "").trim();
+  const hourRange = String(row?.hourly_stats_aggregated_by_advertiser_time_zone || "").trim();
+  const match = hourRange.match(/^(\d{2}):(\d{2}):\d{2}/);
+  if (!isIsoDate(date) || !match) return null;
+
+  const offset = getIsoOffsetFromHours(timezoneOffsetHours);
+  const millis = new Date(`${date}T${match[1]}:${match[2]}:00${offset}`).getTime();
+  return Number.isFinite(millis) ? millis : null;
+}
+
+function getHourlyOverlapRatio(row: any, accountWindow: ClippedAccountWindow, timezoneOffsetHours: unknown): number {
+  const rowStart = parseHourlyInsightStartMillis(row, timezoneOffsetHours);
+  if (rowStart === null) return 1;
+  const rowEnd = rowStart + 60 * 60 * 1000;
+  const overlap = Math.min(rowEnd, accountWindow.endMillis) - Math.max(rowStart, accountWindow.startMillis);
+  if (overlap <= 0) return 0;
+  return Math.min(1, overlap / (60 * 60 * 1000));
+}
+
+function buildMetricsFromTotals(totals: {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  purchases: number;
+  reach: number;
+  weightedRoasSpend: number;
+}) {
+  return {
+    spend: totals.spend,
+    impressions: totals.impressions,
+    clicks: totals.clicks,
+    cpc: totals.clicks > 0 ? totals.spend / totals.clicks : 0,
+    cpm: totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0,
+    ctr: totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0,
+    purchases: totals.purchases,
+    costPerPurchase: totals.purchases > 0 ? totals.spend / totals.purchases : 0,
+    reach: totals.reach,
+    roas: totals.spend > 0 ? totals.weightedRoasSpend / totals.spend : 0,
+  };
+}
+
+function aggregateInsightRows(
+  rows: any[],
+  accountWindow: ClippedAccountWindow,
+  timezoneOffsetHours: unknown
+): ReturnType<typeof buildMetricsFromTotals> {
+  const totals = rows.reduce(
+    (acc, row) => {
+      const ratio = getHourlyOverlapRatio(row, accountWindow, timezoneOffsetHours);
+      if (ratio <= 0) return acc;
+      const spend = parseMetricNumber(row?.spend) * ratio;
+      const purchases = getActionMetricValue(row?.actions || [], PURCHASE_ACTION_PRIORITY) * ratio;
+      const roas = getRoasValue(row);
+      acc.spend += spend;
+      acc.impressions += parseMetricNumber(row?.impressions) * ratio;
+      acc.clicks += parseMetricNumber(row?.clicks) * ratio;
+      acc.purchases += purchases;
+      acc.reach += parseMetricNumber(row?.reach) * ratio;
+      acc.weightedRoasSpend += roas * spend;
+      return acc;
+    },
+    { spend: 0, impressions: 0, clicks: 0, purchases: 0, reach: 0, weightedRoasSpend: 0 }
+  );
+
+  return buildMetricsFromTotals(totals);
+}
+
+function buildInsightsUrl(
+  accountId: string,
+  accessToken: string,
+  fields: string,
+  accountWindow: ClippedAccountWindow,
+  level?: "campaign" | "adset" | "ad"
+): string {
+  const params = new URLSearchParams({
+    fields,
+    time_range: JSON.stringify({ since: accountWindow.since, until: accountWindow.until }),
+    breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone",
+    limit: "500",
+    access_token: accessToken,
+  });
+  if (level) {
+    params.set("level", level);
+  }
+  return `${META_BASE_URL}/act_${accountId}/insights?${params.toString()}`;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = getSupabaseAdmin();
@@ -711,55 +875,56 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Build date range params for Meta (date-granular, mapped from IST business window)
-    const metaSinceDate = businessWindow.startDateIso;
-    const metaUntilDate = businessWindow.endDateIso;
-    const dateParams = new URLSearchParams({
-      time_range: JSON.stringify({ since: metaSinceDate, until: metaUntilDate }),
-    }).toString();
-
-    // Fields to fetch for insights
-    const insightFields = "spend,impressions,clicks,cpc,cpm,ctr,reach,actions,cost_per_action_type,purchase_roas,website_purchase_roas";
-
-    // Helper to extract metrics from insights
-    const extractMetrics = (insight: any) => {
-      const actions = insight?.actions || [];
-      const costPerAction = insight?.cost_per_action_type || [];
-      const purchases = getActionMetricValue(actions, PURCHASE_ACTION_PRIORITY);
-      const costPerPurchase = getActionMetricValue(costPerAction, PURCHASE_ACTION_PRIORITY);
-      const roas = getRoasValue(insight);
-
-      return {
-        spend: parseMetricNumber(insight?.spend),
-        impressions: parseMetricNumber(insight?.impressions),
-        clicks: parseMetricNumber(insight?.clicks),
-        cpc: parseMetricNumber(insight?.cpc),
-        cpm: parseMetricNumber(insight?.cpm),
-        ctr: parseMetricNumber(insight?.ctr),
-        reach: parseMetricNumber(insight?.reach),
-        purchases,
-        costPerPurchase,
-        roas,
-      };
-    };
+    // Fetch hourly Meta buckets so account switches and the 11:30 AM IST boundary are reflected in spend.
+    const insightFields = "spend,impressions,clicks,reach,actions,purchase_roas,website_purchase_roas";
     const accountBreakdowns = (
       await Promise.all(
-        credentials.map(async ({ accountId: adAccountId, accessToken }) => {
+        credentials.map(async ({ accountId: adAccountId, accessToken, startDate, startTime, endDate, endTime }) => {
           const normalizedAdAccountId = normalizeAdAccountId(adAccountId);
           if (!normalizedAdAccountId) return null;
 
-          const accountInsightsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/insights?fields=${insightFields}&${dateParams}&limit=1&access_token=${accessToken}`;
-          const accountUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}?fields=id,name,currency,timezone_name&access_token=${accessToken}`;
+          const accountUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}?fields=id,name,currency,timezone_name,timezone_offset_hours_utc&access_token=${accessToken}`;
+          const accountData = await fetchMetaJson(accountUrl);
+          const accountWindow = getClippedAccountWindow(
+            { startDate, startTime, endDate, endTime },
+            businessWindow,
+            accountData?.timezone_offset_hours_utc
+          );
+          if (!accountWindow) return null;
+
+          const accountInsightsUrl = buildInsightsUrl(
+            normalizedAdAccountId,
+            accessToken,
+            insightFields,
+            accountWindow
+          );
           const campaignsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget&limit=200&access_token=${accessToken}`;
-          const campaignInsightsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/insights?fields=campaign_id,campaign_name,${insightFields}&level=campaign&${dateParams}&limit=500&access_token=${accessToken}`;
-          const adsetInsightsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/insights?fields=adset_id,adset_name,campaign_id,${insightFields}&level=adset&${dateParams}&limit=500&access_token=${accessToken}`;
-          const adInsightsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/insights?fields=ad_id,ad_name,adset_id,campaign_id,${insightFields}&level=ad&${dateParams}&limit=500&access_token=${accessToken}`;
+          const campaignInsightsUrl = buildInsightsUrl(
+            normalizedAdAccountId,
+            accessToken,
+            `campaign_id,campaign_name,${insightFields}`,
+            accountWindow,
+            "campaign"
+          );
+          const adsetInsightsUrl = buildInsightsUrl(
+            normalizedAdAccountId,
+            accessToken,
+            `adset_id,adset_name,campaign_id,${insightFields}`,
+            accountWindow,
+            "adset"
+          );
+          const adInsightsUrl = buildInsightsUrl(
+            normalizedAdAccountId,
+            accessToken,
+            `ad_id,ad_name,adset_id,campaign_id,${insightFields}`,
+            accountWindow,
+            "ad"
+          );
           const adsetsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/adsets?fields=id,name,status,campaign_id,daily_budget,lifetime_budget&limit=500&access_token=${accessToken}`;
           const adsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/ads?fields=id,name,status,adset_id&limit=500&access_token=${accessToken}`;
 
           const [
             accountInsightsData,
-            accountData,
             campaignsData,
             campaignInsightsData,
             adsetInsightsData,
@@ -767,8 +932,7 @@ export async function GET(request: NextRequest) {
             adsetsData,
             adsData,
           ] = await Promise.all([
-            fetchMetaJson(accountInsightsUrl),
-            fetchMetaJson(accountUrl),
+            fetchAllMetaPages(accountInsightsUrl),
             fetchAllMetaPages(campaignsUrl),
             fetchAllMetaPages(campaignInsightsUrl),
             fetchAllMetaPages(adsetInsightsUrl),
@@ -779,17 +943,23 @@ export async function GET(request: NextRequest) {
 
           const campaignInsightsMap = new Map();
           campaignInsightsData.forEach((c: any) => {
-            campaignInsightsMap.set(c.campaign_id, c);
+            const rows = campaignInsightsMap.get(c.campaign_id) || [];
+            rows.push(c);
+            campaignInsightsMap.set(c.campaign_id, rows);
           });
 
           const adsetInsightsMap = new Map();
           adsetInsightsData.forEach((a: any) => {
-            adsetInsightsMap.set(a.adset_id, a);
+            const rows = adsetInsightsMap.get(a.adset_id) || [];
+            rows.push(a);
+            adsetInsightsMap.set(a.adset_id, rows);
           });
 
           const adInsightsMap = new Map();
           adInsightsData.forEach((a: any) => {
-            adInsightsMap.set(a.ad_id, a);
+            const rows = adInsightsMap.get(a.ad_id) || [];
+            rows.push(a);
+            adInsightsMap.set(a.ad_id, rows);
           });
 
           const adsetsByCampaign = new Map<string, any[]>();
@@ -811,24 +981,33 @@ export async function GET(request: NextRequest) {
           });
 
           const campaigns: CampaignData[] = campaignsData.map((campaign: any) => {
-            const campaignInsight = campaignInsightsMap.get(campaign.id);
-            const metrics = extractMetrics(campaignInsight);
+            const metrics = aggregateInsightRows(
+              campaignInsightsMap.get(campaign.id) || [],
+              accountWindow,
+              accountData?.timezone_offset_hours_utc
+            );
             const budget = campaign.daily_budget
               ? parseFloat(campaign.daily_budget) / 100
               : (campaign.lifetime_budget ? parseFloat(campaign.lifetime_budget) / 100 : null);
 
             const campaignAdsets = adsetsByCampaign.get(campaign.id) || [];
             const adsets: AdSetData[] = campaignAdsets.map((adset: any) => {
-              const adsetInsight = adsetInsightsMap.get(adset.id);
-              const adsetMetrics = extractMetrics(adsetInsight);
+              const adsetMetrics = aggregateInsightRows(
+                adsetInsightsMap.get(adset.id) || [],
+                accountWindow,
+                accountData?.timezone_offset_hours_utc
+              );
               const adsetBudget = adset.daily_budget
                 ? parseFloat(adset.daily_budget) / 100
                 : (adset.lifetime_budget ? parseFloat(adset.lifetime_budget) / 100 : null);
 
               const adsetAds = adsByAdset.get(adset.id) || [];
               const ads: AdMetrics[] = adsetAds.map((ad: any) => {
-                const adInsight = adInsightsMap.get(ad.id);
-                const adMetrics = extractMetrics(adInsight);
+                const adMetrics = aggregateInsightRows(
+                  adInsightsMap.get(ad.id) || [],
+                  accountWindow,
+                  accountData?.timezone_offset_hours_utc
+                );
                 return {
                   id: `${normalizedAdAccountId}:${ad.id}`,
                   metaId: String(ad.id),
@@ -870,11 +1049,11 @@ export async function GET(request: NextRequest) {
           });
 
           const knownCampaignIds = new Set(campaignsData.map((campaign: any) => String(campaign.id)));
-          campaignInsightsData.forEach((campaignInsight: any) => {
-            const campaignId = String(campaignInsight?.campaign_id || "");
+          campaignInsightsMap.forEach((campaignInsightRows: any[], campaignIdValue: string) => {
+            const campaignId = String(campaignIdValue || "");
             if (!campaignId || knownCampaignIds.has(campaignId)) return;
 
-            const metrics = extractMetrics(campaignInsight);
+            const metrics = aggregateInsightRows(campaignInsightRows, accountWindow, accountData?.timezone_offset_hours_utc);
             if (
               metrics.spend === 0 &&
               metrics.purchases === 0 &&
@@ -889,7 +1068,7 @@ export async function GET(request: NextRequest) {
               metaId: campaignId,
               accountId: normalizedAdAccountId,
               accountName: accountData?.name || `act_${normalizedAdAccountId}`,
-              name: campaignInsight?.campaign_name || campaignId,
+              name: campaignInsightRows[0]?.campaign_name || campaignId,
               status: "ACTIVE",
               budget: null,
               firstPartySales: 0,
@@ -901,8 +1080,11 @@ export async function GET(request: NextRequest) {
 
           campaigns.sort((a, b) => b.spend - a.spend);
 
-          const accountInsight = accountInsightsData?.data?.[0] || null;
-          const accountMetrics = extractMetrics(accountInsight);
+          const accountMetrics = aggregateInsightRows(
+            accountInsightsData,
+            accountWindow,
+            accountData?.timezone_offset_hours_utc
+          );
 
           const aggregatedCampaignTotals = campaigns.reduce(
             (acc, c) => ({
@@ -1055,6 +1237,7 @@ export async function GET(request: NextRequest) {
         sales: 0,
         revenue: 0,
       };
+      const accountFirstPartySales = accountAttributed.sales;
       return {
         account: account.account,
         campaigns: account.campaigns,
@@ -1068,13 +1251,11 @@ export async function GET(request: NextRequest) {
           roas: account.totals.roas,
         },
         sourceBreakdown: {
-          firstPartySales,
-          firstPartyAttributedSales: accountAttributed.sales,
+          firstPartySales: accountFirstPartySales,
+          firstPartyAttributedSales: accountFirstPartySales,
           firstPartyAttributedRevenue: accountAttributed.revenue,
           metaPurchases: account.totals.purchases,
-          organicOrUnattributedSales: clampNonNegative(
-            firstPartySales - Math.max(account.totals.purchases, firstPartyCampaignAttributionAvailable ? accountAttributed.sales : 0)
-          ),
+          organicOrUnattributedSales: 0,
         },
       };
     });
