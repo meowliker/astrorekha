@@ -949,7 +949,7 @@ export default function ChatPage() {
                     <div>
                       <p className="text-white text-sm font-semibold">About Elysia Chat</p>
                       <p className="mt-2 text-xs leading-5 text-white/70">
-                        Elysia&apos;s chat replies are AI-generated for spiritual entertainment only, not professional advice.
+                        Elysia&apos;s chat replies are AI-generated spiritual guidance, not professional advice.
                         AstroRekha assumes no liability for decisions or outcomes based on chat responses.
                       </p>
                     </div>

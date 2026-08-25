@@ -400,7 +400,7 @@ export default function SoulmateSketchPage() {
             </div>
           ) : null}
 
-          <ReportDisclaimer text="This AI-generated portrait is for entertainment only — not professional advice — and AstroRekha assumes no liability for any decisions or outcomes based on its content." />
+          <ReportDisclaimer text="This AI-generated portrait is for spiritual self-reflection, not professional advice, and AstroRekha assumes no liability for any decisions or outcomes based on its content." />
         </div>
       </div>
     </div>

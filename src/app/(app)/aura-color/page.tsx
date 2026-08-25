@@ -546,7 +546,7 @@ function AuraResultView({ result }: { result: AuraReportResult }) {
         {renderTabContent()}
       </div>
 
-      <ReportDisclaimer text="This aura color quiz is for entertainment only and is not medical, psychological, or professional advice." />
+      <ReportDisclaimer text="This AI-generated aura color report is for spiritual self-reflection and is not medical, psychological, or professional advice." />
     </motion.div>
   );
 }

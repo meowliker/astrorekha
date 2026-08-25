@@ -281,7 +281,7 @@ export default function Step13Page() {
                 transition={{ delay: 0.4 }}
                 className="text-muted-foreground text-center text-xs"
               >
-                These readings are for entertainment purposes only and should not be taken as 100% accurate
+                These readings are AI-generated spiritual insights and should not be taken as 100% accurate
               </motion.p>
 
               <motion.p

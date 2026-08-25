@@ -8,7 +8,7 @@ interface ReportDisclaimerProps {
 }
 
 const DEFAULT_DISCLAIMER_TEXT =
-  "This AI-generated report is for entertainment only — not professional advice — and AstroRekha assumes no liability for any decisions or outcomes based on its content.";
+  "This AI-generated report is for spiritual self-reflection, not professional advice, and AstroRekha assumes no liability for any decisions or outcomes based on its content.";
 
 export default function ReportDisclaimer({ className, text }: ReportDisclaimerProps) {
   return (

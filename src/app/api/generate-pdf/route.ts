@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
     // Footer
     doc.setFontSize(8);
     doc.setTextColor(150, 150, 150);
-    doc.text("This reading is for entertainment purposes only.", 105, 280, { align: "center" });
+    doc.text("This AI-generated reading is for spiritual self-reflection, not professional advice.", 105, 280, { align: "center" });
     doc.text("© AstroRekha - Your Cosmic Journey Awaits", 105, 285, { align: "center" });
     
     // Generate PDF as buffer

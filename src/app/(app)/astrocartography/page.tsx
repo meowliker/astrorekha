@@ -400,7 +400,7 @@ function AstrocartographyReportView({
         </div>
       </section>
 
-      <ReportDisclaimer text="This Astrocartography report is for entertainment only and is not relocation, immigration, legal, financial, or professional advice." />
+      <ReportDisclaimer text="This AI-assisted Astrocartography report is for spiritual self-reflection and is not relocation, immigration, legal, financial, or professional advice." />
     </motion.div>
   );
 }
