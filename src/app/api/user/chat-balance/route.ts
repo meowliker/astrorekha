@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unstable_noStore as noStore } from "next/cache";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
+    noStore();
+
     const email = (request.nextUrl.searchParams.get("email") || "").trim().toLowerCase();
     const userId = (request.nextUrl.searchParams.get("userId") || "").trim();
 
@@ -15,7 +18,20 @@ export async function GET(request: NextRequest) {
     const supabase = getSupabaseAdmin();
     let user: { id: string; email: string | null; coins: number | null } | null = null;
 
-    if (email) {
+    if (userId) {
+      const { data } = await supabase
+        .from("users")
+        .select("id, email, coins")
+        .eq("id", userId)
+        .maybeSingle();
+
+      const resolvedEmail = (data?.email || "").trim().toLowerCase();
+      if (data && (!email || resolvedEmail === email)) {
+        user = data;
+      }
+    }
+
+    if (!user && email) {
       const { data } = await supabase
         .from("users")
         .select("id, email, coins")
@@ -24,7 +40,7 @@ export async function GET(request: NextRequest) {
       if (data) user = data;
     }
 
-    if (!user && userId) {
+    if (!user && userId && !email) {
       const { data } = await supabase
         .from("users")
         .select("id, email, coins")
@@ -37,16 +53,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    return NextResponse.json({
-      success: true,
-      userId: user.id,
-      email: user.email,
-      coins: typeof user.coins === "number" ? user.coins : 0,
-    });
-  } catch (error: any) {
-    console.error("[chat-balance] error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to load chat balance" },
+      {
+        success: true,
+        userId: user.id,
+        email: user.email,
+        coins: typeof user.coins === "number" ? user.coins : 0,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        },
+      }
+    );
+  } catch (error: unknown) {
+    console.error("[chat-balance] error:", error);
+    const message = error instanceof Error ? error.message : "Failed to load chat balance";
+    return NextResponse.json(
+      { error: message },
       { status: 500 }
     );
   }
