@@ -119,6 +119,7 @@ export default function DashboardPage() {
             futurePartnerReport: userData.future_partner_report,
             vastuShastraGuide: userData.vastu_shastra_guide,
             auraColorReport: userData.aura_color_report,
+            pastLifeReport: userData.past_life_report,
             coins: userData.coins,
             purchasedBundle: userData.bundle_purchased || null,
           });
@@ -808,6 +809,39 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
+                {/* Past Life Report */}
+                <div
+                  onClick={() => {
+                    if (unlockedFeatures.pastLifeReport) {
+                      router.push("/past-life");
+                      return;
+                    }
+                    setUpsellPopup({ isOpen: true, feature: "pastLifeReport" });
+                  }}
+                  className="bg-[#1A2235] rounded-2xl border border-primary/20 p-3 cursor-pointer hover:border-primary/40 transition-colors relative"
+                >
+                  {!unlockedFeatures.pastLifeReport && (
+                    <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
+                      <Lock className="w-3 h-3 text-white/60" />
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-amber-400/25 via-fuchsia-500/25 to-violet-600/25 flex items-center justify-center flex-shrink-0 overflow-hidden border border-white/10">
+                      <span className="text-3xl">🕯️</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-semibold">Past Life Report</h3>
+                      <p className="text-white/50 text-xs mt-0.5">Reveal your past-life archetype, karma, and soul lesson</p>
+                      {!unlockedFeatures.pastLifeReport && (
+                        <button className="mt-1 px-3 py-1 bg-primary/20 text-primary text-xs rounded-full">
+                          Get Report
+                        </button>
+                      )}
+                    </div>
+                    <ChevronRight className="w-6 h-6 text-white/40" />
+                  </div>
+                </div>
+
                 {/* Prediction 2026 Report */}
                 <div 
                   onClick={() => {
@@ -906,6 +940,11 @@ export default function DashboardPage() {
               if (upsellPopup.feature === "futurePartnerReport") {
                 unlockFeature("futurePartnerReport");
                 router.push("/future-partner");
+                return;
+              }
+              if (upsellPopup.feature === "pastLifeReport") {
+                unlockFeature("pastLifeReport");
+                router.push("/past-life");
                 return;
               }
               if (upsellPopup.feature === "vastuShastraGuide") {

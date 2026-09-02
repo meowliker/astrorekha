@@ -14,6 +14,7 @@ const CITY_COORDINATES: Record<string, { latitude: number; longitude: number; ti
   "ahmedabad": { latitude: 23.0225, longitude: 72.5714, timezone: 5.5 },
   "jaipur": { latitude: 26.9124, longitude: 75.7873, timezone: 5.5 },
   "lucknow": { latitude: 26.8467, longitude: 80.9462, timezone: 5.5 },
+  "raipur": { latitude: 21.2514, longitude: 81.6296, timezone: 5.5 },
   "new york": { latitude: 40.7128, longitude: -74.006, timezone: -5 },
   "los angeles": { latitude: 34.0522, longitude: -118.2437, timezone: -8 },
   "london": { latitude: 51.5074, longitude: -0.1278, timezone: 0 },

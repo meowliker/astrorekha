@@ -216,7 +216,7 @@ function Step19Content() {
       const offerPriceInr: Record<string, number> = {
         compatibility: 499,
         "2026-predictions": 499,
-        "vastu-shastra-guide": 297,
+        "past-life": 499,
         "ultra-pack": 999,
       };
       const upsellValue = offerList.reduce((sum, offerId) => sum + (offerPriceInr[offerId] ?? 499), 0);

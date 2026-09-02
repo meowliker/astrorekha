@@ -76,6 +76,7 @@ function featureToName(feature: string): string {
     vastuShastraGuide: "Complete Vastu Shastra Guide Ebook",
     auraColorReport: "Aura Color Quiz",
     astrocartographyReport: "Astrocartography",
+    pastLifeReport: "Past Life Report",
   };
   return labels[feature] || feature.replace(/([A-Z])/g, " $1").trim();
 }

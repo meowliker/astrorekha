@@ -25,6 +25,7 @@ const FEATURE_LABELS: Record<string, string> = {
   vastuShastraGuide: "Complete Vastu Shastra Guide Ebook",
   auraColorReport: "Aura Color Quiz",
   astrocartographyReport: "Astrocartography",
+  pastLifeReport: "Past Life Report",
 };
 
 export default function ManageSubscriptionPage() {

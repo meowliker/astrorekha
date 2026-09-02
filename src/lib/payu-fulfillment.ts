@@ -28,6 +28,7 @@ const BUNDLE_FEATURES: Record<string, string[]> = {
     "futurePartnerReport",
     "auraColorReport",
     "astrocartographyReport",
+    "pastLifeReport",
   ],
 };
 
@@ -50,6 +51,8 @@ const OFFER_ID_TO_FEATURE: Record<string, string> = {
   "report-aura-color": "auraColorReport",
   astrocartography: "astrocartographyReport",
   "report-astrocartography": "astrocartographyReport",
+  "past-life": "pastLifeReport",
+  "report-past-life": "pastLifeReport",
   "vastu-shastra-guide": "vastuShastraGuide",
   "report-vastu-shastra-guide": "vastuShastraGuide",
 };
@@ -417,6 +420,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload): Promise<
     vastuShastraGuide: false,
     auraColorReport: false,
     astrocartographyReport: false,
+    pastLifeReport: false,
   };
   let updatedFeatures = { ...currentFeatures } as Record<string, boolean>;
   let updatedCoins = typeof user?.coins === "number" ? user.coins : 0;

@@ -186,6 +186,7 @@ export default function UserHydrator() {
       const hasVastuShastraGuide = !!unlocked.vastuShastraGuide;
       const hasAuraColorReport = !!unlocked.auraColorReport;
       const hasAstrocartographyReport = !!unlocked.astrocartographyReport;
+      const hasPastLifeReport = !!unlocked.pastLifeReport;
 
       if (hasPalmReading) unlockFeature("palmReading");
       if (hasPrediction2026) unlockFeature("prediction2026");
@@ -196,6 +197,7 @@ export default function UserHydrator() {
       if (hasVastuShastraGuide) unlockFeature("vastuShastraGuide");
       if (hasAuraColorReport) unlockFeature("auraColorReport");
       if (hasAstrocartographyReport) unlockFeature("astrocartographyReport");
+      if (hasPastLifeReport) unlockFeature("pastLifeReport");
     } catch (err) {
       console.error("Failed to hydrate user:", err);
     }

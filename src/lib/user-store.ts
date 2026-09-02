@@ -21,6 +21,7 @@ export interface UnlockedFeatures {
   vastuShastraGuide: boolean;
   auraColorReport: boolean;
   astrocartographyReport: boolean;
+  pastLifeReport: boolean;
 }
 
 interface UserState {
@@ -67,6 +68,7 @@ interface UserState {
     vastuShastraGuide?: boolean;
     auraColorReport?: boolean;
     astrocartographyReport?: boolean;
+    pastLifeReport?: boolean;
     coins?: number;
     purchasedBundle?: PurchasedBundle;
   }) => void;
@@ -82,6 +84,7 @@ const initialUnlockedFeatures: UnlockedFeatures = {
   vastuShastraGuide: false,
   auraColorReport: false,
   astrocartographyReport: false,
+  pastLifeReport: false,
 };
 
 const initialState = {
@@ -146,6 +149,7 @@ export const useUserStore = create<UserState>()(
             vastuShastraGuide: true,
             auraColorReport: true,
             astrocartographyReport: true,
+            pastLifeReport: true,
           },
         }),
 
@@ -204,6 +208,7 @@ export const useUserStore = create<UserState>()(
             vastuShastraGuide: true,
             auraColorReport: true,
             astrocartographyReport: true,
+            pastLifeReport: true,
           },
         }),
 
@@ -228,6 +233,8 @@ export const useUserStore = create<UserState>()(
             data.unlockedFeatures?.auraColorReport ?? data.auraColorReport ?? false,
           astrocartographyReport:
             data.unlockedFeatures?.astrocartographyReport ?? data.astrocartographyReport ?? false,
+          pastLifeReport:
+            data.unlockedFeatures?.pastLifeReport ?? data.pastLifeReport ?? false,
         };
         updates.unlockedFeatures = features;
         
@@ -275,6 +282,7 @@ export const featureNames: Record<keyof UnlockedFeatures, string> = {
   vastuShastraGuide: "Complete Vastu Shastra Guide Ebook",
   auraColorReport: "Aura Color Quiz",
   astrocartographyReport: "Astrocartography",
+  pastLifeReport: "Past Life Report",
 };
 
 // Feature prices (INR)
@@ -288,4 +296,5 @@ export const featurePrices: Record<keyof UnlockedFeatures, number> = {
   vastuShastraGuide: 297,
   auraColorReport: 582,
   astrocartographyReport: 582,
+  pastLifeReport: 499,
 };

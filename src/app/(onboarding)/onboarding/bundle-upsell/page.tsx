@@ -1,11 +1,11 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useMemo, useState, useEffect, Suspense } from "react";
 import { fadeUp } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, Loader2, Star, Sparkles, Calendar, Heart, Briefcase, Activity, Users, BookOpen, Home } from "lucide-react";
+import { Activity, Briefcase, Calendar, Check, ChevronDown, Heart, Loader2, Moon, Sparkles, Star, Users } from "lucide-react";
 import { useUserStore } from "@/lib/user-store";
 import { supabase } from "@/lib/supabase";
 import { generateUserId } from "@/lib/user-profile";
@@ -138,17 +138,17 @@ const upsellOffers = [
     ],
   },
   {
-    id: "vastu-shastra-guide",
-    name: "Complete Vastu Shastra Guide Ebook",
-    description: "150+ page practical guide for home and office Vastu.",
-    price: 297,
+    id: "past-life",
+    name: "Past Life Report",
+    description: "Karmic patterns, soul lessons, and hidden gifts.",
+    price: 499,
     originalPrice: 999,
-    discount: "70% OFF",
-    icon: BookOpen,
-    emoji: "📘",
+    discount: "50% OFF",
+    icon: Moon,
+    emoji: "🌙",
     features: [
-      { icon: Home, label: "Home and entrance Vastu", description: "Directions, rooms, remedies, and layout guidance" },
-      { icon: Briefcase, label: "Office and business Vastu", description: "Practical setup advice for workspaces and growth" },
+      { icon: Moon, label: "Soul archetype", description: "Symbolic past-life identity and karmic theme" },
+      { icon: Sparkles, label: "Karmic remedies", description: "Simple practices for healing recurring patterns" },
     ],
   },
 ];
@@ -160,6 +160,7 @@ function BundleUpsellContent() {
   const [paymentError, setPaymentError] = useState("");
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   
   const { userId: storeUserId } = useUserStore();
 
@@ -230,6 +231,15 @@ function BundleUpsellContent() {
 
   const toggleOffer = (id: string) => {
     setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleExpanded = (id: string) => {
+    setExpandedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -407,7 +417,7 @@ function BundleUpsellContent() {
       className="flex-1 flex flex-col min-h-screen bg-background"
     >
       {/* Progress Steps */}
-      <div className="px-6 pt-6 pb-4">
+      <div className="px-6 pt-5 pb-3">
         <div className="flex items-center justify-between">
           {progressSteps.map((step, index) => (
             <div key={step.label} className="flex items-center">
@@ -436,15 +446,15 @@ function BundleUpsellContent() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 px-6 py-4">
+      <div className="flex-1 px-6 py-3">
         {/* Success Message */}
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="bg-green-500/10 border border-green-500/30 rounded-2xl p-4 mb-6 text-center"
+          className="bg-green-500/10 border border-green-500/30 rounded-2xl p-3 mb-8 text-center"
         >
-          <div className="text-3xl mb-2">🎉</div>
-          <h2 className="text-lg font-bold text-green-400">Payment Successful!</h2>
+          <div className="text-2xl mb-1">🎉</div>
+          <h2 className="text-base font-bold text-green-400">Payment Successful!</h2>
           <p className="text-sm text-muted-foreground">Your reading is being prepared</p>
         </motion.div>
 
@@ -465,23 +475,22 @@ function BundleUpsellContent() {
 
           <div className="bg-gradient-to-br from-purple-600/20 via-blue-600/10 to-purple-600/20 rounded-3xl border border-purple-500/30 overflow-hidden">
             {/* Header */}
-            <div className="bg-gradient-to-r from-purple-600/30 to-blue-600/30 px-6 py-5 text-center">
-              <div className="text-4xl mb-2">💞</div>
-              <h3 className="text-2xl font-bold text-white mb-1">Optional Add-ons</h3>
-              <p className="text-white/70 text-sm">Choose one, both, or skip</p>
+            <div className="bg-gradient-to-r from-purple-600/30 to-blue-600/30 px-6 py-4 text-center">
+              <div className="text-3xl mb-1">💞</div>
+              <h3 className="text-xl font-bold text-white mb-1">Optional Add-ons</h3>
+              <p className="text-white/70 text-sm">Choose any add-ons, or skip</p>
             </div>
 
-            <div className="px-6 py-5 space-y-3">
+            <div className="px-6 py-4 space-y-3">
               {upsellOffers.map((offer, index) => {
                 const selected = selectedIds.has(offer.id);
+                const expanded = expandedIds.has(offer.id);
                 return (
-                  <motion.button
+                  <motion.div
                     key={offer.id}
-                    type="button"
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.3 + index * 0.1 }}
-                    onClick={() => toggleOffer(offer.id)}
                     className={`w-full rounded-2xl border-2 p-4 text-left transition-all ${
                       selected
                         ? "border-primary bg-primary/15"
@@ -492,37 +501,69 @@ function BundleUpsellContent() {
                       <div className="text-2xl">{offer.emoji}</div>
                       <div className="flex-1">
                         <div className="flex items-start justify-between gap-2">
-                          <div>
+                          <button
+                            type="button"
+                            onClick={() => toggleExpanded(offer.id)}
+                            className="min-w-0 flex-1 text-left"
+                            aria-expanded={expanded}
+                          >
                             <h4 className="font-semibold text-white text-sm">{offer.name}</h4>
                             <p className="text-white/60 text-xs">{offer.description}</p>
-                          </div>
-                          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleOffer(offer.id)}
+                            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
                             selected ? "border-primary bg-primary" : "border-white/30"
-                          }`}>
+                            }`}
+                            aria-label={`${selected ? "Remove" : "Add"} ${offer.name}`}
+                          >
                             {selected && <Check className="w-4 h-4 text-primary-foreground" />}
-                          </div>
+                          </button>
                         </div>
-                        <div className="mt-3 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(offer.id)}
+                          className="mt-3 flex w-full items-center gap-2 text-left"
+                          aria-expanded={expanded}
+                        >
                           <span className="text-white/45 line-through text-sm">₹{offer.originalPrice}</span>
                           <span className="text-xl font-bold text-white">₹{offer.price}</span>
                           <span className="bg-green-500/20 text-green-400 text-[10px] px-2 py-0.5 rounded-full font-semibold">
                             {offer.discount}
                           </span>
-                        </div>
-                        <div className="mt-3 space-y-2">
-                          {offer.features.map((feature) => (
-                            <div key={feature.label} className="flex items-start gap-2">
-                              <feature.icon className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                              <div>
-                                <p className="text-xs font-medium text-white">{feature.label}</p>
-                                <p className="text-[11px] text-white/55">{feature.description}</p>
+                          <ChevronDown
+                            className={`ml-auto h-4 w-4 text-white/55 transition-transform ${
+                              expanded ? "rotate-180" : ""
+                            }`}
+                          />
+                        </button>
+                        <AnimatePresence initial={false}>
+                          {expanded ? (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.18 }}
+                              className="overflow-hidden"
+                            >
+                              <div className="mt-3 space-y-2">
+                                {offer.features.map((feature) => (
+                                  <div key={feature.label} className="flex items-start gap-2">
+                                    <feature.icon className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                                    <div>
+                                      <p className="text-xs font-medium text-white">{feature.label}</p>
+                                      <p className="text-[11px] text-white/55">{feature.description}</p>
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
-                            </div>
-                          ))}
-                        </div>
+                            </motion.div>
+                          ) : null}
+                        </AnimatePresence>
                       </div>
                     </div>
-                  </motion.button>
+                  </motion.div>
                 );
               })}
             </div>

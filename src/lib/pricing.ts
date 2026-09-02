@@ -87,6 +87,7 @@ function canonicalizeBundleFeatures(bundleId: string, features: string[]): strin
     unique.add("futurePartnerReport");
     unique.add("auraColorReport");
     unique.add("astrocartographyReport");
+    unique.add("pastLifeReport");
     return [
       "palmReading",
       "birthChart",
@@ -94,6 +95,7 @@ function canonicalizeBundleFeatures(bundleId: string, features: string[]): strin
       "futurePartnerReport",
       "auraColorReport",
       "astrocartographyReport",
+      "pastLifeReport",
     ];
   }
 
@@ -136,12 +138,13 @@ function applyBundleOverrides(bundles: BundlePlan[]): BundlePlan[] {
       return {
         ...bundle,
         name: "Cosmic Bundle",
-        description: "All premium reports plus Aura Color Quiz and Astrocartography.",
+        description: "All premium reports plus Aura Color Quiz, Astrocartography, and Past Life Report.",
         features: canonicalizeBundleFeatures(bundle.id, bundle.features),
         featureList: [
           "Everything in Palm + Birth Chart + Soulmate Sketch + Future Partner Report",
           "Aura Color Quiz",
           "Astrocartography map",
+          "Past Life Report",
           "20 questions to chat with Elysia",
         ],
         limitedOffer: false,
@@ -253,12 +256,13 @@ export const DEFAULT_PRICING: PricingConfig = {
       displayPrice: 2599,
       originalPrice: 5199,
       discount: "50% OFF",
-      description: "All premium reports plus Aura Color Quiz and Astrocartography.",
-      features: ["palmReading", "birthChart", "soulmateSketch", "futurePartnerReport", "auraColorReport", "astrocartographyReport"],
+      description: "All premium reports plus Aura Color Quiz, Astrocartography, and Past Life Report.",
+      features: ["palmReading", "birthChart", "soulmateSketch", "futurePartnerReport", "auraColorReport", "astrocartographyReport", "pastLifeReport"],
       featureList: [
         "Everything in Palm + Birth Chart + Soulmate Sketch + Future Partner Report",
         "Aura Color Quiz",
         "Astrocartography map",
+        "Past Life Report",
         "20 questions to chat with Elysia",
       ],
       popular: false,
@@ -312,14 +316,14 @@ export const DEFAULT_PRICING: PricingConfig = {
       active: true,
     },
     {
-      id: "vastu-shastra-guide",
-      name: "Complete Vastu Shastra Guide Ebook",
-      price: 297,
-      displayPrice: 297,
+      id: "past-life",
+      name: "Past Life Report",
+      price: 499,
+      displayPrice: 499,
       originalPrice: 999,
-      discount: "70% OFF",
-      description: "150+ page PDF guide for home, entrance, remedies, office, and business Vastu.",
-      feature: "vastuShastraGuide",
+      discount: "50% OFF",
+      description: "Reveal your symbolic past-life archetype, karmic pattern, and soul lesson.",
+      feature: "pastLifeReport",
       active: true,
     },
   ],
@@ -378,6 +382,14 @@ export const DEFAULT_PRICING: PricingConfig = {
       price: 582,
       originalPrice: 999,
       feature: "astrocartographyReport",
+      active: true,
+    },
+    {
+      id: "report-past-life",
+      name: "Past Life Report",
+      price: 499,
+      originalPrice: 999,
+      feature: "pastLifeReport",
       active: true,
     },
     {
