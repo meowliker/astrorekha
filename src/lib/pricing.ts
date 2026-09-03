@@ -387,7 +387,7 @@ export const DEFAULT_PRICING: PricingConfig = {
     {
       id: "report-past-life",
       name: "Past Life Report",
-      price: 499,
+      price: 582,
       originalPrice: 999,
       feature: "pastLifeReport",
       active: true,

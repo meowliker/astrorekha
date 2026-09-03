@@ -296,5 +296,5 @@ export const featurePrices: Record<keyof UnlockedFeatures, number> = {
   vastuShastraGuide: 297,
   auraColorReport: 582,
   astrocartographyReport: 582,
-  pastLifeReport: 499,
+  pastLifeReport: 582,
 };
