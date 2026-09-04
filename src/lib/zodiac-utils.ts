@@ -121,10 +121,39 @@ export function calculateSunSign(month: string | number, day: string | number): 
   return "Capricorn";
 }
 
+function normalizeDegrees(value: number) {
+  const degrees = value % 360;
+  return degrees < 0 ? degrees + 360 : degrees;
+}
+
+function toJulianDate(year: number, month: number, day: number) {
+  // Use local noon IST as a stable fallback when exact birth time is unavailable.
+  const utcMs = Date.UTC(year, month - 1, day, 12, 0) - 5.5 * 60 * 60 * 1000;
+  return utcMs / 86400000 + 2440587.5;
+}
+
+function approximateMoonLongitude(daysSinceJ2000: number) {
+  const meanLongitude = normalizeDegrees(218.316 + 13.176396 * daysSinceJ2000);
+  const moonMeanAnomaly = normalizeDegrees(134.963 + 13.064993 * daysSinceJ2000);
+  const sunMeanAnomaly = normalizeDegrees(357.529 + 0.98560028 * daysSinceJ2000);
+  const meanElongation = normalizeDegrees(297.85 + 12.190749 * daysSinceJ2000);
+  const argumentOfLatitude = normalizeDegrees(93.272 + 13.22935 * daysSinceJ2000);
+  const sinDeg = (degrees: number) => Math.sin((degrees * Math.PI) / 180);
+
+  return normalizeDegrees(
+    meanLongitude +
+      6.289 * sinDeg(moonMeanAnomaly) +
+      1.274 * sinDeg(2 * meanElongation - moonMeanAnomaly) +
+      0.658 * sinDeg(2 * meanElongation) +
+      0.214 * sinDeg(2 * moonMeanAnomaly) -
+      0.186 * sinDeg(sunMeanAnomaly) -
+      0.114 * sinDeg(2 * argumentOfLatitude)
+  );
+}
+
 /**
- * Approximate Moon sign based on birth date
- * Moon moves through all 12 signs in ~28 days (~2.3 days per sign)
- * This is an approximation - accurate Moon sign requires exact birth time and ephemeris
+ * Approximate Moon sign based on lunar longitude.
+ * This is still a fallback, but is much closer than a simple day-cycle shortcut.
  */
 export function approximateMoonSign(month: string | number, day: string | number, year: string | number): string {
   const m = typeof month === "string" ? (MONTH_MAP[month.toLowerCase()] || parseInt(month)) : month;
@@ -133,24 +162,13 @@ export function approximateMoonSign(month: string | number, day: string | number
 
   if (!m || !d || !y) return "Cancer";
 
-  // Calculate days since a reference date (Jan 1, 2000 - Moon was in Aries)
-  const refDate = new Date(2000, 0, 1);
-  const birthDate = new Date(y, m - 1, d);
-  const daysDiff = Math.floor((birthDate.getTime() - refDate.getTime()) / (1000 * 60 * 60 * 24));
-
-  // Moon cycle is ~27.3 days, so it moves ~13.2 degrees per day
-  // Each sign is 30 degrees, so ~2.27 days per sign
-  const moonCycle = 27.3;
-  const signsPerCycle = 12;
-  const daysPerSign = moonCycle / signsPerCycle;
-
-  // Calculate position in current cycle
-  const positionInCycle = ((daysDiff % moonCycle) + moonCycle) % moonCycle;
-  const signIndex = Math.floor(positionInCycle / daysPerSign);
-
   const signs = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", 
                  "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"];
-  
+
+  const daysSinceJ2000 = toJulianDate(y, m, d) - 2451545;
+  const moonLongitude = approximateMoonLongitude(daysSinceJ2000);
+  const signIndex = Math.floor(moonLongitude / 30);
+
   return signs[signIndex % 12];
 }
 

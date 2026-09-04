@@ -146,7 +146,7 @@ export const SIGN_MODALITIES: Record<string, string> = {
   Sagittarius: "mutable", Capricorn: "cardinal", Aquarius: "fixed", Pisces: "mutable"
 };
 
-function clampScore(value: number, min = 42, max = 96): number {
+function clampScore(value: number, min = 28, max = 96): number {
   return Math.max(min, Math.min(max, Math.round(value)));
 }
 
@@ -157,39 +157,69 @@ function zodiacDistance(sign1: string, sign2: string): number {
   return Math.min(rawDistance, 12 - rawDistance);
 }
 
+function compatibilityId(sign1: string, sign2: string): string {
+  return [sign1, sign2].sort().map((sign) => sign.toLowerCase()).join("_");
+}
+
+const REALISTIC_SCORE_OVERRIDES: Record<string, number> = {
+  aquarius_cancer: 28,
+  aries_capricorn: 33,
+  aquarius_taurus: 34,
+  cancer_sagittarius: 35,
+  aries_scorpio: 36,
+  capricorn_gemini: 36,
+  leo_pisces: 37,
+  gemini_sagittarius: 78,
+};
+
 function elementAdjustment(element1: string, element2: string): number {
-  if (element1 === element2) return 3;
-  if ((element1 === "fire" && element2 === "air") || (element1 === "air" && element2 === "fire")) return 5;
-  if ((element1 === "earth" && element2 === "water") || (element1 === "water" && element2 === "earth")) return 5;
-  if ((element1 === "fire" && element2 === "water") || (element1 === "water" && element2 === "fire")) return -6;
-  if ((element1 === "earth" && element2 === "air") || (element1 === "air" && element2 === "earth")) return -4;
-  return 0;
+  if (element1 === element2) return 5;
+
+  const pair = [element1, element2].sort().join("_");
+  if (pair === "air_fire") return 6;
+  if (pair === "earth_water") return 7;
+  if (pair === "fire_water") return -9;
+  if (pair === "earth_fire") return -10;
+  if (pair === "air_water") return -14;
+  if (pair === "air_earth") return -8;
+
+  return -2;
 }
 
 function aspectBaseScore(distance: number): number {
   switch (distance) {
     case 0:
-      return 78; // conjunction: familiar, strong, sometimes too similar
+      return 74; // conjunction: familiar, strong, sometimes too similar
+    case 1:
+      return 47; // semi-sextile: adjacent signs need adjustment
     case 2:
-      return 81; // sextile: cooperative and supportive
+      return 74; // sextile: cooperative and supportive
     case 3:
-      return 58; // square: friction that needs effort
+      return 42; // square: friction that needs effort
     case 4:
       return 86; // trine: natural ease and harmony
     case 5:
-      return 57; // quincunx: adjustment and learning
+      return 43; // quincunx: adjustment and learning
     case 6:
-      return 78; // opposition: magnetic but balancing
+      return 72; // opposition: magnetic but balancing
     default:
-      return 62; // semi-sextile: workable but less natural
+      return 50;
   }
 }
 
-function deterministicVariation(sign1: string, sign2: string, category: string, spread = 5): number {
+function modalityAdjustment(modality1: string, modality2: string, distance: number): number {
+  if (distance === 3 && modality1 === modality2) return -1;
+  if (distance === 6) return 0;
+  if (modality1 === modality2 && (distance === 0 || distance === 4)) return 3;
+  if (modality1 === modality2) return 1;
+  return 0;
+}
+
+function deterministicVariation(sign1: string, sign2: string, category: string, spread = 4): number {
   const key = [sign1, sign2].sort().join(":") + `:${category}`;
   let hash = 0;
   for (let i = 0; i < key.length; i++) {
-    hash = (hash * 31 + key.charCodeAt(i)) % 1009;
+    hash = (hash * 31 + key.charCodeAt(i)) % 997;
   }
   return (hash % (spread * 2 + 1)) - spread;
 }
@@ -207,22 +237,27 @@ export function generateCompatibilityScores(sign1: string, sign2: string): {
   const m1 = SIGN_MODALITIES[sign1];
   const m2 = SIGN_MODALITIES[sign2];
   const distance = zodiacDistance(sign1, sign2);
-  const modalityAdjustment = m1 === m2 ? 2 : 1;
-  const overall = clampScore(aspectBaseScore(distance) + elementAdjustment(e1, e2) + modalityAdjustment);
+  const override = REALISTIC_SCORE_OVERRIDES[compatibilityId(sign1, sign2)];
+  const overall = override ?? clampScore(
+    aspectBaseScore(distance) +
+      elementAdjustment(e1, e2) +
+      modalityAdjustment(m1, m2, distance) +
+      deterministicVariation(sign1, sign2, "overall", 3)
+  );
   const hasWater = e1 === "water" || e2 === "water";
   const hasAir = e1 === "air" || e2 === "air";
   const hasFire = e1 === "fire" || e2 === "fire";
-  const emotionalBase = overall + (hasWater ? 4 : -7) + (e1 === e2 ? 2 : 0) - (distance === 6 ? 3 : 0);
-  const intellectualBase = overall + (hasAir ? 1 : 0) + (m1 === "mutable" || m2 === "mutable" ? 1 : 0);
-  const physicalBase = overall + (hasFire ? 4 : 0) + (distance === 6 ? 2 : 0);
-  const spiritualBase = overall + (hasWater ? 3 : -4) + (distance === 4 ? 4 : 0) - (distance === 6 ? 1 : 0);
+  const emotionalBase = overall + (hasWater ? 4 : -9) + (e1 === e2 ? 3 : 0) - (distance === 6 ? 5 : 0);
+  const intellectualBase = overall + (hasAir ? 8 : -4) + (m1 === "mutable" || m2 === "mutable" ? 3 : 0);
+  const physicalBase = overall + (hasFire ? 7 : -1) + (distance === 6 ? 5 : 0);
+  const spiritualBase = overall + (hasWater ? 5 : -5) + (distance === 4 ? 4 : 0) - (distance === 6 ? 3 : 0);
   
   return {
     overall,
-    emotional: clampScore(emotionalBase + deterministicVariation(sign1, sign2, "emotional"), 35, 98),
-    intellectual: clampScore(intellectualBase + deterministicVariation(sign1, sign2, "intellectual"), 35, 98),
-    physical: clampScore(physicalBase + deterministicVariation(sign1, sign2, "physical"), 35, 98),
-    spiritual: clampScore(spiritualBase + deterministicVariation(sign1, sign2, "spiritual"), 35, 98),
+    emotional: clampScore(emotionalBase + deterministicVariation(sign1, sign2, "emotional"), 18, 98),
+    intellectual: clampScore(intellectualBase + deterministicVariation(sign1, sign2, "intellectual"), 18, 98),
+    physical: clampScore(physicalBase + deterministicVariation(sign1, sign2, "physical"), 18, 98),
+    spiritual: clampScore(spiritualBase + deterministicVariation(sign1, sign2, "spiritual"), 18, 98),
   };
 }
 

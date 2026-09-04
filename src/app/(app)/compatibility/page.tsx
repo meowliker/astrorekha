@@ -5,10 +5,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, ChevronDown, ChevronUp, Lightbulb, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getZodiacSign } from "@/lib/astrology-api";
 import { getInstantCompatibility, getCompatibilityResult, saveCompatibilityResult } from "@/lib/compatibility-data";
 import { supabase } from "@/lib/supabase";
 import ReportDisclaimer from "@/components/ReportDisclaimer";
+import { approximateMoonSign, extractStoredSignName } from "@/lib/zodiac-utils";
 
 const ZODIAC_SIGNS = [
   { name: "Aries", symbol: "♈", dates: "21 Mar - 19 Apr", element: "Fire", elementIcon: "≋", birthDate: "1990-04-01" },
@@ -333,42 +333,29 @@ export default function CompatibilityPage() {
   const [loadingInsights, setLoadingInsights] = useState(false);
 
   useEffect(() => {
-    const resolveSignName = (value: any): string | null => {
-      if (!value) return null;
+    const monthFromValue = (value: unknown): number | null => {
+      if (value === null || value === undefined) return null;
+      const raw = String(value).trim();
+      if (!raw) return null;
 
-      if (typeof value === "string") {
-        const trimmed = value.trim();
-        if (!trimmed) return null;
-        if (ZODIAC_SIGNS.some((s) => s.name === trimmed)) return trimmed;
-        try {
-          const parsed = JSON.parse(trimmed);
-          if (parsed?.name && ZODIAC_SIGNS.some((s) => s.name === parsed.name)) {
-            return parsed.name;
-          }
-        } catch {
-          // Keep null fallback
-        }
-        return null;
-      }
+      const numeric = Number(raw);
+      if (Number.isFinite(numeric) && numeric >= 1 && numeric <= 12) return numeric;
 
-      if (typeof value === "object" && typeof value.name === "string") {
-        const name = value.name.trim();
-        if (ZODIAC_SIGNS.some((s) => s.name === name)) return name;
-      }
-
-      return null;
+      const parsed = new Date(`${raw} 1, 2000`);
+      return Number.isNaN(parsed.getTime()) ? null : parsed.getMonth() + 1;
     };
 
     const fallbackFromLocalBirthDate = () => {
       const storedBirthDate = localStorage.getItem("birthDate");
       if (!storedBirthDate) return;
       const date = new Date(storedBirthDate);
-      const sign = getZodiacSign(date.getMonth() + 1, date.getDate());
+      if (Number.isNaN(date.getTime())) return;
+      const sign = approximateMoonSign(date.getMonth() + 1, date.getDate(), date.getFullYear());
       setUserSign(sign);
       setUserSignFromBirthDate(sign);
     };
 
-    const loadUserSunSign = async () => {
+    const loadUserMoonSign = async () => {
       try {
         const userId = localStorage.getItem("astrorekha_user_id");
         if (!userId) {
@@ -378,31 +365,32 @@ export default function CompatibilityPage() {
 
         const { data: userData } = await supabase
           .from("users")
-          .select("sun_sign, birth_month, birth_day")
+          .select("moon_sign, birth_month, birth_day, birth_year")
           .eq("id", userId)
           .single();
 
-        let signName = resolveSignName(userData?.sun_sign);
-        if (!signName && userData?.birth_month && userData?.birth_day) {
-          signName = getZodiacSign(Number(userData.birth_month), Number(userData.birth_day));
+        let signName = extractStoredSignName(userData?.moon_sign);
+        if (!signName && userData?.birth_month && userData?.birth_day && userData?.birth_year) {
+          const month = monthFromValue(userData.birth_month);
+          if (month) {
+            signName = approximateMoonSign(month, Number(userData.birth_day), Number(userData.birth_year));
+          }
         }
 
         if (!signName) {
           const { data: profileData } = await supabase
             .from("user_profiles")
-            .select("sun_sign, birth_month, birth_day")
+            .select("moon_sign, birth_month, birth_day, birth_year")
             .eq("id", userId)
             .single();
 
-          signName = resolveSignName(profileData?.sun_sign);
+          signName = extractStoredSignName(profileData?.moon_sign);
 
-          if (!signName && profileData?.birth_month && profileData?.birth_day) {
-            const monthText = String(profileData.birth_month).trim();
-            const monthNumeric = Number(monthText);
-            const month = Number.isFinite(monthNumeric) && monthNumeric > 0
-              ? monthNumeric
-              : (new Date(`${monthText} 1, 2000`).getMonth() + 1 || 1);
-            signName = getZodiacSign(month, Number(profileData.birth_day));
+          if (!signName && profileData?.birth_month && profileData?.birth_day && profileData?.birth_year) {
+            const month = monthFromValue(profileData.birth_month);
+            if (month) {
+              signName = approximateMoonSign(month, Number(profileData.birth_day), Number(profileData.birth_year));
+            }
           }
         }
 
@@ -414,12 +402,12 @@ export default function CompatibilityPage() {
 
         fallbackFromLocalBirthDate();
       } catch (error) {
-        console.error("Failed to load user sun sign:", error);
+        console.error("Failed to load user moon sign:", error);
         fallbackFromLocalBirthDate();
       }
     };
 
-    loadUserSunSign();
+    loadUserMoonSign();
   }, []);
 
   const handleCheckCompatibility = async () => {
@@ -498,9 +486,24 @@ export default function CompatibilityPage() {
       
     } catch (error) {
       console.error("Compatibility error:", error);
-      // Ultimate fallback to static data
-      const compatibility = COMPATIBILITY_DATA[userSign]?.[selectedSign] || { score: 50, description: "A unique connection worth exploring." };
-      const fullResult = generateFullResult(userSign, selectedSign, compatibility.score, compatibility.description);
+      const instantData = getInstantCompatibility(userSign, selectedSign);
+      const fullResult = generateFullResult(userSign, selectedSign, instantData.overallScore, instantData.summary);
+      fullResult.relationshipGlance = instantData.summary;
+      fullResult.wheelOfBalance = {
+        emotional: instantData.emotionalScore,
+        intellectual: instantData.intellectualScore,
+        spiritual: instantData.spiritualScore,
+        sexual: instantData.physicalScore,
+      };
+      fullResult.wheelDescriptions = {
+        emotional: instantData.strengths[0] || "Strong emotional connection",
+        intellectual: instantData.strengths[1] || "Good mental compatibility",
+        spiritual: instantData.strengths[2] || "Shared values and beliefs",
+        sexual: instantData.strengths[3] || "Physical chemistry present",
+      };
+      fullResult.toxicityScore = instantData.toxicityScore;
+      fullResult.toxicityDescription = instantData.toxicityDescription;
+      fullResult.challenges = instantData.challenges;
       setResult(fullResult);
     } finally {
       setLoading(false);
@@ -709,7 +712,7 @@ export default function CompatibilityPage() {
 
                 {/* Selection indicator */}
                 <p className="text-center text-[#D4B896]/60 text-sm">
-                  {selectingFor === "user" ? "Select your sign" : "Select partner's sign"}
+                  {selectingFor === "user" ? "Select your sign" : "Select partner's moon sign"}
                 </p>
 
                 {/* Zodiac Grid */}
@@ -725,7 +728,7 @@ export default function CompatibilityPage() {
                           : "bg-[#1A1F2E]/50 border-[#D4B896]/20 hover:border-[#D4B896]/40"
                       }`}
                     >
-                      {/* You badge - only show on user's birth date sign */}
+                      {/* You badge - only show on user's birth chart sign */}
                       {sign.name === userSignFromBirthDate && (
                         <div className="absolute -top-2 left-1/2 -translate-x-1/2 bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full z-10">
                           You
@@ -743,7 +746,7 @@ export default function CompatibilityPage() {
                       </div>
                       
                       <span className="text-[#D4B896] text-[10px] mt-1 font-medium">{sign.name}</span>
-                      <span className="text-[#D4B896]/50 text-[8px]">{sign.dates}</span>
+                      <span className="text-[#D4B896]/50 text-[8px]">{sign.element}</span>
                     </motion.button>
                   ))}
                 </div>
@@ -773,7 +776,7 @@ export default function CompatibilityPage() {
                   className="w-full border-[#D4B896]/30 bg-[#1A1F2E]/50 text-[#D4B896] hover:bg-[#D4B896]/10 hover:text-[#D4B896] py-6 rounded-full text-base font-medium"
                 >
                   <Moon className="w-4 h-4 mr-2" />
-                  Check using partner birth details
+                  Check Moon Phase Compatibility
                 </Button>
               </motion.div>
             ) : (

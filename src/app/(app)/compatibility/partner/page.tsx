@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, CalendarDays, ChevronDown, ChevronUp, Clock, Lightbulb, Loader2, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ReportDisclaimer from "@/components/ReportDisclaimer";
 import { getCompatibilityResult, getInstantCompatibility, saveCompatibilityResult } from "@/lib/compatibility-data";
+import { calculateMoonMerge, calculateMoonPhase, type MoonMergeReport, type MoonPhaseReport } from "@/lib/moon-phase";
 import { supabase } from "@/lib/supabase";
 import { approximateMoonSign, extractStoredSignName } from "@/lib/zodiac-utils";
 
@@ -98,6 +99,11 @@ type FullResult = {
     description: string;
     solution: string;
   }[];
+  moonMerge?: {
+    user: MoonPhaseReport;
+    partner: MoonPhaseReport;
+    merge: MoonMergeReport;
+  };
 };
 
 function monthToNumber(value: unknown): number | null {
@@ -114,6 +120,44 @@ function splitDate(value: string): { year: string; month: string; day: string } 
   const [year, month, day] = value.split("-");
   if (!year || !month || !day) return null;
   return { year, month: String(Number(month)), day: String(Number(day)) };
+}
+
+function parseTimezoneOffset(value: unknown) {
+  const offset = Number(String(value || "").trim());
+  return Number.isFinite(offset) ? offset : 5.5;
+}
+
+function parseTimeValue(value: string) {
+  const [hourRaw, minuteRaw] = value.split(":");
+  const hour = Number(hourRaw);
+  const minute = Number(minuteRaw);
+
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return { hour: 12, minute: 0 };
+  if (!Number.isInteger(minute) || minute < 0 || minute > 59) return { hour, minute: 0 };
+
+  return { hour, minute };
+}
+
+function parseStoredBirthTime(hourValue: unknown, minuteValue: unknown, periodValue: unknown) {
+  const hour = Number(String(hourValue || "").trim());
+  const minute = Number(String(minuteValue || "0").trim());
+  const period = String(periodValue || "").trim().toUpperCase();
+
+  if (!Number.isInteger(minute) || minute < 0 || minute > 59) return { hour: 12, minute: 0 };
+
+  if (period === "AM" || period === "PM") {
+    if (!Number.isInteger(hour) || hour < 1 || hour > 12) return { hour: 12, minute: 0 };
+    if (period === "AM") return { hour: hour === 12 ? 0 : hour, minute };
+    return { hour: hour === 12 ? 12 : hour + 12, minute };
+  }
+
+  if (Number.isInteger(hour) && hour >= 0 && hour <= 23) return { hour, minute };
+
+  return { hour: 12, minute: 0 };
+}
+
+function formatMoonPercent(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 function extractPartnerMoonSign(payload: any): string | null {
@@ -172,9 +216,128 @@ function buildFullResult(data: ReturnType<typeof getInstantCompatibility>): Full
   };
 }
 
+function MoonPhaseOrb({ phase, size = 80 }: { phase: MoonPhaseReport; size?: number }) {
+  const rawId = useId().replace(/:/g, "");
+  const gradientId = `moonGradient-${rawId}`;
+  const glowId = `moonGlow-${rawId}`;
+  const illumination = phase.illumination / 100;
+  const controlX = phase.waxing
+    ? 50 + (1 - 2 * illumination) * 88
+    : 50 - (1 - 2 * illumination) * 88;
+  const litPath = phase.waxing
+    ? `M 50 6 A 44 44 0 0 1 50 94 Q ${controlX} 50 50 6 Z`
+    : `M 50 6 A 44 44 0 0 0 50 94 Q ${controlX} 50 50 6 Z`;
+
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" className="drop-shadow-[0_0_18px_rgba(212,184,150,0.28)]">
+      <defs>
+        <radialGradient id={gradientId} cx="35%" cy="28%" r="70%">
+          <stop offset="0%" stopColor="#FFF7D6" />
+          <stop offset="46%" stopColor="#D4B896" />
+          <stop offset="100%" stopColor="#9B7A50" />
+        </radialGradient>
+        <radialGradient id={glowId} cx="45%" cy="38%" r="72%">
+          <stop offset="0%" stopColor="#253147" />
+          <stop offset="100%" stopColor="#070B14" />
+        </radialGradient>
+      </defs>
+      <circle cx="50" cy="50" r="45" fill={`url(#${glowId})`} stroke="rgba(255,255,255,0.18)" strokeWidth="1.5" />
+      {phase.illumination >= 98 ? (
+        <circle cx="50" cy="50" r="44" fill={`url(#${gradientId})`} />
+      ) : phase.illumination > 2 ? (
+        <path d={litPath} fill={`url(#${gradientId})`} />
+      ) : null}
+      <circle cx="36" cy="32" r="4" fill="rgba(8,12,22,0.18)" />
+      <circle cx="61" cy="42" r="3" fill="rgba(8,12,22,0.14)" />
+      <circle cx="45" cy="63" r="2.7" fill="rgba(8,12,22,0.15)" />
+      <circle cx="50" cy="50" r="45" fill="none" stroke="rgba(255,255,255,0.16)" strokeWidth="1" />
+    </svg>
+  );
+}
+
+function MoonPersonCard({ label, phase }: { label: string; phase: MoonPhaseReport }) {
+  return (
+    <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-center">
+      <div className="mx-auto mb-2 flex justify-center">
+        <MoonPhaseOrb phase={phase} size={70} />
+      </div>
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/38">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-white">{phase.phaseName}</p>
+      <p className="mt-1 text-xs text-[#D4B896]/75">{formatMoonPercent(phase.illumination)}% illuminated</p>
+    </div>
+  );
+}
+
+function MoonMergePanel({ moonMerge }: { moonMerge: NonNullable<FullResult["moonMerge"]> }) {
+  return (
+    <div className="overflow-hidden rounded-3xl border border-[#D4B896]/20 bg-gradient-to-br from-[#121827] via-[#161A2A] to-[#251324] p-5">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#D4B896]/70">Birth Moon Merge</p>
+          <h3 className="mt-1 text-xl font-bold text-white">{moonMerge.merge.title}</h3>
+        </div>
+        <div className="rounded-full border border-[#D4B896]/25 bg-[#D4B896]/10 px-3 py-1 text-lg font-black text-[#F5D7A1]">
+          {moonMerge.merge.score}%
+        </div>
+      </div>
+
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+        <MoonPersonCard label="You" phase={moonMerge.user} />
+
+        <div className="relative flex h-28 w-20 items-center justify-center overflow-visible">
+          <motion.div
+            initial={{ x: -34, opacity: 0.75 }}
+            animate={{ x: [ -34, 0, -5 ] }}
+            transition={{ duration: 1.1, ease: "easeOut", delay: 0.1 }}
+            className="absolute"
+          >
+            <MoonPhaseOrb phase={moonMerge.user} size={54} />
+          </motion.div>
+          <motion.div
+            initial={{ x: 34, opacity: 0.75 }}
+            animate={{ x: [ 34, 0, 5 ] }}
+            transition={{ duration: 1.1, ease: "easeOut", delay: 0.1 }}
+            className="absolute"
+          >
+            <MoonPhaseOrb phase={moonMerge.partner} size={54} />
+          </motion.div>
+          <motion.div
+            initial={{ scale: 0.35, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.45, ease: "easeOut", delay: 0.95 }}
+            className="absolute flex h-16 w-16 items-center justify-center rounded-full border border-[#F5D7A1]/30 bg-[#F5D7A1]/10 shadow-[0_0_26px_rgba(245,215,161,0.22)]"
+          >
+            <span className="text-sm font-black text-[#F5D7A1]">{moonMerge.merge.score}%</span>
+          </motion.div>
+        </div>
+
+        <MoonPersonCard label="Partner" phase={moonMerge.partner} />
+      </div>
+
+      <p className="mt-4 text-sm leading-relaxed text-white/70">{moonMerge.merge.summary}</p>
+
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <div className="rounded-xl bg-white/[0.045] px-3 py-2 text-center">
+          <p className="text-base font-bold text-white">{moonMerge.merge.completionScore}%</p>
+          <p className="text-[11px] text-white/45">Completion</p>
+        </div>
+        <div className="rounded-xl bg-white/[0.045] px-3 py-2 text-center">
+          <p className="text-base font-bold text-white">{moonMerge.merge.similarityScore}%</p>
+          <p className="text-[11px] text-white/45">Similarity</p>
+        </div>
+        <div className="rounded-xl bg-white/[0.045] px-3 py-2 text-center">
+          <p className="text-base font-bold text-white">{moonMerge.merge.illuminationBalance}%</p>
+          <p className="text-[11px] text-white/45">Light Balance</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PartnerCompatibilityPage() {
   const router = useRouter();
   const [userMoonSign, setUserMoonSign] = useState<string | null>(null);
+  const [userMoonPhase, setUserMoonPhase] = useState<MoonPhaseReport | null>(null);
   const [userMoonLoading, setUserMoonLoading] = useState(true);
   const [partnerBirthDate, setPartnerBirthDate] = useState("");
   const [partnerBirthTime, setPartnerBirthTime] = useState("12:00");
@@ -199,7 +362,7 @@ export default function PartnerCompatibilityPage() {
 
         const { data: userData } = await supabase
           .from("users")
-          .select("moon_sign, birth_month, birth_day, birth_year")
+          .select("moon_sign, birth_month, birth_day, birth_year, birth_hour, birth_minute, birth_period, timezone")
           .eq("id", userId)
           .single();
 
@@ -207,11 +370,15 @@ export default function PartnerCompatibilityPage() {
         let birthMonth = userData?.birth_month;
         let birthDay = userData?.birth_day;
         let birthYear = userData?.birth_year;
+        let birthHour = userData?.birth_hour;
+        let birthMinute = userData?.birth_minute;
+        let birthPeriod = userData?.birth_period;
+        let timezone = userData?.timezone;
 
         if (!moonSign || !birthMonth || !birthDay || !birthYear) {
           const { data: profileData } = await supabase
             .from("user_profiles")
-            .select("moon_sign, birth_month, birth_day, birth_year")
+            .select("moon_sign, birth_month, birth_day, birth_year, birth_hour, birth_minute, birth_period, timezone")
             .eq("id", userId)
             .single();
 
@@ -219,6 +386,10 @@ export default function PartnerCompatibilityPage() {
           birthMonth = birthMonth || profileData?.birth_month;
           birthDay = birthDay || profileData?.birth_day;
           birthYear = birthYear || profileData?.birth_year;
+          birthHour = birthHour || profileData?.birth_hour;
+          birthMinute = birthMinute || profileData?.birth_minute;
+          birthPeriod = birthPeriod || profileData?.birth_period;
+          timezone = timezone || profileData?.timezone;
         }
 
         if (!moonSign && birthMonth && birthDay && birthYear) {
@@ -228,10 +399,35 @@ export default function PartnerCompatibilityPage() {
           }
         }
 
+        if (birthMonth && birthDay && birthYear) {
+          const month = monthToNumber(birthMonth);
+          const day = Number(birthDay);
+          const year = Number(birthYear);
+
+          if (month && Number.isInteger(day) && Number.isInteger(year)) {
+            const time = parseStoredBirthTime(birthHour, birthMinute, birthPeriod);
+            setUserMoonPhase(
+              calculateMoonPhase({
+                year,
+                month,
+                day,
+                hour: time.hour,
+                minute: time.minute,
+                timezoneOffsetHours: parseTimezoneOffset(timezone),
+              })
+            );
+          } else {
+            setUserMoonPhase(null);
+          }
+        } else {
+          setUserMoonPhase(null);
+        }
+
         setUserMoonSign(moonSign || null);
       } catch (err) {
         console.error("Failed to load user moon sign:", err);
         setUserMoonSign(null);
+        setUserMoonPhase(null);
       } finally {
         setUserMoonLoading(false);
       }
@@ -269,6 +465,15 @@ export default function PartnerCompatibilityPage() {
     setPartnerMoonSign(null);
 
     try {
+      const partnerTime = parseTimeValue(partnerBirthTime);
+      const nextPartnerMoonPhase = calculateMoonPhase({
+        year: Number(parts.year),
+        month: Number(parts.month),
+        day: Number(parts.day),
+        hour: partnerTime.hour,
+        minute: partnerTime.minute,
+        timezoneOffsetHours: 5.5,
+      });
       const response = await fetch("/api/astrology/birth-chart", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -293,12 +498,45 @@ export default function PartnerCompatibilityPage() {
       }
 
       setPartnerMoonSign(moonSign);
-      setResult(await buildResult(userMoonSign, moonSign));
+      const nextResult = await buildResult(userMoonSign, moonSign);
+      setResult(
+        userMoonPhase
+          ? {
+              ...nextResult,
+              moonMerge: {
+                user: userMoonPhase,
+                partner: nextPartnerMoonPhase,
+                merge: calculateMoonMerge(userMoonPhase, nextPartnerMoonPhase),
+              },
+            }
+          : nextResult
+      );
     } catch (err) {
       console.error("Moon compatibility error:", err);
       const fallback = approximateMoonSign(parts.month, parts.day, parts.year);
+      const partnerTime = parseTimeValue(partnerBirthTime);
+      const nextPartnerMoonPhase = calculateMoonPhase({
+        year: Number(parts.year),
+        month: Number(parts.month),
+        day: Number(parts.day),
+        hour: partnerTime.hour,
+        minute: partnerTime.minute,
+        timezoneOffsetHours: 5.5,
+      });
       setPartnerMoonSign(fallback);
-      setResult(await buildResult(userMoonSign, fallback));
+      const nextResult = await buildResult(userMoonSign, fallback);
+      setResult(
+        userMoonPhase
+          ? {
+              ...nextResult,
+              moonMerge: {
+                user: userMoonPhase,
+                partner: nextPartnerMoonPhase,
+                merge: calculateMoonMerge(userMoonPhase, nextPartnerMoonPhase),
+              },
+            }
+          : nextResult
+      );
     } finally {
       setLoading(false);
     }
@@ -341,7 +579,7 @@ export default function PartnerCompatibilityPage() {
                     {userMoonLoading
                       ? "Loading your Moon sign..."
                       : userMoonSign
-                        ? `Your Moon sign: ${userMoonSign}`
+                        ? `Your Moon sign: ${userMoonSign}${userMoonPhase ? ` • ${userMoonPhase.phaseName}` : ""}`
                         : "Your Moon sign could not be found."}
                   </p>
                 </div>
@@ -402,6 +640,14 @@ export default function PartnerCompatibilityPage() {
               animate={{ opacity: 1, y: 0 }}
               className="space-y-6"
             >
+              {result.moonMerge && <MoonMergePanel moonMerge={result.moonMerge} />}
+
+              <div className="space-y-4">
+                <div className="text-center">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#D4B896]/70">Sign Compatibility</p>
+                  <p className="mt-1 text-sm text-white/45">Based on both partners&apos; birth chart signs</p>
+                </div>
+
               <div className="flex items-center justify-center gap-3">
                 <div className="flex flex-col items-center">
                   <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#D4B896]/30 to-[#C4A676]/20 border-2 border-[#D4B896]/50 flex items-center justify-center">
@@ -432,6 +678,7 @@ export default function PartnerCompatibilityPage() {
               <div className="text-center">
                 <h2 className="text-white text-2xl font-bold">{result.matchLevel}</h2>
                 <p className="text-white/60 text-sm">{result.matchSubtitle}</p>
+              </div>
               </div>
 
               <div className="bg-[#1A2535] rounded-2xl p-5 border border-[#2A3545]">
