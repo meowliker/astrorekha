@@ -199,6 +199,10 @@ function isWithinRequestedRange(dayKey: string, startDate: string, endDate: stri
   return dayKey >= startDate && dayKey <= endDate;
 }
 
+function minIsoDate(left: string, right: string): string {
+  return left <= right ? left : right;
+}
+
 function addConvertedMetaSpend(
   spendMap: Map<string, DailyMetaSpend>,
   dayKey: string,
@@ -254,7 +258,8 @@ function addHourlySpendToBusinessWindow(
   exchangeRate: number,
   startDate: string,
   endDate: string,
-  accountWindow?: { startMillis: number; endMillis: number } | null
+  accountWindow?: { startMillis: number; endMillis: number } | null,
+  nowMillis?: number
 ) {
   const spend = parseFloat(String(row.spend || "0"));
   if (!Number.isFinite(spend) || spend <= 0) return;
@@ -267,11 +272,21 @@ function addHourlySpendToBusinessWindow(
 
   const rawBucketStartMillis = bucketStart.getTime();
   const rawBucketEndMillis = rawBucketStartMillis + 60 * 60 * 1000;
+  const observedRawBucketEndMillis =
+    Number.isFinite(nowMillis) && (nowMillis as number) > rawBucketStartMillis
+      ? Math.min(rawBucketEndMillis, nowMillis as number)
+      : rawBucketEndMillis;
+  if (observedRawBucketEndMillis <= rawBucketStartMillis) return;
+
   const bucketStartMillis = Math.max(rawBucketStartMillis, accountWindow?.startMillis ?? rawBucketStartMillis);
-  const bucketEndMillis = Math.min(rawBucketEndMillis, accountWindow?.endMillis ?? rawBucketEndMillis);
+  const bucketEndMillis = Math.min(
+    observedRawBucketEndMillis,
+    accountWindow?.endMillis ?? observedRawBucketEndMillis
+  );
   if (bucketStartMillis >= bucketEndMillis) return;
 
-  const adjustedSpend = spend * ((bucketEndMillis - bucketStartMillis) / (60 * 60 * 1000));
+  const observedBucketDurationMillis = observedRawBucketEndMillis - rawBucketStartMillis;
+  const adjustedSpend = spend * ((bucketEndMillis - bucketStartMillis) / observedBucketDurationMillis);
   const clippedBucketStart = new Date(bucketStartMillis);
   const clippedBucketEnd = new Date(bucketEndMillis);
   const startDay = getCostaRicaBusinessDayKeyFromDate(clippedBucketStart);
@@ -310,7 +325,8 @@ async function fetchMetaAdsDailySpend(
   supabase: any,
   startDate: string,
   endDate: string,
-  exchangeRate: number
+  exchangeRate: number,
+  nowMillis = Date.now()
 ): Promise<Map<string, DailyMetaSpend>> {
   const credentials = await getMetaAccountCredentialsForRange(supabase, { startDate, endDate });
 
@@ -391,7 +407,8 @@ async function fetchMetaAdsDailySpend(
             exchangeRate,
             startDate,
             endDate,
-            accountWindow
+            accountWindow,
+            nowMillis
           );
         });
         continue;
@@ -735,8 +752,11 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const token = searchParams.get("token");
-    const startDate = searchParams.get("startDate") || APP_LAUNCH_DATE;
-    const endDate = searchParams.get("endDate") || new Date().toISOString().split("T")[0];
+    const businessToday = getCostaRicaBusinessDayKeyFromDate(new Date());
+    const requestedEndDate = searchParams.get("endDate") || businessToday;
+    const endDate = minIsoDate(requestedEndDate, businessToday);
+    const requestedStartDate = searchParams.get("startDate") || APP_LAUNCH_DATE;
+    const startDate = requestedStartDate > endDate ? endDate : requestedStartDate;
 
     if (!token) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -763,14 +783,15 @@ export async function GET(request: NextRequest) {
 
     if (syncMode === "range") {
       const syncStartDate = searchParams.get("syncStartDate") || startDate;
-      const syncEndDate = searchParams.get("syncEndDate") || endDate;
-      await syncProfitSheetRows(supabase, syncStartDate, syncEndDate, exchangeRate);
-      syncedRange = { start: syncStartDate, end: syncEndDate };
+      const requestedSyncEndDate = searchParams.get("syncEndDate") || endDate;
+      const syncEndDate = minIsoDate(requestedSyncEndDate, businessToday);
+      const effectiveSyncStartDate = syncStartDate > syncEndDate ? syncEndDate : syncStartDate;
+      await syncProfitSheetRows(supabase, effectiveSyncStartDate, syncEndDate, exchangeRate);
+      syncedRange = { start: effectiveSyncStartDate, end: syncEndDate };
     } else if (syncMode === "last2") {
-      const today = new Date().toISOString().split("T")[0];
-      const syncStartDate = addDaysToIsoDate(today, -1);
-      await syncProfitSheetRows(supabase, syncStartDate, today, exchangeRate);
-      syncedRange = { start: syncStartDate, end: today };
+      const syncStartDate = addDaysToIsoDate(businessToday, -1);
+      await syncProfitSheetRows(supabase, syncStartDate, businessToday, exchangeRate);
+      syncedRange = { start: syncStartDate, end: businessToday };
     }
 
     const rows = await readProfitSheetRows(supabase, startDate, endDate);
