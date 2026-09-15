@@ -28,7 +28,7 @@ const defaultAccounts = [
 
 function fixture(options = {}) {
   const requests = [];
-  const storedRows = [];
+  const storedRows = options.savedRows ? [...options.savedRows] : [];
   const now = new Date(options.now || '2026-09-07T10:00:00Z').getTime();
   class FixedDate extends Date {
     constructor(...args) { super(...(args.length ? args : [now])); }
@@ -60,6 +60,7 @@ function fixture(options = {}) {
     const id = url.pathname.split('/')[2].replace('act_', '');
     assert.notEqual(id, 'future');
     if (options.fail && id === 'inr') return { ok: false, json: async () => ({ error: { message: 'Token failed' } }) };
+    if (options.permissionDenied && id === 'inr') return { ok: false, json: async () => ({ error: { code: 200, message: 'Ad account owner has NOT grant ads_read permission' } }) };
     if (!url.pathname.endsWith('/insights')) return { ok: true, json: async () => ({ name: id, currency: id === 'inr' ? 'INR' : 'USD', timezone_offset_hours_utc: id === 'inr' ? 5.5 : -6 }) };
     const hourly = url.searchParams.has('breakdowns');
     const rows = options.zero ? [] : hourly
@@ -167,6 +168,24 @@ test('calendar sync stores midnight-window PayU revenue in its own ledger', asyn
   assert.equal(f.storedRows[0].revenue, 300);
 });
 
+test('calendar reads saved rows and identifies missing dates without a sync', async () => {
+  const f = fixture({
+    dayMode: 'calendar_ist',
+    savedRows: [
+      { date: '2026-09-05', day: 'Sat', revenue: 100 },
+      { date: '2026-09-07', day: 'Mon', revenue: 200 },
+    ],
+  });
+  const { status, body } = await f.get('token=test&startDate=2026-09-05&endDate=2026-09-07&dayMode=calendar_ist&exchangeRate=100');
+  assert.equal(status, 200);
+  assert.equal(body.rows.length, 2);
+  assert.equal(body.missingRanges.length, 1);
+  assert.equal(body.missingRanges[0].startDate, '2026-09-06');
+  assert.equal(body.missingRanges[0].endDate, '2026-09-06');
+  assert.equal(body.missingRanges[0].days, 1);
+  assert.equal(f.requests.length, 0);
+});
+
 test('aligned full-day daily totals are not counted twice with hourly data', async () => {
   const f = fixture({ accounts: [{ ...defaultAccounts[0], startTime: '11:30' }] });
   const { body } = await f.get(); assert.equal(body.totalUSD, 35); assert.equal(body.accounts[0].usd, 35);
@@ -187,4 +206,10 @@ test('missing access, failed requests and pagination cannot masquerade as a comp
     const { status, body } = await fixture(options).get();
     assert.equal(status, 500); assert.ok(body.error); assert.equal(body.accounts, undefined);
   }
+});
+
+test('Meta read permission failure identifies the blocked account', async () => {
+  const { status, body } = await fixture({ permissionDenied: true }).get();
+  assert.equal(status, 500);
+  assert.match(body.error, /Meta denied ads_read access to INR account/);
 });

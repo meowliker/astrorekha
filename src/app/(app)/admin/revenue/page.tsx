@@ -50,6 +50,7 @@ import SpendBreakdownButton from "@/components/admin/SpendBreakdownButton";
 // Tab type
 type TabType = "dashboard" | "profit-sheet" | "profit-sheet-calendar" | "meta-details" | "attribution" | "analytics";
 type ProfitSheetDayMode = "business_1130_ist" | "calendar_ist";
+type MissingReportingRange = { startDate: string; endDate: string; days: number };
 
 // Profit Sheet row interface
 interface ProfitSheetRow {
@@ -886,6 +887,7 @@ export default function AdminRevenuePage() {
   
   // Profit Sheet state
   const [profitSheetData, setProfitSheetData] = useState<ProfitSheetRow[]>([]);
+  const [calendarProfitSheetMissingRanges, setCalendarProfitSheetMissingRanges] = useState<MissingReportingRange[]>([]);
   const [profitSheetLoadedMode, setProfitSheetLoadedMode] = useState<ProfitSheetDayMode | null>(null);
   const [profitSheetLoading, setProfitSheetLoading] = useState(false);
   const [profitSheetError, setProfitSheetError] = useState<string | null>(null);
@@ -896,14 +898,13 @@ export default function AdminRevenuePage() {
   const [profitSheetExchangeRate, setProfitSheetExchangeRate] = useState<number>(85);
   const [profitSheetCustomExchangeRate, setProfitSheetCustomExchangeRate] = useState<string>("");
   const [profitSheetSelectedDates, setProfitSheetSelectedDates] = useState<string[]>([]);
-  const [calendarProfitSheetStartDate, setCalendarProfitSheetStartDate] = useState<string>("2026-06-21");
+  const [calendarProfitSheetStartDate, setCalendarProfitSheetStartDate] = useState<string>("2026-03-13");
   const [calendarProfitSheetEndDate, setCalendarProfitSheetEndDate] = useState<string>(() => getIstDateTimeParts(new Date()).dayKey);
   const [calendarProfitSheetFilter, setCalendarProfitSheetFilter] = useState<string>("all");
   const [calendarProfitSheetRoasFilter, setCalendarProfitSheetRoasFilter] = useState<string>("all");
   const [calendarProfitSheetCustomExchangeRate, setCalendarProfitSheetCustomExchangeRate] = useState<string>("");
   const [calendarProfitSheetSelectedDates, setCalendarProfitSheetSelectedDates] = useState<string[]>([]);
   const profitSheetRequestIdRef = useRef(0);
-  const calendarSyncedRangesRef = useRef<Set<string>>(new Set());
 
   // Meta Breakdown state
   const [metaBreakdown, setMetaBreakdown] = useState<MetaBreakdownData | null>(null);
@@ -1253,8 +1254,6 @@ export default function AdminRevenuePage() {
     const requestedStartDate = dayMode === "calendar_ist" ? calendarProfitSheetStartDate : profitSheetStartDate;
     const requestedEndDate = dayMode === "calendar_ist" ? calendarProfitSheetEndDate : profitSheetEndDate;
     const rateInput = dayMode === "calendar_ist" ? calendarProfitSheetCustomExchangeRate : profitSheetCustomExchangeRate;
-    const calendarRangeKey = `${requestedStartDate}|${requestedEndDate}`;
-    const syncCalendarRange = dayMode === "calendar_ist" && !syncLastTwoDays && !calendarSyncedRangesRef.current.has(calendarRangeKey);
     try {
       setProfitSheetLoading(true);
       setProfitSheetError(null);
@@ -1264,9 +1263,6 @@ export default function AdminRevenuePage() {
       let url = `/api/admin/profit-sheet?token=${encodeURIComponent(token)}&startDate=${encodeURIComponent(requestedStartDate)}&endDate=${encodeURIComponent(requestedEndDate)}&dayMode=${dayMode}`;
       if (syncLastTwoDays) {
         url += "&sync=last2";
-      } else if (syncCalendarRange) {
-        // Populate a calendar range once per session; later visits read the saved ledger.
-        url += "&sync=range";
       }
       
       // Use custom exchange rate if provided
@@ -1291,8 +1287,8 @@ export default function AdminRevenuePage() {
 
       const result = await res.json();
       if (requestId !== profitSheetRequestIdRef.current) return;
-      if (syncCalendarRange) calendarSyncedRangesRef.current.add(calendarRangeKey);
       setProfitSheetData(result.rows || []);
+      setCalendarProfitSheetMissingRanges(dayMode === "calendar_ist" ? result.missingRanges || [] : []);
       setProfitSheetLoadedMode(dayMode);
       if (result.exchangeRate) {
         setProfitSheetExchangeRate(result.exchangeRate);
@@ -1306,6 +1302,7 @@ export default function AdminRevenuePage() {
       console.error("Profit sheet fetch error:", err);
       setProfitSheetError(err instanceof Error ? err.message : "Failed to fetch profit sheet");
       setProfitSheetData([]);
+      setCalendarProfitSheetMissingRanges([]);
       setProfitSheetLoadedMode(dayMode);
     } finally {
       if (requestId === profitSheetRequestIdRef.current) {
@@ -2896,6 +2893,7 @@ export default function AdminRevenuePage() {
             data={profitSheetLoadedMode === (activeTab === "profit-sheet-calendar" ? "calendar_ist" : "business_1130_ist") ? profitSheetData : []}
             loading={profitSheetLoading || profitSheetLoadedMode !== (activeTab === "profit-sheet-calendar" ? "calendar_ist" : "business_1130_ist")}
             error={profitSheetLoadedMode === (activeTab === "profit-sheet-calendar" ? "calendar_ist" : "business_1130_ist") ? profitSheetError : null}
+            missingRanges={activeTab === "profit-sheet-calendar" && profitSheetLoadedMode === "calendar_ist" ? calendarProfitSheetMissingRanges : []}
             startDate={activeTab === "profit-sheet-calendar" ? calendarProfitSheetStartDate : profitSheetStartDate}
             endDate={activeTab === "profit-sheet-calendar" ? calendarProfitSheetEndDate : profitSheetEndDate}
             setStartDate={activeTab === "profit-sheet-calendar" ? setCalendarProfitSheetStartDate : setProfitSheetStartDate}
@@ -2997,6 +2995,7 @@ function ProfitSheetTab({
   data,
   loading,
   error,
+  missingRanges,
   startDate,
   endDate,
   setStartDate,
@@ -3016,6 +3015,7 @@ function ProfitSheetTab({
   data: ProfitSheetRow[];
   loading: boolean;
   error: string | null;
+  missingRanges: MissingReportingRange[];
   startDate: string;
   endDate: string;
   setStartDate: (v: string) => void;
@@ -3822,6 +3822,15 @@ function ProfitSheetTab({
       {error && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-300">
           {error}
+        </div>
+      )}
+      {dayMode === "calendar_ist" && missingRanges.length > 0 && !loading && (
+        <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-200">
+          {missingRanges.reduce((sum, range) => sum + range.days, 0)} dates in this range are not yet synced. The totals below cover saved dates only. Missing: {missingRanges.slice(0, 3).map((range) =>
+            range.startDate === range.endDate
+              ? formatCalendarDateShort(range.startDate)
+              : `${formatCalendarDateShort(range.startDate)}–${formatCalendarDateShort(range.endDate)}`
+          ).join(", ")}{missingRanges.length > 3 ? `, and ${missingRanges.length - 3} more ranges` : ""}.
         </div>
       )}
 

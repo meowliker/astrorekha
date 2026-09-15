@@ -394,7 +394,14 @@ async function fetchMetaAdsDailySpend(
       const dailyData = await dailyResponse.json().catch(() => null);
 
       if (!accountResponse.ok || accountData?.error) {
-        if (accountBreakdown || dayMode === CALENDAR_DAY_MODE) throw new Error(`Unable to fetch spend for ${credential.label || adAccountId}. Check the account's Meta access and try again.`);
+        if (accountBreakdown || dayMode === CALENDAR_DAY_MODE) {
+          const deniedReadAccess = Number(accountData?.error?.code) === 200 &&
+            /ads_management|ads_read/i.test(String(accountData?.error?.message || ""));
+          if (deniedReadAccess) {
+            throw new Error(`Meta denied ads_read access to ${credential.label || adAccountId}. Restore that account's read permission to sync its reporting dates.`);
+          }
+          throw new Error(`Unable to fetch spend for ${credential.label || adAccountId}. Check the account's Meta access and try again.`);
+        }
         console.error(`Meta account fetch failed for act_${adAccountId}:`, accountData?.error || accountResponse.status);
         continue;
       }
@@ -779,6 +786,22 @@ async function readProfitSheetRows(supabase: any, startDate: string, endDate: st
   return (data || []).map(fromDbRow);
 }
 
+function getMissingReportingRanges(rows: ProfitSheetRow[], startDate: string, endDate: string): Array<{ startDate: string; endDate: string; days: number }> {
+  const savedDates = new Set(rows.map((row) => row.date));
+  const ranges: Array<{ startDate: string; endDate: string; days: number }> = [];
+  for (let date = startDate; date <= endDate; date = addDaysToIsoDate(date, 1)) {
+    if (savedDates.has(date)) continue;
+    const current = ranges[ranges.length - 1];
+    if (current && addDaysToIsoDate(current.endDate, 1) === date) {
+      current.endDate = date;
+      current.days++;
+    } else {
+      ranges.push({ startDate: date, endDate: date, days: 1 });
+    }
+  }
+  return ranges;
+}
+
 async function syncProfitSheetRows(
   supabase: any,
   startDate: string,
@@ -907,6 +930,7 @@ export async function GET(request: NextRequest) {
       dayMode,
       source: dayMode === CALENDAR_DAY_MODE ? "supabase_profit_sheet_calendar" : "supabase_profit_sheet",
       dateRange: { start: startDate, end: endDate },
+      missingRanges: dayMode === CALENDAR_DAY_MODE ? getMissingReportingRanges(rows, startDate, endDate) : [],
       syncedRange,
     });
   } catch (error: any) {
