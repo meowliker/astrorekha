@@ -45,9 +45,11 @@ import {
 
 import React from "react";
 import { createPortal } from "react-dom";
+import SpendBreakdownButton from "@/components/admin/SpendBreakdownButton";
 
 // Tab type
-type TabType = "dashboard" | "profit-sheet" | "meta-details" | "attribution" | "analytics";
+type TabType = "dashboard" | "profit-sheet" | "profit-sheet-calendar" | "meta-details" | "attribution" | "analytics";
+type ProfitSheetDayMode = "business_1130_ist" | "calendar_ist";
 
 // Profit Sheet row interface
 interface ProfitSheetRow {
@@ -884,6 +886,7 @@ export default function AdminRevenuePage() {
   
   // Profit Sheet state
   const [profitSheetData, setProfitSheetData] = useState<ProfitSheetRow[]>([]);
+  const [profitSheetLoadedMode, setProfitSheetLoadedMode] = useState<ProfitSheetDayMode | null>(null);
   const [profitSheetLoading, setProfitSheetLoading] = useState(false);
   const [profitSheetError, setProfitSheetError] = useState<string | null>(null);
   const [profitSheetStartDate, setProfitSheetStartDate] = useState<string>("2026-06-21");
@@ -893,7 +896,14 @@ export default function AdminRevenuePage() {
   const [profitSheetExchangeRate, setProfitSheetExchangeRate] = useState<number>(85);
   const [profitSheetCustomExchangeRate, setProfitSheetCustomExchangeRate] = useState<string>("");
   const [profitSheetSelectedDates, setProfitSheetSelectedDates] = useState<string[]>([]);
+  const [calendarProfitSheetStartDate, setCalendarProfitSheetStartDate] = useState<string>("2026-06-21");
+  const [calendarProfitSheetEndDate, setCalendarProfitSheetEndDate] = useState<string>(() => getIstDateTimeParts(new Date()).dayKey);
+  const [calendarProfitSheetFilter, setCalendarProfitSheetFilter] = useState<string>("all");
+  const [calendarProfitSheetRoasFilter, setCalendarProfitSheetRoasFilter] = useState<string>("all");
+  const [calendarProfitSheetCustomExchangeRate, setCalendarProfitSheetCustomExchangeRate] = useState<string>("");
+  const [calendarProfitSheetSelectedDates, setCalendarProfitSheetSelectedDates] = useState<string[]>([]);
   const profitSheetRequestIdRef = useRef(0);
+  const calendarSyncedRangesRef = useRef<Set<string>>(new Set());
 
   // Meta Breakdown state
   const [metaBreakdown, setMetaBreakdown] = useState<MetaBreakdownData | null>(null);
@@ -1138,7 +1148,7 @@ export default function AdminRevenuePage() {
       setVisibleMetaAccessTokenRows(new Set());
       setMetaAccountSettingsMessage("Meta ad account windows saved.");
       fetchMetaAds(metaDatePreset);
-      if (activeTab === "profit-sheet") fetchProfitSheet(undefined, true);
+      if (activeTab === "profit-sheet" || activeTab === "profit-sheet-calendar") fetchProfitSheet(undefined, true);
       if (activeTab === "meta-details") fetchMetaBreakdown();
       if (activeTab === "attribution") fetchAttribution();
       if (activeTab === "analytics") fetchAnalytics(true);
@@ -1239,19 +1249,28 @@ export default function AdminRevenuePage() {
   // Fetch Profit Sheet data
   const fetchProfitSheet = async (customRate?: number, syncLastTwoDays: boolean = false) => {
     const requestId = ++profitSheetRequestIdRef.current;
+    const dayMode: ProfitSheetDayMode = activeTab === "profit-sheet-calendar" ? "calendar_ist" : "business_1130_ist";
+    const requestedStartDate = dayMode === "calendar_ist" ? calendarProfitSheetStartDate : profitSheetStartDate;
+    const requestedEndDate = dayMode === "calendar_ist" ? calendarProfitSheetEndDate : profitSheetEndDate;
+    const rateInput = dayMode === "calendar_ist" ? calendarProfitSheetCustomExchangeRate : profitSheetCustomExchangeRate;
+    const calendarRangeKey = `${requestedStartDate}|${requestedEndDate}`;
+    const syncCalendarRange = dayMode === "calendar_ist" && !syncLastTwoDays && !calendarSyncedRangesRef.current.has(calendarRangeKey);
     try {
       setProfitSheetLoading(true);
       setProfitSheetError(null);
       const token = localStorage.getItem("admin_session_token");
       if (!token) return;
       
-      let url = `/api/admin/profit-sheet?token=${token}&startDate=${profitSheetStartDate}&endDate=${profitSheetEndDate}`;
+      let url = `/api/admin/profit-sheet?token=${encodeURIComponent(token)}&startDate=${encodeURIComponent(requestedStartDate)}&endDate=${encodeURIComponent(requestedEndDate)}&dayMode=${dayMode}`;
       if (syncLastTwoDays) {
         url += "&sync=last2";
+      } else if (syncCalendarRange) {
+        // Populate a calendar range once per session; later visits read the saved ledger.
+        url += "&sync=range";
       }
       
       // Use custom exchange rate if provided
-      const rateToUse = customRate || (profitSheetCustomExchangeRate ? parseFloat(profitSheetCustomExchangeRate) : undefined);
+      const rateToUse = customRate || (rateInput ? parseFloat(rateInput) : undefined);
       if (rateToUse) {
         url += `&exchangeRate=${rateToUse}`;
       }
@@ -1272,11 +1291,14 @@ export default function AdminRevenuePage() {
 
       const result = await res.json();
       if (requestId !== profitSheetRequestIdRef.current) return;
+      if (syncCalendarRange) calendarSyncedRangesRef.current.add(calendarRangeKey);
       setProfitSheetData(result.rows || []);
+      setProfitSheetLoadedMode(dayMode);
       if (result.exchangeRate) {
         setProfitSheetExchangeRate(result.exchangeRate);
-        if (!profitSheetCustomExchangeRate) {
-          setProfitSheetCustomExchangeRate(result.exchangeRate.toFixed(2));
+        if (!rateInput) {
+          if (dayMode === "calendar_ist") setCalendarProfitSheetCustomExchangeRate(result.exchangeRate.toFixed(2));
+          else setProfitSheetCustomExchangeRate(result.exchangeRate.toFixed(2));
         }
       }
     } catch (err) {
@@ -1284,6 +1306,7 @@ export default function AdminRevenuePage() {
       console.error("Profit sheet fetch error:", err);
       setProfitSheetError(err instanceof Error ? err.message : "Failed to fetch profit sheet");
       setProfitSheetData([]);
+      setProfitSheetLoadedMode(dayMode);
     } finally {
       if (requestId === profitSheetRequestIdRef.current) {
         setProfitSheetLoading(false);
@@ -1452,11 +1475,13 @@ export default function AdminRevenuePage() {
   }, [metaDatePreset]);
 
   // Fetch profit sheet when tab changes or date range changes
+  const activeProfitSheetStartDate = activeTab === "profit-sheet-calendar" ? calendarProfitSheetStartDate : profitSheetStartDate;
+  const activeProfitSheetEndDate = activeTab === "profit-sheet-calendar" ? calendarProfitSheetEndDate : profitSheetEndDate;
   useEffect(() => {
-    if (activeTab === "profit-sheet") {
+    if (activeTab === "profit-sheet" || activeTab === "profit-sheet-calendar") {
       fetchProfitSheet();
     }
-  }, [activeTab, profitSheetStartDate, profitSheetEndDate]);
+  }, [activeTab, activeProfitSheetStartDate, activeProfitSheetEndDate]);
 
   // Fetch meta breakdown when tab changes or date preset changes
   useEffect(() => {
@@ -1945,7 +1970,7 @@ export default function AdminRevenuePage() {
               <button
                 onClick={() => {
                   if (activeTab === "dashboard") fetchData(true);
-                  else if (activeTab === "profit-sheet") fetchProfitSheet(undefined, true);
+                  else if (activeTab === "profit-sheet" || activeTab === "profit-sheet-calendar") fetchProfitSheet(undefined, true);
                   else if (activeTab === "meta-details") fetchMetaBreakdown();
                   else if (activeTab === "attribution") fetchAttribution();
                   else if (activeTab === "analytics") fetchAnalytics(true);
@@ -1980,7 +2005,18 @@ export default function AdminRevenuePage() {
               }`}
             >
               <FileSpreadsheet className="w-4 h-4" />
-              Profit Sheet
+              Profit Sheet · 11:30 AM–11:29 AM
+            </button>
+            <button
+              onClick={() => setActiveTab("profit-sheet-calendar")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                activeTab === "profit-sheet-calendar"
+                  ? "bg-primary text-white shadow-lg"
+                  : "text-white/60 hover:text-white hover:bg-white/10"
+              }`}
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              Profit Sheet · 12:00 AM–11:59 PM
             </button>
             <button
               onClick={() => setActiveTab("meta-details")}
@@ -2853,23 +2889,25 @@ export default function AdminRevenuePage() {
         )}
 
         {/* Profit Sheet Tab Content */}
-        {activeTab === "profit-sheet" && (
+        {(activeTab === "profit-sheet" || activeTab === "profit-sheet-calendar") && (
           <ProfitSheetTab
-            data={profitSheetData}
-            loading={profitSheetLoading}
-            error={profitSheetError}
-            startDate={profitSheetStartDate}
-            endDate={profitSheetEndDate}
-            setStartDate={setProfitSheetStartDate}
-            setEndDate={setProfitSheetEndDate}
-            periodFilter={profitSheetFilter}
-            setPeriodFilter={setProfitSheetFilter}
-            roasFilter={profitSheetRoasFilter}
-            setRoasFilter={setProfitSheetRoasFilter}
-            selectedDates={profitSheetSelectedDates}
-            setSelectedDates={setProfitSheetSelectedDates}
-            exchangeRate={profitSheetCustomExchangeRate}
-            setExchangeRate={setProfitSheetCustomExchangeRate}
+            key={activeTab}
+            dayMode={activeTab === "profit-sheet-calendar" ? "calendar_ist" : "business_1130_ist"}
+            data={profitSheetLoadedMode === (activeTab === "profit-sheet-calendar" ? "calendar_ist" : "business_1130_ist") ? profitSheetData : []}
+            loading={profitSheetLoading || profitSheetLoadedMode !== (activeTab === "profit-sheet-calendar" ? "calendar_ist" : "business_1130_ist")}
+            error={profitSheetLoadedMode === (activeTab === "profit-sheet-calendar" ? "calendar_ist" : "business_1130_ist") ? profitSheetError : null}
+            startDate={activeTab === "profit-sheet-calendar" ? calendarProfitSheetStartDate : profitSheetStartDate}
+            endDate={activeTab === "profit-sheet-calendar" ? calendarProfitSheetEndDate : profitSheetEndDate}
+            setStartDate={activeTab === "profit-sheet-calendar" ? setCalendarProfitSheetStartDate : setProfitSheetStartDate}
+            setEndDate={activeTab === "profit-sheet-calendar" ? setCalendarProfitSheetEndDate : setProfitSheetEndDate}
+            periodFilter={activeTab === "profit-sheet-calendar" ? calendarProfitSheetFilter : profitSheetFilter}
+            setPeriodFilter={activeTab === "profit-sheet-calendar" ? setCalendarProfitSheetFilter : setProfitSheetFilter}
+            roasFilter={activeTab === "profit-sheet-calendar" ? calendarProfitSheetRoasFilter : profitSheetRoasFilter}
+            setRoasFilter={activeTab === "profit-sheet-calendar" ? setCalendarProfitSheetRoasFilter : setProfitSheetRoasFilter}
+            selectedDates={activeTab === "profit-sheet-calendar" ? calendarProfitSheetSelectedDates : profitSheetSelectedDates}
+            setSelectedDates={activeTab === "profit-sheet-calendar" ? setCalendarProfitSheetSelectedDates : setProfitSheetSelectedDates}
+            exchangeRate={activeTab === "profit-sheet-calendar" ? calendarProfitSheetCustomExchangeRate : profitSheetCustomExchangeRate}
+            setExchangeRate={activeTab === "profit-sheet-calendar" ? setCalendarProfitSheetCustomExchangeRate : setProfitSheetCustomExchangeRate}
             onRefresh={() => fetchProfitSheet(undefined, true)}
             onRefreshWithRate={(rate) => fetchProfitSheet(rate, true)}
           />
@@ -2955,6 +2993,7 @@ type ProfitSheetSortDirection = "asc" | "desc" | null;
 
 // Profit Sheet Tab Component
 function ProfitSheetTab({
+  dayMode,
   data,
   loading,
   error,
@@ -2973,6 +3012,7 @@ function ProfitSheetTab({
   onRefresh,
   onRefreshWithRate,
 }: {
+  dayMode: ProfitSheetDayMode;
   data: ProfitSheetRow[];
   loading: boolean;
   error: string | null;
@@ -3014,13 +3054,13 @@ function ProfitSheetTab({
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const calendarDropdownRef = useRef<HTMLDivElement | null>(null);
   const [calendarMonthStart, setCalendarMonthStart] = useState<Date>(() => {
-    const focusDate = endDate || startDate || getCurrentBusinessDateIso();
+    const focusDate = endDate || startDate || (dayMode === "calendar_ist" ? getIstDateTimeParts(new Date()).dayKey : getCurrentBusinessDateIso());
     return getMonthStartUtcDate(focusDate);
   });
   const [isSpecificDaysOpen, setIsSpecificDaysOpen] = useState(false);
   const specificDaysDropdownRef = useRef<HTMLDivElement | null>(null);
   const [specificDaysMonthStart, setSpecificDaysMonthStart] = useState<Date>(() => {
-    const focusDate = selectedDates[selectedDates.length - 1] || endDate || startDate || getCurrentBusinessDateIso();
+    const focusDate = selectedDates[selectedDates.length - 1] || endDate || startDate || (dayMode === "calendar_ist" ? getIstDateTimeParts(new Date()).dayKey : getCurrentBusinessDateIso());
     return getMonthStartUtcDate(focusDate);
   });
   const [profitSortKey, setProfitSortKey] = useState<ProfitSheetSortKey | null>(null);
@@ -3083,7 +3123,9 @@ function ProfitSheetTab({
     };
   }, [isSpecificDaysOpen]);
 
-  const maxSelectableBusinessDate = getCurrentBusinessDateIso();
+  const maxSelectableBusinessDate = dayMode === "calendar_ist"
+    ? getIstDateTimeParts(new Date()).dayKey
+    : getCurrentBusinessDateIso();
   const maxMonthStart = getMonthStartUtcDate(maxSelectableBusinessDate);
   const secondCalendarMonthStart = useMemo(
     () => shiftMonthStartUtcDate(calendarMonthStart, 1),
@@ -3218,9 +3260,9 @@ function ProfitSheetTab({
 
   const applyPeriodRange = (period: string) => {
     let periodRange: CalendarRange;
-    if (period === "last7") periodRange = getPresetCalendarRange("last_7d");
-    else if (period === "last14") periodRange = getPresetCalendarRange("last_14d");
-    else if (period === "last30") periodRange = getPresetCalendarRange("last_30d");
+    if (period === "last7") periodRange = { startDate: shiftIsoDate(maxSelectableBusinessDate, -6), endDate: maxSelectableBusinessDate };
+    else if (period === "last14") periodRange = { startDate: shiftIsoDate(maxSelectableBusinessDate, -13), endDate: maxSelectableBusinessDate };
+    else if (period === "last30") periodRange = { startDate: shiftIsoDate(maxSelectableBusinessDate, -29), endDate: maxSelectableBusinessDate };
     else periodRange = { startDate: profitMinRangeStart, endDate: maxSelectableBusinessDate };
 
     setPeriodFilter(period);
@@ -3593,7 +3635,7 @@ function ProfitSheetTab({
 	              onClick={() => {
 	                setSpecificDaysMonthStart(
 	                  getMonthStartUtcDate(
-	                    selectedDates[selectedDates.length - 1] || endDate || startDate || getCurrentBusinessDateIso()
+	                    selectedDates[selectedDates.length - 1] || endDate || startDate || maxSelectableBusinessDate
 	                  )
 	                );
 	                setIsSpecificDaysOpen((prev) => !prev);
@@ -3751,7 +3793,9 @@ function ProfitSheetTab({
           </button>
         </div>
 	        <p className="text-white/30 text-xs mt-3">
-	          Note: Each date represents Costa Rica timezone (UTC-6). Revenue is calculated from 11:30 AM IST to next day 11:29 AM IST. Ads cost is fetched in USD and converted to INR.
+	          {dayMode === "calendar_ist"
+	            ? "Each date covers 12:00 AM to 11:59 PM IST. Revenue and ad spend use the same calendar-day window; each account's configured start and end times still apply."
+	            : "Each date covers 11:30 AM IST to 11:29 AM IST the next day. Revenue and ad spend use the same reporting window; each account's configured start and end times still apply."}
 	        </p>
 	        {selectedDates.length > 0 && (
 	          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2">
@@ -3880,7 +3924,12 @@ function ProfitSheetTab({
                         <td className="text-green-400 text-sm px-4 py-3 text-right font-medium">{formatCurrency(row.revenue)}</td>
                         <td className="text-amber-400/70 text-sm px-4 py-3 text-right">{formatCurrency(row.gst)}</td>
                         <td className="text-red-400/50 text-sm px-4 py-3 text-right">${row.adsCostUSD.toFixed(2)}</td>
-                        <td className="text-red-400/70 text-sm px-4 py-3 text-right">{formatCurrency(row.adsCostINR)}</td>
+                        <td className="text-red-400/70 text-sm px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+                            {formatCurrency(row.adsCostINR)}
+                            <SpendBreakdownButton date={row.date} savedTotalINR={row.adsCostINR} dayMode={dayMode} />
+                          </div>
+                        </td>
                         <td className={`text-sm px-4 py-3 text-right font-medium ${row.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>
                           {formatCurrency(row.netRevenue)}
                         </td>

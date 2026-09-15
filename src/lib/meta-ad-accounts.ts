@@ -363,9 +363,15 @@ export function getMetaAccountDateRangeForRequest(
 export function getMetaAccountWindowForRequest(
   account: Pick<MetaAccountCredential, "startDate" | "startTime" | "endDate" | "endTime">,
   startDate: string,
-  endDate: string
+  endDate: string,
+  dayMode: "business_1130_ist" | "calendar_ist" = "business_1130_ist"
 ): { startDate: string; endDate: string; startTime: string; endTime: string; startMillis: number; endMillis: number } | null {
-  const window = getAccountWindowMillis(account, { startDate, endDate });
+  const calendarStartMillis = new Date(`${startDate}T00:00:00+05:30`).getTime();
+  const calendarEndMillis = new Date(`${shiftIsoDate(endDate, 1)}T00:00:00+05:30`).getTime();
+  const range = dayMode === "calendar_ist"
+    ? { startMillis: calendarStartMillis, endMillis: calendarEndMillis }
+    : { startDate, endDate };
+  const window = getAccountWindowMillis(account, range);
   if (!window) return null;
   const startParts = getIstDateParts(window.startMillis);
   const endParts = getIstDateParts(window.endMillis - 1);

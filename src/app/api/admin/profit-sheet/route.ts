@@ -3,12 +3,16 @@ import { createClient } from "@supabase/supabase-js";
 import { classifyPayUEvent } from "@/lib/finance-events";
 import { getPayUTransactions } from "@/lib/payu-api";
 import type { PayUTransaction } from "@/lib/payu-api";
-import { getMetaAccountCredentialsForRange, getMetaAccountWindowForRequest } from "@/lib/meta-ad-accounts";
+import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromSettings, getMetaAccountWindowForRequest, normalizeMetaAdAccountsSettings } from "@/lib/meta-ad-accounts";
+import type { AccountSpendBreakdown } from "@/lib/profit-sheet-types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const APP_LAUNCH_DATE = "2026-03-13";
+type ProfitSheetDayMode = "business_1130_ist" | "calendar_ist";
+const BUSINESS_DAY_MODE: ProfitSheetDayMode = "business_1130_ist";
+const CALENDAR_DAY_MODE: ProfitSheetDayMode = "calendar_ist";
 
 // Meta API
 const META_API_VERSION = "v21.0";
@@ -222,13 +226,14 @@ function addConvertedMetaSpend(
   spendMap.set(dayKey, current);
 }
 
-function isAccountLocalDayAlignedToBusinessDay(timezoneOffsetHoursUtc: number): boolean {
-  // 00:00 in UTC-6 is 11:30 IST, matching AstroRekha's reporting day.
-  return Math.abs(timezoneOffsetHoursUtc - -6) < 0.01;
+function isAccountLocalDayAlignedToReportingDay(timezoneOffsetHoursUtc: number, dayMode: ProfitSheetDayMode): boolean {
+  const matchingOffset = dayMode === CALENDAR_DAY_MODE ? 5.5 : -6;
+  return Math.abs(timezoneOffsetHoursUtc - matchingOffset) < 0.01;
 }
 
-function getBusinessDayWindowMillis(dayKey: string): { startMillis: number; endMillis: number } | null {
-  const startMillis = new Date(`${dayKey}T11:30:00+05:30`).getTime();
+function getReportingDayWindowMillis(dayKey: string, dayMode: ProfitSheetDayMode): { startMillis: number; endMillis: number } | null {
+  const startTime = dayMode === CALENDAR_DAY_MODE ? "00:00" : "11:30";
+  const startMillis = new Date(`${dayKey}T${startTime}:00+05:30`).getTime();
   if (!Number.isFinite(startMillis)) return null;
   return {
     startMillis,
@@ -238,10 +243,11 @@ function getBusinessDayWindowMillis(dayKey: string): { startMillis: number; endM
 
 function isFullBusinessDayCovered(
   dayKey: string,
-  accountWindow?: { startMillis: number; endMillis: number } | null
+  accountWindow?: { startMillis: number; endMillis: number } | null,
+  dayMode: ProfitSheetDayMode = BUSINESS_DAY_MODE
 ): boolean {
   if (!accountWindow) return true;
-  const dayWindow = getBusinessDayWindowMillis(dayKey);
+  const dayWindow = getReportingDayWindowMillis(dayKey, dayMode);
   if (!dayWindow) return false;
   return accountWindow.startMillis <= dayWindow.startMillis && accountWindow.endMillis >= dayWindow.endMillis;
 }
@@ -259,7 +265,8 @@ function addHourlySpendToBusinessWindow(
   startDate: string,
   endDate: string,
   accountWindow?: { startMillis: number; endMillis: number } | null,
-  nowMillis?: number
+  nowMillis?: number,
+  dayMode: ProfitSheetDayMode = BUSINESS_DAY_MODE
 ) {
   const spend = parseFloat(String(row.spend || "0"));
   if (!Number.isFinite(spend) || spend <= 0) return;
@@ -271,6 +278,7 @@ function addHourlySpendToBusinessWindow(
   if (!bucketStart || Number.isNaN(bucketStart.getTime())) return;
 
   const rawBucketStartMillis = bucketStart.getTime();
+  if (Number.isFinite(nowMillis) && rawBucketStartMillis >= (nowMillis as number)) return;
   const rawBucketEndMillis = rawBucketStartMillis + 60 * 60 * 1000;
   const observedRawBucketEndMillis =
     Number.isFinite(nowMillis) && (nowMillis as number) > rawBucketStartMillis
@@ -289,8 +297,8 @@ function addHourlySpendToBusinessWindow(
   const adjustedSpend = spend * ((bucketEndMillis - bucketStartMillis) / observedBucketDurationMillis);
   const clippedBucketStart = new Date(bucketStartMillis);
   const clippedBucketEnd = new Date(bucketEndMillis);
-  const startDay = getCostaRicaBusinessDayKeyFromDate(clippedBucketStart);
-  const endDay = getCostaRicaBusinessDayKeyFromDate(new Date(clippedBucketEnd.getTime() - 1));
+  const startDay = getCostaRicaBusinessDayKeyFromDate(clippedBucketStart, dayMode);
+  const endDay = getCostaRicaBusinessDayKeyFromDate(new Date(clippedBucketEnd.getTime() - 1), dayMode);
 
   if (startDay === endDay) {
     if (isWithinRequestedRange(startDay, startDate, endDate)) {
@@ -299,8 +307,8 @@ function addHourlySpendToBusinessWindow(
     return;
   }
 
-  // Only the 11:30 IST boundary can split one hourly bucket into two business days.
-  const splitBoundary = new Date(`${endDay}T11:30:00+05:30`);
+  const splitTime = dayMode === CALENDAR_DAY_MODE ? "00:00" : "11:30";
+  const splitBoundary = new Date(`${endDay}T${splitTime}:00+05:30`);
   const splitMillis = splitBoundary.getTime();
   const startMillis = clippedBucketStart.getTime();
   const endMillis = clippedBucketEnd.getTime();
@@ -326,9 +334,29 @@ async function fetchMetaAdsDailySpend(
   startDate: string,
   endDate: string,
   exchangeRate: number,
-  nowMillis = Date.now()
+  nowMillis = Date.now(),
+  accountBreakdown?: AccountSpendBreakdown[],
+  dayMode: ProfitSheetDayMode = BUSINESS_DAY_MODE
 ): Promise<Map<string, DailyMetaSpend>> {
-  const credentials = await getMetaAccountCredentialsForRange(supabase, { startDate, endDate });
+  const accountRange = dayMode === CALENDAR_DAY_MODE
+    ? {
+        startMillis: new Date(`${startDate}T00:00:00+05:30`).getTime(),
+        endMillis: new Date(`${addDaysToIsoDate(endDate, 1)}T00:00:00+05:30`).getTime(),
+      }
+    : { startDate, endDate };
+  let credentials;
+  if (accountBreakdown) {
+    const { data, error } = await supabase.from("settings").select("value").eq("key", "meta_ad_accounts").maybeSingle();
+    if (error) throw new Error("Unable to load ad accounts. Please try again.");
+    const config = normalizeMetaAdAccountsSettings(data?.value);
+    const missingToken = config.accounts.find((account) =>
+      getMetaAccountWindowForRequest(account, startDate, endDate, dayMode) && !account.accessToken
+    );
+    if (missingToken) throw new Error(`Meta access is missing for ${missingToken.label || missingToken.accountId}. Update it in Ad Accounts.`);
+    credentials = getMetaAccountCredentialsFromSettings(config, accountRange);
+  } else {
+    credentials = await getMetaAccountCredentialsForRange(supabase, accountRange);
+  }
 
   if (credentials.length === 0) {
     return new Map();
@@ -343,8 +371,9 @@ async function fetchMetaAdsDailySpend(
 
     for (const credential of credentials) {
       const { accountId: adAccountId, accessToken } = credential;
-      const accountWindow = getMetaAccountWindowForRequest(credential, startDate, endDate);
+      const accountWindow = getMetaAccountWindowForRequest(credential, startDate, endDate, dayMode);
       if (!accountWindow) continue;
+      const accountSpendMap = new Map<string, DailyMetaSpend>();
       const accountUrl = `${META_BASE_URL}/act_${adAccountId}?fields=id,name,currency,timezone_name,timezone_offset_hours_utc&access_token=${accessToken}`;
       const hourlyUrl =
         `${META_BASE_URL}/act_${adAccountId}/insights` +
@@ -356,20 +385,33 @@ async function fetchMetaAdsDailySpend(
         `?fields=date_start,spend&time_increment=1&${dateParams}&limit=500&access_token=${accessToken}`;
 
       const [accountResponse, hourlyResponse, dailyResponse] = await Promise.all([
-        fetch(accountUrl),
-        fetch(hourlyUrl),
-        fetch(dailyFallbackUrl),
+        fetch(accountUrl, { cache: "no-store", signal: AbortSignal.timeout(20000) }),
+        fetch(hourlyUrl, { cache: "no-store", signal: AbortSignal.timeout(20000) }),
+        fetch(dailyFallbackUrl, { cache: "no-store", signal: AbortSignal.timeout(20000) }),
       ]);
       const accountData = await accountResponse.json().catch(() => null);
       const hourlyData = await hourlyResponse.json().catch(() => null);
       const dailyData = await dailyResponse.json().catch(() => null);
 
       if (!accountResponse.ok || accountData?.error) {
+        if (accountBreakdown || dayMode === CALENDAR_DAY_MODE) throw new Error(`Unable to fetch spend for ${credential.label || adAccountId}. Check the account's Meta access and try again.`);
         console.error(`Meta account fetch failed for act_${adAccountId}:`, accountData?.error || accountResponse.status);
         continue;
       }
 
+      // A breakdown must be complete; do not display failed or truncated accounts as zero.
+      if ((accountBreakdown || dayMode === CALENDAR_DAY_MODE) && (
+        !hourlyResponse.ok || hourlyData?.error || !Array.isArray(hourlyData?.data) ||
+        !dailyResponse.ok || dailyData?.error || !Array.isArray(dailyData?.data) ||
+        hourlyData?.paging?.next || dailyData?.paging?.next
+      )) {
+        throw new Error(`Complete spend data is unavailable for ${credential.label || adAccountId}. Please try again.`);
+      }
+
       const currency = String(accountData?.currency || "USD").toUpperCase();
+      if ((accountBreakdown || dayMode === CALENDAR_DAY_MODE) && currency !== "USD" && currency !== "INR") {
+        throw new Error(`Currency conversion for ${currency} is unavailable for ${credential.label || adAccountId}.`);
+      }
       const timezoneOffsetHoursUtcRaw = Number(accountData?.timezone_offset_hours_utc);
       const timezoneOffsetHoursUtc = Number.isFinite(timezoneOffsetHoursUtcRaw) ? timezoneOffsetHoursUtcRaw : -6;
 
@@ -383,15 +425,15 @@ async function fetchMetaAdsDailySpend(
         : [];
       const dailyAppliedDays = new Set<string>();
 
-      if (isAccountLocalDayAlignedToBusinessDay(timezoneOffsetHoursUtc)) {
+      if (isAccountLocalDayAlignedToReportingDay(timezoneOffsetHoursUtc, dayMode)) {
         dailyRows.forEach((day) => {
           const spend = parseFloat(String(day.spend || "0"));
           if (!Number.isFinite(spend) || spend <= 0) return;
           const dayKey = String(day.date_start || "");
           if (!isWithinRequestedRange(dayKey, startDate, endDate)) return;
           if (dayKey < accountWindow.startDate || dayKey > accountWindow.endDate) return;
-          if (!isFullBusinessDayCovered(dayKey, accountWindow)) return;
-          addConvertedMetaSpend(spendMap, dayKey, spend, currency, exchangeRate);
+          if (!isFullBusinessDayCovered(dayKey, accountWindow, dayMode)) return;
+          addConvertedMetaSpend(accountSpendMap, dayKey, spend, currency, exchangeRate);
           dailyAppliedDays.add(dayKey);
         });
       }
@@ -400,7 +442,7 @@ async function fetchMetaAdsDailySpend(
         hourlyRows.forEach((row) => {
           if (dailyAppliedDays.has(String(row.date_start || ""))) return;
           addHourlySpendToBusinessWindow(
-            spendMap,
+            accountSpendMap,
             row,
             timezoneOffsetHoursUtc,
             currency,
@@ -408,21 +450,41 @@ async function fetchMetaAdsDailySpend(
             startDate,
             endDate,
             accountWindow,
-            nowMillis
+            nowMillis,
+            dayMode
           );
         });
-        continue;
+      } else {
+        // Fallback in case hourly breakdown is unavailable for an account.
+        dailyRows.forEach((day) => {
+          const spend = parseFloat(String(day.spend || "0"));
+          if (!Number.isFinite(spend) || spend <= 0) return;
+          const dayKey = String(day.date_start || "");
+          if (dailyAppliedDays.has(dayKey)) return;
+          if (!isWithinRequestedRange(dayKey, startDate, endDate)) return;
+          if (dayKey < accountWindow.startDate || dayKey > accountWindow.endDate) return;
+          if (accountBreakdown || dayMode === CALENDAR_DAY_MODE) throw new Error(`Hourly spend is unavailable for ${credential.label || adAccountId}. Its reporting window cannot be calculated accurately yet.`);
+          addConvertedMetaSpend(accountSpendMap, dayKey, spend, currency, exchangeRate);
+        });
       }
 
-      // Fallback in case hourly breakdown is unavailable for an account.
-      dailyRows.forEach((day) => {
-        const spend = parseFloat(String(day.spend || "0"));
-        if (!Number.isFinite(spend) || spend <= 0) return;
-        const dayKey = String(day.date_start || "");
-        if (dailyAppliedDays.has(dayKey)) return;
-        if (!isWithinRequestedRange(dayKey, startDate, endDate)) return;
-        if (dayKey < accountWindow.startDate || dayKey > accountWindow.endDate) return;
-        addConvertedMetaSpend(spendMap, dayKey, spend, currency, exchangeRate);
+      let accountUSD = 0;
+      let accountINR = 0;
+      for (const [day, spend] of accountSpendMap) {
+        const total = spendMap.get(day) || { usd: 0, inr: 0 };
+        total.usd += spend.usd;
+        total.inr += spend.inr;
+        spendMap.set(day, total);
+        accountUSD += spend.usd;
+        accountINR += spend.inr;
+      }
+      accountBreakdown?.push({
+        accountId: adAccountId,
+        accountName: credential.label || String(accountData.name || adAccountId),
+        currency,
+        spend: currency === "INR" ? accountINR : accountUSD,
+        usd: accountUSD,
+        inr: accountINR,
       });
 
       if (!Array.isArray(dailyData?.data)) {
@@ -432,6 +494,7 @@ async function fetchMetaAdsDailySpend(
 
     return spendMap;
   } catch (error) {
+    if (accountBreakdown || dayMode === CALENDAR_DAY_MODE) throw error;
     console.error("Meta Ads fetch error:", error);
     return new Map();
   }
@@ -491,8 +554,9 @@ function getIstDateTimeParts(date: Date): { dayKey: string; hour: number; minute
   return { dayKey, hour: Number.isFinite(hour) ? hour : 0, minute: Number.isFinite(minute) ? minute : 0 };
 }
 
-function getCostaRicaBusinessDayKeyFromDate(date: Date): string {
+function getCostaRicaBusinessDayKeyFromDate(date: Date, dayMode: ProfitSheetDayMode = BUSINESS_DAY_MODE): string {
   const { dayKey, hour, minute } = getIstDateTimeParts(date);
+  if (dayMode === CALENDAR_DAY_MODE) return dayKey;
   const isBeforeBoundary = hour < 11 || (hour === 11 && minute < 30);
   return isBeforeBoundary ? addDaysToIsoDate(dayKey, -1) : dayKey;
 }
@@ -549,11 +613,12 @@ async function buildProfitSheetRows(
   supabase: any,
   startDate: string,
   endDate: string,
-  exchangeRate: number
+  exchangeRate: number,
+  dayMode: ProfitSheetDayMode = BUSINESS_DAY_MODE
 ): Promise<{ rows: ProfitSheetRow[]; source: string; paymentRows: SyncedPaymentRow[] }> {
   console.log(`Using exchange rate: ${exchangeRate}`);
 
-  const metaSpendMap = await fetchMetaAdsDailySpend(supabase, startDate, endDate, exchangeRate);
+  const metaSpendMap = await fetchMetaAdsDailySpend(supabase, startDate, endDate, exchangeRate, Date.now(), undefined, dayMode);
   console.log(`Fetched Meta Ads spend for ${metaSpendMap.size} days`);
 
   const dates: string[] = [];
@@ -582,7 +647,7 @@ async function buildProfitSheetRows(
       if (financial.kind === "ignore") return null;
       const createdAt = new Date(String(txn.addedon || "").replace(" ", "T") + "+05:30");
       if (Number.isNaN(createdAt.getTime())) return null;
-      const dayKey = getCostaRicaBusinessDayKeyFromDate(createdAt);
+      const dayKey = getCostaRicaBusinessDayKeyFromDate(createdAt, dayMode);
       if (dayKey < startDate || dayKey > endDate) return null;
       return {
         createdAt,
@@ -695,9 +760,13 @@ function fromDbRow(row: any): ProfitSheetRow {
   };
 }
 
-async function readProfitSheetRows(supabase: any, startDate: string, endDate: string): Promise<ProfitSheetRow[]> {
+function profitSheetTableForMode(dayMode: ProfitSheetDayMode): string {
+  return dayMode === CALENDAR_DAY_MODE ? "profit_sheet_calendar" : "profit_sheet";
+}
+
+async function readProfitSheetRows(supabase: any, startDate: string, endDate: string, dayMode: ProfitSheetDayMode = BUSINESS_DAY_MODE): Promise<ProfitSheetRow[]> {
   const { data, error } = await supabase
-    .from("profit_sheet")
+    .from(profitSheetTableForMode(dayMode))
     .select("*")
     .gte("date", startDate)
     .lte("date", endDate)
@@ -714,9 +783,10 @@ async function syncProfitSheetRows(
   supabase: any,
   startDate: string,
   endDate: string,
-  exchangeRate: number
+  exchangeRate: number,
+  dayMode: ProfitSheetDayMode = BUSINESS_DAY_MODE
 ): Promise<{ rows: ProfitSheetRow[]; source: string }> {
-  const result = await buildProfitSheetRows(supabase, startDate, endDate, exchangeRate);
+  const result = await buildProfitSheetRows(supabase, startDate, endDate, exchangeRate, dayMode);
   if (result.paymentRows.length > 0) {
     for (let i = 0; i < result.paymentRows.length; i += 500) {
       const batch = result.paymentRows.slice(i, i + 500);
@@ -732,7 +802,7 @@ async function syncProfitSheetRows(
 
   if (result.rows.length > 0) {
     const { error } = await supabase
-      .from("profit_sheet")
+      .from(profitSheetTableForMode(dayMode))
       .upsert(result.rows.map((row) => toDbRow(row, exchangeRate, result.source)), { onConflict: "date" });
 
     if (error) {
@@ -752,7 +822,12 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const token = searchParams.get("token");
-    const businessToday = getCostaRicaBusinessDayKeyFromDate(new Date());
+    const dayModeParam = searchParams.get("dayMode");
+    if (dayModeParam && dayModeParam !== BUSINESS_DAY_MODE && dayModeParam !== CALENDAR_DAY_MODE) {
+      return NextResponse.json({ error: "Choose a valid profit-sheet day mode." }, { status: 400 });
+    }
+    const dayMode: ProfitSheetDayMode = dayModeParam === CALENDAR_DAY_MODE ? CALENDAR_DAY_MODE : BUSINESS_DAY_MODE;
+    const businessToday = getCostaRicaBusinessDayKeyFromDate(new Date(), dayMode);
     const requestedEndDate = searchParams.get("endDate") || businessToday;
     const endDate = minIsoDate(requestedEndDate, businessToday);
     const requestedStartDate = searchParams.get("startDate") || APP_LAUNCH_DATE;
@@ -776,6 +851,34 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Session expired" }, { status: 401 });
     }
 
+    const breakdownDate = searchParams.get("breakdownDate");
+    if (breakdownDate !== null) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(breakdownDate) ||
+        !Number.isFinite(Date.parse(`${breakdownDate}T00:00:00Z`)) ||
+        new Date(`${breakdownDate}T00:00:00Z`).toISOString().slice(0, 10) !== breakdownDate ||
+        breakdownDate < APP_LAUNCH_DATE || breakdownDate > businessToday) {
+        return NextResponse.json({ error: "Choose a valid reporting date." }, { status: 400 });
+      }
+      // Reuse the day's saved exchange rate so the breakdown can be compared with its row.
+      const { data: savedDay, error: savedDayError } = await supabase
+        .from(profitSheetTableForMode(dayMode)).select("exchange_rate").eq("date", breakdownDate).maybeSingle();
+      if (savedDayError) throw new Error("Unable to read the reporting day's exchange rate.");
+      const savedRate = Number(savedDay?.exchange_rate);
+      const exchangeRate = Number.isFinite(savedRate) && savedRate > 0 ? savedRate : await fetchExchangeRate();
+      const accounts: AccountSpendBreakdown[] = [];
+      const spend = await fetchMetaAdsDailySpend(supabase, breakdownDate, breakdownDate, exchangeRate, Date.now(), accounts, dayMode);
+      const total = spend.get(breakdownDate) || { usd: 0, inr: 0 };
+      return NextResponse.json({
+        date: breakdownDate,
+        accounts: accounts.sort((a, b) => b.inr - a.inr),
+        totalUSD: total.usd,
+        totalINR: total.inr,
+        exchangeRate,
+        dayMode,
+        fetchedAt: new Date().toISOString(),
+      }, { headers: { "Cache-Control": "no-store" } });
+    }
+
     const customExchangeRate = searchParams.get("exchangeRate");
     const exchangeRate = customExchangeRate ? parseFloat(customExchangeRate) : await fetchExchangeRate();
     const syncMode = searchParams.get("sync");
@@ -786,22 +889,23 @@ export async function GET(request: NextRequest) {
       const requestedSyncEndDate = searchParams.get("syncEndDate") || endDate;
       const syncEndDate = minIsoDate(requestedSyncEndDate, businessToday);
       const effectiveSyncStartDate = syncStartDate > syncEndDate ? syncEndDate : syncStartDate;
-      await syncProfitSheetRows(supabase, effectiveSyncStartDate, syncEndDate, exchangeRate);
+      await syncProfitSheetRows(supabase, effectiveSyncStartDate, syncEndDate, exchangeRate, dayMode);
       syncedRange = { start: effectiveSyncStartDate, end: syncEndDate };
     } else if (syncMode === "last2") {
       const syncStartDate = addDaysToIsoDate(businessToday, -1);
-      await syncProfitSheetRows(supabase, syncStartDate, businessToday, exchangeRate);
+      await syncProfitSheetRows(supabase, syncStartDate, businessToday, exchangeRate, dayMode);
       syncedRange = { start: syncStartDate, end: businessToday };
     }
 
-    const rows = await readProfitSheetRows(supabase, startDate, endDate);
+    const rows = await readProfitSheetRows(supabase, startDate, endDate, dayMode);
     const totals = calculateTotals(rows);
 
     return NextResponse.json({
       rows,
       totals,
       exchangeRate,
-      source: "supabase_profit_sheet",
+      dayMode,
+      source: dayMode === CALENDAR_DAY_MODE ? "supabase_profit_sheet_calendar" : "supabase_profit_sheet",
       dateRange: { start: startDate, end: endDate },
       syncedRange,
     });
