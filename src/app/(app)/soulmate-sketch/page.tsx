@@ -124,7 +124,11 @@ export default function SoulmateSketchPage() {
       return value.trim().length === 0;
     });
 
-    setCurrentStep(firstUnansweredIndex === -1 ? questions.length : firstUnansweredIndex);
+    setCurrentStep(
+      firstUnansweredIndex === -1
+        ? Math.max(questions.length - 1, 0)
+        : firstUnansweredIndex
+    );
     setHasSyncedStepFromSavedAnswers(true);
   }, [answers, hasSyncedStepFromSavedAnswers, loading, questions]);
 
@@ -190,6 +194,11 @@ export default function SoulmateSketchPage() {
     }
   };
 
+  const handleBack = () => {
+    setError("");
+    setCurrentStep((step) => Math.max(0, Math.min(step, questions.length) - 1));
+  };
+
   const handleGenerate = async () => {
     if (!userId) {
       setError("Please login again to continue.");
@@ -244,6 +253,7 @@ export default function SoulmateSketchPage() {
   const imageUrl = status?.sketch_image_url || null;
   const hasReachedLimit = (status?.generation_count || 0) >= (status?.maxSketchPerUser || config.maxSketchPerUser);
   const hasAllAnswers = questions.every((question) => !!answers[question.id]);
+  const canOfferGeneration = hasAllAnswers && (!activeQuestion || currentStep === questions.length - 1);
 
   if (!unlockedFeatures.soulmateSketch) {
     return (
@@ -290,16 +300,8 @@ export default function SoulmateSketchPage() {
                 Your portrait is being prepared. Please check back in some time.
               </p>
               <p className="mt-2 text-xs text-white/60">
-                You can leave this screen and return later. We keep checking automatically.
+                You can leave this screen and return later.
               </p>
-              <Button
-                type="button"
-                variant="outline"
-                className="mt-4 border-white/20 bg-white/5 text-white hover:bg-white/10"
-                onClick={() => fetchStatus().catch(() => {})}
-              >
-                Check Status Now
-              </Button>
             </div>
           ) : imageUrl ? (
             <motion.div
@@ -354,19 +356,45 @@ export default function SoulmateSketchPage() {
                       );
                     })}
                   </div>
-                  {isMultiSelectQuestion && currentStep < questions.length - 1 ? (
-                    <Button
-                      onClick={handleContinue}
-                      disabled={parseMultiAnswer(answers[activeQuestion.id]).length === 0}
-                      className="mt-4 h-11 w-full"
-                    >
-                      Continue
-                    </Button>
-                  ) : null}
+                  <div className={`mt-4 grid gap-3 ${currentStep > 0 && isMultiSelectQuestion && currentStep < questions.length - 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+                    {currentStep > 0 ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleBack}
+                        className="h-11 border-white/20 bg-white/5 text-white hover:bg-white/10"
+                      >
+                        <ArrowLeft className="mr-2 h-4 w-4" />
+                        Back
+                      </Button>
+                    ) : null}
+                    {isMultiSelectQuestion && currentStep < questions.length - 1 ? (
+                      <Button
+                        type="button"
+                        onClick={handleContinue}
+                        disabled={parseMultiAnswer(answers[activeQuestion.id]).length === 0}
+                        className="h-11"
+                      >
+                        Continue
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
 
-              {hasAllAnswers ? (
+              {!activeQuestion && hasAllAnswers ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleBack}
+                  className="mt-6 h-11 w-full border-white/20 bg-white/5 text-white hover:bg-white/10"
+                >
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Back to Edit Answers
+                </Button>
+              ) : null}
+
+              {canOfferGeneration ? (
                 <Button
                   onClick={handleGenerate}
                   disabled={isGenerating || hasReachedLimit}
