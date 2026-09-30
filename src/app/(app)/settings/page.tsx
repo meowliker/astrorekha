@@ -16,7 +16,7 @@ const subscriptionBenefits = [
 ];
 
 // Bundle benefits based on what was purchased
-const getBundleBenefits = (bundleId: string | null, unlockedFeatures?: { birthChart?: boolean; compatibilityTest?: boolean; prediction2026?: boolean; soulmateSketch?: boolean; futurePartnerReport?: boolean; vastuShastraGuide?: boolean; auraColorReport?: boolean; astrocartographyReport?: boolean; pastLifeReport?: boolean }) => {
+const getBundleBenefits = (bundleId: string | null, unlockedFeatures?: { birthChart?: boolean; compatibilityTest?: boolean; prediction2026?: boolean; soulmateSketch?: boolean; futurePartnerReport?: boolean; vastuShastraGuide?: boolean; auraColorReport?: boolean; astrocartographyReport?: boolean; pastLifeReport?: boolean; numerologyReport?: boolean; spiritAnimalReport?: boolean }) => {
   const benefits = [];
   
   // Always included for all users
@@ -49,6 +49,12 @@ if (isCompleteBundle || unlockedFeatures?.astrocartographyReport) {
 }
 if (isCompleteBundle || unlockedFeatures?.pastLifeReport) {
   benefits.push({ icon: "🕯️", text: "Past Life Report" });
+}
+if (unlockedFeatures?.numerologyReport) {
+  benefits.push({ icon: "🔢", text: "Numerology Report" });
+}
+if (unlockedFeatures?.spiritAnimalReport) {
+  benefits.push({ icon: "🐾", text: "Spirit Animal Report" });
 }
 
   benefits.push({ icon: "💬", text: "Question packs to Chat with Elysia" });

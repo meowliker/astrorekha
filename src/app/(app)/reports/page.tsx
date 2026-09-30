@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { ChevronRight, Star, Sun, Moon, Sparkles, Loader2, Lock, MessageCircle, Lightbulb, CheckCircle, XCircle, Clock } from "lucide-react";
+import { ChevronRight, Star, Sun, Moon, Sparkles, Loader2, Lock, MessageCircle, Lightbulb, CheckCircle, XCircle, Clock, Hash } from "lucide-react";
 import Image from "next/image";
 import { ASTROREKHA_ASSETS } from "@/lib/assets";
 import { getZodiacSign, getZodiacSymbol, getZodiacColor } from "@/lib/astrology-api";
@@ -120,6 +120,8 @@ export default function DashboardPage() {
             vastuShastraGuide: userData.vastu_shastra_guide,
             auraColorReport: userData.aura_color_report,
             pastLifeReport: userData.past_life_report,
+            numerologyReport: userData.numerology_report,
+            spiritAnimalReport: userData.spirit_animal_report,
             coins: userData.coins,
             purchasedBundle: userData.bundle_purchased || null,
           });
@@ -776,6 +778,39 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
+                {/* Spirit Animal Report */}
+                <div
+                  onClick={() => {
+                    if (unlockedFeatures.spiritAnimalReport) {
+                      router.push("/spirit-animal");
+                      return;
+                    }
+                    setUpsellPopup({ isOpen: true, feature: "spiritAnimalReport" });
+                  }}
+                  className="bg-[#1A2235] rounded-2xl border border-primary/20 p-3 cursor-pointer hover:border-primary/40 transition-colors relative"
+                >
+                  {!unlockedFeatures.spiritAnimalReport && (
+                    <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
+                      <Lock className="w-3 h-3 text-white/60" />
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-500/30 to-purple-600/30 flex items-center justify-center flex-shrink-0 overflow-hidden border border-white/10">
+                      <span className="text-3xl">🐾</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-semibold">Spirit Animal Report</h3>
+                      <p className="text-white/50 text-xs mt-0.5">Reveal the animal guide that reflects your instincts and inner strengths</p>
+                      {!unlockedFeatures.spiritAnimalReport && (
+                        <button className="mt-1 px-3 py-1 bg-primary/20 text-primary text-xs rounded-full">
+                          Get Report
+                        </button>
+                      )}
+                    </div>
+                    <ChevronRight className="w-6 h-6 text-white/40" />
+                  </div>
+                </div>
+
                 {/* Astrocartography */}
                 <div
                   onClick={() => {
@@ -833,6 +868,39 @@ export default function DashboardPage() {
                       <h3 className="text-white font-semibold">Past Life Report</h3>
                       <p className="text-white/50 text-xs mt-0.5">Reveal your past-life archetype, karma, and soul lesson</p>
                       {!unlockedFeatures.pastLifeReport && (
+                        <button className="mt-1 px-3 py-1 bg-primary/20 text-primary text-xs rounded-full">
+                          Get Report
+                        </button>
+                      )}
+                    </div>
+                    <ChevronRight className="w-6 h-6 text-white/40" />
+                  </div>
+                </div>
+
+                {/* Numerology Report */}
+                <div
+                  onClick={() => {
+                    if (unlockedFeatures.numerologyReport) {
+                      router.push("/numerology");
+                      return;
+                    }
+                    setUpsellPopup({ isOpen: true, feature: "numerologyReport" });
+                  }}
+                  className="bg-[#1A2235] rounded-2xl border border-primary/20 p-3 cursor-pointer hover:border-primary/40 transition-colors relative"
+                >
+                  {!unlockedFeatures.numerologyReport && (
+                    <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
+                      <Lock className="w-3 h-3 text-white/60" />
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-rose-500/25 via-amber-400/20 to-violet-600/25 flex items-center justify-center flex-shrink-0 overflow-hidden border border-white/10">
+                      <Hash className="w-8 h-8 text-amber-200" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-semibold">Numerology Report</h3>
+                      <p className="text-white/50 text-xs mt-0.5">Mulank, Bhagyank, name number, remedies, and compatibility</p>
+                      {!unlockedFeatures.numerologyReport && (
                         <button className="mt-1 px-3 py-1 bg-primary/20 text-primary text-xs rounded-full">
                           Get Report
                         </button>
@@ -945,6 +1013,16 @@ export default function DashboardPage() {
               if (upsellPopup.feature === "pastLifeReport") {
                 unlockFeature("pastLifeReport");
                 router.push("/past-life");
+                return;
+              }
+              if (upsellPopup.feature === "numerologyReport") {
+                unlockFeature("numerologyReport");
+                router.push("/numerology");
+                return;
+              }
+              if (upsellPopup.feature === "spiritAnimalReport") {
+                unlockFeature("spiritAnimalReport");
+                router.push("/spirit-animal");
                 return;
               }
               if (upsellPopup.feature === "vastuShastraGuide") {

@@ -9,7 +9,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:spirit-animal": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/test-spirit-animal-scoring.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",

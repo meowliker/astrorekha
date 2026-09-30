@@ -5,7 +5,7 @@ import { useMemo, useState, useEffect, Suspense } from "react";
 import { fadeUp } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Activity, Briefcase, Calendar, Check, ChevronDown, Heart, Loader2, Moon, Sparkles, Star, Users } from "lucide-react";
+import { Activity, BarChart3, Briefcase, Calendar, Check, ChevronDown, Heart, Loader2, Moon, Sparkles, Star, Users } from "lucide-react";
 import { useUserStore } from "@/lib/user-store";
 import { supabase } from "@/lib/supabase";
 import { generateUserId } from "@/lib/user-profile";
@@ -149,6 +149,36 @@ const upsellOffers = [
     features: [
       { icon: Moon, label: "Soul archetype", description: "Symbolic past-life identity and karmic theme" },
       { icon: Sparkles, label: "Karmic remedies", description: "Simple practices for healing recurring patterns" },
+    ],
+  },
+  {
+    id: "numerology",
+    name: "Numerology Report",
+    description: "Decode your core numbers, strengths, timing, and personal remedies.",
+    price: 499,
+    originalPrice: 999,
+    discount: "50% OFF",
+    icon: BarChart3,
+    emoji: "#",
+    features: [
+      { icon: BarChart3, label: "Core number profile", description: "Mulank, Bhagyank, and name number explained in detail" },
+      { icon: Star, label: "Strengths and life themes", description: "Personality, purpose, career, and relationship patterns" },
+      { icon: Sparkles, label: "Personal remedies", description: "Helpful numbers, colors, dates, and practical guidance" },
+    ],
+  },
+  {
+    id: "spirit-animal",
+    name: "Spirit Animal Report",
+    description: "Reveal your spirit animal and discover its guidance.",
+    price: 499,
+    originalPrice: 999,
+    discount: "50% OFF",
+    icon: Sparkles,
+    emoji: "🐾",
+    features: [
+      { icon: Sparkles, label: "Your spirit animal", description: "Reveal the spirit animal reflected in your response pattern" },
+      { icon: Heart, label: "Inner nature and relationships", description: "Strengths, emotional patterns, love, and connection" },
+      { icon: Briefcase, label: "Purpose and growth", description: "Career direction, daily practices, and personal guidance" },
     ],
   },
 ];
@@ -481,7 +511,7 @@ function BundleUpsellContent() {
               <p className="text-white/70 text-sm">Choose any add-ons, or skip</p>
             </div>
 
-            <div className="px-6 py-4 space-y-3">
+            <div className="space-y-2.5 px-5 py-4">
               {upsellOffers.map((offer, index) => {
                 const selected = selectedIds.has(offer.id);
                 const expanded = expandedIds.has(offer.id);
@@ -491,78 +521,79 @@ function BundleUpsellContent() {
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.3 + index * 0.1 }}
-                    className={`w-full rounded-2xl border-2 p-4 text-left transition-all ${
+                    className={`w-full rounded-2xl border-2 text-left transition-all ${
                       selected
                         ? "border-primary bg-primary/15"
                         : "border-white/10 bg-white/5 hover:border-primary/50"
                     }`}
                   >
-                    <div className="flex items-start gap-3">
-                      <div className="text-2xl">{offer.emoji}</div>
-                      <div className="flex-1">
-                        <div className="flex items-start justify-between gap-2">
-                          <button
-                            type="button"
-                            onClick={() => toggleExpanded(offer.id)}
-                            className="min-w-0 flex-1 text-left"
-                            aria-expanded={expanded}
-                          >
-                            <h4 className="font-semibold text-white text-sm">{offer.name}</h4>
-                            <p className="text-white/60 text-xs">{offer.description}</p>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => toggleOffer(offer.id)}
-                            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                            selected ? "border-primary bg-primary" : "border-white/30"
-                            }`}
-                            aria-label={`${selected ? "Remove" : "Add"} ${offer.name}`}
-                          >
-                            {selected && <Check className="w-4 h-4 text-primary-foreground" />}
-                          </button>
+                    <div className="flex items-center gap-3 p-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(offer.id)}
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                        aria-expanded={expanded}
+                      >
+                        <div className={offer.id === "numerology" ? "text-3xl font-light text-amber-200" : "text-2xl"}>
+                          {offer.emoji}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => toggleExpanded(offer.id)}
-                          className="mt-3 flex w-full items-center gap-2 text-left"
-                          aria-expanded={expanded}
-                        >
-                          <span className="text-white/45 line-through text-sm">₹{offer.originalPrice}</span>
-                          <span className="text-xl font-bold text-white">₹{offer.price}</span>
-                          <span className="bg-green-500/20 text-green-400 text-[10px] px-2 py-0.5 rounded-full font-semibold">
-                            {offer.discount}
-                          </span>
-                          <ChevronDown
-                            className={`ml-auto h-4 w-4 text-white/55 transition-transform ${
-                              expanded ? "rotate-180" : ""
-                            }`}
-                          />
-                        </button>
-                        <AnimatePresence initial={false}>
-                          {expanded ? (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: "auto", opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              transition={{ duration: 0.18 }}
-                              className="overflow-hidden"
-                            >
-                              <div className="mt-3 space-y-2">
-                                {offer.features.map((feature) => (
-                                  <div key={feature.label} className="flex items-start gap-2">
-                                    <feature.icon className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                                    <div>
-                                      <p className="text-xs font-medium text-white">{feature.label}</p>
-                                      <p className="text-[11px] text-white/55">{feature.description}</p>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </motion.div>
-                          ) : null}
-                        </AnimatePresence>
-                      </div>
+                        <div className="min-w-0 flex-1">
+                          <h4 className="text-sm font-semibold leading-tight text-white">{offer.name}</h4>
+                          <p className="mt-0.5 line-clamp-2 text-xs leading-snug text-white/60">{offer.description}</p>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => toggleOffer(offer.id)}
+                        className={`grid h-6 w-6 flex-shrink-0 place-items-center rounded-full border-2 ${
+                          selected ? "border-primary bg-primary" : "border-white/30"
+                        }`}
+                        aria-label={`${selected ? "Remove" : "Add"} ${offer.name}`}
+                      >
+                        {selected && <Check className="h-4 w-4 text-primary-foreground" />}
+                      </button>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(offer.id)}
+                      className="flex w-full items-center justify-between border-t border-white/10 px-3 py-2 text-left"
+                      aria-expanded={expanded}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-white/45 line-through">₹{offer.originalPrice}</span>
+                        <span className="text-lg font-bold text-white">₹{offer.price}</span>
+                        <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-400">
+                          {offer.discount}
+                        </span>
+                      </div>
+                      <ChevronDown className={`h-4 w-4 text-white/45 transition-transform ${expanded ? "rotate-180" : ""}`} />
+                    </button>
+
+                    <AnimatePresence initial={false}>
+                      {expanded ? (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.18 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="space-y-2 border-t border-white/10 px-3 py-3">
+                            {offer.features.map((feature) => (
+                              <div key={feature.label} className="flex items-start gap-2">
+                                <feature.icon className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
+                                <div>
+                                  <p className="text-xs font-medium text-white">{feature.label}</p>
+                                  <p className="text-[11px] text-white/55">{feature.description}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </motion.div>
+                      ) : null}
+                    </AnimatePresence>
                   </motion.div>
                 );
               })}

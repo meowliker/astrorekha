@@ -44,6 +44,12 @@ const OFFER_ID_TO_FEATURE: Record<string, string> = {
   "report-astrocartography": "astrocartographyReport",
   "past-life": "pastLifeReport",
   "report-past-life": "pastLifeReport",
+  numerology: "numerologyReport",
+  "numerology-report": "numerologyReport",
+  "report-numerology": "numerologyReport",
+  "spirit-animal": "spiritAnimalReport",
+  "spirit-animal-report": "spiritAnimalReport",
+  "report-spirit-animal": "spiritAnimalReport",
   "vastu-shastra-guide": "vastuShastraGuide",
   "report-vastu-shastra-guide": "vastuShastraGuide",
 };
@@ -79,6 +85,8 @@ function mergeFeatures(
     auraColorReport: false,
     astrocartographyReport: false,
     pastLifeReport: false,
+    numerologyReport: false,
+    spiritAnimalReport: false,
     ...(current || {}),
   };
 
@@ -222,6 +230,8 @@ export async function reconcilePaidPaymentsForEmail({
     auraColorReport: false,
     astrocartographyReport: false,
     pastLifeReport: false,
+    numerologyReport: false,
+    spiritAnimalReport: false,
     ...(userData?.unlocked_features || {}),
   };
   let computedCoinsFromPayments = 0;

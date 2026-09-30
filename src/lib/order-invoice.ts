@@ -106,6 +106,8 @@ function humanizeFeature(value: string): string {
     auraColorReport: "Aura Color Quiz",
     astrocartographyReport: "Astrocartography",
     pastLifeReport: "Past Life Report",
+    numerologyReport: "Numerology Report",
+    spiritAnimalReport: "Spirit Animal Report",
   };
   return labels[value] || value.replace(/[-_]/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").trim();
 }

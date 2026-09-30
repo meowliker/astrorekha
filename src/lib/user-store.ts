@@ -22,6 +22,8 @@ export interface UnlockedFeatures {
   auraColorReport: boolean;
   astrocartographyReport: boolean;
   pastLifeReport: boolean;
+  numerologyReport: boolean;
+  spiritAnimalReport: boolean;
 }
 
 interface UserState {
@@ -69,6 +71,8 @@ interface UserState {
     auraColorReport?: boolean;
     astrocartographyReport?: boolean;
     pastLifeReport?: boolean;
+    numerologyReport?: boolean;
+    spiritAnimalReport?: boolean;
     coins?: number;
     purchasedBundle?: PurchasedBundle;
   }) => void;
@@ -85,6 +89,8 @@ const initialUnlockedFeatures: UnlockedFeatures = {
   auraColorReport: false,
   astrocartographyReport: false,
   pastLifeReport: false,
+  numerologyReport: false,
+  spiritAnimalReport: false,
 };
 
 const initialState = {
@@ -150,6 +156,8 @@ export const useUserStore = create<UserState>()(
             auraColorReport: true,
             astrocartographyReport: true,
             pastLifeReport: true,
+            numerologyReport: true,
+            spiritAnimalReport: true,
           },
         }),
 
@@ -209,6 +217,8 @@ export const useUserStore = create<UserState>()(
             auraColorReport: true,
             astrocartographyReport: true,
             pastLifeReport: true,
+            numerologyReport: true,
+            spiritAnimalReport: true,
           },
         }),
 
@@ -235,6 +245,10 @@ export const useUserStore = create<UserState>()(
             data.unlockedFeatures?.astrocartographyReport ?? data.astrocartographyReport ?? false,
           pastLifeReport:
             data.unlockedFeatures?.pastLifeReport ?? data.pastLifeReport ?? false,
+          numerologyReport:
+            data.unlockedFeatures?.numerologyReport ?? data.numerologyReport ?? false,
+          spiritAnimalReport:
+            data.unlockedFeatures?.spiritAnimalReport ?? data.spiritAnimalReport ?? false,
         };
         updates.unlockedFeatures = features;
         
@@ -283,6 +297,8 @@ export const featureNames: Record<keyof UnlockedFeatures, string> = {
   auraColorReport: "Aura Color Quiz",
   astrocartographyReport: "Astrocartography",
   pastLifeReport: "Past Life Report",
+  numerologyReport: "Numerology Report",
+  spiritAnimalReport: "Spirit Animal Report",
 };
 
 // Feature prices (INR)
@@ -297,4 +313,6 @@ export const featurePrices: Record<keyof UnlockedFeatures, number> = {
   auraColorReport: 582,
   astrocartographyReport: 582,
   pastLifeReport: 582,
+  numerologyReport: 582,
+  spiritAnimalReport: 582,
 };

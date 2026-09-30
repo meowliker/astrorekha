@@ -26,6 +26,8 @@ const FEATURE_LABELS: Record<string, string> = {
   auraColorReport: "Aura Color Quiz",
   astrocartographyReport: "Astrocartography",
   pastLifeReport: "Past Life Report",
+  numerologyReport: "Numerology Report",
+  spiritAnimalReport: "Spirit Animal Report",
 };
 
 export default function ManageSubscriptionPage() {

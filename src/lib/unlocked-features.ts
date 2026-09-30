@@ -9,6 +9,8 @@ export interface NormalizedUnlockedFeatures {
   auraColorReport: boolean;
   astrocartographyReport: boolean;
   pastLifeReport: boolean;
+  numerologyReport: boolean;
+  spiritAnimalReport: boolean;
 }
 
 const DEFAULT_UNLOCKED_FEATURES: NormalizedUnlockedFeatures = {
@@ -22,6 +24,8 @@ const DEFAULT_UNLOCKED_FEATURES: NormalizedUnlockedFeatures = {
   auraColorReport: false,
   astrocartographyReport: false,
   pastLifeReport: false,
+  numerologyReport: false,
+  spiritAnimalReport: false,
 };
 
 function toBoolean(value: unknown): boolean {
@@ -63,5 +67,7 @@ export function normalizeUnlockedFeatures(raw: unknown): NormalizedUnlockedFeatu
     auraColorReport: toBoolean(source.auraColorReport),
     astrocartographyReport: toBoolean(source.astrocartographyReport),
     pastLifeReport: toBoolean(source.pastLifeReport),
+    numerologyReport: toBoolean(source.numerologyReport),
+    spiritAnimalReport: toBoolean(source.spiritAnimalReport),
   };
 }

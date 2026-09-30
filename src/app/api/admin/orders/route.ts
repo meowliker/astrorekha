@@ -77,6 +77,8 @@ function featureToName(feature: string): string {
     auraColorReport: "Aura Color Quiz",
     astrocartographyReport: "Astrocartography",
     pastLifeReport: "Past Life Report",
+    numerologyReport: "Numerology Report",
+    spiritAnimalReport: "Spirit Animal Report",
   };
   return labels[feature] || feature.replace(/([A-Z])/g, " $1").trim();
 }

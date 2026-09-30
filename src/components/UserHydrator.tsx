@@ -187,6 +187,8 @@ export default function UserHydrator() {
       const hasAuraColorReport = !!unlocked.auraColorReport;
       const hasAstrocartographyReport = !!unlocked.astrocartographyReport;
       const hasPastLifeReport = !!unlocked.pastLifeReport;
+      const hasNumerologyReport = !!unlocked.numerologyReport;
+      const hasSpiritAnimalReport = !!unlocked.spiritAnimalReport;
 
       if (hasPalmReading) unlockFeature("palmReading");
       if (hasPrediction2026) unlockFeature("prediction2026");
@@ -198,6 +200,8 @@ export default function UserHydrator() {
       if (hasAuraColorReport) unlockFeature("auraColorReport");
       if (hasAstrocartographyReport) unlockFeature("astrocartographyReport");
       if (hasPastLifeReport) unlockFeature("pastLifeReport");
+      if (hasNumerologyReport) unlockFeature("numerologyReport");
+      if (hasSpiritAnimalReport) unlockFeature("spiritAnimalReport");
     } catch (err) {
       console.error("Failed to hydrate user:", err);
     }

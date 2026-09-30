@@ -23,6 +23,8 @@ const featureToReportId: Record<keyof UnlockedFeatures, string> = {
   auraColorReport: "report-aura-color",
   astrocartographyReport: "report-astrocartography",
   pastLifeReport: "report-past-life",
+  numerologyReport: "report-numerology",
+  spiritAnimalReport: "report-spirit-animal",
 };
 
 const PENDING_PAYMENT_KEY = "astrorekha_pending_payu_payment";
@@ -195,6 +197,8 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
   const isAuraColorReport = feature === "auraColorReport";
   const isAstrocartographyReport = feature === "astrocartographyReport";
   const isPastLifeReport = feature === "pastLifeReport";
+  const isNumerologyReport = feature === "numerologyReport";
+  const isSpiritAnimalReport = feature === "spiritAnimalReport";
   const displayName = isVastuGuide ? "Vastu Shastra Guide" : featureName;
   const description = isVastuGuide
     ? "Get the ebook with practical Vastu guidance for home, entrance, remedies, and business."
@@ -204,6 +208,10 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
     ? "Discover your most supportive places for love, career, home, and spiritual growth through your birth map."
     : isPastLifeReport
     ? "Reveal your symbolic past-life archetype, karmic gifts, repeating patterns, and soul lesson from your birth details."
+    : isNumerologyReport
+    ? "Unlock your Mulank, Bhagyank, name number, compatibility numbers, remedies, and complete numerology guidance."
+    : isSpiritAnimalReport
+    ? "Reveal the spirit animal that reflects your instincts, inner strengths, and personal path, with guidance inspired by its symbolism."
     : `Get your personalized ${featureName.toLowerCase()} and discover deeper insights about your cosmic journey.`;
   const ctaLabel = isVastuGuide ? "Get EBook" : `Get ${featureName}`;
 
