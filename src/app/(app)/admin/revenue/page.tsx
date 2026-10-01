@@ -3493,6 +3493,13 @@ function ProfitSheetTab({
   const legacyTotals = calculateProfitTotals(legacyRows);
   const currentTotals = calculateProfitTotals(currentRows);
   const totals = calculateProfitTotals(filteredData);
+  const hasLegacyDateSelection = selectedDates.length > 0
+    ? selectedDates.some((date) => date < gstChangeDate)
+    : startDate < gstChangeDate;
+  const hasCurrentDateSelection = selectedDates.length > 0
+    ? selectedDates.some((date) => date >= gstChangeDate)
+    : endDate >= gstChangeDate;
+  const showCombinedTotals = hasLegacyDateSelection && hasCurrentDateSelection;
 
   const renderProfitTable = ({
     title,
@@ -3500,22 +3507,21 @@ function ProfitSheetTab({
     gstLabel,
     rows,
     tableTotals,
+    overallTotals,
   }: {
     title: string;
     subtitle: string;
     gstLabel: string;
     rows: ProfitSheetRow[];
     tableTotals: ReturnType<typeof calculateProfitTotals>;
+    overallTotals?: ReturnType<typeof calculateProfitTotals>;
   }) => (
     <section className="bg-[#1A2235] rounded-xl border border-white/10 overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
+      <div className="border-b border-white/10 px-4 py-3">
         <div>
           <h3 className="text-sm font-semibold text-white">{title}</h3>
           <p className="mt-0.5 text-xs text-white/45">{subtitle}</p>
         </div>
-        <span className="rounded-full border border-amber-400/25 bg-amber-400/10 px-2.5 py-1 text-xs font-medium text-amber-300">
-          {gstLabel}
-        </span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full">
@@ -3581,6 +3587,22 @@ function ProfitSheetTab({
               <td className="px-4 py-3 text-right text-sm text-white">{tableTotals.bundlePurchases}</td>
               <td className="px-4 py-3 text-right text-sm text-white">{tableTotals.transactionCount}</td>
             </tr>
+            {overallTotals && (
+              <tr className="border-t border-primary/30 bg-primary/15 font-bold">
+                <td className="px-4 py-3 text-sm text-white" colSpan={2}>OVERALL TOTAL</td>
+                <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(overallTotals.grossRevenue)}</td>
+                <td className="px-4 py-3 text-right text-sm text-red-400">-{formatCurrency(overallTotals.refundAmount)}</td>
+                <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(overallTotals.revenue)}</td>
+                <td className="px-4 py-3 text-right text-sm text-amber-400">{formatCurrency(overallTotals.gst)}</td>
+                <td className="px-4 py-3 text-right text-sm text-red-400/70">${overallTotals.adsCostUSD.toFixed(2)}</td>
+                <td className="px-4 py-3 text-right text-sm text-red-400">{formatCurrency(overallTotals.adsCostINR)}</td>
+                <td className={`px-4 py-3 text-right text-sm ${overallTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{formatCurrency(overallTotals.netRevenue)}</td>
+                <td className={`px-4 py-3 text-right text-sm ${overallTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{overallTotals.profitPercent.toFixed(2)}%</td>
+                <td className={`px-4 py-3 text-right text-sm ${overallTotals.roas >= 1 ? "text-green-400" : "text-amber-400"}`}>{overallTotals.roas > 0 ? overallTotals.roas.toFixed(2) : "-"}</td>
+                <td className="px-4 py-3 text-right text-sm text-white">{overallTotals.bundlePurchases}</td>
+                <td className="px-4 py-3 text-right text-sm text-white">{overallTotals.transactionCount}</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -3926,12 +3948,13 @@ function ProfitSheetTab({
         </div>
       )}
 
-      {/* Combined totals across both GST tables */}
-      <div>
-        <h2 className="text-sm font-semibold text-white">Combined Total</h2>
-        <p className="mt-0.5 text-xs text-white/45">All selected dates across both GST periods</p>
-      </div>
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      {showCombinedTotals && (
+        <>
+          <div>
+            <h2 className="text-sm font-semibold text-white">Combined Total</h2>
+            <p className="mt-0.5 text-xs text-white/45">All selected dates across both GST periods</p>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Total Received</p>
           <p className="text-green-400 text-xl font-bold">{formatCurrency(totals.grossRevenue)}</p>
@@ -3978,7 +4001,9 @@ function ProfitSheetTab({
             {totals.roas > 0 ? totals.roas.toFixed(2) : "-"}
           </p>
         </div>
-      </div>
+          </div>
+        </>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center rounded-xl border border-white/10 bg-[#1A2235] py-12">
@@ -3987,19 +4012,20 @@ function ProfitSheetTab({
         </div>
       ) : (
         <>
-          {renderProfitTable({
+          {hasLegacyDateSelection && renderProfitTable({
             title: "Profit Sheet — Through 30 September 2026",
             subtitle: "All selected reporting dates up to and including 30 September 2026",
             gstLabel: "5%",
             rows: legacyRows,
             tableTotals: legacyTotals,
           })}
-          {renderProfitTable({
+          {hasCurrentDateSelection && renderProfitTable({
             title: "Profit Sheet — From 1 October 2026",
             subtitle: "All selected reporting dates from 1 October 2026 onward",
             gstLabel: "18%",
             rows: currentRows,
             tableTotals: currentTotals,
+            overallTotals: showCombinedTotals ? totals : undefined,
           })}
         </>
       )}
