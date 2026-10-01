@@ -3516,7 +3516,8 @@ function ProfitSheetTab({
     tableTotals: ReturnType<typeof calculateProfitTotals>;
     overallTotals?: ReturnType<typeof calculateProfitTotals>;
   }) => (
-    <section className="bg-[#1A2235] rounded-xl border border-white/10 overflow-hidden">
+    <>
+      <section className="bg-[#1A2235] rounded-xl border border-white/10 overflow-hidden">
       <div className="border-b border-white/10 px-4 py-3">
         <div>
           <h3 className="text-sm font-semibold text-white">{title}</h3>
@@ -3587,26 +3588,35 @@ function ProfitSheetTab({
               <td className="px-4 py-3 text-right text-sm text-white">{tableTotals.bundlePurchases}</td>
               <td className="px-4 py-3 text-right text-sm text-white">{tableTotals.transactionCount}</td>
             </tr>
-            {overallTotals && (
-              <tr className="border-t border-primary/30 bg-primary/15 font-bold">
-                <td className="px-4 py-3 text-sm text-white" colSpan={2}>OVERALL TOTAL</td>
-                <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(overallTotals.grossRevenue)}</td>
-                <td className="px-4 py-3 text-right text-sm text-red-400">-{formatCurrency(overallTotals.refundAmount)}</td>
-                <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(overallTotals.revenue)}</td>
-                <td className="px-4 py-3 text-right text-sm text-amber-400">{formatCurrency(overallTotals.gst)}</td>
-                <td className="px-4 py-3 text-right text-sm text-red-400/70">${overallTotals.adsCostUSD.toFixed(2)}</td>
-                <td className="px-4 py-3 text-right text-sm text-red-400">{formatCurrency(overallTotals.adsCostINR)}</td>
-                <td className={`px-4 py-3 text-right text-sm ${overallTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{formatCurrency(overallTotals.netRevenue)}</td>
-                <td className={`px-4 py-3 text-right text-sm ${overallTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{overallTotals.profitPercent.toFixed(2)}%</td>
-                <td className={`px-4 py-3 text-right text-sm ${overallTotals.roas >= 1 ? "text-green-400" : "text-amber-400"}`}>{overallTotals.roas > 0 ? overallTotals.roas.toFixed(2) : "-"}</td>
-                <td className="px-4 py-3 text-right text-sm text-white">{overallTotals.bundlePurchases}</td>
-                <td className="px-4 py-3 text-right text-sm text-white">{overallTotals.transactionCount}</td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
-    </section>
+      </section>
+      {overallTotals && (
+        <section className="mt-3 overflow-hidden rounded-xl border border-primary/30 bg-[#1A2235]">
+          <div className="overflow-x-auto">
+            <table className="w-full" aria-label="Overall totals across both profit sheet tables">
+              <tbody>
+                <tr className="bg-primary/15 font-bold">
+                  <td className="px-4 py-3 text-sm text-white" colSpan={2}>OVERALL TOTAL</td>
+                  <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(overallTotals.grossRevenue)}</td>
+                  <td className="px-4 py-3 text-right text-sm text-red-400">-{formatCurrency(overallTotals.refundAmount)}</td>
+                  <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(overallTotals.revenue)}</td>
+                  <td className="px-4 py-3 text-right text-sm text-amber-400">{formatCurrency(overallTotals.gst)}</td>
+                  <td className="px-4 py-3 text-right text-sm text-red-400/70">${overallTotals.adsCostUSD.toFixed(2)}</td>
+                  <td className="px-4 py-3 text-right text-sm text-red-400">{formatCurrency(overallTotals.adsCostINR)}</td>
+                  <td className={`px-4 py-3 text-right text-sm ${overallTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{formatCurrency(overallTotals.netRevenue)}</td>
+                  <td className={`px-4 py-3 text-right text-sm ${overallTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{overallTotals.profitPercent.toFixed(2)}%</td>
+                  <td className={`px-4 py-3 text-right text-sm ${overallTotals.roas >= 1 ? "text-green-400" : "text-amber-400"}`}>{overallTotals.roas > 0 ? overallTotals.roas.toFixed(2) : "-"}</td>
+                  <td className="px-4 py-3 text-right text-sm text-white">{overallTotals.bundlePurchases}</td>
+                  <td className="px-4 py-3 text-right text-sm text-white">{overallTotals.transactionCount}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </>
   );
 
   return (
