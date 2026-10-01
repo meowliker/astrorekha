@@ -3500,6 +3500,15 @@ function ProfitSheetTab({
     ? selectedDates.some((date) => date >= gstChangeDate)
     : endDate >= gstChangeDate;
   const showCombinedTotals = hasLegacyDateSelection && hasCurrentDateSelection;
+  const profitTableColumnWidths = [96, 72, 120, 105, 120, 105, 105, 135, 120, 90, 80, 125, 85];
+  const profitTableMinWidth = profitTableColumnWidths.reduce((sum, width) => sum + width, 0);
+  const renderProfitTableColumns = () => (
+    <colgroup>
+      {profitTableColumnWidths.map((width, index) => (
+        <col key={`${index}-${width}`} style={{ width }} />
+      ))}
+    </colgroup>
+  );
 
   const renderProfitTable = ({
     title,
@@ -3525,7 +3534,8 @@ function ProfitSheetTab({
         </div>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full">
+        <table className="w-full table-fixed" style={{ minWidth: profitTableMinWidth }}>
+          {renderProfitTableColumns()}
           <thead>
             <tr className="border-b border-white/10 bg-white/5">
               <SortableHeader sortKey="date" align="left">Date</SortableHeader>
@@ -3595,7 +3605,12 @@ function ProfitSheetTab({
       {overallTotals && (
         <section className="mt-3 overflow-hidden rounded-xl border border-primary/30 bg-[#1A2235]">
           <div className="overflow-x-auto">
-            <table className="w-full" aria-label="Overall totals across both profit sheet tables">
+            <table
+              className="w-full table-fixed"
+              style={{ minWidth: profitTableMinWidth }}
+              aria-label="Overall totals across both profit sheet tables"
+            >
+              {renderProfitTableColumns()}
               <tbody>
                 <tr className="bg-primary/15 font-bold">
                   <td className="px-4 py-3 text-sm text-white" colSpan={2}>OVERALL TOTAL</td>
