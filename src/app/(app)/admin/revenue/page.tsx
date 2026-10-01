@@ -48,9 +48,8 @@ import { createPortal } from "react-dom";
 import SpendBreakdownButton from "@/components/admin/SpendBreakdownButton";
 
 // Tab type
-type TabType = "dashboard" | "profit-sheet" | "profit-sheet-calendar" | "meta-details" | "attribution" | "analytics";
+type TabType = "dashboard" | "profit-sheet" | "meta-details" | "attribution" | "analytics";
 type ProfitSheetDayMode = "business_1130_ist" | "calendar_ist";
-type MissingReportingRange = { startDate: string; endDate: string; days: number };
 
 // Profit Sheet row interface
 interface ProfitSheetRow {
@@ -59,7 +58,7 @@ interface ProfitSheetRow {
   revenue: number;        // Net revenue after refunds for that Costa Rica day
   grossRevenue?: number;  // Gross received amount before refunds
   refundAmount?: number;  // Refund amount for that day
-  gst: number;            // 5% of revenue
+  gst: number;            // 5% through Sep 30, 2026; 18% from Oct 1, 2026
   adsCostUSD: number;     // Meta Ads spend in USD
   adsCostINR: number;     // Meta Ads spend converted to INR
   netRevenue: number;     // Revenue - GST - Ads Cost (INR)
@@ -887,23 +886,15 @@ export default function AdminRevenuePage() {
   
   // Profit Sheet state
   const [profitSheetData, setProfitSheetData] = useState<ProfitSheetRow[]>([]);
-  const [calendarProfitSheetMissingRanges, setCalendarProfitSheetMissingRanges] = useState<MissingReportingRange[]>([]);
   const [profitSheetLoadedMode, setProfitSheetLoadedMode] = useState<ProfitSheetDayMode | null>(null);
   const [profitSheetLoading, setProfitSheetLoading] = useState(false);
   const [profitSheetError, setProfitSheetError] = useState<string | null>(null);
-  const [profitSheetStartDate, setProfitSheetStartDate] = useState<string>("2026-06-21");
-  const [profitSheetEndDate, setProfitSheetEndDate] = useState<string>(new Date().toISOString().split("T")[0]);
-  const [profitSheetFilter, setProfitSheetFilter] = useState<string>("all");
+  const [profitSheetStartDate, setProfitSheetStartDate] = useState<string>(() => getFirstDayOfMonthIso(getCurrentBusinessDateIso()));
+  const [profitSheetEndDate, setProfitSheetEndDate] = useState<string>(() => getCurrentBusinessDateIso());
+  const [profitSheetFilter, setProfitSheetFilter] = useState<string>("thisMonth");
   const [profitSheetRoasFilter, setProfitSheetRoasFilter] = useState<string>("all");
-  const [profitSheetExchangeRate, setProfitSheetExchangeRate] = useState<number>(85);
   const [profitSheetCustomExchangeRate, setProfitSheetCustomExchangeRate] = useState<string>("");
   const [profitSheetSelectedDates, setProfitSheetSelectedDates] = useState<string[]>([]);
-  const [calendarProfitSheetStartDate, setCalendarProfitSheetStartDate] = useState<string>("2026-03-13");
-  const [calendarProfitSheetEndDate, setCalendarProfitSheetEndDate] = useState<string>(() => getIstDateTimeParts(new Date()).dayKey);
-  const [calendarProfitSheetFilter, setCalendarProfitSheetFilter] = useState<string>("all");
-  const [calendarProfitSheetRoasFilter, setCalendarProfitSheetRoasFilter] = useState<string>("all");
-  const [calendarProfitSheetCustomExchangeRate, setCalendarProfitSheetCustomExchangeRate] = useState<string>("");
-  const [calendarProfitSheetSelectedDates, setCalendarProfitSheetSelectedDates] = useState<string[]>([]);
   const profitSheetRequestIdRef = useRef(0);
 
   // Meta Breakdown state
@@ -1149,7 +1140,7 @@ export default function AdminRevenuePage() {
       setVisibleMetaAccessTokenRows(new Set());
       setMetaAccountSettingsMessage("Meta ad account windows saved.");
       fetchMetaAds(metaDatePreset);
-      if (activeTab === "profit-sheet" || activeTab === "profit-sheet-calendar") fetchProfitSheet(undefined, true);
+      if (activeTab === "profit-sheet") fetchProfitSheet(undefined, true);
       if (activeTab === "meta-details") fetchMetaBreakdown();
       if (activeTab === "attribution") fetchAttribution();
       if (activeTab === "analytics") fetchAnalytics(true);
@@ -1250,10 +1241,10 @@ export default function AdminRevenuePage() {
   // Fetch Profit Sheet data
   const fetchProfitSheet = async (customRate?: number, syncLastTwoDays: boolean = false) => {
     const requestId = ++profitSheetRequestIdRef.current;
-    const dayMode: ProfitSheetDayMode = activeTab === "profit-sheet-calendar" ? "calendar_ist" : "business_1130_ist";
-    const requestedStartDate = dayMode === "calendar_ist" ? calendarProfitSheetStartDate : profitSheetStartDate;
-    const requestedEndDate = dayMode === "calendar_ist" ? calendarProfitSheetEndDate : profitSheetEndDate;
-    const rateInput = dayMode === "calendar_ist" ? calendarProfitSheetCustomExchangeRate : profitSheetCustomExchangeRate;
+    const dayMode: ProfitSheetDayMode = "business_1130_ist";
+    const requestedStartDate = profitSheetStartDate;
+    const requestedEndDate = profitSheetEndDate;
+    const rateInput = profitSheetCustomExchangeRate;
     try {
       setProfitSheetLoading(true);
       setProfitSheetError(null);
@@ -1288,13 +1279,10 @@ export default function AdminRevenuePage() {
       const result = await res.json();
       if (requestId !== profitSheetRequestIdRef.current) return;
       setProfitSheetData(result.rows || []);
-      setCalendarProfitSheetMissingRanges(dayMode === "calendar_ist" ? result.missingRanges || [] : []);
       setProfitSheetLoadedMode(dayMode);
       if (result.exchangeRate) {
-        setProfitSheetExchangeRate(result.exchangeRate);
         if (!rateInput) {
-          if (dayMode === "calendar_ist") setCalendarProfitSheetCustomExchangeRate(result.exchangeRate.toFixed(2));
-          else setProfitSheetCustomExchangeRate(result.exchangeRate.toFixed(2));
+          setProfitSheetCustomExchangeRate(result.exchangeRate.toFixed(2));
         }
       }
     } catch (err) {
@@ -1302,7 +1290,6 @@ export default function AdminRevenuePage() {
       console.error("Profit sheet fetch error:", err);
       setProfitSheetError(err instanceof Error ? err.message : "Failed to fetch profit sheet");
       setProfitSheetData([]);
-      setCalendarProfitSheetMissingRanges([]);
       setProfitSheetLoadedMode(dayMode);
     } finally {
       if (requestId === profitSheetRequestIdRef.current) {
@@ -1472,13 +1459,11 @@ export default function AdminRevenuePage() {
   }, [metaDatePreset]);
 
   // Fetch profit sheet when tab changes or date range changes
-  const activeProfitSheetStartDate = activeTab === "profit-sheet-calendar" ? calendarProfitSheetStartDate : profitSheetStartDate;
-  const activeProfitSheetEndDate = activeTab === "profit-sheet-calendar" ? calendarProfitSheetEndDate : profitSheetEndDate;
   useEffect(() => {
-    if (activeTab === "profit-sheet" || activeTab === "profit-sheet-calendar") {
+    if (activeTab === "profit-sheet") {
       fetchProfitSheet();
     }
-  }, [activeTab, activeProfitSheetStartDate, activeProfitSheetEndDate]);
+  }, [activeTab, profitSheetStartDate, profitSheetEndDate]);
 
   // Fetch meta breakdown when tab changes or date preset changes
   useEffect(() => {
@@ -1967,7 +1952,7 @@ export default function AdminRevenuePage() {
               <button
                 onClick={() => {
                   if (activeTab === "dashboard") fetchData(true);
-                  else if (activeTab === "profit-sheet" || activeTab === "profit-sheet-calendar") fetchProfitSheet(undefined, true);
+                  else if (activeTab === "profit-sheet") fetchProfitSheet(undefined, true);
                   else if (activeTab === "meta-details") fetchMetaBreakdown();
                   else if (activeTab === "attribution") fetchAttribution();
                   else if (activeTab === "analytics") fetchAnalytics(true);
@@ -2002,18 +1987,7 @@ export default function AdminRevenuePage() {
               }`}
             >
               <FileSpreadsheet className="w-4 h-4" />
-              Profit Sheet · 11:30 AM–11:29 AM
-            </button>
-            <button
-              onClick={() => setActiveTab("profit-sheet-calendar")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                activeTab === "profit-sheet-calendar"
-                  ? "bg-primary text-white shadow-lg"
-                  : "text-white/60 hover:text-white hover:bg-white/10"
-              }`}
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              Profit Sheet · 12:00 AM–11:59 PM
+              Profit Sheet
             </button>
             <button
               onClick={() => setActiveTab("meta-details")}
@@ -2886,26 +2860,24 @@ export default function AdminRevenuePage() {
         )}
 
         {/* Profit Sheet Tab Content */}
-        {(activeTab === "profit-sheet" || activeTab === "profit-sheet-calendar") && (
+        {activeTab === "profit-sheet" && (
           <ProfitSheetTab
-            key={activeTab}
-            dayMode={activeTab === "profit-sheet-calendar" ? "calendar_ist" : "business_1130_ist"}
-            data={profitSheetLoadedMode === (activeTab === "profit-sheet-calendar" ? "calendar_ist" : "business_1130_ist") ? profitSheetData : []}
-            loading={profitSheetLoading || profitSheetLoadedMode !== (activeTab === "profit-sheet-calendar" ? "calendar_ist" : "business_1130_ist")}
-            error={profitSheetLoadedMode === (activeTab === "profit-sheet-calendar" ? "calendar_ist" : "business_1130_ist") ? profitSheetError : null}
-            missingRanges={activeTab === "profit-sheet-calendar" && profitSheetLoadedMode === "calendar_ist" ? calendarProfitSheetMissingRanges : []}
-            startDate={activeTab === "profit-sheet-calendar" ? calendarProfitSheetStartDate : profitSheetStartDate}
-            endDate={activeTab === "profit-sheet-calendar" ? calendarProfitSheetEndDate : profitSheetEndDate}
-            setStartDate={activeTab === "profit-sheet-calendar" ? setCalendarProfitSheetStartDate : setProfitSheetStartDate}
-            setEndDate={activeTab === "profit-sheet-calendar" ? setCalendarProfitSheetEndDate : setProfitSheetEndDate}
-            periodFilter={activeTab === "profit-sheet-calendar" ? calendarProfitSheetFilter : profitSheetFilter}
-            setPeriodFilter={activeTab === "profit-sheet-calendar" ? setCalendarProfitSheetFilter : setProfitSheetFilter}
-            roasFilter={activeTab === "profit-sheet-calendar" ? calendarProfitSheetRoasFilter : profitSheetRoasFilter}
-            setRoasFilter={activeTab === "profit-sheet-calendar" ? setCalendarProfitSheetRoasFilter : setProfitSheetRoasFilter}
-            selectedDates={activeTab === "profit-sheet-calendar" ? calendarProfitSheetSelectedDates : profitSheetSelectedDates}
-            setSelectedDates={activeTab === "profit-sheet-calendar" ? setCalendarProfitSheetSelectedDates : setProfitSheetSelectedDates}
-            exchangeRate={activeTab === "profit-sheet-calendar" ? calendarProfitSheetCustomExchangeRate : profitSheetCustomExchangeRate}
-            setExchangeRate={activeTab === "profit-sheet-calendar" ? setCalendarProfitSheetCustomExchangeRate : setProfitSheetCustomExchangeRate}
+            dayMode="business_1130_ist"
+            data={profitSheetLoadedMode === "business_1130_ist" ? profitSheetData : []}
+            loading={profitSheetLoading || profitSheetLoadedMode !== "business_1130_ist"}
+            error={profitSheetLoadedMode === "business_1130_ist" ? profitSheetError : null}
+            startDate={profitSheetStartDate}
+            endDate={profitSheetEndDate}
+            setStartDate={setProfitSheetStartDate}
+            setEndDate={setProfitSheetEndDate}
+            periodFilter={profitSheetFilter}
+            setPeriodFilter={setProfitSheetFilter}
+            roasFilter={profitSheetRoasFilter}
+            setRoasFilter={setProfitSheetRoasFilter}
+            selectedDates={profitSheetSelectedDates}
+            setSelectedDates={setProfitSheetSelectedDates}
+            exchangeRate={profitSheetCustomExchangeRate}
+            setExchangeRate={setProfitSheetCustomExchangeRate}
             onRefresh={() => fetchProfitSheet(undefined, true)}
             onRefreshWithRate={(rate) => fetchProfitSheet(rate, true)}
           />
@@ -2995,7 +2967,6 @@ function ProfitSheetTab({
   data,
   loading,
   error,
-  missingRanges,
   startDate,
   endDate,
   setStartDate,
@@ -3015,7 +2986,6 @@ function ProfitSheetTab({
   data: ProfitSheetRow[];
   loading: boolean;
   error: string | null;
-  missingRanges: MissingReportingRange[];
   startDate: string;
   endDate: string;
   setStartDate: (v: string) => void;
@@ -3259,11 +3229,26 @@ function ProfitSheetTab({
       : "Select Range";
 
   const applyPeriodRange = (period: string) => {
-    let periodRange: CalendarRange;
-    if (period === "last7") periodRange = { startDate: shiftIsoDate(maxSelectableBusinessDate, -6), endDate: maxSelectableBusinessDate };
-    else if (period === "last14") periodRange = { startDate: shiftIsoDate(maxSelectableBusinessDate, -13), endDate: maxSelectableBusinessDate };
-    else if (period === "last30") periodRange = { startDate: shiftIsoDate(maxSelectableBusinessDate, -29), endDate: maxSelectableBusinessDate };
-    else periodRange = { startDate: profitMinRangeStart, endDate: maxSelectableBusinessDate };
+    const [currentYear, currentMonth] = maxSelectableBusinessDate.split("-").map(Number);
+    const monthMatch = period.match(/^month-(\d{2})$/);
+    let startMonth = currentMonth;
+    let monthCount = 1;
+
+    if (monthMatch) {
+      startMonth = Number(monthMatch[1]);
+    } else if (/^q[1-4]$/.test(period)) {
+      startMonth = (Number(period.slice(1)) - 1) * 3 + 1;
+      monthCount = 3;
+    }
+
+    const periodYear = startMonth > currentMonth ? currentYear - 1 : currentYear;
+    const rangeStart = `${periodYear}-${pad2(startMonth)}-01`;
+    const rangeEndDate = new Date(Date.UTC(periodYear, startMonth - 1 + monthCount, 0));
+    const naturalRangeEnd = rangeEndDate.toISOString().split("T")[0];
+    const periodRange: CalendarRange = {
+      startDate: period === "thisMonth" ? getFirstDayOfMonthIso(maxSelectableBusinessDate) : rangeStart,
+      endDate: naturalRangeEnd > maxSelectableBusinessDate ? maxSelectableBusinessDate : naturalRangeEnd,
+    };
 
     setPeriodFilter(period);
     setStartDate(periodRange.startDate);
@@ -3405,8 +3390,8 @@ function ProfitSheetTab({
     }
   };
 
-  const sortedData = profitSortKey && profitSortDirection
-    ? [...filteredData].sort((a, b) => {
+  const sortProfitRows = (rows: ProfitSheetRow[]) => profitSortKey && profitSortDirection
+    ? [...rows].sort((a, b) => {
         const aValue = getSortValue(a, profitSortKey);
         const bValue = getSortValue(b, profitSortKey);
         let comparison = 0;
@@ -3419,7 +3404,7 @@ function ProfitSheetTab({
 
         return profitSortDirection === "asc" ? comparison : -comparison;
       })
-    : filteredData;
+    : rows;
 
   const handleProfitSort = (key: ProfitSheetSortKey) => {
     if (profitSortKey !== key) {
@@ -3467,35 +3452,140 @@ function ProfitSheetTab({
     );
   };
 
-  // Calculate totals
-  const totals = filteredData.reduce(
-    (acc, row) => ({
-      revenue: acc.revenue + row.revenue,
-      grossRevenue: acc.grossRevenue + (row.grossRevenue ?? row.revenue),
-      refundAmount: acc.refundAmount + (row.refundAmount ?? 0),
-      gst: acc.gst + row.gst,
-      adsCostUSD: acc.adsCostUSD + row.adsCostUSD,
-      adsCostINR: acc.adsCostINR + row.adsCostINR,
-      netRevenue: acc.netRevenue + row.netRevenue,
-      bundleRevenue: acc.bundleRevenue + (row.bundleRevenue ?? 0),
-      transactionCount: acc.transactionCount + row.transactionCount,
-      bundlePurchases: acc.bundlePurchases + row.bundlePurchases,
-    }),
-    {
-      revenue: 0,
-      grossRevenue: 0,
-      refundAmount: 0,
-      gst: 0,
-      adsCostUSD: 0,
-      adsCostINR: 0,
-      netRevenue: 0,
-      bundleRevenue: 0,
-      transactionCount: 0,
-      bundlePurchases: 0,
-    }
+  const calculateProfitTotals = (rows: ProfitSheetRow[]) => {
+    const totals = rows.reduce(
+      (acc, row) => ({
+        revenue: acc.revenue + row.revenue,
+        grossRevenue: acc.grossRevenue + (row.grossRevenue ?? row.revenue),
+        refundAmount: acc.refundAmount + (row.refundAmount ?? 0),
+        gst: acc.gst + row.gst,
+        adsCostUSD: acc.adsCostUSD + row.adsCostUSD,
+        adsCostINR: acc.adsCostINR + row.adsCostINR,
+        netRevenue: acc.netRevenue + row.netRevenue,
+        bundleRevenue: acc.bundleRevenue + (row.bundleRevenue ?? 0),
+        transactionCount: acc.transactionCount + row.transactionCount,
+        bundlePurchases: acc.bundlePurchases + row.bundlePurchases,
+      }),
+      {
+        revenue: 0,
+        grossRevenue: 0,
+        refundAmount: 0,
+        gst: 0,
+        adsCostUSD: 0,
+        adsCostINR: 0,
+        netRevenue: 0,
+        bundleRevenue: 0,
+        transactionCount: 0,
+        bundlePurchases: 0,
+      }
+    );
+
+    return {
+      ...totals,
+      roas: totals.adsCostINR > 0 ? totals.bundleRevenue / totals.adsCostINR : 0,
+      profitPercent: totals.revenue > 0 ? (totals.netRevenue / totals.revenue) * 100 : 0,
+    };
+  };
+
+  const gstChangeDate = "2026-10-01";
+  const legacyRows = sortProfitRows(filteredData.filter((row) => row.date < gstChangeDate));
+  const currentRows = sortProfitRows(filteredData.filter((row) => row.date >= gstChangeDate));
+  const legacyTotals = calculateProfitTotals(legacyRows);
+  const currentTotals = calculateProfitTotals(currentRows);
+  const totals = calculateProfitTotals(filteredData);
+
+  const renderProfitTable = ({
+    title,
+    subtitle,
+    gstLabel,
+    rows,
+    tableTotals,
+  }: {
+    title: string;
+    subtitle: string;
+    gstLabel: string;
+    rows: ProfitSheetRow[];
+    tableTotals: ReturnType<typeof calculateProfitTotals>;
+  }) => (
+    <section className="bg-[#1A2235] rounded-xl border border-white/10 overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
+        <div>
+          <h3 className="text-sm font-semibold text-white">{title}</h3>
+          <p className="mt-0.5 text-xs text-white/45">{subtitle}</p>
+        </div>
+        <span className="rounded-full border border-amber-400/25 bg-amber-400/10 px-2.5 py-1 text-xs font-medium text-amber-300">
+          {gstLabel}
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-white/10 bg-white/5">
+              <SortableHeader sortKey="date" align="left">Date</SortableHeader>
+              <SortableHeader sortKey="day" align="left">Day</SortableHeader>
+              <SortableHeader sortKey="grossRevenue">Received</SortableHeader>
+              <SortableHeader sortKey="refundAmount">Refund</SortableHeader>
+              <SortableHeader sortKey="revenue">Revenue</SortableHeader>
+              <SortableHeader sortKey="gst">GST ({gstLabel})</SortableHeader>
+              <SortableHeader sortKey="adsCostUSD">Ads (USD)</SortableHeader>
+              <SortableHeader sortKey="adsCostINR">Ads (INR)</SortableHeader>
+              <SortableHeader sortKey="netRevenue">Profit</SortableHeader>
+              <SortableHeader sortKey="profitPercent">Profit %</SortableHeader>
+              <SortableHeader sortKey="roas">ROAS</SortableHeader>
+              <SortableHeader sortKey="bundlePurchases">Bundle Purchases</SortableHeader>
+              <SortableHeader sortKey="transactionCount">Orders</SortableHeader>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={13} className="py-8 text-center text-white/40">
+                  No data in this table for the selected dates and filters
+                </td>
+              </tr>
+            ) : (
+              rows.map((row, idx) => (
+                  <tr key={row.date} className={`border-b border-white/5 hover:bg-white/5 ${idx % 2 === 0 ? "bg-white/[0.02]" : ""}`}>
+                    <td className="px-4 py-3 text-sm text-white/80">{formatDate(row.date)}</td>
+                    <td className="px-4 py-3 text-sm text-white/60">{row.day}</td>
+                    <td className="px-4 py-3 text-right text-sm font-medium text-green-400">{formatCurrency(row.grossRevenue ?? row.revenue)}</td>
+                    <td className="px-4 py-3 text-right text-sm font-medium text-red-400">-{formatCurrency(row.refundAmount ?? 0)}</td>
+                    <td className="px-4 py-3 text-right text-sm font-medium text-green-400">{formatCurrency(row.revenue)}</td>
+                    <td className="px-4 py-3 text-right text-sm text-amber-400/70">{formatCurrency(row.gst)}</td>
+                    <td className="px-4 py-3 text-right text-sm text-red-400/50">${row.adsCostUSD.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right text-sm text-red-400/70">
+                      <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+                        {formatCurrency(row.adsCostINR)}
+                        <SpendBreakdownButton date={row.date} savedTotalINR={row.adsCostINR} dayMode={dayMode} />
+                      </div>
+                    </td>
+                    <td className={`px-4 py-3 text-right text-sm font-medium ${row.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{formatCurrency(row.netRevenue)}</td>
+                    <td className={`px-4 py-3 text-right text-sm font-medium ${(row.profitPercent || 0) >= 0 ? "text-green-400" : "text-red-400"}`}>{(row.profitPercent || 0).toFixed(2)}%</td>
+                    <td className={`px-4 py-3 text-right text-sm font-medium ${row.roas >= 1 ? "text-green-400" : row.roas > 0 ? "text-amber-400" : "text-white/30"}`}>{row.roas > 0 ? row.roas.toFixed(2) : "-"}</td>
+                    <td className="px-4 py-3 text-right text-sm text-white/80">{row.bundlePurchases}</td>
+                    <td className="px-4 py-3 text-right text-sm text-white/60">{row.transactionCount}</td>
+                  </tr>
+                ))
+            )}
+            <tr className="border-t-2 border-white/20 bg-white/10 font-semibold">
+              <td className="px-4 py-3 text-sm text-white" colSpan={2}>TABLE TOTAL</td>
+              <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(tableTotals.grossRevenue)}</td>
+              <td className="px-4 py-3 text-right text-sm text-red-400">-{formatCurrency(tableTotals.refundAmount)}</td>
+              <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(tableTotals.revenue)}</td>
+              <td className="px-4 py-3 text-right text-sm text-amber-400">{formatCurrency(tableTotals.gst)}</td>
+              <td className="px-4 py-3 text-right text-sm text-red-400/70">${tableTotals.adsCostUSD.toFixed(2)}</td>
+              <td className="px-4 py-3 text-right text-sm text-red-400">{formatCurrency(tableTotals.adsCostINR)}</td>
+              <td className={`px-4 py-3 text-right text-sm ${tableTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{formatCurrency(tableTotals.netRevenue)}</td>
+              <td className={`px-4 py-3 text-right text-sm ${tableTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{tableTotals.profitPercent.toFixed(2)}%</td>
+              <td className={`px-4 py-3 text-right text-sm ${tableTotals.roas >= 1 ? "text-green-400" : "text-amber-400"}`}>{tableTotals.roas > 0 ? tableTotals.roas.toFixed(2) : "-"}</td>
+              <td className="px-4 py-3 text-right text-sm text-white">{tableTotals.bundlePurchases}</td>
+              <td className="px-4 py-3 text-right text-sm text-white">{tableTotals.transactionCount}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
-  const overallRoas = totals.adsCostINR > 0 ? totals.bundleRevenue / totals.adsCostINR : 0;
-  const overallProfitPercent = totals.revenue > 0 ? (totals.netRevenue / totals.revenue) * 100 : 0;
 
   return (
     <div className="space-y-4">
@@ -3741,10 +3831,23 @@ function ProfitSheetTab({
               onChange={(e) => applyPeriodRange(e.target.value)}
               className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50"
             >
-              <option value="all">All Time</option>
-              <option value="last7">Last 7 Days</option>
-              <option value="last14">Last 14 Days</option>
-              <option value="last30">Last 30 Days</option>
+              <option value="thisMonth">This Month</option>
+              <option value="q1">Q1 (Jan–Mar)</option>
+              <option value="q2">Q2 (Apr–Jun)</option>
+              <option value="q3">Q3 (Jul–Sep)</option>
+              <option value="q4">Q4 (Oct–Dec)</option>
+              <option value="month-01">January</option>
+              <option value="month-02">February</option>
+              <option value="month-03">March</option>
+              <option value="month-04">April</option>
+              <option value="month-05">May</option>
+              <option value="month-06">June</option>
+              <option value="month-07">July</option>
+              <option value="month-08">August</option>
+              <option value="month-09">September</option>
+              <option value="month-10">October</option>
+              <option value="month-11">November</option>
+              <option value="month-12">December</option>
             </select>
           </div>
           <div>
@@ -3793,9 +3896,7 @@ function ProfitSheetTab({
           </button>
         </div>
 	        <p className="text-white/30 text-xs mt-3">
-	          {dayMode === "calendar_ist"
-	            ? "Each date covers 12:00 AM to 11:59 PM IST. Revenue and ad spend use the same calendar-day window; each account's configured start and end times still apply."
-	            : "Each date covers 11:30 AM IST to 11:29 AM IST the next day. Revenue and ad spend use the same reporting window; each account's configured start and end times still apply."}
+	          Each date covers 11:30 AM IST to 11:29 AM IST the next day. Revenue and ad spend use the same reporting window; each account&apos;s configured start and end times still apply.
 	        </p>
 	        {selectedDates.length > 0 && (
 	          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2">
@@ -3824,17 +3925,12 @@ function ProfitSheetTab({
           {error}
         </div>
       )}
-      {dayMode === "calendar_ist" && missingRanges.length > 0 && !loading && (
-        <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-200">
-          {missingRanges.reduce((sum, range) => sum + range.days, 0)} dates in this range are not yet synced. The totals below cover saved dates only. Missing: {missingRanges.slice(0, 3).map((range) =>
-            range.startDate === range.endDate
-              ? formatCalendarDateShort(range.startDate)
-              : `${formatCalendarDateShort(range.startDate)}–${formatCalendarDateShort(range.endDate)}`
-          ).join(", ")}{missingRanges.length > 3 ? `, and ${missingRanges.length - 3} more ranges` : ""}.
-        </div>
-      )}
 
-      {/* Summary Cards */}
+      {/* Combined totals across both GST tables */}
+      <div>
+        <h2 className="text-sm font-semibold text-white">Combined Total</h2>
+        <p className="mt-0.5 text-xs text-white/45">All selected dates across both GST periods</p>
+      </div>
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Total Received</p>
@@ -3853,7 +3949,7 @@ function ProfitSheetTab({
           <p className="text-green-400 text-xl font-bold">{formatCurrency(totals.revenue)}</p>
         </div>
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
-          <p className="text-white/50 text-xs mb-1">Total GST (5%)</p>
+          <p className="text-white/50 text-xs mb-1">Combined GST</p>
           <p className="text-amber-400 text-xl font-bold">{formatCurrency(totals.gst)}</p>
         </div>
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
@@ -3872,116 +3968,41 @@ function ProfitSheetTab({
         </div>
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Overall Profit %</p>
-          <p className={`text-xl font-bold ${overallProfitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>
-            {overallProfitPercent.toFixed(2)}%
+          <p className={`text-xl font-bold ${totals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>
+            {totals.profitPercent.toFixed(2)}%
           </p>
         </div>
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Overall ROAS</p>
-          <p className={`text-xl font-bold ${overallRoas >= 1 ? "text-green-400" : overallRoas > 0 ? "text-amber-400" : "text-white/40"}`}>
-            {overallRoas > 0 ? overallRoas.toFixed(2) : "-"}
+          <p className={`text-xl font-bold ${totals.roas >= 1 ? "text-green-400" : totals.roas > 0 ? "text-amber-400" : "text-white/40"}`}>
+            {totals.roas > 0 ? totals.roas.toFixed(2) : "-"}
           </p>
         </div>
       </div>
 
-      {/* Data Table */}
-      <div className="bg-[#1A2235] rounded-xl border border-white/10 overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-6 h-6 text-primary animate-spin" />
-            <span className="ml-2 text-white/60">Loading profit sheet...</span>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-white/10 bg-white/5">
-                  <SortableHeader sortKey="date" align="left">Date</SortableHeader>
-                  <SortableHeader sortKey="day" align="left">Day</SortableHeader>
-                  <SortableHeader sortKey="grossRevenue">Received</SortableHeader>
-                  <SortableHeader sortKey="refundAmount">Refund</SortableHeader>
-                  <SortableHeader sortKey="revenue">Revenue</SortableHeader>
-                  <SortableHeader sortKey="gst">GST (5%)</SortableHeader>
-                  <SortableHeader sortKey="adsCostUSD">Ads (USD)</SortableHeader>
-                  <SortableHeader sortKey="adsCostINR">Ads (INR)</SortableHeader>
-                  <SortableHeader sortKey="netRevenue">Profit</SortableHeader>
-                  <SortableHeader sortKey="profitPercent">Profit %</SortableHeader>
-                  <SortableHeader sortKey="roas">ROAS</SortableHeader>
-                  <SortableHeader sortKey="bundlePurchases">Bundle Purchases</SortableHeader>
-                  <SortableHeader sortKey="transactionCount">Orders</SortableHeader>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedData.length === 0 ? (
-                  <tr>
-                    <td colSpan={13} className="text-center text-white/40 py-8">
-                      No data available for the selected filters
-                    </td>
-                  </tr>
-                ) : (
-                  <>
-                    {sortedData.map((row, idx) => (
-                      <tr key={row.date} className={`border-b border-white/5 hover:bg-white/5 ${idx % 2 === 0 ? "bg-white/[0.02]" : ""}`}>
-                        <td className="text-white/80 text-sm px-4 py-3">{formatDate(row.date)}</td>
-                        <td className="text-white/60 text-sm px-4 py-3">{row.day}</td>
-                        <td className="text-green-400 text-sm px-4 py-3 text-right font-medium">
-                          {formatCurrency(row.grossRevenue ?? row.revenue)}
-                        </td>
-                        <td className="text-red-400 text-sm px-4 py-3 text-right font-medium">
-                          -{formatCurrency(row.refundAmount ?? 0)}
-                        </td>
-                        <td className="text-green-400 text-sm px-4 py-3 text-right font-medium">{formatCurrency(row.revenue)}</td>
-                        <td className="text-amber-400/70 text-sm px-4 py-3 text-right">{formatCurrency(row.gst)}</td>
-                        <td className="text-red-400/50 text-sm px-4 py-3 text-right">${row.adsCostUSD.toFixed(2)}</td>
-                        <td className="text-red-400/70 text-sm px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1 whitespace-nowrap">
-                            {formatCurrency(row.adsCostINR)}
-                            <SpendBreakdownButton date={row.date} savedTotalINR={row.adsCostINR} dayMode={dayMode} />
-                          </div>
-                        </td>
-                        <td className={`text-sm px-4 py-3 text-right font-medium ${row.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>
-                          {formatCurrency(row.netRevenue)}
-                        </td>
-                        <td className={`text-sm px-4 py-3 text-right font-medium ${(row.profitPercent || 0) >= 0 ? "text-green-400" : "text-red-400"}`}>
-                          {(row.profitPercent || 0).toFixed(2)}%
-                        </td>
-                        <td className={`text-sm px-4 py-3 text-right font-medium ${
-                          row.roas >= 1 ? "text-green-400" : row.roas > 0 ? "text-amber-400" : "text-white/30"
-                        }`}>
-                          {row.roas > 0 ? row.roas.toFixed(2) : "-"}
-                        </td>
-                        <td className="text-white/80 text-sm px-4 py-3 text-right">{row.bundlePurchases}</td>
-                        <td className="text-white/60 text-sm px-4 py-3 text-right">{row.transactionCount}</td>
-                      </tr>
-                    ))}
-                    {/* Totals Row */}
-                    <tr className="bg-white/10 border-t-2 border-white/20 font-semibold">
-                      <td className="text-white text-sm px-4 py-3" colSpan={2}>TOTAL</td>
-                      <td className="text-green-400 text-sm px-4 py-3 text-right">{formatCurrency(totals.grossRevenue)}</td>
-                      <td className="text-red-400 text-sm px-4 py-3 text-right">-{formatCurrency(totals.refundAmount)}</td>
-                      <td className="text-green-400 text-sm px-4 py-3 text-right">{formatCurrency(totals.revenue)}</td>
-                      <td className="text-amber-400 text-sm px-4 py-3 text-right">{formatCurrency(totals.gst)}</td>
-                      <td className="text-red-400/70 text-sm px-4 py-3 text-right">${totals.adsCostUSD.toFixed(2)}</td>
-                      <td className="text-red-400 text-sm px-4 py-3 text-right">{formatCurrency(totals.adsCostINR)}</td>
-                      <td className={`text-sm px-4 py-3 text-right ${totals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>
-                        {formatCurrency(totals.netRevenue)}
-                      </td>
-                      <td className={`text-sm px-4 py-3 text-right ${overallProfitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>
-                        {overallProfitPercent.toFixed(2)}%
-                      </td>
-                      <td className={`text-sm px-4 py-3 text-right ${overallRoas >= 1 ? "text-green-400" : "text-amber-400"}`}>
-                        {overallRoas > 0 ? overallRoas.toFixed(2) : "-"}
-                      </td>
-                      <td className="text-white text-sm px-4 py-3 text-right">{totals.bundlePurchases}</td>
-                      <td className="text-white text-sm px-4 py-3 text-right">{totals.transactionCount}</td>
-                    </tr>
-                  </>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {loading ? (
+        <div className="flex items-center justify-center rounded-xl border border-white/10 bg-[#1A2235] py-12">
+          <Loader2 className="w-6 h-6 animate-spin text-primary" />
+          <span className="ml-2 text-white/60">Loading profit sheet...</span>
+        </div>
+      ) : (
+        <>
+          {renderProfitTable({
+            title: "Profit Sheet — Through 30 September 2026",
+            subtitle: "All selected reporting dates up to and including 30 September 2026",
+            gstLabel: "5%",
+            rows: legacyRows,
+            tableTotals: legacyTotals,
+          })}
+          {renderProfitTable({
+            title: "Profit Sheet — From 1 October 2026",
+            subtitle: "All selected reporting dates from 1 October 2026 onward",
+            gstLabel: "18%",
+            rows: currentRows,
+            tableTotals: currentTotals,
+          })}
+        </>
+      )}
     </div>
   );
 }

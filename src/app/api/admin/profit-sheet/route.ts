@@ -10,6 +10,9 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const APP_LAUNCH_DATE = "2026-03-13";
+const GST_RATE_CHANGE_DATE = "2026-10-01";
+const LEGACY_GST_RATE = 0.05;
+const CURRENT_GST_RATE = 0.18;
 type ProfitSheetDayMode = "business_1130_ist" | "calendar_ist";
 const BUSINESS_DAY_MODE: ProfitSheetDayMode = "business_1130_ist";
 const CALENDAR_DAY_MODE: ProfitSheetDayMode = "calendar_ist";
@@ -574,6 +577,10 @@ function addDaysToIsoDate(isoDate: string, days: number): string {
   return d.toISOString().split("T")[0];
 }
 
+function getProfitSheetGstRate(date: string): number {
+  return date >= GST_RATE_CHANGE_DATE ? CURRENT_GST_RATE : LEGACY_GST_RATE;
+}
+
 function calculateTotals(profitSheet: ProfitSheetRow[]) {
   const totals = profitSheet.reduce(
       (acc, row) => ({
@@ -679,7 +686,7 @@ async function buildProfitSheetRows(
       .filter((event) => event.kind === "refund")
       .reduce((sum, event) => sum + event.amount, 0);
     const revenue = grossRevenue - refundAmount;
-    const gst = revenue * 0.05;
+    const gst = revenue * getProfitSheetGstRate(costaRicaDate);
     const dailyMetaSpend = metaSpendMap.get(costaRicaDate) || { usd: 0, inr: 0 };
     const adsCostUSD = dailyMetaSpend.usd;
     const adsCostINR = dailyMetaSpend.inr;
@@ -747,17 +754,25 @@ function toDbRow(row: ProfitSheetRow, exchangeRate: number, source: string) {
 }
 
 function fromDbRow(row: any): ProfitSheetRow {
+  const revenue = Number(row.revenue || 0);
+  const adsCostINR = Number(row.ads_cost_inr || 0);
+  // GST and profit are derived from the reporting date so previously saved
+  // October rows cannot retain the legacy 5% calculation.
+  const gst = revenue * getProfitSheetGstRate(String(row.date || ""));
+  const netRevenue = revenue - gst - adsCostINR;
+  const profitPercent = revenue > 0 ? (netRevenue / revenue) * 100 : 0;
+
   return {
     date: row.date,
     day: row.day,
-    revenue: Number(row.revenue || 0),
+    revenue,
     grossRevenue: Number(row.gross_revenue || 0),
     refundAmount: Number(row.refund_amount || 0),
-    gst: Number(row.gst || 0),
+    gst,
     adsCostUSD: Number(row.ads_cost_usd || 0),
-    adsCostINR: Number(row.ads_cost_inr || 0),
-    netRevenue: Number(row.net_revenue || 0),
-    profitPercent: Number(row.profit_percent || 0),
+    adsCostINR,
+    netRevenue,
+    profitPercent,
     roas: Number(row.roas || 0),
     bundleRevenue: Number(row.bundle_revenue || 0),
     transactionCount: Number(row.transaction_count || 0),
