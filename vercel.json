@@ -8,6 +8,10 @@
       "schedule": "0 6 * * *"
     },
     {
+      "path": "/api/cron/capture-meta-account-balances",
+      "schedule": "0 6 * * *"
+    },
+    {
       "path": "/api/cron/daily-horoscope-email",
       "schedule": "0 3 * * *"
     }

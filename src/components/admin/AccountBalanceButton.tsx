@@ -14,10 +14,8 @@ const money = (value: number, currency: "USD" | "INR") => new Intl.NumberFormat(
 
 export default function AccountBalanceButton({
   data,
-  error,
 }: {
-  data: AccountBalanceSummary | null;
-  error: string | null;
+  data: AccountBalanceSummary;
 }) {
   const [open, setOpen] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -62,26 +60,24 @@ export default function AccountBalanceButton({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 id={titleId} className="text-lg font-semibold">Account balance by ad account</h2>
-                <p className="mt-1 text-sm text-white/65">Current balance reported by Meta</p>
+                <p className="mt-1 text-sm text-white/65">
+                  Saved 11:30 AM IST snapshot for {new Date(`${data.date}T12:00:00+05:30`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}
+                </p>
               </div>
               <button type="button" autoFocus onClick={close} aria-label="Close account balance breakdown" className="rounded-lg p-2 text-white/60 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400">
                 <X className="h-5 w-5" aria-hidden="true" />
               </button>
             </div>
 
-            {error && (
-              <div className="mt-5 rounded-xl border border-red-400/20 bg-red-400/5 p-4">
-                <p role="alert" className="text-sm text-red-200">{error}</p>
-              </div>
-            )}
-
-            {data && (
-              <>
+            <>
                 <ul className="mt-4 divide-y divide-white/10">
                   {data.accounts.map((account) => (
                     <li key={account.accountId} className="flex items-start justify-between gap-4 py-4">
                       <div className="min-w-0">
                         <p className="break-words text-sm font-medium">{account.accountName}</p>
+                        <p className="mt-1 text-xs text-white/60">
+                          {account.balanceMode === "remaining_spend_limit" ? "Remaining spending limit" : "Outstanding balance"}
+                        </p>
                         <p className="mt-1 text-xs text-white/40">act_{account.accountId}</p>
                       </div>
                       <div className="shrink-0 text-right tabular-nums">
@@ -93,7 +89,7 @@ export default function AccountBalanceButton({
                 </ul>
                 {data.accounts.length === 0 && <p className="py-6 text-sm text-white/60">No current ad accounts are configured.</p>}
                 <div className="flex items-center justify-between border-t border-white/15 pt-4">
-                  <span className="text-sm font-medium">Total balance</span>
+                  <span className="text-sm font-medium">Total account balance at 11:30 AM</span>
                   <div className="text-right tabular-nums">
                     <p className="text-lg font-semibold text-green-300">{money(data.totalUSD, "USD")}</p>
                     <p className="text-xs text-white/55">{money(data.totalINR, "INR")}</p>
@@ -102,12 +98,7 @@ export default function AccountBalanceButton({
                 <p className="mt-4 text-xs leading-relaxed text-white/40">
                   USD conversion: ₹{data.exchangeRate.toFixed(2)} per $1. Updated {new Date(data.fetchedAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST.
                 </p>
-              </>
-            )}
-
-            {!data && !error && (
-              <p className="py-8 text-center text-sm text-white/60">Account balance is not available yet.</p>
-            )}
+            </>
           </div>
         </dialog>, document.body
       )}

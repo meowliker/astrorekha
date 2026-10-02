@@ -69,6 +69,7 @@ interface ProfitSheetRow {
   bundleRevenue?: number; // Revenue from bundle purchases only
   transactionCount: number;
   bundlePurchases: number;
+  accountBalance?: AccountBalanceSummary;
 }
 
 // Meta Ads Breakdown interfaces
@@ -523,6 +524,7 @@ interface MetaAdAccountAdminRow {
   accessTokenPreview?: string;
   accountCurrency?: string;
   accountTimezone?: string;
+  balanceMode: "outstanding" | "remaining_spend_limit";
 }
 
 const META_IST_TIMEZONE = "Asia/Kolkata";
@@ -769,6 +771,7 @@ function createBlankMetaAdAccountRow(): MetaAdAccountAdminRow {
     endTime: "23:59",
     active: true,
     accessToken: "",
+    balanceMode: "outstanding",
   };
 }
 
@@ -823,6 +826,7 @@ function mapMetaAccountForAdmin(account: any): MetaAdAccountAdminRow {
     accessTokenPreview: account.accessTokenPreview,
     accountCurrency: account.accountCurrency,
     accountTimezone: account.accountTimezone,
+    balanceMode: account.balanceMode === "remaining_spend_limit" ? "remaining_spend_limit" : "outstanding",
   };
 }
 
@@ -891,8 +895,6 @@ export default function AdminRevenuePage() {
   const [profitSheetLoadedMode, setProfitSheetLoadedMode] = useState<ProfitSheetDayMode | null>(null);
   const [profitSheetLoading, setProfitSheetLoading] = useState(false);
   const [profitSheetError, setProfitSheetError] = useState<string | null>(null);
-  const [profitSheetAccountBalance, setProfitSheetAccountBalance] = useState<AccountBalanceSummary | null>(null);
-  const [profitSheetAccountBalanceError, setProfitSheetAccountBalanceError] = useState<string | null>(null);
   const [profitSheetStartDate, setProfitSheetStartDate] = useState<string>(() => getFirstDayOfMonthIso(getCurrentBusinessDateIso()));
   const [profitSheetEndDate, setProfitSheetEndDate] = useState<string>(() => getCurrentBusinessDateIso());
   const [profitSheetFilter, setProfitSheetFilter] = useState<string>("thisMonth");
@@ -1122,6 +1124,7 @@ export default function AdminRevenuePage() {
         endDate: row.active ? undefined : row.endDate || undefined,
         endTime: row.active ? undefined : row.endTime,
         active: row.active,
+        balanceMode: row.balanceMode,
         accessToken: row.accessToken || undefined,
       }));
 
@@ -1283,8 +1286,6 @@ export default function AdminRevenuePage() {
       const result = await res.json();
       if (requestId !== profitSheetRequestIdRef.current) return;
       setProfitSheetData(result.rows || []);
-      setProfitSheetAccountBalance(result.accountBalance || null);
-      setProfitSheetAccountBalanceError(result.accountBalanceError || null);
       setProfitSheetLoadedMode(dayMode);
       if (result.exchangeRate) {
         if (!rateInput) {
@@ -1296,8 +1297,6 @@ export default function AdminRevenuePage() {
       console.error("Profit sheet fetch error:", err);
       setProfitSheetError(err instanceof Error ? err.message : "Failed to fetch profit sheet");
       setProfitSheetData([]);
-      setProfitSheetAccountBalance(null);
-      setProfitSheetAccountBalanceError(null);
       setProfitSheetLoadedMode(dayMode);
     } finally {
       if (requestId === profitSheetRequestIdRef.current) {
@@ -1792,6 +1791,19 @@ export default function AdminRevenuePage() {
                             placeholder="act_123..."
                             className="h-10 w-full min-w-0 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white outline-none focus:border-primary/50"
                           />
+                        </label>
+                        <label className="min-w-0 space-y-1 xl:col-span-3">
+                          <span className="text-xs text-white/45">Balance type</span>
+                          <select
+                            value={row.balanceMode}
+                            onChange={(event) => updateMetaAccountRow(index, {
+                              balanceMode: event.target.value as MetaAdAccountAdminRow["balanceMode"],
+                            })}
+                            className="h-10 w-full min-w-0 rounded-lg border border-white/10 bg-[#151b2a] px-3 text-sm text-white outline-none focus:border-primary/50"
+                          >
+                            <option value="outstanding">Postpaid — outstanding balance</option>
+                            <option value="remaining_spend_limit">Prepaid — remaining spending limit</option>
+                          </select>
                         </label>
                         <label className="min-w-0 space-y-1 xl:col-span-2">
                           <span className="text-xs text-white/45">Start date</span>
@@ -2872,8 +2884,6 @@ export default function AdminRevenuePage() {
           <ProfitSheetTab
             dayMode="business_1130_ist"
             data={profitSheetLoadedMode === "business_1130_ist" ? profitSheetData : []}
-            accountBalance={profitSheetLoadedMode === "business_1130_ist" ? profitSheetAccountBalance : null}
-            accountBalanceError={profitSheetLoadedMode === "business_1130_ist" ? profitSheetAccountBalanceError : null}
             loading={profitSheetLoading || profitSheetLoadedMode !== "business_1130_ist"}
             error={profitSheetLoadedMode === "business_1130_ist" ? profitSheetError : null}
             startDate={profitSheetStartDate}
@@ -2975,8 +2985,6 @@ type ProfitSheetSortDirection = "asc" | "desc" | null;
 function ProfitSheetTab({
   dayMode,
   data,
-  accountBalance,
-  accountBalanceError,
   loading,
   error,
   startDate,
@@ -2996,8 +3004,6 @@ function ProfitSheetTab({
 }: {
   dayMode: ProfitSheetDayMode;
   data: ProfitSheetRow[];
-  accountBalance: AccountBalanceSummary | null;
-  accountBalanceError: string | null;
   loading: boolean;
   error: string | null;
   startDate: string;
@@ -3552,13 +3558,18 @@ function ProfitSheetTab({
   }) => {
     const columnWidths = getProfitTableColumnWidths(showAccountBalance);
     const tableMinWidth = columnWidths.reduce((sum, width) => sum + width, 0);
-    const renderBalanceCell = () => (
+    const renderBalanceCell = (accountBalance?: AccountBalanceSummary) => (
       <td className="px-4 py-3 text-right text-sm text-green-300">
-        <div className="flex items-center justify-end gap-1 whitespace-nowrap">
-          <span>{accountBalance ? formatUsd(accountBalance.totalUSD) : "Unavailable"}</span>
-          <AccountBalanceButton data={accountBalance} error={accountBalanceError} />
-        </div>
+        {accountBalance ? (
+          <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+            <span>{formatUsd(accountBalance.totalUSD)}</span>
+            <AccountBalanceButton data={accountBalance} />
+          </div>
+        ) : <span className="text-white/30">—</span>}
       </td>
+    );
+    const renderBalanceTotalCell = () => (
+      <td className="px-4 py-3 text-right text-sm text-white/30">—</td>
     );
 
     return (
@@ -3615,7 +3626,7 @@ function ProfitSheetTab({
                         <SpendBreakdownButton date={row.date} savedTotalINR={row.adsCostINR} dayMode={dayMode} />
                       </div>
                     </td>
-                    {showAccountBalance && renderBalanceCell()}
+                    {showAccountBalance && renderBalanceCell(row.accountBalance)}
                     <td className={`px-4 py-3 text-right text-sm font-medium ${row.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{formatCurrency(row.netRevenue)}</td>
                     <td className={`px-4 py-3 text-right text-sm font-medium ${(row.profitPercent || 0) >= 0 ? "text-green-400" : "text-red-400"}`}>{(row.profitPercent || 0).toFixed(2)}%</td>
                     <td className={`px-4 py-3 text-right text-sm font-medium ${row.roas >= 1 ? "text-green-400" : row.roas > 0 ? "text-amber-400" : "text-white/30"}`}>{row.roas > 0 ? row.roas.toFixed(2) : "-"}</td>
@@ -3632,7 +3643,7 @@ function ProfitSheetTab({
               <td className="px-4 py-3 text-right text-sm text-amber-400">{formatCurrency(tableTotals.gst)}</td>
               <td className="px-4 py-3 text-right text-sm text-red-400/70">${tableTotals.adsCostUSD.toFixed(2)}</td>
               <td className="px-4 py-3 text-right text-sm text-red-400">{formatCurrency(tableTotals.adsCostINR)}</td>
-              {showAccountBalance && renderBalanceCell()}
+              {showAccountBalance && renderBalanceTotalCell()}
               <td className={`px-4 py-3 text-right text-sm ${tableTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{formatCurrency(tableTotals.netRevenue)}</td>
               <td className={`px-4 py-3 text-right text-sm ${tableTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{tableTotals.profitPercent.toFixed(2)}%</td>
               <td className={`px-4 py-3 text-right text-sm ${tableTotals.roas >= 1 ? "text-green-400" : "text-amber-400"}`}>{tableTotals.roas > 0 ? tableTotals.roas.toFixed(2) : "-"}</td>
@@ -3648,7 +3659,7 @@ function ProfitSheetTab({
                 <td className="px-4 py-3 text-right text-sm text-amber-400">{formatCurrency(overallTotals.gst)}</td>
                 <td className="px-4 py-3 text-right text-sm text-red-400/70">${overallTotals.adsCostUSD.toFixed(2)}</td>
                 <td className="px-4 py-3 text-right text-sm text-red-400">{formatCurrency(overallTotals.adsCostINR)}</td>
-                {showAccountBalance && renderBalanceCell()}
+                {showAccountBalance && renderBalanceTotalCell()}
                 <td className={`px-4 py-3 text-right text-sm ${overallTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{formatCurrency(overallTotals.netRevenue)}</td>
                 <td className={`px-4 py-3 text-right text-sm ${overallTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{overallTotals.profitPercent.toFixed(2)}%</td>
                 <td className={`px-4 py-3 text-right text-sm ${overallTotals.roas >= 1 ? "text-green-400" : "text-amber-400"}`}>{overallTotals.roas > 0 ? overallTotals.roas.toFixed(2) : "-"}</td>

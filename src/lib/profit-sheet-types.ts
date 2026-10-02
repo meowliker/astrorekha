@@ -20,12 +20,14 @@ export interface AccountBalanceBreakdown {
   accountId: string;
   accountName: string;
   currency: "USD" | "INR";
+  balanceMode: "outstanding" | "remaining_spend_limit";
   balance: number;
   usd: number;
   inr: number;
 }
 
 export interface AccountBalanceSummary {
+  date: string;
   accounts: AccountBalanceBreakdown[];
   totalUSD: number;
   totalINR: number;

@@ -114,6 +114,7 @@ export async function GET(request: NextRequest) {
         accountId: account.accountId,
         accessToken: account.accessToken,
         label: `Meta Account ${index + 1}`,
+        balanceMode: account.balanceMode || "outstanding",
         startDate: "",
         startTime: "00:00",
         endDate: "",

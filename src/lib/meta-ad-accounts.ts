@@ -22,6 +22,7 @@ export interface MetaAccountCredential {
   accountId: string;
   accessToken: string;
   label?: string;
+  balanceMode?: MetaAccountBalanceMode;
   startDate?: string;
   startTime?: string;
   endDate?: string;
@@ -29,10 +30,13 @@ export interface MetaAccountCredential {
   active?: boolean;
 }
 
+export type MetaAccountBalanceMode = "outstanding" | "remaining_spend_limit";
+
 export interface MetaAdAccountSettingsRow {
   accountId: string;
   accessToken?: string;
   label?: string;
+  balanceMode?: MetaAccountBalanceMode;
   startDate?: string;
   startTime?: string;
   endDate?: string;
@@ -139,6 +143,13 @@ function parseBoolean(value: unknown): boolean | undefined {
   return undefined;
 }
 
+function normalizeBalanceMode(value: unknown): MetaAccountBalanceMode | undefined {
+  const text = String(value || "").trim().toLowerCase();
+  if (["remaining_spend_limit", "remaining", "prepaid"].includes(text)) return "remaining_spend_limit";
+  if (["outstanding", "postpaid"].includes(text)) return "outstanding";
+  return undefined;
+}
+
 function normalizeMetaAdAccountRow(row: unknown): MetaAdAccountSettingsRow | null {
   if (!row || typeof row !== "object") return null;
   const value = row as Record<string, unknown>;
@@ -176,6 +187,7 @@ function normalizeMetaAdAccountRow(row: unknown): MetaAdAccountSettingsRow | nul
     accountId,
     accessToken: accessToken || undefined,
     label: String(value.label || value.name || "").trim() || undefined,
+    balanceMode: normalizeBalanceMode(value.balanceMode || value.balance_mode || value.billingType || value.billing_type),
     startDate,
     startTime,
     endDate,
@@ -424,6 +436,7 @@ export function getMetaAccountCredentialsFromSettings(
       accountId: account.accountId,
       accessToken: account.accessToken as string,
       label: account.label,
+      balanceMode: account.balanceMode,
       startDate: account.startDate,
       startTime: account.startTime,
       endDate: account.endDate,
