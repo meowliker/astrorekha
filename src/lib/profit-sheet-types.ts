@@ -15,3 +15,20 @@ export interface DailySpendBreakdown {
   exchangeRate: number;
   fetchedAt: string;
 }
+
+export interface AccountBalanceBreakdown {
+  accountId: string;
+  accountName: string;
+  currency: "USD" | "INR";
+  balance: number;
+  usd: number;
+  inr: number;
+}
+
+export interface AccountBalanceSummary {
+  accounts: AccountBalanceBreakdown[];
+  totalUSD: number;
+  totalINR: number;
+  exchangeRate: number;
+  fetchedAt: string;
+}

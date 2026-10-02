@@ -46,6 +46,8 @@ import {
 import React from "react";
 import { createPortal } from "react-dom";
 import SpendBreakdownButton from "@/components/admin/SpendBreakdownButton";
+import AccountBalanceButton from "@/components/admin/AccountBalanceButton";
+import type { AccountBalanceSummary } from "@/lib/profit-sheet-types";
 
 // Tab type
 type TabType = "dashboard" | "profit-sheet" | "meta-details" | "attribution" | "analytics";
@@ -889,6 +891,8 @@ export default function AdminRevenuePage() {
   const [profitSheetLoadedMode, setProfitSheetLoadedMode] = useState<ProfitSheetDayMode | null>(null);
   const [profitSheetLoading, setProfitSheetLoading] = useState(false);
   const [profitSheetError, setProfitSheetError] = useState<string | null>(null);
+  const [profitSheetAccountBalance, setProfitSheetAccountBalance] = useState<AccountBalanceSummary | null>(null);
+  const [profitSheetAccountBalanceError, setProfitSheetAccountBalanceError] = useState<string | null>(null);
   const [profitSheetStartDate, setProfitSheetStartDate] = useState<string>(() => getFirstDayOfMonthIso(getCurrentBusinessDateIso()));
   const [profitSheetEndDate, setProfitSheetEndDate] = useState<string>(() => getCurrentBusinessDateIso());
   const [profitSheetFilter, setProfitSheetFilter] = useState<string>("thisMonth");
@@ -1279,6 +1283,8 @@ export default function AdminRevenuePage() {
       const result = await res.json();
       if (requestId !== profitSheetRequestIdRef.current) return;
       setProfitSheetData(result.rows || []);
+      setProfitSheetAccountBalance(result.accountBalance || null);
+      setProfitSheetAccountBalanceError(result.accountBalanceError || null);
       setProfitSheetLoadedMode(dayMode);
       if (result.exchangeRate) {
         if (!rateInput) {
@@ -1290,6 +1296,8 @@ export default function AdminRevenuePage() {
       console.error("Profit sheet fetch error:", err);
       setProfitSheetError(err instanceof Error ? err.message : "Failed to fetch profit sheet");
       setProfitSheetData([]);
+      setProfitSheetAccountBalance(null);
+      setProfitSheetAccountBalanceError(null);
       setProfitSheetLoadedMode(dayMode);
     } finally {
       if (requestId === profitSheetRequestIdRef.current) {
@@ -2864,6 +2872,8 @@ export default function AdminRevenuePage() {
           <ProfitSheetTab
             dayMode="business_1130_ist"
             data={profitSheetLoadedMode === "business_1130_ist" ? profitSheetData : []}
+            accountBalance={profitSheetLoadedMode === "business_1130_ist" ? profitSheetAccountBalance : null}
+            accountBalanceError={profitSheetLoadedMode === "business_1130_ist" ? profitSheetAccountBalanceError : null}
             loading={profitSheetLoading || profitSheetLoadedMode !== "business_1130_ist"}
             error={profitSheetLoadedMode === "business_1130_ist" ? profitSheetError : null}
             startDate={profitSheetStartDate}
@@ -2965,6 +2975,8 @@ type ProfitSheetSortDirection = "asc" | "desc" | null;
 function ProfitSheetTab({
   dayMode,
   data,
+  accountBalance,
+  accountBalanceError,
   loading,
   error,
   startDate,
@@ -2984,6 +2996,8 @@ function ProfitSheetTab({
 }: {
   dayMode: ProfitSheetDayMode;
   data: ProfitSheetRow[];
+  accountBalance: AccountBalanceSummary | null;
+  accountBalanceError: string | null;
   loading: boolean;
   error: string | null;
   startDate: string;
@@ -3008,6 +3022,13 @@ function ProfitSheetTab({
       minimumFractionDigits: 2,
     }).format(value);
   };
+
+  const formatUsd = (value: number) => new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -3501,10 +3522,12 @@ function ProfitSheetTab({
     : endDate >= gstChangeDate;
   const showCombinedTotals = hasLegacyDateSelection && hasCurrentDateSelection;
   const profitTableColumnWidths = [96, 72, 120, 105, 120, 105, 105, 135, 120, 90, 80, 125, 85];
-  const profitTableMinWidth = profitTableColumnWidths.reduce((sum, width) => sum + width, 0);
-  const renderProfitTableColumns = () => (
+  const getProfitTableColumnWidths = (showAccountBalance: boolean) => showAccountBalance
+    ? [...profitTableColumnWidths.slice(0, 8), 150, ...profitTableColumnWidths.slice(8)]
+    : profitTableColumnWidths;
+  const renderProfitTableColumns = (showAccountBalance: boolean) => (
     <colgroup>
-      {profitTableColumnWidths.map((width, index) => (
+      {getProfitTableColumnWidths(showAccountBalance).map((width, index) => (
         <col key={`${index}-${width}`} style={{ width }} />
       ))}
     </colgroup>
@@ -3517,6 +3540,7 @@ function ProfitSheetTab({
     rows,
     tableTotals,
     overallTotals,
+    showAccountBalance = false,
   }: {
     title: string;
     subtitle: string;
@@ -3524,8 +3548,20 @@ function ProfitSheetTab({
     rows: ProfitSheetRow[];
     tableTotals: ReturnType<typeof calculateProfitTotals>;
     overallTotals?: ReturnType<typeof calculateProfitTotals>;
-  }) => (
-    <>
+    showAccountBalance?: boolean;
+  }) => {
+    const columnWidths = getProfitTableColumnWidths(showAccountBalance);
+    const tableMinWidth = columnWidths.reduce((sum, width) => sum + width, 0);
+    const renderBalanceCell = () => (
+      <td className="px-4 py-3 text-right text-sm text-green-300">
+        <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+          <span>{accountBalance ? formatUsd(accountBalance.totalUSD) : "Unavailable"}</span>
+          <AccountBalanceButton data={accountBalance} error={accountBalanceError} />
+        </div>
+      </td>
+    );
+
+    return (
       <section className="bg-[#1A2235] rounded-xl border border-white/10 overflow-hidden">
       <div className="border-b border-white/10 px-4 py-3">
         <div>
@@ -3534,8 +3570,8 @@ function ProfitSheetTab({
         </div>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full table-fixed" style={{ minWidth: profitTableMinWidth }}>
-          {renderProfitTableColumns()}
+        <table className="w-full table-fixed" style={{ minWidth: tableMinWidth }}>
+          {renderProfitTableColumns(showAccountBalance)}
           <thead>
             <tr className="border-b border-white/10 bg-white/5">
               <SortableHeader sortKey="date" align="left">Date</SortableHeader>
@@ -3546,6 +3582,9 @@ function ProfitSheetTab({
               <SortableHeader sortKey="gst">GST ({gstLabel})</SortableHeader>
               <SortableHeader sortKey="adsCostUSD">Ads (USD)</SortableHeader>
               <SortableHeader sortKey="adsCostINR">Ads (INR)</SortableHeader>
+              {showAccountBalance && (
+                <th className="px-4 py-3 text-right text-xs font-semibold text-white/70">Account Balance</th>
+              )}
               <SortableHeader sortKey="netRevenue">Profit</SortableHeader>
               <SortableHeader sortKey="profitPercent">Profit %</SortableHeader>
               <SortableHeader sortKey="roas">ROAS</SortableHeader>
@@ -3556,7 +3595,7 @@ function ProfitSheetTab({
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={13} className="py-8 text-center text-white/40">
+                <td colSpan={showAccountBalance ? 14 : 13} className="py-8 text-center text-white/40">
                   No data in this table for the selected dates and filters
                 </td>
               </tr>
@@ -3576,6 +3615,7 @@ function ProfitSheetTab({
                         <SpendBreakdownButton date={row.date} savedTotalINR={row.adsCostINR} dayMode={dayMode} />
                       </div>
                     </td>
+                    {showAccountBalance && renderBalanceCell()}
                     <td className={`px-4 py-3 text-right text-sm font-medium ${row.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{formatCurrency(row.netRevenue)}</td>
                     <td className={`px-4 py-3 text-right text-sm font-medium ${(row.profitPercent || 0) >= 0 ? "text-green-400" : "text-red-400"}`}>{(row.profitPercent || 0).toFixed(2)}%</td>
                     <td className={`px-4 py-3 text-right text-sm font-medium ${row.roas >= 1 ? "text-green-400" : row.roas > 0 ? "text-amber-400" : "text-white/30"}`}>{row.roas > 0 ? row.roas.toFixed(2) : "-"}</td>
@@ -3592,47 +3632,36 @@ function ProfitSheetTab({
               <td className="px-4 py-3 text-right text-sm text-amber-400">{formatCurrency(tableTotals.gst)}</td>
               <td className="px-4 py-3 text-right text-sm text-red-400/70">${tableTotals.adsCostUSD.toFixed(2)}</td>
               <td className="px-4 py-3 text-right text-sm text-red-400">{formatCurrency(tableTotals.adsCostINR)}</td>
+              {showAccountBalance && renderBalanceCell()}
               <td className={`px-4 py-3 text-right text-sm ${tableTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{formatCurrency(tableTotals.netRevenue)}</td>
               <td className={`px-4 py-3 text-right text-sm ${tableTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{tableTotals.profitPercent.toFixed(2)}%</td>
               <td className={`px-4 py-3 text-right text-sm ${tableTotals.roas >= 1 ? "text-green-400" : "text-amber-400"}`}>{tableTotals.roas > 0 ? tableTotals.roas.toFixed(2) : "-"}</td>
               <td className="px-4 py-3 text-right text-sm text-white">{tableTotals.bundlePurchases}</td>
               <td className="px-4 py-3 text-right text-sm text-white">{tableTotals.transactionCount}</td>
             </tr>
+            {overallTotals && (
+              <tr className="border-t border-primary/30 bg-primary/15 font-bold">
+                <td className="px-4 py-3 text-sm text-white" colSpan={2}>OVERALL TOTAL</td>
+                <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(overallTotals.grossRevenue)}</td>
+                <td className="px-4 py-3 text-right text-sm text-red-400">-{formatCurrency(overallTotals.refundAmount)}</td>
+                <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(overallTotals.revenue)}</td>
+                <td className="px-4 py-3 text-right text-sm text-amber-400">{formatCurrency(overallTotals.gst)}</td>
+                <td className="px-4 py-3 text-right text-sm text-red-400/70">${overallTotals.adsCostUSD.toFixed(2)}</td>
+                <td className="px-4 py-3 text-right text-sm text-red-400">{formatCurrency(overallTotals.adsCostINR)}</td>
+                {showAccountBalance && renderBalanceCell()}
+                <td className={`px-4 py-3 text-right text-sm ${overallTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{formatCurrency(overallTotals.netRevenue)}</td>
+                <td className={`px-4 py-3 text-right text-sm ${overallTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{overallTotals.profitPercent.toFixed(2)}%</td>
+                <td className={`px-4 py-3 text-right text-sm ${overallTotals.roas >= 1 ? "text-green-400" : "text-amber-400"}`}>{overallTotals.roas > 0 ? overallTotals.roas.toFixed(2) : "-"}</td>
+                <td className="px-4 py-3 text-right text-sm text-white">{overallTotals.bundlePurchases}</td>
+                <td className="px-4 py-3 text-right text-sm text-white">{overallTotals.transactionCount}</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
       </section>
-      {overallTotals && (
-        <section className="mt-3 overflow-hidden rounded-xl border border-primary/30 bg-[#1A2235]">
-          <div className="overflow-x-auto">
-            <table
-              className="w-full table-fixed"
-              style={{ minWidth: profitTableMinWidth }}
-              aria-label="Overall totals across both profit sheet tables"
-            >
-              {renderProfitTableColumns()}
-              <tbody>
-                <tr className="bg-primary/15 font-bold">
-                  <td className="px-4 py-3 text-sm text-white" colSpan={2}>OVERALL TOTAL</td>
-                  <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(overallTotals.grossRevenue)}</td>
-                  <td className="px-4 py-3 text-right text-sm text-red-400">-{formatCurrency(overallTotals.refundAmount)}</td>
-                  <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(overallTotals.revenue)}</td>
-                  <td className="px-4 py-3 text-right text-sm text-amber-400">{formatCurrency(overallTotals.gst)}</td>
-                  <td className="px-4 py-3 text-right text-sm text-red-400/70">${overallTotals.adsCostUSD.toFixed(2)}</td>
-                  <td className="px-4 py-3 text-right text-sm text-red-400">{formatCurrency(overallTotals.adsCostINR)}</td>
-                  <td className={`px-4 py-3 text-right text-sm ${overallTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{formatCurrency(overallTotals.netRevenue)}</td>
-                  <td className={`px-4 py-3 text-right text-sm ${overallTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{overallTotals.profitPercent.toFixed(2)}%</td>
-                  <td className={`px-4 py-3 text-right text-sm ${overallTotals.roas >= 1 ? "text-green-400" : "text-amber-400"}`}>{overallTotals.roas > 0 ? overallTotals.roas.toFixed(2) : "-"}</td>
-                  <td className="px-4 py-3 text-right text-sm text-white">{overallTotals.bundlePurchases}</td>
-                  <td className="px-4 py-3 text-right text-sm text-white">{overallTotals.transactionCount}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-    </>
-  );
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -4051,6 +4080,7 @@ function ProfitSheetTab({
             rows: currentRows,
             tableTotals: currentTotals,
             overallTotals: showCombinedTotals ? totals : undefined,
+            showAccountBalance: true,
           })}
         </>
       )}

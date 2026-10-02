@@ -3,8 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import { classifyPayUEvent } from "@/lib/finance-events";
 import { getPayUTransactions } from "@/lib/payu-api";
 import type { PayUTransaction } from "@/lib/payu-api";
-import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromSettings, getMetaAccountWindowForRequest, normalizeMetaAdAccountsSettings } from "@/lib/meta-ad-accounts";
-import type { AccountSpendBreakdown } from "@/lib/profit-sheet-types";
+import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromSettings, getMetaAccountWindowForRequest, loadMetaAdAccountsSettings, normalizeMetaAdAccountsSettings } from "@/lib/meta-ad-accounts";
+import type { AccountBalanceBreakdown, AccountBalanceSummary, AccountSpendBreakdown } from "@/lib/profit-sheet-types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -172,6 +172,85 @@ async function fetchExchangeRate(): Promise<number> {
   } catch {
     return 85; // Default fallback
   }
+}
+
+function parseMetaBalance(rawBalance: unknown, accountName: string): number {
+  const minorUnits = Number(rawBalance);
+  if (!Number.isFinite(minorUnits)) {
+    throw new Error(`Meta returned an invalid balance for ${accountName}.`);
+  }
+  return minorUnits / 100;
+}
+
+async function fetchMetaAccountBalances(
+  supabase: any,
+  exchangeRate: number
+): Promise<AccountBalanceSummary> {
+  if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
+    throw new Error("A valid USD to INR rate is required to calculate account balances.");
+  }
+
+  const settings = await loadMetaAdAccountsSettings(supabase);
+  const nowMillis = Date.now();
+  const range = { startMillis: nowMillis, endMillis: nowMillis + 60_000 };
+  const currentDay = getCostaRicaBusinessDayKeyFromDate(new Date(), BUSINESS_DAY_MODE);
+  const currentAccounts = settings.accounts.filter((account) =>
+    getMetaAccountWindowForRequest(account, currentDay, currentDay, BUSINESS_DAY_MODE)
+  );
+  const missingToken = currentAccounts.find((account) => !account.accessToken);
+  if (missingToken) {
+    throw new Error(`Meta access is missing for ${missingToken.label || missingToken.accountId}. Update it in Ad Accounts.`);
+  }
+
+  const credentials = getMetaAccountCredentialsFromSettings(settings, range);
+  const accounts = await Promise.all(credentials.map(async (credential): Promise<AccountBalanceBreakdown> => {
+    const accountUrl = new URL(`${META_BASE_URL}/act_${credential.accountId}`);
+    accountUrl.searchParams.set("fields", "id,name,currency,balance");
+    accountUrl.searchParams.set("access_token", credential.accessToken);
+    const response = await fetch(accountUrl, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(20_000),
+    });
+    const accountData = await response.json().catch(() => null);
+    const accountName = credential.label || String(accountData?.name || credential.accountId);
+
+    if (!response.ok || accountData?.error) {
+      throw new Error(`Unable to fetch the current balance for ${accountName}. Check its Meta access and try again.`);
+    }
+
+    const currency = String(accountData?.currency || "").toUpperCase();
+    if (currency !== "USD" && currency !== "INR") {
+      throw new Error(`Currency conversion for ${currency || "this account"} is unavailable for ${accountName}.`);
+    }
+
+    const balance = parseMetaBalance(accountData?.balance, accountName);
+    const usd = currency === "USD" ? balance : balance / exchangeRate;
+    const inr = currency === "INR" ? balance : balance * exchangeRate;
+    return {
+      accountId: credential.accountId,
+      accountName,
+      currency,
+      balance,
+      usd,
+      inr,
+    };
+  }));
+
+  const totals = accounts.reduce(
+    (sum, account) => ({
+      usd: sum.usd + account.usd,
+      inr: sum.inr + account.inr,
+    }),
+    { usd: 0, inr: 0 }
+  );
+
+  return {
+    accounts: accounts.sort((a, b) => b.usd - a.usd),
+    totalUSD: totals.usd,
+    totalINR: totals.inr,
+    exchangeRate,
+    fetchedAt: new Date().toISOString(),
+  };
 }
 
 
@@ -937,10 +1016,24 @@ export async function GET(request: NextRequest) {
 
     const rows = await readProfitSheetRows(supabase, startDate, endDate, dayMode);
     const totals = calculateTotals(rows);
+    let accountBalance: AccountBalanceSummary | null = null;
+    let accountBalanceError: string | null = null;
+    if (endDate >= GST_RATE_CHANGE_DATE) {
+      try {
+        accountBalance = await fetchMetaAccountBalances(supabase, exchangeRate);
+      } catch (balanceError) {
+        accountBalanceError = balanceError instanceof Error
+          ? balanceError.message
+          : "Unable to load the current Meta account balances.";
+        console.error("Meta account balance error:", balanceError);
+      }
+    }
 
     return NextResponse.json({
       rows,
       totals,
+      accountBalance,
+      accountBalanceError,
       exchangeRate,
       dayMode,
       source: dayMode === CALENDAR_DAY_MODE ? "supabase_profit_sheet_calendar" : "supabase_profit_sheet",
