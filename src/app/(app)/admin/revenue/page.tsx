@@ -3559,7 +3559,7 @@ function ProfitSheetTab({
     const columnWidths = getProfitTableColumnWidths(showAccountBalance);
     const tableMinWidth = columnWidths.reduce((sum, width) => sum + width, 0);
     const renderBalanceCell = (accountBalance?: AccountBalanceSummary) => (
-      <td className="px-4 py-3 text-right text-sm text-green-300">
+      <td className={`px-4 py-3 text-right text-sm ${accountBalance && accountBalance.totalUSD < 0 ? "text-red-300" : "text-green-300"}`}>
         {accountBalance ? (
           <div className="flex items-center justify-end gap-1 whitespace-nowrap">
             <span>{formatUsd(accountBalance.totalUSD)}</span>

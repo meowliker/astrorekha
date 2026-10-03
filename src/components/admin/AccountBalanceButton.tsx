@@ -81,7 +81,7 @@ export default function AccountBalanceButton({
                         <p className="mt-1 text-xs text-white/40">act_{account.accountId}</p>
                       </div>
                       <div className="shrink-0 text-right tabular-nums">
-                        <p className="text-sm font-semibold text-green-300">{money(account.usd, "USD")}</p>
+                        <p className={`text-sm font-semibold ${account.usd < 0 ? "text-red-300" : "text-green-300"}`}>{money(account.usd, "USD")}</p>
                         <p className="mt-1 text-xs text-white/55">{money(account.inr, "INR")}</p>
                       </div>
                     </li>
@@ -91,7 +91,7 @@ export default function AccountBalanceButton({
                 <div className="flex items-center justify-between border-t border-white/15 pt-4">
                   <span className="text-sm font-medium">Total account balance at 11:30 AM</span>
                   <div className="text-right tabular-nums">
-                    <p className="text-lg font-semibold text-green-300">{money(data.totalUSD, "USD")}</p>
+                    <p className={`text-lg font-semibold ${data.totalUSD < 0 ? "text-red-300" : "text-green-300"}`}>{money(data.totalUSD, "USD")}</p>
                     <p className="text-xs text-white/55">{money(data.totalINR, "INR")}</p>
                   </div>
                 </div>

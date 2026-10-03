@@ -123,7 +123,9 @@ export async function fetchMetaAccountBalanceSnapshot(
             parseMetaMinorUnits(accountData?.amount_spent, "amount spent", accountName)
         )
       : parseMetaMinorUnits(accountData?.balance, "outstanding balance", accountName);
-    const balance = balanceMinorUnits / 100;
+    // Remaining prepaid funds are an asset; outstanding postpaid charges are a liability.
+    // Store the sign here so every daily snapshot and its total use the same accounting rule.
+    const balance = (balanceMode === "outstanding" ? -Math.abs(balanceMinorUnits) : Math.abs(balanceMinorUnits)) / 100;
     const usd = currency === "USD" ? balance : balance / exchangeRate;
     const inr = currency === "INR" ? balance : balance * exchangeRate;
 
