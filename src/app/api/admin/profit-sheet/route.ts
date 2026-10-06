@@ -4,7 +4,8 @@ import { classifyPayUEvent } from "@/lib/finance-events";
 import { getPayUTransactions } from "@/lib/payu-api";
 import type { PayUTransaction } from "@/lib/payu-api";
 import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromSettings, getMetaAccountWindowForRequest, loadMetaAdAccountsSettings, normalizeMetaAdAccountsSettings } from "@/lib/meta-ad-accounts";
-import type { AccountBalanceSummary, AccountSpendBreakdown } from "@/lib/profit-sheet-types";
+import type { AccountBalanceSummary, AccountSpendBreakdown, IndianAdAccountSpend, ProfitSheetGstBreakdown } from "@/lib/profit-sheet-types";
+import { calculateProfitSheetGst } from "@/lib/profit-sheet-gst";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -28,6 +29,7 @@ interface ProfitSheetRow {
   grossRevenue?: number;
   refundAmount?: number;
   gst: number;
+  gstBreakdown?: ProfitSheetGstBreakdown;
   adsCostUSD: number;
   adsCostINR: number;
   netRevenue: number;
@@ -44,6 +46,8 @@ interface ProfitSheetRow {
 interface DailyMetaSpend {
   usd: number;
   inr: number;
+  indianSpendInr?: number;
+  indianAccounts?: IndianAdAccountSpend[];
 }
 
 interface SyncedPaymentRow {
@@ -484,6 +488,13 @@ async function fetchMetaAdsDailySpend(
         const total = spendMap.get(day) || { usd: 0, inr: 0 };
         total.usd += spend.usd;
         total.inr += spend.inr;
+        if (currency === "INR") {
+          total.indianSpendInr = (total.indianSpendInr || 0) + spend.inr;
+          total.indianAccounts = [
+            ...(total.indianAccounts || []),
+            { accountId: adAccountId, accountName: credential.label || String(accountData.name || adAccountId), spendInr: spend.inr },
+          ];
+        }
         spendMap.set(day, total);
         accountUSD += spend.usd;
         accountINR += spend.inr;
@@ -632,7 +643,8 @@ async function buildProfitSheetRows(
 ): Promise<{ rows: ProfitSheetRow[]; source: string; paymentRows: SyncedPaymentRow[] }> {
   console.log(`Using exchange rate: ${exchangeRate}`);
 
-  const metaSpendMap = await fetchMetaAdsDailySpend(supabase, startDate, endDate, exchangeRate, Date.now(), undefined, dayMode);
+  // A financial sync must fail rather than silently save incomplete Meta spend.
+  const metaSpendMap = await fetchMetaAdsDailySpend(supabase, startDate, endDate, exchangeRate, Date.now(), [], dayMode);
   console.log(`Fetched Meta Ads spend for ${metaSpendMap.size} days`);
 
   const dates: string[] = [];
@@ -686,8 +698,10 @@ async function buildProfitSheetRows(
       .filter((event) => event.kind === "refund")
       .reduce((sum, event) => sum + event.amount, 0);
     const revenue = grossRevenue - refundAmount;
-    const gst = revenue * getProfitSheetGstRate(costaRicaDate);
     const dailyMetaSpend = metaSpendMap.get(costaRicaDate) || { usd: 0, inr: 0 };
+    const indianAdSpendInr = dailyMetaSpend.indianSpendInr || 0;
+    const { revenueGst, adGstCredit, gst } = calculateProfitSheetGst(revenue, getProfitSheetGstRate(costaRicaDate), indianAdSpendInr);
+    const gstBreakdown = { revenueGst, adGstCredit, indianAdSpendInr, indianAdAccounts: dailyMetaSpend.indianAccounts || [] };
     const adsCostUSD = dailyMetaSpend.usd;
     const adsCostINR = dailyMetaSpend.inr;
     const netRevenue = revenue - gst - adsCostINR;
@@ -711,6 +725,7 @@ async function buildProfitSheetRows(
       grossRevenue,
       refundAmount,
       gst,
+      gstBreakdown,
       adsCostUSD,
       adsCostINR,
       netRevenue,
@@ -736,6 +751,8 @@ function toDbRow(row: ProfitSheetRow, exchangeRate: number, source: string) {
     gross_revenue: row.grossRevenue || 0,
     refund_amount: row.refundAmount || 0,
     gst: row.gst,
+    indian_ad_spend_inr: row.gstBreakdown?.indianAdSpendInr ?? 0,
+    indian_ad_accounts: row.gstBreakdown?.indianAdAccounts ?? [],
     ads_cost_usd: row.adsCostUSD,
     ads_cost_inr: row.adsCostINR,
     net_revenue: row.netRevenue,
@@ -756,9 +773,18 @@ function toDbRow(row: ProfitSheetRow, exchangeRate: number, source: string) {
 function fromDbRow(row: any): ProfitSheetRow {
   const revenue = Number(row.revenue || 0);
   const adsCostINR = Number(row.ads_cost_inr || 0);
-  // GST and profit are derived from the reporting date so previously saved
-  // October rows cannot retain the legacy 5% calculation.
-  const gst = revenue * getProfitSheetGstRate(String(row.date || ""));
+  // Older rows have no saved per-account spend yet. Preserve their prior gross
+  // GST until they are synced, rather than inventing an input credit of zero.
+  const hasIndianAdSpend = row.indian_ad_spend_inr !== null && row.indian_ad_spend_inr !== undefined;
+  const indianAdSpendInr = hasIndianAdSpend ? Number(row.indian_ad_spend_inr) : 0;
+  const calculation = calculateProfitSheetGst(revenue, getProfitSheetGstRate(String(row.date || "")), indianAdSpendInr);
+  const gst = hasIndianAdSpend ? calculation.gst : calculation.revenueGst;
+  const gstBreakdown = hasIndianAdSpend ? {
+    revenueGst: calculation.revenueGst,
+    adGstCredit: calculation.adGstCredit,
+    indianAdSpendInr,
+    indianAdAccounts: Array.isArray(row.indian_ad_accounts) ? row.indian_ad_accounts as IndianAdAccountSpend[] : [],
+  } : undefined;
   const netRevenue = revenue - gst - adsCostINR;
   const profitPercent = revenue > 0 ? (netRevenue / revenue) * 100 : 0;
 
@@ -783,6 +809,7 @@ function fromDbRow(row: any): ProfitSheetRow {
     grossRevenue: Number(row.gross_revenue || 0),
     refundAmount: Number(row.refund_amount || 0),
     gst,
+    gstBreakdown,
     adsCostUSD: Number(row.ads_cost_usd || 0),
     adsCostINR,
     netRevenue,
@@ -902,6 +929,41 @@ export async function GET(request: NextRequest) {
 
     if (new Date(sessionData.expires_at) < new Date()) {
       return NextResponse.json({ error: "Session expired" }, { status: 401 });
+    }
+
+    if (searchParams.get("sync") === "gst") {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate) ||
+        startDate < APP_LAUNCH_DATE || endDate > addDaysToIsoDate(startDate, 6)) {
+        return NextResponse.json({ error: "Choose a valid range of up to seven days." }, { status: 400 });
+      }
+      const table = profitSheetTableForMode(dayMode);
+      const { data: savedRows, error: savedRowsError } = await supabase.from(table)
+        .select("date,revenue,ads_cost_inr")
+        .gte("date", startDate).lte("date", endDate)
+        .is("indian_ad_spend_inr", null);
+      if (savedRowsError) throw new Error("Unable to read saved Profit Sheet rows.");
+      if (!savedRows?.length) return NextResponse.json({ updatedDates: [] });
+
+      const spendMap = await fetchMetaAdsDailySpend(supabase, startDate, endDate, 1, Date.now(), [], dayMode);
+      const updatedDates: string[] = [];
+      for (const savedRow of savedRows) {
+        const spend = spendMap.get(savedRow.date);
+        const indianAdSpendInr = spend?.indianSpendInr || 0;
+        const { gst } = calculateProfitSheetGst(Number(savedRow.revenue || 0), getProfitSheetGstRate(savedRow.date), indianAdSpendInr);
+        const netRevenue = Number(savedRow.revenue || 0) - gst - Number(savedRow.ads_cost_inr || 0);
+        const profitPercent = Number(savedRow.revenue || 0) > 0 ? (netRevenue / Number(savedRow.revenue)) * 100 : 0;
+        const { error: updateError } = await supabase.from(table).update({
+          gst,
+          indian_ad_spend_inr: indianAdSpendInr,
+          indian_ad_accounts: spend?.indianAccounts || [],
+          net_revenue: netRevenue,
+          profit_percent: profitPercent,
+          updated_at: new Date().toISOString(),
+        }).eq("date", savedRow.date).is("indian_ad_spend_inr", null);
+        if (updateError) throw new Error(`Unable to update GST for ${savedRow.date}: ${updateError.message}`);
+        updatedDates.push(savedRow.date);
+      }
+      return NextResponse.json({ updatedDates }, { headers: { "Cache-Control": "no-store" } });
     }
 
     const breakdownDate = searchParams.get("breakdownDate");

@@ -47,7 +47,8 @@ import React from "react";
 import { createPortal } from "react-dom";
 import SpendBreakdownButton from "@/components/admin/SpendBreakdownButton";
 import AccountBalanceButton from "@/components/admin/AccountBalanceButton";
-import type { AccountBalanceSummary } from "@/lib/profit-sheet-types";
+import GstBreakdownButton from "@/components/admin/GstBreakdownButton";
+import type { AccountBalanceSummary, ProfitSheetGstBreakdown } from "@/lib/profit-sheet-types";
 
 // Tab type
 type TabType = "dashboard" | "profit-sheet" | "meta-details" | "attribution" | "analytics";
@@ -60,7 +61,8 @@ interface ProfitSheetRow {
   revenue: number;        // Net revenue after refunds for that Costa Rica day
   grossRevenue?: number;  // Gross received amount before refunds
   refundAmount?: number;  // Refund amount for that day
-  gst: number;            // 5% through Sep 30, 2026; 18% from Oct 1, 2026
+  gst: number;            // Revenue GST less 18% of INR ad account spend
+  gstBreakdown?: ProfitSheetGstBreakdown;
   adsCostUSD: number;     // Meta Ads spend in USD
   adsCostINR: number;     // Meta Ads spend converted to INR
   netRevenue: number;     // Revenue - GST - Ads Cost (INR)
@@ -3062,6 +3064,8 @@ function ProfitSheetTab({
   });
   const [profitSortKey, setProfitSortKey] = useState<ProfitSheetSortKey | null>(null);
   const [profitSortDirection, setProfitSortDirection] = useState<ProfitSheetSortDirection>(null);
+  const [gstRefreshProgress, setGstRefreshProgress] = useState<string | null>(null);
+  const [gstRefreshError, setGstRefreshError] = useState<string | null>(null);
 
   useEffect(() => {
     setPickerStartDate(startDate);
@@ -3369,6 +3373,40 @@ function ProfitSheetTab({
   let filteredData = selectedDates.length > 0
     ? data.filter((row) => selectedDateSet.has(row.date))
     : [...data];
+  const missingGstDates = filteredData.filter((row) => !row.gstBreakdown).map((row) => row.date).sort();
+
+  const refreshMissingGst = async () => {
+    const token = localStorage.getItem("admin_session_token");
+    if (!token) {
+      setGstRefreshError("Your admin session has expired. Please sign in again.");
+      return;
+    }
+    setGstRefreshError(null);
+    try {
+      let completed = 0;
+      for (let index = 0; index < missingGstDates.length;) {
+        const first = missingGstDates[index];
+        const lastAllowed = new Date(`${first}T00:00:00Z`);
+        lastAllowed.setUTCDate(lastAllowed.getUTCDate() + 6);
+        let last = first;
+        while (index < missingGstDates.length && missingGstDates[index] <= lastAllowed.toISOString().slice(0, 10)) {
+          last = missingGstDates[index++];
+        }
+        setGstRefreshProgress(`Updating GST: ${completed} of ${missingGstDates.length} days`);
+        const params = new URLSearchParams({ token, startDate: first, endDate: last, dayMode, sync: "gst" });
+        const response = await fetch(`/api/admin/profit-sheet?${params}`, { cache: "no-store" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `Unable to update GST for ${first}–${last}.`);
+        completed += result.updatedDates?.length || 0;
+      }
+      setGstRefreshProgress(null);
+      onRefresh();
+    } catch (failure) {
+      setGstRefreshProgress(null);
+      setGstRefreshError(failure instanceof Error ? failure.message : "Unable to update GST.");
+      onRefresh();
+    }
+  };
 
   // ROAS filter
   if (roasFilter === "positive") {
@@ -3527,7 +3565,7 @@ function ProfitSheetTab({
     ? selectedDates.some((date) => date >= gstChangeDate)
     : endDate >= gstChangeDate;
   const showCombinedTotals = hasLegacyDateSelection && hasCurrentDateSelection;
-  const profitTableColumnWidths = [96, 72, 120, 105, 120, 105, 105, 135, 120, 90, 80, 125, 85];
+  const profitTableColumnWidths = [96, 72, 120, 105, 120, 105, 135, 135, 120, 90, 80, 125, 85];
   const getProfitTableColumnWidths = (showAccountBalance: boolean) => showAccountBalance
     ? [...profitTableColumnWidths.slice(0, 8), 150, ...profitTableColumnWidths.slice(8)]
     : profitTableColumnWidths;
@@ -3590,9 +3628,9 @@ function ProfitSheetTab({
               <SortableHeader sortKey="grossRevenue">Received</SortableHeader>
               <SortableHeader sortKey="refundAmount">Refund</SortableHeader>
               <SortableHeader sortKey="revenue">Revenue</SortableHeader>
-              <SortableHeader sortKey="gst">GST ({gstLabel})</SortableHeader>
               <SortableHeader sortKey="adsCostUSD">Ads (USD)</SortableHeader>
               <SortableHeader sortKey="adsCostINR">Ads (INR)</SortableHeader>
+              <SortableHeader sortKey="gst">GST ({gstLabel})</SortableHeader>
               {showAccountBalance && (
                 <th className="px-4 py-3 text-right text-xs font-semibold text-white/70">Account Balance</th>
               )}
@@ -3618,12 +3656,17 @@ function ProfitSheetTab({
                     <td className="px-4 py-3 text-right text-sm font-medium text-green-400">{formatCurrency(row.grossRevenue ?? row.revenue)}</td>
                     <td className="px-4 py-3 text-right text-sm font-medium text-red-400">-{formatCurrency(row.refundAmount ?? 0)}</td>
                     <td className="px-4 py-3 text-right text-sm font-medium text-green-400">{formatCurrency(row.revenue)}</td>
-                    <td className="px-4 py-3 text-right text-sm text-amber-400/70">{formatCurrency(row.gst)}</td>
                     <td className="px-4 py-3 text-right text-sm text-red-400/50">${row.adsCostUSD.toFixed(2)}</td>
                     <td className="px-4 py-3 text-right text-sm text-red-400/70">
                       <div className="flex items-center justify-end gap-1 whitespace-nowrap">
                         {formatCurrency(row.adsCostINR)}
                         <SpendBreakdownButton date={row.date} savedTotalINR={row.adsCostINR} dayMode={dayMode} />
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm text-amber-400/70">
+                      <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+                        {formatCurrency(row.gst)}
+                        <GstBreakdownButton date={row.date} revenue={row.revenue} breakdown={row.gstBreakdown} rate={row.date >= gstChangeDate ? 18 : 5} />
                       </div>
                     </td>
                     {showAccountBalance && renderBalanceCell(row.accountBalance)}
@@ -3640,9 +3683,9 @@ function ProfitSheetTab({
               <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(tableTotals.grossRevenue)}</td>
               <td className="px-4 py-3 text-right text-sm text-red-400">-{formatCurrency(tableTotals.refundAmount)}</td>
               <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(tableTotals.revenue)}</td>
-              <td className="px-4 py-3 text-right text-sm text-amber-400">{formatCurrency(tableTotals.gst)}</td>
               <td className="px-4 py-3 text-right text-sm text-red-400/70">${tableTotals.adsCostUSD.toFixed(2)}</td>
               <td className="px-4 py-3 text-right text-sm text-red-400">{formatCurrency(tableTotals.adsCostINR)}</td>
+              <td className="px-4 py-3 text-right text-sm text-amber-400">{formatCurrency(tableTotals.gst)}</td>
               {showAccountBalance && renderBalanceTotalCell()}
               <td className={`px-4 py-3 text-right text-sm ${tableTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{formatCurrency(tableTotals.netRevenue)}</td>
               <td className={`px-4 py-3 text-right text-sm ${tableTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{tableTotals.profitPercent.toFixed(2)}%</td>
@@ -3656,9 +3699,9 @@ function ProfitSheetTab({
                 <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(overallTotals.grossRevenue)}</td>
                 <td className="px-4 py-3 text-right text-sm text-red-400">-{formatCurrency(overallTotals.refundAmount)}</td>
                 <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(overallTotals.revenue)}</td>
-                <td className="px-4 py-3 text-right text-sm text-amber-400">{formatCurrency(overallTotals.gst)}</td>
                 <td className="px-4 py-3 text-right text-sm text-red-400/70">${overallTotals.adsCostUSD.toFixed(2)}</td>
                 <td className="px-4 py-3 text-right text-sm text-red-400">{formatCurrency(overallTotals.adsCostINR)}</td>
+                <td className="px-4 py-3 text-right text-sm text-amber-400">{formatCurrency(overallTotals.gst)}</td>
                 {showAccountBalance && renderBalanceTotalCell()}
                 <td className={`px-4 py-3 text-right text-sm ${overallTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{formatCurrency(overallTotals.netRevenue)}</td>
                 <td className={`px-4 py-3 text-right text-sm ${overallTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{overallTotals.profitPercent.toFixed(2)}%</td>
@@ -3975,13 +4018,22 @@ function ProfitSheetTab({
           </div>
           <button
             onClick={onRefresh}
-            disabled={loading}
+            disabled={loading || !!gstRefreshProgress}
             className="px-4 py-2 bg-primary hover:bg-primary/80 text-white text-sm rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </button>
+          {missingGstDates.length > 0 && <button
+            type="button"
+            onClick={() => void refreshMissingGst()}
+            disabled={loading || !!gstRefreshProgress}
+            className="px-4 py-2 rounded-lg bg-amber-500/20 text-amber-200 text-sm hover:bg-amber-500/30 disabled:opacity-50"
+          >
+            {gstRefreshProgress || `Update GST for ${missingGstDates.length} day${missingGstDates.length === 1 ? "" : "s"}`}
+          </button>}
         </div>
+        {gstRefreshError && <p role="alert" className="mt-3 text-xs text-red-300">{gstRefreshError}</p>}
 	        <p className="text-white/30 text-xs mt-3">
 	          Each date covers 11:30 AM IST to 11:29 AM IST the next day. Revenue and ad spend use the same reporting window; each account&apos;s configured start and end times still apply.
 	        </p>

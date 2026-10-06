@@ -16,6 +16,19 @@ export interface DailySpendBreakdown {
   fetchedAt: string;
 }
 
+export interface IndianAdAccountSpend {
+  accountId: string;
+  accountName: string;
+  spendInr: number;
+}
+
+export interface ProfitSheetGstBreakdown {
+  revenueGst: number;
+  indianAdSpendInr: number;
+  indianAdAccounts: IndianAdAccountSpend[];
+  adGstCredit: number;
+}
+
 export interface AccountBalanceBreakdown {
   accountId: string;
   accountName: string;
