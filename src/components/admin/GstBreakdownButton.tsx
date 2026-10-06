@@ -67,8 +67,7 @@ export default function GstBreakdownButton({ date, revenue, breakdown, rate }: {
             </button>
           </div>
           {breakdown ? <div className="mt-5 space-y-4 text-sm tabular-nums">
-            <div className="flex justify-between gap-4"><span>Revenue GST ({money(revenue)} × {rate}%)</span><span>{money(breakdown.revenueGst)}</span></div>
-            <div className="border-t border-white/10 pt-4">
+            <div>
               <p className="font-medium">Indian ad account spend</p>
               {breakdown.indianAdAccounts.length ? breakdown.indianAdAccounts.map((account) => (
                 <div key={account.accountId} className="mt-3 flex justify-between gap-4 text-white/65">
@@ -78,8 +77,11 @@ export default function GstBreakdownButton({ date, revenue, breakdown, rate }: {
               )) : <p className="mt-3 text-white/50">No INR ad account spend for this day.</p>}
               <div className="mt-4 flex justify-between gap-4 font-medium"><span>Total Indian ad spend</span><span>{money(breakdown.indianAdSpendInr)}</span></div>
             </div>
-            <div className="flex justify-between gap-4 border-t border-white/10 pt-4 text-amber-300">
-              <span>Less: 18% of Indian ad spend</span><span>−{money(breakdown.adGstCredit)}</span>
+            <div className="space-y-2 border-t border-white/10 pt-4">
+              <div className="flex justify-between gap-4"><span>Revenue GST ({money(revenue)} × {rate}%)</span><span className="shrink-0">{money(breakdown.revenueGst)}</span></div>
+              <div className="flex justify-between gap-4 text-amber-300">
+                <span>18% of Indian ad spend</span><span className="shrink-0">−{money(breakdown.adGstCredit)}</span>
+              </div>
             </div>
             <div className="flex justify-between gap-4 border-t border-white/15 pt-4 text-base font-semibold">
               <span>GST deducted from revenue</span><span>{money(breakdown.revenueGst - breakdown.adGstCredit)}</span>
