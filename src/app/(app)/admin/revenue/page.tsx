@@ -49,6 +49,7 @@ import SpendBreakdownButton from "@/components/admin/SpendBreakdownButton";
 import AccountBalanceButton from "@/components/admin/AccountBalanceButton";
 import GstBreakdownButton from "@/components/admin/GstBreakdownButton";
 import type { AccountBalanceSummary, ProfitSheetGstBreakdown } from "@/lib/profit-sheet-types";
+import { INDIAN_AD_GST_START_DATE } from "@/lib/profit-sheet-gst";
 
 // Tab type
 type TabType = "dashboard" | "profit-sheet" | "meta-details" | "attribution" | "analytics";
@@ -1285,10 +1286,40 @@ export default function AdminRevenuePage() {
         throw new Error(err.error || "Failed to fetch profit sheet");
       }
 
-      const result = await res.json();
+      let result = await res.json();
+      if (requestId !== profitSheetRequestIdRef.current) return;
+      let gstWarning: string | null = null;
+      const missingOctoberDates: string[] = (result.rows || [])
+        .filter((row: ProfitSheetRow) => row.date >= INDIAN_AD_GST_START_DATE && !row.gstBreakdown)
+        .map((row: ProfitSheetRow) => row.date)
+        .sort();
+      if (missingOctoberDates.length > 0) {
+        try {
+          for (let index = 0; index < missingOctoberDates.length;) {
+            const first = missingOctoberDates[index];
+            const lastAllowed = new Date(`${first}T00:00:00Z`);
+            lastAllowed.setUTCDate(lastAllowed.getUTCDate() + 6);
+            let last = first;
+            while (index < missingOctoberDates.length && missingOctoberDates[index] <= lastAllowed.toISOString().slice(0, 10)) {
+              last = missingOctoberDates[index++];
+            }
+            const params = new URLSearchParams({ token, startDate: first, endDate: last, dayMode, sync: "gst" });
+            const syncResponse = await fetch(`/api/admin/profit-sheet?${params}`, { cache: "no-store" });
+            const syncResult = await syncResponse.json();
+            if (!syncResponse.ok) throw new Error(syncResult.error || `Unable to update GST for ${first}–${last}.`);
+          }
+          const refreshedUrl = new URL(url, window.location.origin);
+          refreshedUrl.searchParams.delete("sync");
+          const refreshedResponse = await fetch(refreshedUrl.toString(), { cache: "no-store" });
+          if (!refreshedResponse.ok) throw new Error("Unable to reload the updated GST values.");
+          result = await refreshedResponse.json();
+        } catch (failure) {
+          gstWarning = failure instanceof Error ? failure.message : "Unable to update October GST.";
+        }
+      }
       if (requestId !== profitSheetRequestIdRef.current) return;
       setProfitSheetData(result.rows || []);
-      setProfitSheetError(result.syncWarning || null);
+      setProfitSheetError(gstWarning || result.syncWarning || null);
       setProfitSheetLoadedMode(dayMode);
       if (result.exchangeRate) {
         if (!rateInput) {
@@ -3374,7 +3405,7 @@ function ProfitSheetTab({
   let filteredData = selectedDates.length > 0
     ? data.filter((row) => selectedDateSet.has(row.date))
     : [...data];
-  const missingGstDates = filteredData.filter((row) => !row.gstBreakdown).map((row) => row.date).sort();
+  const missingGstDates = filteredData.filter((row) => row.date >= INDIAN_AD_GST_START_DATE && !row.gstBreakdown).map((row) => row.date).sort();
 
   const refreshMissingGst = async () => {
     const token = localStorage.getItem("admin_session_token");
@@ -3553,7 +3584,7 @@ function ProfitSheetTab({
     };
   };
 
-  const gstChangeDate = "2026-10-01";
+  const gstChangeDate = INDIAN_AD_GST_START_DATE;
   const legacyRows = sortProfitRows(filteredData.filter((row) => row.date < gstChangeDate));
   const currentRows = sortProfitRows(filteredData.filter((row) => row.date >= gstChangeDate));
   const legacyTotals = calculateProfitTotals(legacyRows);
@@ -3667,7 +3698,7 @@ function ProfitSheetTab({
                     <td className="px-4 py-3 text-right text-sm text-amber-400/70">
                       <div className="flex items-center justify-end gap-1 whitespace-nowrap">
                         {formatCurrency(row.gst)}
-                        <GstBreakdownButton date={row.date} revenue={row.revenue} breakdown={row.gstBreakdown} rate={row.date >= gstChangeDate ? 18 : 5} />
+                        {row.date >= gstChangeDate && <GstBreakdownButton date={row.date} revenue={row.revenue} breakdown={row.gstBreakdown} rate={18} />}
                       </div>
                     </td>
                     {showAccountBalance && renderBalanceCell(row.accountBalance)}

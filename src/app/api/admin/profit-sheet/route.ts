@@ -5,7 +5,7 @@ import { getPayUTransactions } from "@/lib/payu-api";
 import type { PayUTransaction } from "@/lib/payu-api";
 import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromSettings, getMetaAccountWindowForRequest, loadMetaAdAccountsSettings, normalizeMetaAdAccountsSettings } from "@/lib/meta-ad-accounts";
 import type { AccountBalanceSummary, AccountSpendBreakdown, IndianAdAccountSpend, ProfitSheetGstBreakdown } from "@/lib/profit-sheet-types";
-import { calculateProfitSheetGst } from "@/lib/profit-sheet-gst";
+import { calculateProfitSheetGst, indianAdGstApplies } from "@/lib/profit-sheet-gst";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -699,9 +699,12 @@ async function buildProfitSheetRows(
       .reduce((sum, event) => sum + event.amount, 0);
     const revenue = grossRevenue - refundAmount;
     const dailyMetaSpend = metaSpendMap.get(costaRicaDate) || { usd: 0, inr: 0 };
-    const indianAdSpendInr = dailyMetaSpend.indianSpendInr || 0;
-    const { revenueGst, adGstCredit, gst } = calculateProfitSheetGst(revenue, getProfitSheetGstRate(costaRicaDate), indianAdSpendInr);
-    const gstBreakdown = { revenueGst, adGstCredit, indianAdSpendInr, indianAdAccounts: dailyMetaSpend.indianAccounts || [] };
+    const indianAdSpendInr = indianAdGstApplies(costaRicaDate) ? dailyMetaSpend.indianSpendInr || 0 : 0;
+    const { revenueGst, adGstCredit, gst: currentGst } = calculateProfitSheetGst(revenue, getProfitSheetGstRate(costaRicaDate), indianAdSpendInr);
+    const gst = indianAdGstApplies(costaRicaDate) ? currentGst : revenue * LEGACY_GST_RATE;
+    const gstBreakdown = indianAdGstApplies(costaRicaDate)
+      ? { revenueGst, adGstCredit, indianAdSpendInr, indianAdAccounts: dailyMetaSpend.indianAccounts || [] }
+      : undefined;
     const adsCostUSD = dailyMetaSpend.usd;
     const adsCostINR = dailyMetaSpend.inr;
     const netRevenue = revenue - gst - adsCostINR;
@@ -751,8 +754,8 @@ function toDbRow(row: ProfitSheetRow, exchangeRate: number, source: string) {
     gross_revenue: row.grossRevenue || 0,
     refund_amount: row.refundAmount || 0,
     gst: row.gst,
-    indian_ad_spend_inr: row.gstBreakdown?.indianAdSpendInr ?? 0,
-    indian_ad_accounts: row.gstBreakdown?.indianAdAccounts ?? [],
+    indian_ad_spend_inr: row.gstBreakdown?.indianAdSpendInr ?? null,
+    indian_ad_accounts: row.gstBreakdown?.indianAdAccounts ?? null,
     ads_cost_usd: row.adsCostUSD,
     ads_cost_inr: row.adsCostINR,
     net_revenue: row.netRevenue,
@@ -775,10 +778,13 @@ function fromDbRow(row: any): ProfitSheetRow {
   const adsCostINR = Number(row.ads_cost_inr || 0);
   // Older rows have no saved per-account spend yet. Preserve their prior gross
   // GST until they are synced, rather than inventing an input credit of zero.
-  const hasIndianAdSpend = row.indian_ad_spend_inr !== null && row.indian_ad_spend_inr !== undefined;
+  const hasIndianAdSpend = indianAdGstApplies(String(row.date || "")) &&
+    row.indian_ad_spend_inr !== null && row.indian_ad_spend_inr !== undefined;
   const indianAdSpendInr = hasIndianAdSpend ? Number(row.indian_ad_spend_inr) : 0;
   const calculation = calculateProfitSheetGst(revenue, getProfitSheetGstRate(String(row.date || "")), indianAdSpendInr);
-  const gst = hasIndianAdSpend ? calculation.gst : calculation.revenueGst;
+  const gst = indianAdGstApplies(String(row.date || ""))
+    ? hasIndianAdSpend ? calculation.gst : calculation.revenueGst
+    : revenue * LEGACY_GST_RATE;
   const gstBreakdown = hasIndianAdSpend ? {
     revenueGst: calculation.revenueGst,
     adGstCredit: calculation.adGstCredit,
@@ -933,7 +939,7 @@ export async function GET(request: NextRequest) {
 
     if (searchParams.get("sync") === "gst") {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate) ||
-        startDate < APP_LAUNCH_DATE || endDate > addDaysToIsoDate(startDate, 6)) {
+        !indianAdGstApplies(startDate) || endDate > addDaysToIsoDate(startDate, 6)) {
         return NextResponse.json({ error: "Choose a valid range of up to seven days." }, { status: 400 });
       }
       const table = profitSheetTableForMode(dayMode);
