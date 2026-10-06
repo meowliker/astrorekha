@@ -1288,6 +1288,7 @@ export default function AdminRevenuePage() {
       const result = await res.json();
       if (requestId !== profitSheetRequestIdRef.current) return;
       setProfitSheetData(result.rows || []);
+      setProfitSheetError(result.syncWarning || null);
       setProfitSheetLoadedMode(dayMode);
       if (result.exchangeRate) {
         if (!rateInput) {

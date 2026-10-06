@@ -998,6 +998,7 @@ export async function GET(request: NextRequest) {
     const exchangeRate = customExchangeRate ? parseFloat(customExchangeRate) : await fetchExchangeRate();
     const syncMode = searchParams.get("sync");
     let syncedRange: { start: string; end: string } | null = null;
+    let syncWarning: string | null = null;
 
     if (syncMode === "range") {
       const syncStartDate = searchParams.get("syncStartDate") || startDate;
@@ -1008,8 +1009,13 @@ export async function GET(request: NextRequest) {
       syncedRange = { start: effectiveSyncStartDate, end: syncEndDate };
     } else if (syncMode === "last2") {
       const syncStartDate = addDaysToIsoDate(businessToday, -1);
-      await syncProfitSheetRows(supabase, syncStartDate, businessToday, exchangeRate, dayMode);
-      syncedRange = { start: syncStartDate, end: businessToday };
+      try {
+        await syncProfitSheetRows(supabase, syncStartDate, businessToday, exchangeRate, dayMode);
+        syncedRange = { start: syncStartDate, end: businessToday };
+      } catch (syncError) {
+        console.error("Profit Sheet refresh failed; serving saved rows:", syncError);
+        syncWarning = "The latest Meta or PayU data could not be refreshed. Showing the last saved Profit Sheet values.";
+      }
     }
 
     const rows = await readProfitSheetRows(supabase, startDate, endDate, dayMode);
@@ -1023,6 +1029,7 @@ export async function GET(request: NextRequest) {
       dateRange: { start: startDate, end: endDate },
       missingRanges: dayMode === CALENDAR_DAY_MODE ? getMissingReportingRanges(rows, startDate, endDate) : [],
       syncedRange,
+      syncWarning,
     });
   } catch (error: any) {
     console.error("Profit sheet error:", error);
