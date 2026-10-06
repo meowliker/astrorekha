@@ -75,28 +75,23 @@ export default function Step11Page() {
     ascendantSign: storeAscendant,
     modality: storeModality,
     polarity: storePolarity,
-    calculateLocalSigns,
     fetchAccurateSigns,
     signsFromApi,
+    signsLoading,
+    knowsBirthTime,
   } = useOnboardingStore();
   
-  // Use store values directly, with fallbacks
-  const sunSign = storeSunSign || { name: "...", symbol: "✦", element: "", description: "" };
-  const moonSign = storeMoonSign || { name: "...", symbol: "✦", element: "", description: "" };
-  const ascendant = storeAscendant || { name: "...", symbol: "✦", element: "", description: "" };
-  const modality = storeModality || "Cardinal";
-  const polarity = storePolarity || "Feminine";
+  const pendingLabel = signsLoading ? "Calculating…" : "Unavailable";
+  const sunSign = storeSunSign || { name: pendingLabel, symbol: "✦", element: "", description: "" };
+  const moonSign = storeMoonSign || { name: knowsBirthTime ? pendingLabel : "Birth time needed", symbol: "✦", element: "", description: "" };
+  const ascendant = storeAscendant || { name: knowsBirthTime ? pendingLabel : "Birth time needed", symbol: "✦", element: "", description: "" };
+  const modality = storeModality || "Unavailable";
+  const polarity = storePolarity || "Unavailable";
 
   const genderLabel = gender === "male" ? "Man" : gender === "female" ? "Woman" : "Person";
   const elementLabel = elementPreference ? elementPreference.charAt(0).toUpperCase() + elementPreference.slice(1) : "Water";
 
-  // Ensure signs are calculated (should already be done from step-5)
   useEffect(() => {
-    // If signs aren't loaded yet, calculate them instantly
-    if (!storeSunSign) {
-      calculateLocalSigns();
-    }
-    // If not from API yet, fetch in background
     if (!signsFromApi) {
       fetchAccurateSigns();
     }
@@ -221,7 +216,7 @@ export default function Step11Page() {
             </div>
 
             <div className="text-center">
-              <span className="text-2xl">{polarity === "Masculine" ? "♂" : "♀"}</span>
+              <span className="text-2xl">{polarity === "Masculine" ? "♂" : polarity === "Feminine" ? "♀" : "✦"}</span>
               <p className="text-sm font-medium mt-1">{polarity}</p>
               <p className="text-xs text-muted-foreground">Polarity</p>
             </div>
@@ -318,7 +313,7 @@ export default function Step11Page() {
                 >
                   <span className="text-xl">{moonSign.symbol}</span>
                   <span className="text-xs font-medium">{moonSign.name}</span>
-                  <span className="text-xs text-muted-foreground">Moon Sign</span>
+                  <span className="text-xs text-muted-foreground">Vedic Moon Sign</span>
                 </motion.div>
                 <motion.div 
                   initial={{ opacity: 0, y: 20 }}
@@ -328,7 +323,7 @@ export default function Step11Page() {
                 >
                   <span className="text-xl">{sunSign.symbol}</span>
                   <span className="text-xs font-medium">{sunSign.name}</span>
-                  <span className="text-xs text-muted-foreground">Sun Sign</span>
+                  <span className="text-xs text-muted-foreground">Vedic Sun Sign</span>
                 </motion.div>
                 <motion.div 
                   initial={{ opacity: 0, y: 20 }}
@@ -338,7 +333,7 @@ export default function Step11Page() {
                 >
                   <span className="text-xl">{ascendant.symbol}</span>
                   <span className="text-xs font-medium">{ascendant.name}</span>
-                  <span className="text-xs text-muted-foreground">Ascendant</span>
+                  <span className="text-xs text-muted-foreground">Vedic Ascendant</span>
                 </motion.div>
               </motion.div>
             )}

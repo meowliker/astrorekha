@@ -1,11 +1,10 @@
 const ASTRO_ENGINE_URL = process.env.ASTRO_ENGINE_URL || 'http://localhost:8000';
 
-export async function fetchFromAstroEngine(endpoint: string, data: any) {
+export async function fetchFromAstroEngine(endpoint: string, data: any, timeoutMs = 8000) {
   const url = `${ASTRO_ENGINE_URL}${endpoint}`;
   
-  // 8-second timeout so fallback logic kicks in quickly if engine is unreachable
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, {

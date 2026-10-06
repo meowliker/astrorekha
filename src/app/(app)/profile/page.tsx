@@ -6,10 +6,8 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, User, Settings, ChevronRight } from "lucide-react";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { useUserStore } from "@/lib/user-store";
-import { getZodiacSign, getZodiacSymbol, getZodiacColor } from "@/lib/astrology-api";
 import { supabase } from "@/lib/supabase";
 import { UserAvatar, getUserDisplayName } from "@/components/UserAvatar";
-import { extractStoredSignName } from "@/lib/zodiac-utils";
 
 // Zodiac symbols mapping
 const zodiacSymbols: Record<string, string> = {
@@ -28,8 +26,8 @@ const zodiacElements: Record<string, string> = {
 // Ruling planet mapping
 const zodiacPlanets: Record<string, string> = {
   Aries: "Mars", Taurus: "Venus", Gemini: "Mercury", Cancer: "Moon",
-  Leo: "Sun", Virgo: "Mercury", Libra: "Venus", Scorpio: "Pluto",
-  Sagittarius: "Jupiter", Capricorn: "Saturn", Aquarius: "Uranus", Pisces: "Neptune"
+  Leo: "Sun", Virgo: "Mercury", Libra: "Venus", Scorpio: "Mars",
+  Sagittarius: "Jupiter", Capricorn: "Saturn", Aquarius: "Saturn", Pisces: "Jupiter"
 };
 
 // Polarity mapping
@@ -57,6 +55,7 @@ export default function ProfilePage() {
     birthHour: string;
     birthMinute: string;
     birthPeriod: string;
+    knowsBirthTime: boolean;
     sunSign: string;
     moonSign: string;
     ascendantSign: string;
@@ -67,7 +66,7 @@ export default function ProfilePage() {
   const { 
     birthMonth: storeBirthMonth, birthDay: storeBirthDay, birthYear: storeBirthYear, 
     birthHour: storeBirthHour, birthMinute: storeBirthMinute, birthPeriod: storeBirthPeriod,
-    ascendantSign: storeAscendantSign, moonSign: storeMoonSign
+    birthPlace: storeBirthPlace, knowsBirthTime: storeKnowsBirthTime,
   } = useOnboardingStore();
   
   const { purchasedBundle } = useUserStore();
@@ -82,118 +81,71 @@ export default function ProfilePage() {
     setIsLoading(true);
     try {
       const userId = localStorage.getItem("astrorekha_user_id");
-
+      let dbUser: any = null;
+      let profileData: any = null;
       if (userId) {
-        const { data: dbUser } = await supabase.from("users").select("*").eq("id", userId).single();
+        const [userResult, profileResult] = await Promise.all([
+          supabase.from("users").select("*").eq("id", userId).maybeSingle(),
+          supabase.from("user_profiles").select("*").eq("id", userId).maybeSingle(),
+        ]);
+        dbUser = userResult.data;
+        profileData = profileResult.data;
+      }
 
-        if (dbUser) {
-          const data = dbUser;
-          const month = data.birth_month ? String(data.birth_month) : storeBirthMonth;
-          const day = data.birth_day ? String(data.birth_day) : storeBirthDay;
-          const year = data.birth_year ? String(data.birth_year) : storeBirthYear;
-          const hour = data.birth_hour || storeBirthHour || "12";
-          const minute = data.birth_minute || storeBirthMinute || "00";
-          const period = data.birth_period || storeBirthPeriod || "PM";
-          const place = data.birth_place || "";
-          
-          let sunSignValue = extractStoredSignName(data.sun_sign);
-          let moonSignValue = extractStoredSignName(data.moon_sign);
-          let ascendantValue = extractStoredSignName(data.ascendant_sign);
-          
-          if (!sunSignValue || !moonSignValue || !ascendantValue) {
-            try {
-              const { data: profileData } = await supabase.from("user_profiles").select("*").eq("id", userId).single();
-              if (profileData) {
-                if (!sunSignValue) sunSignValue = extractStoredSignName(profileData.sun_sign);
-                if (!moonSignValue) moonSignValue = extractStoredSignName(profileData.moon_sign);
-                if (!ascendantValue) ascendantValue = extractStoredSignName(profileData.ascendant_sign);
-                
-                if (sunSignValue || moonSignValue || ascendantValue) {
-                  await supabase.from("users").update({
-                    ...(sunSignValue ? { sun_sign: sunSignValue } : {}),
-                    ...(moonSignValue ? { moon_sign: moonSignValue } : {}),
-                    ...(ascendantValue ? { ascendant_sign: ascendantValue } : {}),
-                  }).eq("id", userId);
-                }
-              }
-            } catch (profileError) {
-              console.error("Error reading user_profiles:", profileError);
-            }
-          }
-          
-          if (!sunSignValue || !moonSignValue || !ascendantValue) {
-            try {
-              const response = await fetch("/api/astrology/signs", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  birthMonth: month,
-                  birthDay: day,
-                  birthYear: year,
-                  birthHour: hour,
-                  birthMinute: minute,
-                  birthPeriod: period,
-                  birthPlace: place,
-                }),
-              });
-              const signsData = await response.json();
-              if (signsData.success) {
-                if (!sunSignValue) sunSignValue = extractStoredSignName(signsData.sunSign);
-                if (!moonSignValue) moonSignValue = extractStoredSignName(signsData.moonSign);
-                if (!ascendantValue) ascendantValue = extractStoredSignName(signsData.ascendant);
-                
-                await supabase.from("users").update({
-                  sun_sign: signsData.sunSign?.name || signsData.sunSign,
-                  moon_sign: signsData.moonSign?.name || signsData.moonSign,
-                  ascendant_sign: signsData.ascendant?.name || signsData.ascendant,
-                }).eq("id", userId);
-              }
-            } catch (signsError) {
-              console.error("Error fetching signs:", signsError);
-              moonSignValue = moonSignValue || "Cancer";
-              ascendantValue = ascendantValue || "Leo";
-            }
-          }
+      const hasSavedProfile = Boolean(dbUser || profileData);
+      const month = String(profileData?.birth_month || dbUser?.birth_month || (hasSavedProfile ? "" : storeBirthMonth));
+      const day = String(profileData?.birth_day || dbUser?.birth_day || (hasSavedProfile ? "" : storeBirthDay));
+      const year = String(profileData?.birth_year || dbUser?.birth_year || (hasSavedProfile ? "" : storeBirthYear));
+      const hour = String(profileData?.birth_hour || dbUser?.birth_hour || (hasSavedProfile ? "" : storeBirthHour));
+      const minute = String(profileData?.birth_minute ?? dbUser?.birth_minute ?? (hasSavedProfile ? "" : storeBirthMinute));
+      const period = String(profileData?.birth_period || dbUser?.birth_period || (hasSavedProfile ? "" : storeBirthPeriod));
+      const place = String(profileData?.birth_place || dbUser?.birth_place || (hasSavedProfile ? "" : storeBirthPlace));
+      const knowsBirthTime = profileData?.knows_birth_time ?? (hasSavedProfile ? Boolean(hour && period) : storeKnowsBirthTime);
+      let sunSign = "Unavailable";
+      let moonSign = knowsBirthTime ? "Unavailable" : "Birth time needed";
+      let ascendantSign = knowsBirthTime ? "Unavailable" : "Birth time needed";
 
-          const email = data.email || localStorage.getItem("astrorekha_email") || undefined;
-          
-          // Final fallback: use Western tropical calculation only if astro-engine signs unavailable
-          const fallbackSunSign = month && day ? getZodiacSign(Number(month), Number(day)) : "Aries";
-
-          setUserData({
-            birthMonth: month,
-            birthDay: day,
-            birthYear: year,
-            birthHour: hour,
-            birthMinute: minute,
-            birthPeriod: period,
-            sunSign: sunSignValue || fallbackSunSign,
-            moonSign: moonSignValue || "Cancer",
-            ascendantSign: ascendantValue || "Leo",
-            name: data.name || undefined,
-            email: email,
+      if (month && day && year && place) {
+        try {
+          const response = await fetch("/api/astrology/signs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              birthMonth: month, birthDay: day, birthYear: year,
+              birthHour: hour, birthMinute: minute, birthPeriod: period,
+              birthPlace: place, knowsBirthTime,
+            }),
           });
-          setIsLoading(false);
-          return;
+          const signs = await response.json();
+          if (!response.ok || !signs.success || !signs.sunSign?.name) {
+            throw new Error(signs.error || "Unable to calculate signs.");
+          }
+          sunSign = signs.sunSign.name;
+          moonSign = signs.moonSign?.name || moonSign;
+          ascendantSign = signs.ascendant?.name || ascendantSign;
+
+          if (userId && hasSavedProfile) {
+            const correctedSigns = {
+              sun_sign: signs.sunSign.name,
+              moon_sign: signs.moonSign?.name ?? null,
+              ascendant_sign: signs.ascendant?.name ?? null,
+            };
+            const updates = [supabase.from("users").update(correctedSigns).eq("id", userId)];
+            if (profileData) updates.push(supabase.from("user_profiles").update(correctedSigns).eq("id", userId));
+            await Promise.all(updates);
+          }
+        } catch (signsError) {
+          console.error("Error calculating Vedic profile signs:", signsError);
         }
       }
 
-      // Fallback to onboarding store
-      if (storeBirthMonth && storeBirthDay) {
-        const storedEmail = localStorage.getItem("astrorekha_email") || undefined;
-        setUserData({
-          birthMonth: storeBirthMonth,
-          birthDay: storeBirthDay,
-          birthYear: storeBirthYear,
-          birthHour: storeBirthHour || "12",
-          birthMinute: storeBirthMinute || "00",
-          birthPeriod: storeBirthPeriod || "PM",
-          sunSign: getZodiacSign(Number(storeBirthMonth), Number(storeBirthDay)),
-          moonSign: storeMoonSign?.name || "Cancer",
-          ascendantSign: storeAscendantSign?.name || "Leo",
-          email: storedEmail,
-        });
-      }
+      setUserData({
+        birthMonth: month, birthDay: day, birthYear: year,
+        birthHour: hour, birthMinute: minute, birthPeriod: period, knowsBirthTime,
+        sunSign, moonSign, ascendantSign,
+        name: dbUser?.name || profileData?.name || undefined,
+        email: dbUser?.email || profileData?.email || localStorage.getItem("astrorekha_email") || undefined,
+      });
     } catch (error) {
       console.error("Error loading user data:", error);
     } finally {
@@ -201,22 +153,23 @@ export default function ProfilePage() {
     }
   };
 
-  const sunSign = userData?.sunSign || (isLoading ? "Loading..." : "Aries");
-  const userMoonSign = userData?.moonSign || (isLoading ? "Loading..." : "Cancer");
-  const userAscendant = userData?.ascendantSign || (isLoading ? "Loading..." : "Leo");
+  const sunSign = userData?.sunSign || (isLoading ? "Loading..." : "Unavailable");
+  const userMoonSign = userData?.moonSign || (isLoading ? "Loading..." : "Unavailable");
+  const userAscendant = userData?.ascendantSign || (isLoading ? "Loading..." : "Unavailable");
   const birthMonth = userData?.birthMonth || storeBirthMonth;
   const birthDay = userData?.birthDay || storeBirthDay;
   const birthYear = userData?.birthYear || storeBirthYear;
-  const birthHour = userData?.birthHour || storeBirthHour || "12";
-  const birthMinute = userData?.birthMinute || storeBirthMinute || "00";
-  const birthPeriod = userData?.birthPeriod || storeBirthPeriod || "PM";
+  const birthHour = userData ? userData.birthHour : storeBirthHour;
+  const birthMinute = userData ? userData.birthMinute : storeBirthMinute;
+  const birthPeriod = userData ? userData.birthPeriod : storeBirthPeriod;
 
   // Format birth date and time
   const formatBirthDateTime = () => {
     if (!birthMonth || !birthDay || !birthYear) return "Not set";
     const months = ["January", "February", "March", "April", "May", "June", 
                     "July", "August", "September", "October", "November", "December"];
-    const hour = birthHour || 12;
+    if (!userData?.knowsBirthTime || !birthHour || !birthPeriod) return `${birthMonth} ${birthDay}, ${birthYear} • Birth time not provided`;
+    const hour = birthHour;
     const minute = birthMinute || 0;
     const period = birthPeriod || "PM";
     // Handle month as number or name
@@ -309,7 +262,7 @@ export default function ProfilePage() {
                   {/* Inner decorative circles */}
                   <div className="w-32 h-32 rounded-full border border-primary/20 flex items-center justify-center">
                     <div className="w-24 h-24 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center">
-                      <span className="text-5xl text-primary">{zodiacSymbols[sunSign] || "♈"}</span>
+                      <span className="text-5xl text-primary">{zodiacSymbols[sunSign] || "✦"}</span>
                     </div>
                   </div>
                 </div>
@@ -326,7 +279,7 @@ export default function ProfilePage() {
                   />
                 ))}
               </div>
-              <p className="text-white text-lg font-medium mt-4">Sun sign - {sunSign}</p>
+              <p className="text-white text-lg font-medium mt-4">Vedic Sun sign - {sunSign}</p>
             </motion.div>
 
             {/* Zodiac Info Grid - Row 1 */}
@@ -341,7 +294,7 @@ export default function ProfilePage() {
                 <div className="w-16 h-16 rounded-full bg-[#1A1F2E] flex items-center justify-center border border-primary/20">
                   <span className="text-2xl text-primary">☽</span>
                 </div>
-                <p className="text-white/50 text-xs mt-2">Moon Sign</p>
+                <p className="text-white/50 text-xs mt-2">Vedic Moon Sign</p>
                 <p className="text-white font-medium text-sm">{userMoonSign}</p>
               </div>
 
@@ -356,15 +309,15 @@ export default function ProfilePage() {
                   </span>
                 </div>
                 <p className="text-white/50 text-xs mt-2">Element</p>
-                <p className="text-white font-medium text-sm">{zodiacElements[sunSign] || "Fire"}</p>
+                <p className="text-white font-medium text-sm">{zodiacElements[sunSign] || "Unavailable"}</p>
               </div>
 
               {/* Ascendant */}
               <div className="flex flex-col items-center">
                 <div className="w-16 h-16 rounded-full bg-[#1A1F2E] flex items-center justify-center border border-primary/20">
-                  <span className="text-2xl text-primary">{zodiacSymbols[userAscendant] || "♌"}</span>
+                  <span className="text-2xl text-primary">{zodiacSymbols[userAscendant] || "✦"}</span>
                 </div>
-                <p className="text-white/50 text-xs mt-2">Ascendant</p>
+                <p className="text-white/50 text-xs mt-2">Vedic Ascendant</p>
                 <p className="text-white font-medium text-sm">{userAscendant}</p>
               </div>
             </motion.div>
@@ -382,7 +335,7 @@ export default function ProfilePage() {
                   <span className="text-2xl text-primary">♃</span>
                 </div>
                 <p className="text-white/50 text-xs mt-2">Planet</p>
-                <p className="text-white font-medium text-sm">{zodiacPlanets[sunSign] || "Jupiter"}</p>
+                <p className="text-white font-medium text-sm">{zodiacPlanets[sunSign] || "Unavailable"}</p>
               </div>
 
               {/* Polarity */}
@@ -391,7 +344,7 @@ export default function ProfilePage() {
                   <span className="text-2xl text-primary">♂</span>
                 </div>
                 <p className="text-white/50 text-xs mt-2">Polarity</p>
-                <p className="text-white font-medium text-sm">{zodiacPolarity[sunSign] || "Masculine"}</p>
+                <p className="text-white font-medium text-sm">{zodiacPolarity[sunSign] || "Unavailable"}</p>
               </div>
 
               {/* Modality */}
@@ -400,7 +353,7 @@ export default function ProfilePage() {
                   <span className="text-2xl text-primary">☍</span>
                 </div>
                 <p className="text-white/50 text-xs mt-2">Modality</p>
-                <p className="text-white font-medium text-sm">{zodiacModality[sunSign] || "Mutable"}</p>
+                <p className="text-white font-medium text-sm">{zodiacModality[sunSign] || "Unavailable"}</p>
               </div>
             </motion.div>
           </div>

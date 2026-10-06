@@ -17,51 +17,31 @@ const insightTags = [
   { icon: "🌙", label: "Your intuition and dreams" },
 ];
 
-interface SignData {
-  name: string;
-  symbol: string;
-  element: string;
-  description: string;
-}
-
 export default function Step5Page() {
   const router = useRouter();
   const [phase, setPhase] = useState<"loading" | "results">("loading");
   const [visibleTags, setVisibleTags] = useState(0);
   
-  // Get signs from store - will be calculated instantly on mount
   const { 
-    birthMonth, birthDay, birthYear, birthHour, birthMinute, birthPeriod, birthPlace,
     sunSign: storeSunSign, 
     moonSign: storeMoonSign, 
     ascendantSign: storeAscendant,
-    calculateLocalSigns,
     fetchAccurateSigns,
-    signsFromApi
+    signsFromApi,
+    signsLoading,
+    signsError,
+    knowsBirthTime,
   } = useOnboardingStore();
-  
-  // Local state for display (starts with store values or defaults)
-  const [sunSign, setSunSign] = useState<SignData>(storeSunSign || { name: "...", symbol: "✦", element: "", description: "" });
-  const [moonSign, setMoonSign] = useState<SignData>(storeMoonSign || { name: "...", symbol: "✦", element: "", description: "" });
-  const [ascendant, setAscendant] = useState<SignData>(storeAscendant || { name: "...", symbol: "✦", element: "", description: "" });
+  const pendingLabel = signsLoading ? "Calculating…" : "Unavailable";
+  const sunSign = storeSunSign || { name: pendingLabel, symbol: "✦" };
+  const moonSign = storeMoonSign || { name: knowsBirthTime ? pendingLabel : "Birth time needed", symbol: "✦" };
+  const ascendant = storeAscendant || { name: knowsBirthTime ? pendingLabel : "Birth time needed", symbol: "✦" };
 
-  // Calculate local signs IMMEDIATELY on mount
   useEffect(() => {
-    // Step 1: Calculate instant local signs (no API call)
-    calculateLocalSigns();
-    
-    // Step 2: Start background API fetch for accurate Moon/Ascendant
     if (!signsFromApi) {
       fetchAccurateSigns();
     }
   }, []);
-  
-  // Sync local state with store when store updates
-  useEffect(() => {
-    if (storeSunSign) setSunSign(storeSunSign);
-    if (storeMoonSign) setMoonSign(storeMoonSign);
-    if (storeAscendant) setAscendant(storeAscendant);
-  }, [storeSunSign, storeMoonSign, storeAscendant]);
 
   useEffect(() => {
     const tagInterval = setInterval(() => {
@@ -186,6 +166,12 @@ export default function Step5Page() {
                 <span className="text-xs text-muted-foreground">Ascendant</span>
               </div>
             </motion.div>
+            <p className="mb-4 text-center text-xs text-muted-foreground">Calculated using the Vedic (Lahiri) zodiac.</p>
+            {signsError && <div className="mb-5 text-center text-sm text-amber-300">
+              <p>{signsError}</p>
+              <button type="button" onClick={() => fetchAccurateSigns()} className="mt-2 underline underline-offset-2">Try again</button>
+            </div>}
+            {!knowsBirthTime && !signsError && <p className="mb-5 text-center text-xs text-muted-foreground">Add your birth time later to calculate your Moon sign and ascendant.</p>}
           </motion.div>
         )}
       </AnimatePresence>

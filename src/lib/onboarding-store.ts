@@ -2,7 +2,6 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { calculateInstantSigns } from "./zodiac-utils";
 
 export type Gender = "female" | "male" | "non-binary" | null;
 export type RelationshipStatus = "in-relationship" | "just-broke-up" | "engaged" | "married" | "looking-for-soulmate" | "single" | "complicated" | null;
@@ -35,6 +34,7 @@ interface OnboardingState {
   ascendantSign: SignData | null;
   signsLoading: boolean;
   signsFromApi: boolean;
+  signsError: string | null;
   modality: string | null;
   polarity: string | null;
   
@@ -51,7 +51,6 @@ interface OnboardingState {
   setSignsLoading: (loading: boolean) => void;
   setModality: (modality: string) => void;
   setPolarity: (polarity: string) => void;
-  calculateLocalSigns: () => void;
   fetchAccurateSigns: () => Promise<void>;
   reset: () => void;
 }
@@ -75,9 +74,31 @@ const initialState = {
   ascendantSign: null as SignData | null,
   signsLoading: false,
   signsFromApi: false,
+  signsError: null as string | null,
   modality: null as string | null,
   polarity: null as string | null,
 };
+
+const invalidatedSigns = {
+  sunSign: null,
+  moonSign: null,
+  ascendantSign: null,
+  signsLoading: false,
+  signsFromApi: false,
+  signsError: null,
+  modality: null,
+  polarity: null,
+};
+
+function birthDetailsKey(state: OnboardingState): string {
+  return JSON.stringify([
+    state.birthMonth, state.birthDay, state.birthYear,
+    state.knowsBirthTime ? state.birthHour : null,
+    state.knowsBirthTime ? state.birthMinute : null,
+    state.knowsBirthTime ? state.birthPeriod : null,
+    state.birthPlace.trim().toLowerCase(), state.knowsBirthTime,
+  ]);
+}
 
 export const useOnboardingStore = create<OnboardingState>()(
   persist(
@@ -87,14 +108,14 @@ export const useOnboardingStore = create<OnboardingState>()(
       setGender: (gender) => set({ gender }),
       
       setBirthDate: (birthMonth, birthDay, birthYear) =>
-        set({ birthMonth, birthDay, birthYear }),
+        set({ ...invalidatedSigns, birthMonth, birthDay, birthYear }),
       
       setBirthTime: (birthHour, birthMinute, birthPeriod) =>
-        set({ birthHour, birthMinute, birthPeriod }),
+        set({ ...invalidatedSigns, birthHour, birthMinute, birthPeriod, knowsBirthTime: true }),
       
-      setBirthPlace: (birthPlace) => set({ birthPlace }),
+      setBirthPlace: (birthPlace) => set({ ...invalidatedSigns, birthPlace }),
       
-      setKnowsBirthTime: (knowsBirthTime) => set({ knowsBirthTime }),
+      setKnowsBirthTime: (knowsBirthTime) => set({ ...invalidatedSigns, knowsBirthTime }),
       
       setRelationshipStatus: (relationshipStatus) => set({ relationshipStatus }),
       
@@ -108,7 +129,8 @@ export const useOnboardingStore = create<OnboardingState>()(
         sunSign, 
         moonSign, 
         ascendantSign: { ...ascendantSign, name: ascendantSign.name, symbol: ascendantSign.symbol, element: ascendantSign.element, description: ascendantSign.description },
-        signsFromApi: fromApi 
+        signsFromApi: fromApi,
+        signsError: null,
       }),
       
       setSignsLoading: (signsLoading) => set({ signsLoading }),
@@ -117,30 +139,12 @@ export const useOnboardingStore = create<OnboardingState>()(
       
       setPolarity: (polarity) => set({ polarity }),
       
-      calculateLocalSigns: () => set((state) => {
-        const signs = calculateInstantSigns(
-          state.birthMonth,
-          state.birthDay,
-          state.birthYear,
-          state.birthHour,
-          state.birthMinute,
-          state.birthPeriod
-        );
-        return {
-          sunSign: signs.sunSign,
-          moonSign: signs.moonSign,
-          ascendantSign: signs.ascendant,
-          modality: signs.modality,
-          polarity: signs.polarity,
-          signsFromApi: false,
-        };
-      }),
-      
       fetchAccurateSigns: async () => {
         const state = useOnboardingStore.getState();
-        if (state.signsFromApi) return; // Already fetched from API
+        if (state.signsFromApi || state.signsLoading) return;
+        const requestedBirthDetails = birthDetailsKey(state);
         
-        set({ signsLoading: true });
+        set({ signsLoading: true, signsError: null });
         
         try {
           const response = await fetch("/api/astrology/signs", {
@@ -154,25 +158,30 @@ export const useOnboardingStore = create<OnboardingState>()(
               birthMinute: state.birthMinute,
               birthPeriod: state.birthPeriod,
               birthPlace: state.birthPlace,
+              knowsBirthTime: state.knowsBirthTime,
             }),
           });
           const data = await response.json();
-          if (data.success) {
+          if (birthDetailsKey(useOnboardingStore.getState()) !== requestedBirthDetails) return;
+          if (response.ok && data.success && data.sunSign?.name) {
             set({
               sunSign: data.sunSign,
-              moonSign: data.moonSign,
-              ascendantSign: data.ascendant,
+              moonSign: data.moonSign ?? null,
+              ascendantSign: data.ascendant ?? null,
               modality: data.modality,
               polarity: data.polarity,
               signsFromApi: true,
               signsLoading: false,
+              signsError: null,
             });
           } else {
-            set({ signsLoading: false });
+            set({ signsLoading: false, signsError: data.error || "Unable to calculate your signs. Please try again." });
           }
         } catch (error) {
           console.error("Failed to fetch accurate signs:", error);
-          set({ signsLoading: false });
+          if (birthDetailsKey(useOnboardingStore.getState()) === requestedBirthDetails) {
+            set({ signsLoading: false, signsError: "Unable to calculate your signs. Please try again." });
+          }
         }
       },
       
@@ -180,6 +189,8 @@ export const useOnboardingStore = create<OnboardingState>()(
     }),
     {
       name: "astrorekha-onboarding",
+      version: 1,
+      migrate: (persistedState) => ({ ...(persistedState as object), ...invalidatedSigns }),
     }
   )
 );

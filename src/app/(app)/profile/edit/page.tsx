@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { useUserStore } from "@/lib/user-store";
 import { supabase } from "@/lib/supabase";
-import { getZodiacSign } from "@/lib/astrology-api";
 
 const months = [
   "January", "February", "March", "April", "May", "June",
@@ -45,6 +44,7 @@ export default function EditProfilePage() {
     birthPlace, setBirthPlace,
     birthHour, birthMinute, birthPeriod,
     setBirthTime,
+    knowsBirthTime, setKnowsBirthTime,
     relationshipStatus, setRelationshipStatus,
   } = useOnboardingStore();
 
@@ -67,23 +67,35 @@ export default function EditProfilePage() {
         return;
       }
 
-      // Load from Supabase
-      const { data: userData } = await supabase.from("users").select("*").eq("id", userId).single();
+      const [userResult, profileResult] = await Promise.all([
+        supabase.from("users").select("*").eq("id", userId).maybeSingle(),
+        supabase.from("user_profiles").select("birth_month,birth_day,birth_year,birth_place,birth_hour,birth_minute,birth_period,knows_birth_time").eq("id", userId).maybeSingle(),
+      ]);
+      const userData = userResult.data;
+      const profileData = profileResult.data;
 
       if (userData) {
         if (userData.name) setLocalName(userData.name);
         if (userData.gender) setGender(userData.gender);
         if (userData.relationship_status) setRelationshipStatus(userData.relationship_status);
-        if (userData.birth_month && userData.birth_day && userData.birth_year) {
-          setBirthDate(String(userData.birth_month), String(userData.birth_day), String(userData.birth_year));
+        const month = profileData?.birth_month || userData.birth_month;
+        const day = profileData?.birth_day || userData.birth_day;
+        const year = profileData?.birth_year || userData.birth_year;
+        if (month && day && year) {
+          setBirthDate(String(month), String(day), String(year));
         }
-        if (userData.birth_place) setBirthPlace(userData.birth_place);
-        if (userData.birth_hour) {
+        const place = profileData?.birth_place || userData.birth_place;
+        if (place) setBirthPlace(place);
+        const hour = profileData?.birth_hour || userData.birth_hour;
+        if (hour) {
           setBirthTime(
-            String(userData.birth_hour),
-            String(userData.birth_minute || 0),
-            userData.birth_period || "AM"
+            String(hour),
+            String(profileData?.birth_minute ?? userData.birth_minute ?? 0),
+            profileData?.birth_period || userData.birth_period || "AM"
           );
+        }
+        if (typeof profileData?.knows_birth_time === "boolean") {
+          setKnowsBirthTime(profileData.knows_birth_time);
         }
       } else {
         const savedName = localStorage.getItem("astrorekha_name");
@@ -155,11 +167,6 @@ export default function EditProfilePage() {
         const newBirthPeriod = field === "birthTime" ? value.period : birthPeriod;
         const newBirthPlace = field === "birthPlace" ? value : birthPlace;
         
-        // Calculate sun sign from birth date
-        const sunSign = newBirthMonth && newBirthDay 
-          ? getZodiacSign(Number(newBirthMonth), Number(newBirthDay))
-          : null;
-        
         // Base update data (snake_case for Supabase)
         const updateData: any = {
           name: field === "name" ? value : localName,
@@ -177,12 +184,10 @@ export default function EditProfilePage() {
         
         // If birth details changed, recalculate signs
         if (field === "birthDate" || field === "birthTime" || field === "birthPlace") {
-          // Update sun sign immediately (calculated locally)
-          if (sunSign) {
-            updateData.sun_sign = sunSign;
-          }
+          updateData.sun_sign = null;
+          updateData.moon_sign = null;
+          updateData.ascendant_sign = null;
           
-          // Recalculate moon and ascendant signs via API
           try {
             const response = await fetch("/api/astrology/signs", {
               method: "POST",
@@ -198,21 +203,36 @@ export default function EditProfilePage() {
                 birthMinute: newBirthMinute,
                 birthPeriod: newBirthPeriod,
                 birthPlace: newBirthPlace,
+                knowsBirthTime: field === "birthTime" ? true : knowsBirthTime,
               }),
             });
             const signsData = await response.json();
-            if (signsData.success) {
-              updateData.sun_sign = signsData.sunSign;
-              updateData.moon_sign = signsData.moonSign;
-              updateData.ascendant_sign = signsData.ascendant;
+            if (response.ok && signsData.success) {
+              updateData.sun_sign = signsData.sunSign?.name ?? null;
+              updateData.moon_sign = signsData.moonSign?.name ?? null;
+              updateData.ascendant_sign = signsData.ascendant?.name ?? null;
             }
           } catch (signsError) {
             console.error("Error recalculating signs:", signsError);
-            // Still save the sun sign we calculated locally
           }
         }
         
         await supabase.from("users").update(updateData).eq("id", userId);
+        if (field === "birthDate" || field === "birthTime" || field === "birthPlace") {
+          await supabase.from("user_profiles").update({
+            birth_month: newBirthMonth,
+            birth_day: newBirthDay,
+            birth_year: newBirthYear,
+            birth_place: newBirthPlace,
+            birth_hour: newBirthHour,
+            birth_minute: newBirthMinute,
+            birth_period: newBirthPeriod,
+            knows_birth_time: field === "birthTime" ? true : knowsBirthTime,
+            sun_sign: updateData.sun_sign,
+            moon_sign: updateData.moon_sign,
+            ascendant_sign: updateData.ascendant_sign,
+          }).eq("id", userId);
+        }
       }
     } catch (error) {
       console.error("Error saving:", error);
