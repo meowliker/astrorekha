@@ -17,6 +17,7 @@ import {
   SpiritAnimalResult,
 } from "@/components/spirit-animal/SpiritAnimalReport";
 import {
+  hasSpiritAnimalTraitPercentages,
   SPIRIT_ANIMAL_QUESTIONS,
   serializeSpiritAnimalAnswers,
   type SpiritAnimalReportResult,
@@ -40,6 +41,7 @@ export default function SpiritAnimalPage() {
   const [userId, setUserId] = useState("");
 
   const currentQuestion = SPIRIT_ANIMAL_QUESTIONS[step];
+  const needsQuizRecovery = Boolean(result && !hasSpiritAnimalTraitPercentages(result.traitPercentages));
   const answeredCount = useMemo(
     () => SPIRIT_ANIMAL_QUESTIONS.filter((question) => Boolean(answers[question.id])).length,
     [answers]
@@ -148,6 +150,11 @@ export default function SpiritAnimalPage() {
           {!loading && error && !result ? (
             <div className="rounded-3xl border border-red-400/25 bg-red-500/10 p-5 text-center">
               <p className="text-sm text-red-100">{error}</p>
+              {answeredCount === SPIRIT_ANIMAL_QUESTIONS.length ? (
+                <button type="button" onClick={() => submitQuiz(answers)} disabled={isSubmitting} className="mt-4 block w-full rounded-2xl bg-primary px-4 py-3 font-semibold text-white disabled:opacity-50">
+                  {isSubmitting ? "Saving..." : "Retry saving my result"}
+                </button>
+              ) : null}
               <Link href="/reports" className="mt-4 block w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 font-semibold">Back to Reports</Link>
             </div>
           ) : null}
@@ -192,17 +199,30 @@ export default function SpiritAnimalPage() {
             </section>
           ) : null}
 
-          {!loading && result ? (
-            <SpiritAnimalResult
-              result={result}
-              onCompleteQuiz={() => {
+          {!loading && result && needsQuizRecovery ? (
+            <section className="rounded-3xl border border-primary/20 bg-[#1A2235] p-6">
+              <h2 className="text-xl font-semibold">Your quiz answers weren&apos;t saved</h2>
+              <p className="mt-3 text-sm leading-7 text-white/70">
+                An older {result.animalName} report was already on this account. When you completed the quiz, the app returned that report without saving your answers. We can&apos;t recover the answers from that attempt.
+              </p>
+              <p className="mt-3 text-sm leading-7 text-white/70">
+                Please take the quiz once more to get your actual animal and trait pattern. Your report is already unlocked; there is no additional payment.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
                 setStep(0);
                 setAnswers({});
                 setError("");
                 setResult(null);
               }}
-            />
+                className="mt-5 w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white"
+              >
+                Retake quiz and save my result
+              </button>
+            </section>
           ) : null}
+          {!loading && result && !needsQuizRecovery ? <SpiritAnimalResult result={result} /> : null}
     </SpiritAnimalPageShell>
   );
 }
