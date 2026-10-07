@@ -1,5 +1,5 @@
 """
-PalmCosmic Natal Chart Calculator
+AstroRekha Natal Chart Calculator
 Uses Swiss Ephemeris (NASA JPL DE431) for 0.0001° precision.
 """
 
@@ -112,7 +112,7 @@ def geocode_place(place_name: str) -> dict:
     if place_lower in _geocode_cache:
         return _geocode_cache[place_lower]
     
-    geolocator = Nominatim(user_agent="palmcosmic_v2", timeout=10)
+    geolocator = Nominatim(user_agent="astrorekha_astro_engine", timeout=10)
     location = geolocator.geocode(place_name)
     if not location:
         raise ValueError(f"Cannot find location: {place_name}")

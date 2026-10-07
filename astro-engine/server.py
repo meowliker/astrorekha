@@ -14,15 +14,15 @@ EPHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ephe')
 if os.path.exists(EPHE_PATH):
     swe.set_ephe_path(EPHE_PATH)
 
-app = FastAPI(title="PalmCosmic Astro Engine", version="2.0")
+app = FastAPI(title="AstroRekha Astro Engine", version="2.0")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "https://palmcosmic.com",
-        "https://www.palmcosmic.com",
-        "https://palmcosmic.vercel.app",
+        "http://localhost:3107",
+        "https://astrorekha.com",
+        "https://www.astrorekha.com",
     ],
     allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,

@@ -648,9 +648,7 @@ export default function ChatPage() {
       }
 
       // No saved chat - show welcome message
-      const greeting = ascendantSign?.name 
-        ? `Hey there! I'm Elysia. I can see you're a ${ascendantSign.name} rising - that's fascinating! I've got your birth chart and palm reading ready. What's on your mind today?`
-        : `Hey! I'm Elysia, your cosmic guide. I've got access to your birth chart and palm reading. What would you like to explore today?`;
+      const greeting = "Hey! I'm Elysia, your guide in AstroRekha. Ask me about your readings, reports, or anything you'd like to explore today.";
       
       setMessages([
         {

@@ -697,7 +697,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="text-white font-semibold">Soulmate Sketch</h3>
-                      <p className="text-white/50 text-xs mt-0.5">AI portrait + relationship timeline highlights</p>
+                      <p className="text-white/50 text-xs mt-0.5">Personalized AI portrait shaped by your answers</p>
                       {!unlockedFeatures.soulmateSketch && (
                         <button className="mt-1 px-3 py-1 bg-primary/20 text-primary text-xs rounded-full">
                           Get Report

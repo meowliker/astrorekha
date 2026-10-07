@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { logClaudeUsage } from "@/lib/ai-usage-logger";
+import { ELYSIA_PRODUCT_CONTEXT } from "@/lib/elysia-product-context";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import {
   CHAT_UNLIMITED_PASS_ID,
@@ -14,6 +15,23 @@ import {
 const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
 const COINS_PER_QUESTION = 3;
 const SUCCESS_STATUSES = ["paid", "success", "captured"];
+const WRONG_BRAND_PATTERN = /\bPalm\s*Cosmic\b/i;
+const SKETCH_DISMISSAL_PATTERN = /not real palmistry or astrology|(?:AI-generated faces|sketch(?:es)?) based on random inputs|whatever sketch generator|not your actual chart or palm data|sketch(?:es)? (?:are|is) just creative visualizations/i;
+const MISTAKE_DENIAL_PATTERN = /\bI (?:didn'?t|did not|never) (?:call|say|describe).{0,60}\b(?:fake|scam|not real)\b/i;
+
+function hasIncorrectProductClaim(reply: string): boolean {
+  return WRONG_BRAND_PATTERN.test(reply) || SKETCH_DISMISSAL_PATTERN.test(reply) || MISTAKE_DENIAL_PATTERN.test(reply);
+}
+
+function safeProductReply(userMessage: string): string {
+  if (/soul\s*mate|sketch|portrait/i.test(userMessage)) {
+    const correction = /why did you|you (?:said|called)|wrong app|fake|not real/i.test(userMessage)
+      ? "I used the wrong app name and dismissed your sketch. I'm sorry. "
+      : "";
+    return `${correction}Soulmate Sketch is an AstroRekha feature. It creates a personalized AI portrait from the preferences you shared. I can help explain how it works or discuss what stood out to you in your sketch, though I can't see the finished image in this chat.`;
+  }
+  return "I'm Elysia, your guide in AstroRekha. Tell me which part of your reading or report you'd like to explore, and I'll use the details available here to help.";
+}
 
 // Load prompt files from prompts/ directory
 function loadPrompt(filename: string): string {
@@ -486,14 +504,14 @@ If the user's question is about job/career/profession:
       : "";
 
     // Build full system prompt with loaded prompts + user data
-    const fullSystemPrompt = `${elysiaSystemPrompt}\n\n${interpretationRules}${careerDirective}${getCurrentDateContext()}${FOLLOW_UP_DIRECTIVE}\n\n=== THIS USER'S PERSONAL DATA ===\n${structuredContext}`;
+    const fullSystemPrompt = `${elysiaSystemPrompt}\n\n${ELYSIA_PRODUCT_CONTEXT}\n\n${interpretationRules}${careerDirective}${getCurrentDateContext()}${FOLLOW_UP_DIRECTIVE}\n\n=== ASTROREKHA PRODUCT RULE ===\nYou are Elysia inside AstroRekha. Soulmate Sketch is an AstroRekha report. Acknowledge the user's experience with it without claiming to see the finished image or dismissing the product. Earlier assistant replies that denied the feature or used another app name were wrong. If the user challenges one of those replies, own the mistake instead of denying it.\n\n=== THIS USER'S PERSONAL DATA ===\n${structuredContext}`;
 
     // Build messages array with chat history (last 20 messages for context)
     const messages: { role: "user" | "assistant"; content: string }[] = [];
 
     if (context?.previousMessages && Array.isArray(context.previousMessages)) {
       context.previousMessages.slice(-20).forEach((m: any) => {
-        if (m.role && m.content) {
+        if (m.role && m.content && !(m.role === "assistant" && hasIncorrectProductClaim(m.content))) {
           messages.push({
             role: m.role as "user" | "assistant",
             content: m.content,
@@ -532,13 +550,41 @@ If the user's question is about job/career/profession:
     });
 
     const textContent = response.content.find((block) => block.type === "text");
-    const rawReply = textContent && "text" in textContent ? textContent.text : "";
+    let rawReply = textContent && "text" in textContent ? textContent.text : "";
+    let replyUsage = response.usage;
+
+    if (hasIncorrectProductClaim(rawReply)) {
+      try {
+        const correctedResponse = await anthropic.messages.create({
+          model: CLAUDE_MODEL,
+          max_tokens: 1024,
+          system: `${fullSystemPrompt}\n\n=== RESPONSE CORRECTION ===\nYour previous draft used the wrong brand or inaccurately dismissed an AstroRekha feature. Write a fresh answer to the user's latest message. Name the app AstroRekha, recognize Soulmate Sketch as its personalized AI portrait, and do not pretend to see the finished image. If correcting an earlier brand error, say "the wrong app name" without repeating it.`,
+          messages,
+        });
+        await logClaudeUsage({
+          feature: "chat",
+          operation: "reply_correction",
+          model: CLAUDE_MODEL,
+          userId,
+          requestId: correctedResponse.id,
+          usage: correctedResponse.usage,
+        });
+        const correctedText = correctedResponse.content.find((block) => block.type === "text");
+        rawReply = correctedText && "text" in correctedText ? correctedText.text : "";
+        replyUsage = correctedResponse.usage;
+      } catch (correctionError) {
+        console.error("[chat] Product reply correction failed:", correctionError);
+      }
+      if (!rawReply || hasIncorrectProductClaim(rawReply)) {
+        rawReply = safeProductReply(String(message || ""));
+      }
+    }
     const { reply, followUpQuestions } = extractFollowUpQuestions(rawReply, String(message || ""));
 
     return NextResponse.json({
       reply,
       followUpQuestions,
-      usage: response.usage,
+      usage: replyUsage,
       unlimitedPassActive: !!activeUnlimitedPass,
       unlimitedPassEndsAt: activeUnlimitedPass?.endsAt || null,
     });
