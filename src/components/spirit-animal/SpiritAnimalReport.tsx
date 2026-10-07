@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import ReportDisclaimer from "@/components/ReportDisclaimer";
 import {
+  hasSpiritAnimalTraitPercentages,
   SPIRIT_TRAITS,
   type SpiritAnimalReportResult,
   type SpiritTrait,
@@ -63,9 +64,11 @@ export function SpiritAnimalPageShell({
 export function SpiritAnimalResult({
   result,
   unoptimizedImages = false,
+  onCompleteQuiz,
 }: {
   result: SpiritAnimalReportResult;
   unoptimizedImages?: boolean;
+  onCompleteQuiz?: () => void;
 }) {
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
@@ -109,7 +112,7 @@ export function SpiritAnimalResult({
         </div>
       </section>
 
-      <TraitProfile result={result} />
+      <TraitProfile result={result} onCompleteQuiz={onCompleteQuiz} />
       <TextCard title="Your Inner Nature" icon={<Sparkles className="h-4 w-4 text-primary" />} text={result.innerNature} />
       <ListCard title="Natural Gifts" icon={<Shield className="h-4 w-4 text-emerald-300" />} items={result.strengths} tint="emerald" />
       <TextCard title="When You Are Aligned" icon={<Sparkles className="h-4 w-4 text-fuchsia-300" />} text={result.whenBalanced} />
@@ -132,19 +135,26 @@ export function SpiritAnimalResult({
   );
 }
 
-function TraitProfile({ result }: { result: SpiritAnimalReportResult }) {
-  const percentages: Partial<Record<SpiritTrait, number>> = result.traitPercentages || {};
+function TraitProfile({ result, onCompleteQuiz }: { result: SpiritAnimalReportResult; onCompleteQuiz?: () => void }) {
+  const hasPersonalScores = hasSpiritAnimalTraitPercentages(result.traitPercentages);
+  const percentages: Partial<Record<SpiritTrait, number>> = hasPersonalScores ? result.traitPercentages : {};
 
   return (
     <section className="rounded-3xl border border-white/10 bg-[#1A2235] p-5">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h3 className="font-semibold text-white">Your Archetype Pattern</h3>
-          <p className="mt-1 text-xs leading-5 text-white/50">The six instincts reflected across your choices</p>
+          <p className="mt-1 text-xs leading-5 text-white/50">{hasPersonalScores ? "The six instincts reflected across your choices" : "Complete the quiz to reveal your six instincts"}</p>
         </div>
         <Compass className="h-5 w-5 shrink-0 text-primary" />
       </div>
-      <div className="mt-5 space-y-3">
+      {!hasPersonalScores ? (
+        <div className="mt-5">
+          <p className="text-sm leading-6 text-white/65">This earlier report has no saved quiz answers, so your personal trait pattern cannot be calculated yet.</p>
+          {onCompleteQuiz ? <button type="button" onClick={onCompleteQuiz} className="mt-4 w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white">Complete the 10-question quiz</button> : null}
+          {onCompleteQuiz ? <p className="mt-2 text-xs leading-5 text-white/45">Your animal will be based on your answers and may change.</p> : null}
+        </div>
+      ) : <div className="mt-5 space-y-3">
         {SPIRIT_TRAITS.map((trait) => {
           const value = Number(percentages[trait] || 0);
           return (
@@ -162,7 +172,7 @@ function TraitProfile({ result }: { result: SpiritAnimalReportResult }) {
             </div>
           );
         })}
-      </div>
+      </div>}
     </section>
   );
 }

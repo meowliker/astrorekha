@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import {
   computeSpiritAnimalResult,
+  hasSpiritAnimalTraitPercentages,
+  hydrateSpiritAnimalReport,
   SPIRIT_ANIMAL_KEYS,
   SPIRIT_ANIMAL_QUESTIONS,
   SPIRIT_ANIMALS,
   SPIRIT_TRAITS,
+  spiritTraitPercentagesFromScores,
   type SpiritAnimalAnswer,
+  type SpiritAnimalScoringResult,
 } from "../src/lib/spirit-animal-report";
 
 assert.equal(SPIRIT_ANIMAL_QUESTIONS.length, 10, "assessment must contain ten questions");
@@ -49,6 +53,7 @@ const random = () => {
 };
 
 const counts = Object.fromEntries(SPIRIT_ANIMAL_KEYS.map((key) => [key, 0])) as Record<(typeof SPIRIT_ANIMAL_KEYS)[number], number>;
+const samples: Partial<Record<(typeof SPIRIT_ANIMAL_KEYS)[number], SpiritAnimalScoringResult>> = {};
 const sampleSize = 100_000;
 for (let index = 0; index < sampleSize; index += 1) {
   const answers: SpiritAnimalAnswer[] = SPIRIT_ANIMAL_QUESTIONS.map((question) => ({
@@ -60,12 +65,21 @@ for (let index = 0; index < sampleSize; index += 1) {
   assert.equal(first.animalKey, second.animalKey, "the same user and answers must always return the same animal");
   assert.equal(SPIRIT_ANIMAL_KEYS.includes(first.animalKey), true, "every response must return exactly one valid animal");
   counts[first.animalKey] += 1;
+  samples[first.animalKey] ||= first;
 }
 
 for (const animalKey of SPIRIT_ANIMAL_KEYS) {
   const share = counts[animalKey] / sampleSize;
   assert.ok(share >= 0.07 && share <= 0.10, `${animalKey} neutral share ${(share * 100).toFixed(2)}% is outside the 7–10% guardrail`);
+  const sample = samples[animalKey]!;
+  assert.equal(hasSpiritAnimalTraitPercentages(sample.traitPercentages), true, `${animalKey} needs a personal trait pattern`);
+  assert.deepEqual(spiritTraitPercentagesFromScores(sample.traitScores), sample.traitPercentages);
+  const recovered = hydrateSpiritAnimalReport(animalKey, {}, "2026-01-01T00:00:00.000Z", sample.traitScores);
+  assert.deepEqual(recovered.traitPercentages, sample.traitPercentages, `${animalKey} should recover percentages from saved scores`);
 }
+
+const legacy = hydrateSpiritAnimalReport("wolf", {}, "2026-01-01T00:00:00.000Z", {});
+assert.equal(hasSpiritAnimalTraitPercentages(legacy.traitPercentages), false, "a report without quiz data must not show six false 0% values");
 
 assert.throws(() => computeSpiritAnimalResult([]), /answer all 10 questions/i);
 

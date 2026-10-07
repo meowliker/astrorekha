@@ -192,7 +192,17 @@ export default function SpiritAnimalPage() {
             </section>
           ) : null}
 
-          {!loading && result ? <SpiritAnimalResult result={result} /> : null}
+          {!loading && result ? (
+            <SpiritAnimalResult
+              result={result}
+              onCompleteQuiz={() => {
+                setStep(0);
+                setAnswers({});
+                setError("");
+                setResult(null);
+              }}
+            />
+          ) : null}
     </SpiritAnimalPageShell>
   );
 }

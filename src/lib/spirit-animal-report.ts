@@ -405,6 +405,27 @@ export interface SpiritAnimalScoringResult {
   scoringVersion: "spirit-animal-v1-balanced";
 }
 
+export function hasSpiritAnimalTraitPercentages(value: unknown): value is Record<SpiritTrait, number> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const percentages = value as Record<string, unknown>;
+  const values = SPIRIT_TRAITS.map((trait) => percentages[trait]);
+  if (!values.every((number) => typeof number === "number" && Number.isFinite(number) && number >= 0 && number <= 100)) return false;
+  const total = values.reduce<number>((sum, number) => sum + (number as number), 0);
+  return total >= 97 && total <= 103;
+}
+
+export function spiritTraitPercentagesFromScores(value: unknown): Record<SpiritTrait, number> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const scores = value as Record<string, unknown>;
+  const values = SPIRIT_TRAITS.map((trait) => scores[trait]);
+  if (!values.every((number) => typeof number === "number" && Number.isFinite(number) && number >= 0)) return null;
+  const total = values.reduce<number>((sum, number) => sum + (number as number), 0);
+  if (total <= 0) return null;
+  return Object.fromEntries(
+    SPIRIT_TRAITS.map((trait) => [trait, Math.round(((scores[trait] as number) / total) * 100)])
+  ) as Record<SpiritTrait, number>;
+}
+
 function stableHash(value: string): number {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
@@ -460,10 +481,7 @@ export function computeSpiritAnimalResult(answers: SpiritAnimalAnswer[]): Spirit
     (left, right) => stableHash(`${tieSeed}|${right}`) - stableHash(`${tieSeed}|${left}`)
   );
 
-  const totalTraitPoints = Object.values(traitScores).reduce((sum, value) => sum + value, 0);
-  const traitPercentages = Object.fromEntries(
-    SPIRIT_TRAITS.map((trait) => [trait, Math.round((traitScores[trait] / totalTraitPoints) * 100)])
-  ) as Record<SpiritTrait, number>;
+  const traitPercentages = spiritTraitPercentagesFromScores(traitScores)!;
 
   const topTraits = [...SPIRIT_TRAITS]
     .sort((left, right) => traitScores[right] - traitScores[left] || TRAIT_INDEX[left] - TRAIT_INDEX[right])
@@ -522,16 +540,22 @@ export type SpiritAnimalReportResult = ReturnType<typeof buildSpiritAnimalReport
 export function hydrateSpiritAnimalReport(
   animalKey: SpiritAnimalKey,
   snapshot: unknown,
-  generatedAt = new Date().toISOString()
+  generatedAt = new Date().toISOString(),
+  traitScores?: unknown
 ): SpiritAnimalReportResult {
   const stored = snapshot && typeof snapshot === "object"
     ? (snapshot as Partial<SpiritAnimalReportResult>)
     : {};
 
+  const traitPercentages = hasSpiritAnimalTraitPercentages(stored.traitPercentages)
+    ? stored.traitPercentages
+    : spiritTraitPercentagesFromScores(traitScores) || {};
+
   return {
     ...buildSpiritAnimalReport(animalKey, generatedAt),
     ...stored,
     animalKey,
+    traitPercentages,
     imageUrl: SPIRIT_ANIMAL_IMAGE_URLS[animalKey] || stored.imageUrl,
     heroGradient: SPIRIT_ANIMAL_HERO_GRADIENTS[animalKey],
     generatedAt: stored.generatedAt || generatedAt,

@@ -3,8 +3,10 @@ import {
   buildSpiritAnimalReport,
   computeSpiritAnimalResult,
   formatSpiritAnswersForStorage,
+  hasSpiritAnimalTraitPercentages,
   hydrateSpiritAnimalReport,
   isSpiritAnimalKey,
+  spiritTraitPercentagesFromScores,
   SPIRIT_ANIMAL_REPORT_TEMPLATES,
   type SpiritAnimalAnswer,
   type SpiritAnimalKey,
@@ -60,7 +62,7 @@ export async function POST(request: NextRequest) {
 
     const { data: existing, error: existingError } = await supabase
       .from("spirit_animal_reports")
-      .select("animal_key, report_snapshot, generated_at")
+      .select("id, animal_key, report_snapshot, trait_scores, generated_at")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -73,16 +75,19 @@ export async function POST(request: NextRequest) {
       if (!isSpiritAnimalKey(existing.animal_key)) {
         return NextResponse.json({ error: "invalid_animal_result" }, { status: 500 });
       }
-      return NextResponse.json(
-        {
-          error: "already_completed",
-          status: "complete",
-          animal_key: existing.animal_key,
-          result: hydrateSpiritAnimalReport(existing.animal_key, existing.report_snapshot, existing.generated_at),
-          generated_at: existing.generated_at,
-        },
-        { status: 409 }
-      );
+      if (hasSpiritAnimalTraitPercentages(existing.report_snapshot?.traitPercentages)
+        || spiritTraitPercentagesFromScores(existing.trait_scores)) {
+        return NextResponse.json(
+          {
+            error: "already_completed",
+            status: "complete",
+            animal_key: existing.animal_key,
+            result: hydrateSpiritAnimalReport(existing.animal_key, existing.report_snapshot, existing.generated_at, existing.trait_scores),
+            generated_at: existing.generated_at,
+          },
+          { status: 409 }
+        );
+      }
     }
 
     let scored;
@@ -105,10 +110,7 @@ export async function POST(request: NextRequest) {
       generatedAt: nowIso,
     };
 
-    const { data: saved, error: saveError } = await supabase
-      .from("spirit_animal_reports")
-      .insert({
-        user_id: userId,
+    const reportRecord = {
         animal_key: scored.animalKey,
         status: "complete",
         answers: formatSpiritAnswersForStorage(answers),
@@ -118,23 +120,33 @@ export async function POST(request: NextRequest) {
         scoring_version: scored.scoringVersion,
         generated_at: nowIso,
         updated_at: nowIso,
-      })
-      .select("animal_key, report_snapshot, generated_at")
-      .single();
+    };
+    const { data: saved, error: saveError } = existing
+      ? await supabase.from("spirit_animal_reports")
+          .update(reportRecord)
+          .eq("id", existing.id)
+          .eq("user_id", userId)
+          .select("animal_key, report_snapshot, generated_at")
+          .single()
+      : await supabase.from("spirit_animal_reports")
+          .insert({ user_id: userId, ...reportRecord })
+          .select("animal_key, report_snapshot, generated_at")
+          .single();
 
     if (saveError || !saved) {
       // A simultaneous submission may have won the unique(user_id) race.
       const { data: winner } = await supabase
         .from("spirit_animal_reports")
-        .select("animal_key, report_snapshot, generated_at")
+        .select("animal_key, report_snapshot, trait_scores, generated_at")
         .eq("user_id", userId)
         .maybeSingle();
-      if (winner) {
+      if (winner && (hasSpiritAnimalTraitPercentages(winner.report_snapshot?.traitPercentages)
+        || spiritTraitPercentagesFromScores(winner.trait_scores))) {
         if (!isSpiritAnimalKey(winner.animal_key)) {
           return NextResponse.json({ error: "invalid_animal_result" }, { status: 500 });
         }
         return NextResponse.json(
-          { error: "already_completed", status: "complete", animal_key: winner.animal_key, result: hydrateSpiritAnimalReport(winner.animal_key, winner.report_snapshot, winner.generated_at), generated_at: winner.generated_at },
+          { error: "already_completed", status: "complete", animal_key: winner.animal_key, result: hydrateSpiritAnimalReport(winner.animal_key, winner.report_snapshot, winner.generated_at, winner.trait_scores), generated_at: winner.generated_at },
           { status: 409 }
         );
       }

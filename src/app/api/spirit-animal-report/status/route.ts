@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await supabase
       .from("spirit_animal_reports")
-      .select("status, animal_key, report_snapshot, scoring_version, generated_at, updated_at")
+      .select("status, animal_key, report_snapshot, trait_scores, scoring_version, generated_at, updated_at")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       status: "complete",
       animal_key: data.animal_key,
-      result: hydrateSpiritAnimalReport(data.animal_key, data.report_snapshot, data.generated_at),
+      result: hydrateSpiritAnimalReport(data.animal_key, data.report_snapshot, data.generated_at, data.trait_scores),
       scoring_version: data.scoring_version,
       generated_at: data.generated_at,
       updated_at: data.updated_at,
