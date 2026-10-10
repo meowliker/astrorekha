@@ -26,6 +26,10 @@ type BackfillUserRow = {
 type ExistingPaymentRow = {
   id: string;
   payu_txn_id: string | null;
+  type: string;
+  bundle_id: string | null;
+  feature: string | null;
+  coins: number | null;
 };
 
 function toYmdUtc(date: Date): string {
@@ -153,13 +157,13 @@ export async function POST(request: NextRequest) {
     for (const ids of chunk(txnIds, 500)) {
       const { data: existingRows, error: existingError } = await supabase
         .from("payments")
-        .select("id, payu_txn_id")
+        .select("id, payu_txn_id, type, bundle_id, feature, coins")
         .in("payu_txn_id", ids);
       if (existingError) {
         return NextResponse.json({ error: existingError.message }, { status: 500 });
       }
       for (const row of (existingRows || []) as ExistingPaymentRow[]) {
-        if (row.payu_txn_id) existingByTxn.set(row.payu_txn_id, row);
+        if (row.payu_txn_id && !row.id.startsWith("pay_refund_")) existingByTxn.set(row.payu_txn_id, row);
       }
     }
 
@@ -192,6 +196,9 @@ export async function POST(request: NextRequest) {
 
       const payuTxn = payuByTxn.get(txnid);
       const existing = existingByTxn.get(txnid);
+      // Current PayU requests put campaign/ad set/ad in udf1-3 and the order ID in udf4.
+      // Preserve the product saved at checkout; only old PayU requests stored product data in UDFs.
+      const hasAttributionUdfs = payuTxn && String(payuTxn.udf4 || "").trim() === txnid;
 
       const createdAtFromPayu = parsePayUAddedOnToIso(payuTxn?.addedon);
       const createdAt = createdAtFromPayu || user.created_at || new Date().toISOString();
@@ -204,10 +211,10 @@ export async function POST(request: NextRequest) {
         payu_txn_id: txnid,
         payu_payment_id: (payuTxn?.mihpayid || user.payu_payment_id || null) as string | null,
         user_id: user.id,
-        type: (payuTxn?.udf2 || "bundle") as string,
-        bundle_id: (payuTxn?.udf3 || user.bundle_purchased || null) as string | null,
-        feature: (payuTxn?.udf4 || null) as string | null,
-        coins: (() => {
+        type: (existing?.type || (hasAttributionUdfs ? "unknown" : payuTxn?.udf2 || "bundle")) as string,
+        bundle_id: (existing?.bundle_id ?? (hasAttributionUdfs ? null : payuTxn?.udf3 || user.bundle_purchased || null)) as string | null,
+        feature: (existing?.feature ?? (hasAttributionUdfs ? null : payuTxn?.udf4 || null)) as string | null,
+        coins: existing?.coins ?? (() => {
           const parsed = Number.parseInt(String(payuTxn?.udf5 || ""), 10);
           return Number.isFinite(parsed) ? parsed : null;
         })(),

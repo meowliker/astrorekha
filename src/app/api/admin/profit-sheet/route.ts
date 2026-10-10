@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { classifyPayUEvent } from "@/lib/finance-events";
 import { getPayUTransactions } from "@/lib/payu-api";
 import type { PayUTransaction } from "@/lib/payu-api";
+import { parentPaymentId, purchaseMetadata } from "@/lib/payu-purchase-metadata";
+import type { SavedPurchaseMetadata } from "@/lib/payu-purchase-metadata";
 import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromSettings, getMetaAccountWindowForRequest, loadMetaAdAccountsSettings, normalizeMetaAdAccountsSettings } from "@/lib/meta-ad-accounts";
 import type { AccountBalanceSummary, AccountSpendBreakdown, IndianAdAccountSpend, ProfitSheetGstBreakdown } from "@/lib/profit-sheet-types";
 import { calculateProfitSheetGst, indianAdGstApplies } from "@/lib/profit-sheet-gst";
@@ -129,7 +132,20 @@ function stablePaymentEventId(txn: PayUTransaction): string | null {
   return `pay_refund_${refundKey}`;
 }
 
-function buildSyncedPaymentRows(transactions: PayUTransaction[]): SyncedPaymentRow[] {
+async function loadSavedPurchases(supabase: SupabaseClient, transactions: PayUTransaction[]): Promise<Map<string, SavedPurchaseMetadata>> {
+  const ids = Array.from(new Set(transactions.map(parentPaymentId).filter((id): id is string => !!id)));
+  const saved = new Map<string, SavedPurchaseMetadata>();
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await supabase.from("payments")
+      .select("id,type,bundle_id,feature,coins,customer_email")
+      .in("id", ids.slice(i, i + 200));
+    if (error) throw new Error(`Unable to read saved purchase types: ${error.message}`);
+    for (const row of (data || []) as SavedPurchaseMetadata[]) saved.set(row.id, row);
+  }
+  return saved;
+}
+
+function buildSyncedPaymentRows(transactions: PayUTransaction[], savedPurchases: Map<string, SavedPurchaseMetadata>): SyncedPaymentRow[] {
   const rowsById = new Map<string, SyncedPaymentRow>();
 
   for (const txn of transactions) {
@@ -140,18 +156,14 @@ function buildSyncedPaymentRows(transactions: PayUTransaction[]): SyncedPaymentR
     if (!txnid || !id || !createdAt || amount <= 0) continue;
 
     const paymentStatus = normalizePaymentStatus(txn.status);
+    const saved = savedPurchases.get(parentPaymentId(txn) || "");
+    const product = purchaseMetadata(txn, saved);
     const row: SyncedPaymentRow = {
       id,
       payu_txn_id: txnid,
       payu_payment_id: String(txn.mihpayid || txn.id || "").trim() || null,
-      type: normalizePurchaseType(txn.udf2),
-      bundle_id: String(txn.udf3 || "").trim() || null,
-      feature: String(txn.udf4 || "").trim() || null,
-      coins: (() => {
-        const parsed = Number.parseInt(String(txn.udf5 || ""), 10);
-        return Number.isFinite(parsed) ? parsed : null;
-      })(),
-      customer_email: String(txn.email || "").trim().toLowerCase() || null,
+      ...product,
+      customer_email: saved?.customer_email || String(txn.email || "").trim().toLowerCase() || null,
       amount,
       currency: "INR",
       payment_status: paymentStatus,
@@ -666,7 +678,8 @@ async function buildProfitSheetRows(
 
   const payuFetchEnd = addDaysToIsoDate(endDate, 1);
   const payuTransactions = await getPayUTransactions(startDate, payuFetchEnd);
-  const paymentRows = buildSyncedPaymentRows(payuTransactions);
+  const savedPurchases = await loadSavedPurchases(supabase, payuTransactions);
+  const paymentRows = buildSyncedPaymentRows(payuTransactions, savedPurchases);
   const financialRows: FinancialRow[] = payuTransactions
     .map((txn) => {
       const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
@@ -681,7 +694,7 @@ async function buildProfitSheetRows(
         kind: financial.kind,
         amount: financial.amount,
         signedAmount: financial.signedAmount,
-        type: normalizePurchaseType(txn.udf2),
+        type: purchaseMetadata(txn, savedPurchases.get(parentPaymentId(txn) || "")).type,
       } as FinancialRow;
     })
     .filter((row): row is FinancialRow => !!row);
