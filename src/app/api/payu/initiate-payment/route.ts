@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import { readOrderAttribution } from "@/lib/order-attribution";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing, type PricingConfig } from "@/lib/pricing";
 import { sanitizePaymentAttribution, type PaymentAttributionPayload } from "@/lib/attribution";
@@ -218,6 +219,21 @@ export async function POST(request: NextRequest) {
       ...refererAttribution,
       ...sanitizedAttribution,
     };
+    const { firstTouch, lastTouch, gaClientId, gaSessionId } = await readOrderAttribution();
+    // The server-side last-touch cookie takes precedence over browser-supplied attribution.
+    if (lastTouch) {
+      finalAttribution.utm_source = lastTouch.utm_source || undefined;
+      finalAttribution.utm_medium = lastTouch.utm_medium || undefined;
+      finalAttribution.utm_campaign = lastTouch.utm_campaign || undefined;
+      finalAttribution.utm_term = lastTouch.utm_term || undefined;
+      finalAttribution.utm_content = lastTouch.utm_content || undefined;
+      finalAttribution.meta_campaign_id = lastTouch.campaign_id || undefined;
+      finalAttribution.meta_adset_id = lastTouch.adset_id || undefined;
+      finalAttribution.meta_ad_id = lastTouch.ad_id || undefined;
+      finalAttribution.fbclid = lastTouch.fbclid || undefined;
+      finalAttribution.landing_path = lastTouch.landing_path || undefined;
+      finalAttribution.captured_at = lastTouch.captured_at || undefined;
+    }
 
     const merchantKey = process.env.PAYU_MERCHANT_KEY;
     const merchantSalt = process.env.PAYU_MERCHANT_SALT;
@@ -338,7 +354,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate unique transaction ID
-    const txnId = `TXN_${Date.now()}_${(userId || "anon").slice(-6)}`;
+    // PayU v1 limits txnid to 25 characters; the same ID is our payments.id.
+    const txnId = `pay_${Date.now().toString(36)}${crypto.randomBytes(5).toString("hex")}`;
 
     // Prepare PayU parameters
     const payuParams = {
@@ -349,10 +366,10 @@ export async function POST(request: NextRequest) {
       firstname: firstName || "Customer",
       email: normalizedEmail || "customer@astrorekha.com",
       phone: payuPhone,
-      udf1: userId || "",
-      udf2: type || "",
-      udf3: bundleId || packageId || "",
-      udf4: metadata.feature || "",
+      udf1: (finalAttribution.utm_campaign || "").slice(0, 255),
+      udf2: (finalAttribution.utm_term || "").slice(0, 255),
+      udf3: (finalAttribution.utm_content || "").slice(0, 255),
+      udf4: txnId,
       udf5: metadata.coins || "",
     };
 
@@ -407,8 +424,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Save payment record (await to ensure it's created before returning)
-    const { error: paymentError } = await supabase.from("payments").insert({
-      id: `pay_${txnId}`,
+    const paymentRecord = {
+      id: txnId,
       payu_txn_id: txnId,
       user_id: resolvedPaymentUserId,
       type,
@@ -416,15 +433,15 @@ export async function POST(request: NextRequest) {
       feature: metadata.feature || null,
       coins: metadata.coins ? parseInt(metadata.coins, 10) : null,
       customer_email: normalizedEmail || null,
-        amount: toPaise(amount), // Store in paise for consistency
-        paywall_test_id: normalizedPaywallTestId,
-        paywall_variant: normalizedPaywallVariant,
-        tax_mode: taxMode,
-        base_amount: baseAmount !== null ? toPaise(baseAmount) : null,
-        gst_rate: gstRate,
-        gst_amount: gstAmount !== null ? toPaise(gstAmount) : null,
-        total_amount: toPaise(amount),
-        currency: "INR",
+      amount: toPaise(amount), // Store in paise for consistency
+      paywall_test_id: normalizedPaywallTestId,
+      paywall_variant: normalizedPaywallVariant,
+      tax_mode: taxMode,
+      base_amount: baseAmount !== null ? toPaise(baseAmount) : null,
+      gst_rate: gstRate,
+      gst_amount: gstAmount !== null ? toPaise(gstAmount) : null,
+      total_amount: toPaise(amount),
+      currency: "INR",
       payment_status: "created",
       birth_details_snapshot: birthDetailsSnapshot,
       birth_details_complete: birthDetailsSnapshot?.completeForBirthChart || false,
@@ -441,13 +458,33 @@ export async function POST(request: NextRequest) {
       meta_campaign_id: finalAttribution.meta_campaign_id || null,
       meta_adset_id: finalAttribution.meta_adset_id || null,
       meta_ad_id: finalAttribution.meta_ad_id || null,
+      fb_campaign_id: finalAttribution.meta_campaign_id || null,
+      fb_adset_id: finalAttribution.meta_adset_id || null,
+      fb_ad_id: finalAttribution.meta_ad_id || null,
+      first_touch: firstTouch,
+      last_touch: lastTouch,
+      ga_client_id: gaClientId,
+      ga_session_id: gaSessionId,
       landing_path: finalAttribution.landing_path || null,
       landing_url: finalAttribution.landing_url || null,
       referrer_url: finalAttribution.referrer_url || requestReferrer || null,
       attribution_captured_at: finalAttribution.captured_at || nowIso,
       created_at: nowIso,
-    });
-    
+    };
+    let { error: paymentError } = await supabase.from("payments").insert(paymentRecord);
+    if (paymentError && /fb_campaign_id|fb_adset_id|fb_ad_id|first_touch|last_touch|ga_client_id|ga_session_id/i.test(paymentError.message)) {
+      // Preserve checkout during a code-before-migration rollout; existing UTM columns still save.
+      const legacyRecord = { ...paymentRecord } as Record<string, unknown>;
+      for (const column of [
+        "fb_campaign_id", "fb_adset_id", "fb_ad_id", "first_touch", "last_touch",
+        "ga_client_id", "ga_session_id",
+      ]) {
+        delete legacyRecord[column];
+      }
+      console.warn("[payu/initiate-payment] New attribution columns unavailable; retrying with existing payment columns");
+      ({ error: paymentError } = await supabase.from("payments").insert(legacyRecord));
+    }
+
     if (paymentError) {
       console.error("Failed to save payment record:", paymentError);
       return NextResponse.json(
@@ -463,7 +500,7 @@ export async function POST(request: NextRequest) {
       productType: type || null,
       productId: bundleId || packageId || null,
       productName: productInfo,
-      paymentId: `pay_${txnId}`,
+      paymentId: txnId,
       payuTxnId: txnId,
         amount: toPaise(amount),
       currency: "INR",

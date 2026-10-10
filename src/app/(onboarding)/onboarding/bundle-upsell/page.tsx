@@ -12,6 +12,7 @@ import { generateUserId } from "@/lib/user-profile";
 import { pixelEvents } from "@/lib/pixel-events";
 import Script from "next/script";
 import { getPaymentAttributionPayload } from "@/lib/attribution-client";
+import { trackCheckout } from "@/lib/analytics";
 import { normalizeIndianWhatsappNumber, toPayUPhoneNumber } from "@/lib/whatsapp";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 
@@ -72,6 +73,7 @@ type PayUBoltResponse = {
     txnid: string;
     mihpayid?: string;
     hash?: string;
+    additionalCharges?: string;
   };
 };
 
@@ -311,6 +313,7 @@ function BundleUpsellContent() {
       const data = await response.json();
 
       if (data.txnId) {
+        trackCheckout(selectedOfferIds, data.productInfo || selectedOfferLabel, Number(data.amount));
         savePendingPayUPayment({
           txnid: data.txnId,
           type: "upsell",
@@ -386,6 +389,7 @@ function BundleUpsellContent() {
                   mihpayid: responsePayload.response.mihpayid,
                   status: "success",
                   hash: responsePayload.response.hash,
+                  additionalCharges: responsePayload.response.additionalCharges,
                   amount: data.amount,
                   productinfo: data.productInfo,
                   firstname: data.firstName,

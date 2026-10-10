@@ -111,7 +111,7 @@ function stablePaymentEventId(txn: PayUTransaction): string | null {
 
   const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
   if (financial.kind !== "refund") {
-    return `pay_${txnid}`;
+    return txnid.startsWith("pay_") ? txnid : `pay_${txnid}`;
   }
 
   const refundKey = [

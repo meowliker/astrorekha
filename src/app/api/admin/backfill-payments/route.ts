@@ -241,7 +241,7 @@ export async function POST(request: NextRequest) {
           }
         } else {
           const { error: insertError } = await supabase.from("payments").insert({
-            id: `pay_${txnid}`,
+            id: txnid.startsWith("pay_") ? txnid : `pay_${txnid}`,
             ...payload,
           });
 

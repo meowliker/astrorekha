@@ -1,4 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { verifyPayUResponseHash } from "@/lib/payu-response-hash";
+import { sendGa4Purchase } from "@/lib/ga4-purchase";
 import { sendVastuGuideEmail } from "@/lib/vastu-guide-email";
 import { type PaymentAttributionPayload } from "@/lib/attribution";
 import { recordMarketingEvent } from "@/lib/marketing-events";
@@ -75,11 +77,13 @@ export interface PayUCallbackPayload {
   firstname?: string;
   email?: string;
   phone?: string;
-  udf1?: string; // userId
-  udf2?: string; // type
-  udf3?: string; // bundleId/packageId
-  udf4?: string; // feature
+  udf1?: string; // new orders: utm_campaign; legacy orders: userId
+  udf2?: string; // new orders: utm_term; legacy orders: type
+  udf3?: string; // new orders: utm_content; legacy orders: bundleId/packageId
+  udf4?: string; // new orders: order ID; legacy orders: feature
   udf5?: string; // coins
+  additionalCharges?: string;
+  additional_charges?: string;
   key?: string;
 }
 
@@ -242,7 +246,7 @@ async function ensureFulfillmentUser(params: {
   return normalizedUserId;
 }
 
-export async function fulfillPayUPayment(payload: PayUCallbackPayload): Promise<{
+export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: { verifiedByPayUApi?: boolean } = {}): Promise<{
   success: boolean;
   alreadyPaid: boolean;
   userId: string | null;
@@ -258,15 +262,32 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload): Promise<
 
   const supabase = getSupabaseAdmin();
 
-  const { data: existingPayment } = await supabase
+  const { data: existingPayment, error: lookupError } = await supabase
     .from("payments")
     .select("*")
     .eq("payu_txn_id", txnid)
     .maybeSingle();
 
+  if (lookupError) throw lookupError;
+  // A callback can only fulfil an order we created. Reconciliation uses verified PayU API data.
+  if (!existingPayment) {
+    return { success: false, alreadyPaid: false, userId: null, reason: "Unknown order" };
+  }
+  if (!options.verifiedByPayUApi) {
+    const key = process.env.PAYU_MERCHANT_KEY;
+    const salt = process.env.PAYU_MERCHANT_SALT;
+    if (!key || !salt || !verifyPayUResponseHash(payload, key, salt) ||
+        parseAmountToPaise(payload.amount) !== existingPayment.amount) {
+      return { success: false, alreadyPaid: false, userId: null, reason: "Invalid PayU response" };
+    }
+  }
+
   const alreadyPaid = SUCCESS_STATUSES.has(normalizeStatus(existingPayment?.payment_status || ""));
 
   if (!SUCCESS_STATUSES.has(status)) {
+    if (alreadyPaid) {
+      return { success: true, alreadyPaid: true, userId: existingPayment.user_id || null };
+    }
     await supabase
       .from("payments")
       .update({
@@ -277,10 +298,10 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload): Promise<
 
     await recordMarketingEvent({
       eventName: "payment_failed",
-      userId: existingPayment?.user_id || payload.udf1 || null,
+      userId: existingPayment.user_id || null,
       email: existingPayment?.customer_email || payload.email || null,
-      productType: payload.udf2 || existingPayment?.type || null,
-      productId: payload.udf3 || existingPayment?.bundle_id || null,
+      productType: existingPayment.type || null,
+      productId: existingPayment.bundle_id || null,
       productName: payload.productinfo || null,
       paymentId: existingPayment?.id || `pay_${txnid}`,
       payuTxnId: txnid,
@@ -301,19 +322,19 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload): Promise<
   const normalizedEmail = payload.email?.toLowerCase().trim() || null;
   const normalizedWhatsappNumber = normalizeIndianWhatsappNumber(payload.phone);
 
-  let resolvedUserId =
-    payload.udf1?.trim() ||
-    existingPayment?.user_id ||
+  const legacyUdfs = existingPayment.id !== txnid;
+  let resolvedUserId = existingPayment.user_id ||
+    (legacyUdfs ? payload.udf1?.trim() : null) ||
     (await resolveUserIdFromEmail(payload.email));
   resolvedUserId = await ensureFulfillmentUser({
     supabase,
     userId: resolvedUserId,
   });
 
-  const type = (payload.udf2 || existingPayment?.type || "bundle").trim();
-  const bundleId = (payload.udf3 || existingPayment?.bundle_id || "").trim();
-  const feature = (payload.udf4 || existingPayment?.feature || "").trim();
-  const coins = (payload.udf5 || String(existingPayment?.coins || "")).trim();
+  const type = (existingPayment.type || (legacyUdfs ? payload.udf2 : null) || "bundle").trim();
+  const bundleId = (existingPayment.bundle_id || (legacyUdfs ? payload.udf3 : null) || "").trim();
+  const feature = (existingPayment.feature || (legacyUdfs ? payload.udf4 : null) || "").trim();
+  const coins = String(existingPayment.coins || (legacyUdfs ? payload.udf5 : null) || "").trim();
 
   if (existingPayment) {
     const updatePayload: Record<string, any> = {
@@ -332,28 +353,24 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload): Promise<
       updatePayload.amount = amountInPaise;
     }
 
-    await supabase
+    const { error: updateError } = await supabase
       .from("payments")
       .update(updatePayload)
       .eq("payu_txn_id", txnid);
-  } else {
-    await supabase.from("payments").insert({
-      id: `pay_${txnid}`,
-      payu_txn_id: txnid,
-      payu_payment_id: mihpayid || null,
-      user_id: resolvedUserId || null,
-      type,
-      bundle_id: bundleId || null,
-      feature: feature || null,
-      coins: coins ? parseInt(coins, 10) : null,
-      customer_email: normalizedEmail,
-      amount: amountInPaise,
-      currency: "INR",
-      payment_status: "paid",
-      fulfilled_at: nowIso,
-      created_at: nowIso,
-    });
+    if (updateError) throw updateError;
   }
+
+  // Analytics follows fulfilment so a slow GA4 request cannot delay user access.
+  const recordGaPurchaseSafely = async () => {
+    try {
+      await sendGa4Purchase({
+        ...existingPayment,
+        amount: amountInPaise || existingPayment.amount,
+      }, payload.productinfo);
+    } catch (error) {
+      console.error("[payu-fulfillment] GA4 purchase failed without blocking fulfilment", error);
+    }
+  };
 
   if (!alreadyPaid) {
     await recordMarketingEvent({
@@ -399,6 +416,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload): Promise<
   }
 
   if (!resolvedUserId) {
+    await recordGaPurchaseSafely();
     return { success: true, alreadyPaid, userId: resolvedUserId || null };
   }
 
@@ -523,5 +541,6 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload): Promise<
     }
   }
 
+  await recordGaPurchaseSafely();
   return { success: true, alreadyPaid, userId: resolvedUserId };
 }

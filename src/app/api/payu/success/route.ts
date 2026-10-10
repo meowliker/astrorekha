@@ -23,6 +23,8 @@ function toPayloadFromFormData(formData: FormData): PayUCallbackPayload {
     udf4: get("udf4"),
     udf5: get("udf5"),
     key: get("key"),
+    additionalCharges: get("additionalCharges"),
+    additional_charges: get("additional_charges"),
   };
 }
 
@@ -40,10 +42,13 @@ async function parsePayUPayload(request: NextRequest): Promise<PayUCallbackPaylo
 export async function POST(request: NextRequest) {
   try {
     const payload = await parsePayUPayload(request);
-    await fulfillPayUPayment({
+    const result = await fulfillPayUPayment({
       ...payload,
       status: payload.status || "success",
     });
+    if (!result.success) {
+      return NextResponse.json({ success: false, error: result.reason }, { status: 400 });
+    }
 
     const txnid = payload.txnid || "";
     const redirectUrl = new URL("/payment/processing", request.url);

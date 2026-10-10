@@ -1,5 +1,37 @@
 import { type NextRequest, NextResponse } from "next/server";
 
+const ATTRIBUTION_KEYS = [
+  "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+  "campaign_id", "adset_id", "ad_id", "fbclid",
+] as const;
+const ATTRIBUTION_COOKIE_AGE = 30 * 24 * 60 * 60;
+
+function withAttribution(request: NextRequest, response: NextResponse): NextResponse {
+  const params = request.nextUrl.searchParams;
+  // A touch is a tagged landing, not every later navigation without campaign parameters.
+  if (!ATTRIBUTION_KEYS.some((key) => params.has(key))) return response;
+
+  const touch: Record<string, string | null> = {
+    landing_path: request.nextUrl.pathname.slice(0, 512),
+    captured_at: new Date().toISOString(),
+  };
+  for (const key of ATTRIBUTION_KEYS) {
+    touch[key] = params.get(key)?.trim().slice(0, 256) || null;
+  }
+  const cookieOptions = {
+    path: "/",
+    maxAge: ATTRIBUTION_COOKIE_AGE,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+  };
+  const value = JSON.stringify(touch);
+  if (!request.cookies.has("ar_utm_first")) {
+    response.cookies.set("ar_utm_first", value, cookieOptions);
+  }
+  response.cookies.set("ar_utm_last", value, cookieOptions);
+  return response;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -43,30 +75,13 @@ export async function middleware(request: NextRequest) {
     
     if (!hasAccess) {
       // Redirect to welcome/onboarding
-      return NextResponse.redirect(new URL("/welcome", request.url));
+      return withAttribution(request, NextResponse.redirect(new URL("/welcome", request.url)));
     }
   }
   
-  return NextResponse.next();
+  return withAttribution(request, NextResponse.next());
 }
 
 export const config = {
-  matcher: [
-    "/page-previews/:path*",
-    "/dashboard/:path*",
-    "/reports/:path*",
-    "/chat/:path*",
-    "/palm-reading/:path*",
-    "/horoscope/:path*",
-    "/birth-chart/:path*",
-    "/compatibility/:path*",
-    "/prediction-2026/:path*",
-    "/past-life/:path*",
-    "/numerology/:path*",
-    "/spirit-animal/:path*",
-    "/soulmate-sketch/:path*",
-    "/future-partner/:path*",
-    "/profile/:path*",
-    "/settings/:path*",
-  ],
+  matcher: ["/((?!api(?:/|$)|_next(?:/|$)|.*\\.[^/]+$).*)"],
 };

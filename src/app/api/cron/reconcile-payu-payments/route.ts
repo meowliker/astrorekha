@@ -139,7 +139,7 @@ async function runReconciliation(lookbackDays: number, maxRows: number, includeF
           udf4: payuTxn.udf4 || row.feature || undefined,
           udf5: payuTxn.udf5 || (typeof row.coins === "number" ? String(row.coins) : undefined),
           key: process.env.PAYU_MERCHANT_KEY,
-        });
+        }, { verifiedByPayUApi: true });
 
         if (result.success) {
           if (result.alreadyPaid) {

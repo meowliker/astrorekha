@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
       udf4: payuTxn.udf4 || payment?.feature || undefined,
       udf5: payuTxn.udf5 || (typeof payment?.coins === "number" ? String(payment.coins) : undefined),
       key: process.env.PAYU_MERCHANT_KEY,
-    });
+    }, { verifiedByPayUApi: true });
 
     return NextResponse.json({
       success: true,

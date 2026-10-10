@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { Shield } from "lucide-react";
 import { useHaptic } from "@/hooks/useHaptic";
 import { pixelEvents } from "@/lib/pixel-events";
+import { track } from "@/lib/analytics";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { calculateZodiacSign, generateUserId } from "@/lib/user-profile";
 import { normalizeIndianWhatsappNumber } from "@/lib/whatsapp";
@@ -151,6 +152,7 @@ export default function Step15Page() {
     // Navigate to paywall immediately (skip legacy redirect spinner step).
     localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
     localStorage.setItem("astrorekha_layout_variant", "A");
+    track("quiz_complete", { quiz_id: "onboarding" });
     router.push("/onboarding/bundle-pricing");
     
     // Save lead data in background (non-blocking)

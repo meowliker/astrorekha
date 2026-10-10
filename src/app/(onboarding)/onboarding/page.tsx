@@ -11,6 +11,7 @@ import { Menu } from "lucide-react";
 import { OnboardingSidebar } from "@/components/OnboardingSidebar";
 import { ASTROREKHA_ASSETS } from "@/lib/assets";
 import { pixelEvents } from "@/lib/pixel-events";
+import { track } from "@/lib/analytics";
 
 const genderOptions: { value: Gender; label: string; icon: string }[] = [
   { value: "female", label: "Female", icon: "♀" },
@@ -40,6 +41,7 @@ export default function OnboardingPage() {
   }, [router]);
 
   const handleGenderSelect = (selectedGender: Gender) => {
+    track("quiz_start", { quiz_id: "onboarding" });
     setGender(selectedGender);
     pixelEvents.lead(); // Track lead when user starts onboarding
     router.push("/onboarding/birthday");

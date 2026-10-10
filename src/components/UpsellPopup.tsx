@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useUserStore, featureNames, featurePrices, UnlockedFeatures } from "@/lib/user-store";
 import { generateUserId } from "@/lib/user-profile";
 import { getPaymentAttributionPayload } from "@/lib/attribution-client";
+import { trackCheckout } from "@/lib/analytics";
 import Script from "next/script";
 import { normalizeIndianWhatsappNumber, toPayUPhoneNumber } from "@/lib/whatsapp";
 import { useOnboardingStore } from "@/lib/onboarding-store";
@@ -105,6 +106,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
       const data = await response.json();
 
       if (data.txnId) {
+        trackCheckout(reportId, data.productInfo || featureNames[feature], Number(data.amount));
         savePendingPayUPayment({
           txnid: data.txnId,
           type: "report",
@@ -137,7 +139,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
         }, {
           responseHandler: async (response: any) => {
             if (response.response.txnStatus === "SUCCESS") {
-              await fetch("/api/payu/verify-payment", {
+              const verifyRes = await fetch("/api/payu/verify-payment", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -145,6 +147,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
                   mihpayid: response.response.mihpayid,
                   status: "success",
                   hash: response.response.hash,
+                  additionalCharges: response.response.additionalCharges,
                   amount: data.amount,
                   productinfo: data.productInfo,
                   firstname: data.firstName,
@@ -157,7 +160,11 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
                   udf5: data.udf5,
                   key: data.key,
                 }),
-              });
+              }).catch(() => null);
+              if (!verifyRes?.ok || !(await verifyRes.json().catch(() => null))?.success) {
+                window.location.href = `/payment/processing?txnid=${encodeURIComponent(data.txnId)}&source=report_popup`;
+                return;
+              }
               localStorage.removeItem(PENDING_PAYMENT_KEY);
               setIsProcessing(false);
               onPurchase?.();

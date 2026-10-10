@@ -14,6 +14,7 @@ import Link from "next/link";
 import Script from "next/script";
 import { usePricing } from "@/hooks/usePricing";
 import { getPaymentAttributionPayload } from "@/lib/attribution-client";
+import { trackCheckout } from "@/lib/analytics";
 import { normalizeIndianWhatsappNumber, toPayUPhoneNumber } from "@/lib/whatsapp";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { ASTROREKHA_ASSETS } from "@/lib/assets";
@@ -42,6 +43,7 @@ type PayUBoltResponse = {
     txnid: string;
     mihpayid?: string;
     hash?: string;
+    additionalCharges?: string;
   };
 };
 
@@ -481,6 +483,7 @@ export default function BundlePricingPage() {
 
       if (data.txnId) {
         const chargedAmountInr = Number(data.amount || plan.price);
+        trackCheckout(selectedPlan, plan.name, chargedAmountInr);
         savePendingPayUPayment({
           txnid: data.txnId,
           type: "bundle",
@@ -546,6 +549,7 @@ export default function BundlePricingPage() {
                   mihpayid: response.response.mihpayid,
                   status: "success",
                   hash: response.response.hash,
+                  additionalCharges: response.response.additionalCharges,
                   amount: data.amount,
                   productinfo: data.productInfo,
                   firstname: data.firstName,

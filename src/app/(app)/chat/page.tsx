@@ -16,6 +16,7 @@ import { usePricing } from "@/hooks/usePricing";
 import { getPaymentAttributionPayload } from "@/lib/attribution-client";
 import { trackMarketingEvent } from "@/lib/marketing-events-client";
 import { normalizeIndianWhatsappNumber, toPayUPhoneNumber } from "@/lib/whatsapp";
+import { trackCheckout } from "@/lib/analytics";
 import {
   CHAT_UNLIMITED_OFFER_EVENT_NAMES,
   CHAT_UNLIMITED_PASS_ID,
@@ -320,6 +321,7 @@ export default function ChatPage() {
       const data = await response.json();
 
       if (data.txnId) {
+        trackCheckout(pkg.packageId, data.productInfo || pkg.id, Number(data.amount));
         savePendingPayUPayment({
           txnid: data.txnId,
           type: "coins",
@@ -346,7 +348,7 @@ export default function ChatPage() {
         }, {
           responseHandler: async (response: any) => {
             if (response.response.txnStatus === "SUCCESS") {
-              await fetch("/api/payu/verify-payment", {
+              const verifyRes = await fetch("/api/payu/verify-payment", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -354,6 +356,7 @@ export default function ChatPage() {
                   mihpayid: response.response.mihpayid,
                   status: "success",
                   hash: response.response.hash,
+                  additionalCharges: response.response.additionalCharges,
                   amount: data.amount,
                   productinfo: data.productInfo,
                   firstname: data.firstName,
@@ -366,7 +369,11 @@ export default function ChatPage() {
                   udf5: data.udf5,
                   key: data.key,
                 }),
-              });
+              }).catch(() => null);
+              if (!verifyRes?.ok || !(await verifyRes.json().catch(() => null))?.success) {
+                window.location.href = `/payment/processing?txnid=${encodeURIComponent(data.txnId)}&source=coins`;
+                return;
+              }
               localStorage.removeItem(PENDING_PAYMENT_KEY);
               setPurchasingPackage(null);
               window.location.reload();
@@ -422,12 +429,13 @@ export default function ChatPage() {
       const data = await response.json();
 
       if (data.txnId) {
+        trackCheckout(CHAT_UNLIMITED_PASS_ID, data.productInfo || CHAT_UNLIMITED_PASS_NAME, Number(data.amount));
         await trackMarketingEvent({
           eventName: CHAT_UNLIMITED_OFFER_EVENT_NAMES.checkoutStarted,
           productType: CHAT_UNLIMITED_PASS_TYPE,
           productId: CHAT_UNLIMITED_PASS_ID,
           productName: CHAT_UNLIMITED_PASS_NAME,
-          paymentId: `pay_${data.txnId}`,
+          paymentId: data.txnId,
           payuTxnId: data.txnId,
           amount: Math.round(Number(data.amount || CHAT_UNLIMITED_PASS_PRICE_INR) * 100),
           metadata: {
@@ -461,7 +469,7 @@ export default function ChatPage() {
         }, {
           responseHandler: async (response: any) => {
             if (response.response.txnStatus === "SUCCESS") {
-              await fetch("/api/payu/verify-payment", {
+              const verifyRes = await fetch("/api/payu/verify-payment", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -469,6 +477,7 @@ export default function ChatPage() {
                   mihpayid: response.response.mihpayid,
                   status: "success",
                   hash: response.response.hash,
+                  additionalCharges: response.response.additionalCharges,
                   amount: data.amount,
                   productinfo: data.productInfo,
                   firstname: data.firstName,
@@ -481,7 +490,11 @@ export default function ChatPage() {
                   udf5: data.udf5,
                   key: data.key,
                 }),
-              });
+              }).catch(() => null);
+              if (!verifyRes?.ok || !(await verifyRes.json().catch(() => null))?.success) {
+                window.location.href = `/payment/processing?txnid=${encodeURIComponent(data.txnId)}&source=chat_pass`;
+                return;
+              }
               localStorage.removeItem(PENDING_PAYMENT_KEY);
               setPurchasingUnlimitedPass(false);
               setShowUnlimitedOffer(false);
