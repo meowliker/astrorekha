@@ -37,6 +37,50 @@ export interface PayUTransaction {
   unmappedstatus?: string;
 }
 
+export interface VerifiedPayUTransaction {
+  txnid?: string;
+  mihpayid?: string;
+  status?: string;
+  unmappedstatus?: string;
+  amt?: string | number;
+  transaction_amount?: string | number;
+  productinfo?: string;
+  firstname?: string;
+  email?: string;
+  phone?: string;
+  udf1?: string;
+  udf2?: string;
+  udf3?: string;
+  udf4?: string;
+  udf5?: string;
+}
+
+/** Check one PayU transaction without scanning the merchant's full sales/refund history. */
+export async function verifyPayUTransaction(txnid: string): Promise<VerifiedPayUTransaction | null> {
+  const merchantKey = process.env.PAYU_MERCHANT_KEY;
+  const merchantSalt = process.env.PAYU_MERCHANT_SALT;
+  if (!merchantKey || !merchantSalt) throw new Error("PayU credentials not configured");
+
+  const command = "verify_payment";
+  const hash = generateHash(`${merchantKey}|${command}|${txnid}|${merchantSalt}`);
+  const response = await fetch(PAYU_BASE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+    body: new URLSearchParams({ key: merchantKey, command, var1: txnid, hash }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(12000),
+  });
+  if (!response.ok) throw new Error(`PayU verification failed with HTTP ${response.status}`);
+
+  const result = await response.json() as {
+    status?: number;
+    transaction_details?: Record<string, VerifiedPayUTransaction>;
+  };
+  if (result.status !== 1) return null;
+  const transaction = result.transaction_details?.[txnid];
+  return transaction?.txnid === txnid ? transaction : null;
+}
+
 interface PayUTransactionResponse {
   status: number;
   msg: string;
