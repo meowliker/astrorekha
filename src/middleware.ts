@@ -74,8 +74,10 @@ export async function middleware(request: NextRequest) {
     const hasAccess = request.cookies.get("ar_access");
     
     if (!hasAccess) {
-      // Redirect to welcome/onboarding
-      return withAttribution(request, NextResponse.redirect(new URL("/welcome", request.url)));
+      // Keep campaign parameters visible and available after redirecting to the landing page.
+      const landingUrl = request.nextUrl.clone();
+      landingUrl.pathname = "/";
+      return withAttribution(request, NextResponse.redirect(landingUrl));
     }
   }
   

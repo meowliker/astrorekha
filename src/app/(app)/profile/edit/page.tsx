@@ -293,7 +293,7 @@ export default function EditProfilePage() {
       resetUserState();
       
       // Step 5: Redirect to welcome screen
-      router.push("/welcome");
+      router.push("/");
     } catch (error) {
       console.error("Delete account error:", error);
       setDeleteError("Failed to delete account. Please try again.");

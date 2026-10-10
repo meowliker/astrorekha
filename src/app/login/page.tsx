@@ -343,7 +343,7 @@ export default function LoginPage() {
           <motion.button
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            onClick={() => router.push("/welcome")}
+            onClick={() => router.push("/")}
             className="p-2 -ml-2 text-white/70 hover:text-white transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -482,7 +482,7 @@ export default function LoginPage() {
           <p className="text-white/50 text-sm">
             Don&apos;t have an account?{" "}
             <button
-              onClick={() => router.push("/welcome")}
+              onClick={() => router.push("/")}
               className="text-primary hover:text-primary/80 font-medium transition-colors"
             >
               Sign up
@@ -764,7 +764,7 @@ export default function LoginPage() {
                 <Button
                   onClick={() => {
                     setShowUserNotFound(false);
-                    router.push("/welcome");
+                    router.push("/");
                   }}
                   className="w-full h-12 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-500 text-white font-semibold"
                 >

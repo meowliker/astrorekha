@@ -95,7 +95,7 @@ export default function SettingsPage() {
     // Reset stores
     resetUserState();
     // Redirect to welcome screen
-    router.push("/welcome");
+    router.push("/");
   };
 
   return (

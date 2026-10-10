@@ -121,7 +121,7 @@ export default function UserHydrator() {
         await fetch("/api/session/clear", { method: "POST" });
         
         // Redirect to welcome
-        router.replace("/welcome");
+        router.replace("/");
         return;
       }
 

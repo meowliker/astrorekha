@@ -99,6 +99,7 @@ type InternalRouteAccumulator = {
 
 const ONBOARDING_FLOW_ROUTES: Record<VariantKey, string[]> = {
   A: [
+    "/",
     "/welcome",
     "/onboarding",
     "/onboarding/birthday",
@@ -121,6 +122,7 @@ const ONBOARDING_FLOW_ROUTES: Record<VariantKey, string[]> = {
     "/onboarding/step-20",
   ],
   B: [
+    "/",
     "/welcome-b",
     "/onboarding",
     "/onboarding/birthday",
