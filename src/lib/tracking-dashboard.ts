@@ -61,8 +61,11 @@ export type TrackingCampaign = {
   utmTerms: string[];
   utmContents: string[];
   attribution: "meta_id" | "utm_id" | "unique_name" | "utm_only" | "none";
-  adBreakdown: Array<{ term: string; content: string; orders: number; revenue: number }>;
+  adBreakdown: Array<{ adsetId: string | null; adId: string | null; term: string; content: string; orders: number; grossRevenue: number; refunds: number; refundAmount: number; revenue: number }>;
 };
+
+export type TrackingChild = TrackingCampaign & { level: "adset" | "ad"; id: string; parentId: string };
+export type TrackingActivity = { id: string; accountId: string; accountName: string; at: string; actor: string; action: string; object: string; objectType: string; detail: string };
 
 export type TrackingSale = {
   id: string;
@@ -81,7 +84,8 @@ export type TrackingSummary = {
   accounts: Array<{ id: string; name: string; currency: string; timezone: string | null; error?: string }>;
   campaigns: TrackingCampaign[];
   hourly: TrackingHour[];
-  totals: { spendInr: number; orders: number; attributedOrders: number; grossRevenue: number; refundAmount: number; revenue: number };
+  totals: { spendInr: number; indianSpendInr: number; gst: number; profit: number | null; orders: number; attributedOrders: number; grossRevenue: number; refundAmount: number; revenue: number };
+  accountDailySpendInr: Record<string, Record<string, { total: number; indian: number }>>;
   dates: { start: string; end: string };
   fxRate: number;
   fxRateSource: string;

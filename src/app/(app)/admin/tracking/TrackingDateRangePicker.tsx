@@ -82,7 +82,7 @@ export default function TrackingDateRangePicker({ value, maxDate, onChange }: {
   return (
     <div ref={root} className="relative">
       <button type="button" onClick={() => { if (!open) { setDraftStart(value.start); setDraftEnd(value.end); setMonth(monthStart(value.end)); setHint(""); } setOpen(!open); }} aria-expanded={open} aria-label="Choose reporting date range" className="flex items-center gap-2 rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm hover:bg-white/5">
-        <CalendarDays size={16} className="text-[#e51b50]" /><span>{value.start === value.end ? longDate(value.start) : `${shortDate(value.start)} – ${longDate(value.end)}`}</span>
+        <CalendarDays size={16} className="text-[#e51b50]" /><span>{value.start === maxDate && value.end === maxDate ? `Today · ${longDate(maxDate)}` : value.start === value.end ? longDate(value.start) : `${shortDate(value.start)} – ${longDate(value.end)}`}</span>
       </button>
       {open && <div className="absolute right-0 top-[calc(100%+8px)] z-40 w-[min(92vw,620px)] rounded-xl border border-white/15 bg-[#1b2437] p-4 shadow-2xl shadow-black/50">
         <div className="mb-3 flex items-center justify-between"><h2 className="text-sm font-semibold">Reporting dates</h2><button type="button" onClick={() => setOpen(false)} aria-label="Close date picker" className="rounded p-1 text-slate-400 hover:bg-white/10 hover:text-white"><X size={16} /></button></div>

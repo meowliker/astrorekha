@@ -56,6 +56,7 @@ export async function fetchMetaTrackingAccount(
 ): Promise<{
   account: { id: string; name: string; currency: string; timezone: string | null; error?: string };
   campaigns: TrackingCampaign[];
+  dailySpendInr: Record<string, { total: number; indian: number }>;
   warnings: string[];
 }> {
   const accountId = credential.accountId;
@@ -121,6 +122,13 @@ export async function fetchMetaTrackingAccount(
       hourly: hourlySpend.rows, daily: dailySpend.rows, start: dates.start, end: dates.end,
       timezoneOffsetHoursUtc: offset, accountWindow, nowMillis: Date.now(),
     });
+    const dailySpendInr: Record<string, { total: number; indian: number }> = {};
+    for (let day = dates.start; day <= dates.end; day = new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)) {
+      const daily = campaignSpendForBusinessDays({ hourly: hourlySpend.rows, daily: dailySpend.rows,
+        start: day, end: day, timezoneOffsetHoursUtc: offset, accountWindow, nowMillis: Date.now() });
+      const total = Array.from(daily.values()).reduce((sum, spend) => sum + spend, 0) * (currency === "USD" ? usdInrRate : 1);
+      dailySpendInr[day] = { total: currency === "INR" || currency === "USD" ? total : 0, indian: currency === "INR" ? total : 0 };
+    }
     const byId = new Map<string, TrackingCampaign>();
 
     function baseCampaign(id: string, name: string): TrackingCampaign {
@@ -174,9 +182,9 @@ export async function fetchMetaTrackingAccount(
       row.spendInr = currency === "INR" ? spend : currency === "USD" ? spend * usdInrRate : null;
       byId.set(id, row);
     }
-    return { account, campaigns: Array.from(byId.values()), warnings };
+    return { account, campaigns: Array.from(byId.values()), dailySpendInr, warnings };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Meta request failed";
-    return { account: { id: accountId, name: fallbackName, currency: "INR", timezone: null, error: message }, campaigns: [], warnings: [`${fallbackName}: ${message}`] };
+    return { account: { id: accountId, name: fallbackName, currency: "INR", timezone: null, error: message }, campaigns: [], dailySpendInr: {}, warnings: [`${fallbackName}: ${message}`] };
   }
 }

@@ -13,6 +13,7 @@ export type TrackingViewConfig = {
   accountId: string;
   search: string;
   hourMetric: "orders" | "revenue";
+  activeOnly?: boolean;
 };
 
 export type TrackingSavedView = TrackingViewConfig & {
@@ -36,5 +37,6 @@ export function normalizeTrackingView(input: unknown): TrackingViewConfig | null
     accountId: typeof value.accountId === "string" ? value.accountId.slice(0, 100) : "all",
     search: typeof value.search === "string" ? value.search.slice(0, 120) : "",
     hourMetric: value.hourMetric === "revenue" ? "revenue" : "orders",
+    activeOnly: value.activeOnly === true,
   };
 }

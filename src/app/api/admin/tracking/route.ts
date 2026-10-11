@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing } from "@/lib/pricing";
 import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
 import { fetchMetaTrackingAccount } from "@/lib/tracking-meta";
+import { calculateProfitSheetGst, indianAdGstApplies } from "@/lib/profit-sheet-gst";
 import {
   businessDate, businessDayStartUtc, businessHourBucket, campaignNameKey, isMetaSource,
   nextBusinessDayStartUtc, paidAt, productLabel,
@@ -28,9 +29,7 @@ function validDate(value: string | null): value is string {
 
 function defaultDates(): { start: string; end: string } {
   const end = businessDate(new Date());
-  const start = new Date(`${end}T00:00:00Z`);
-  start.setUTCDate(start.getUTCDate() - 6);
-  return { start: start.toISOString().slice(0, 10), end };
+  return { start: end, end };
 }
 
 async function paidPayments(supabase: ReturnType<typeof getSupabaseAdmin>, start: string, end: string): Promise<TrackingPayment[]> {
@@ -155,9 +154,11 @@ function attachOrders(campaigns: TrackingCampaign[], sales: TrackingPayment[], r
     if (payment.utm_content && !row.utmContents.includes(payment.utm_content)) row.utmContents.push(payment.utm_content);
     const term = payment.utm_term || "—";
     const content = payment.utm_content || "—";
-    const detail = row.adBreakdown.find((item) => item.term === term && item.content === content);
-    if (detail) { detail.orders++; detail.revenue += amount; }
-    else row.adBreakdown.push({ term, content, orders: 1, revenue: amount });
+    const adsetId = payment.meta_adset_id || payment.fb_adset_id || null;
+    const adId = payment.meta_ad_id || payment.fb_ad_id || null;
+    const detail = row.adBreakdown.find((item) => item.adsetId === adsetId && item.adId === adId && item.term === term && item.content === content);
+    if (detail) { detail.orders++; detail.grossRevenue += amount; detail.revenue += amount; }
+    else row.adBreakdown.push({ adsetId, adId, term, content, orders: 1, grossRevenue: amount, refunds: 0, refundAmount: 0, revenue: amount });
     addHour(payment, row, amount, false);
   }
 
@@ -169,6 +170,11 @@ function attachOrders(campaigns: TrackingCampaign[], sales: TrackingPayment[], r
     row.refunds++;
     row.refundAmount += amount;
     row.revenue -= amount;
+    const source = parent || refund;
+    const adsetId = source.meta_adset_id || source.fb_adset_id || null;
+    const adId = source.meta_ad_id || source.fb_ad_id || null;
+    const detail = row.adBreakdown.find((item) => item.adsetId === adsetId && item.adId === adId && item.term === (source.utm_term || "—") && item.content === (source.utm_content || "—"));
+    if (detail) { detail.refunds++; detail.refundAmount += amount; detail.revenue -= amount; }
     addHour(refund, row, amount, true);
   }
   return { campaigns: campaigns.concat(Array.from(extra.values())), hourly: Array.from(hourMap.values()), attributedOrders };
@@ -198,12 +204,24 @@ async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { s
   const warnings = meta.flatMap((result) => result.warnings);
   if (!credentials.length) warnings.push("No Meta ad accounts are configured for this range. UTM orders are still shown.");
   if (joined.attributedOrders < sales.length) warnings.push(`${sales.length - joined.attributedOrders} paid orders could not be matched to a unique Meta campaign.`);
+  // Match the Profit Sheet's net GST calculation and 11:30 AM IST business day.
+  const spendInr = campaigns.reduce((sum, row) => sum + (row.spendInr || 0), 0);
+  const indianSpendInr = campaigns.reduce((sum, row) => sum + (row.currency === "INR" ? row.spendInr || 0 : 0), 0);
+  const revenue = grossRevenue - refundAmount;
+  const gst = Array.from({ length: Math.floor((Date.parse(dates.end) - Date.parse(dates.start)) / 86_400_000) + 1 }, (_, index) => {
+      const day = new Date(Date.parse(`${dates.start}T00:00:00Z`) + index * 86_400_000).toISOString().slice(0, 10);
+      const dailyRevenue = joined.hourly.filter((hour) => hour.date === day).reduce((sum, hour) => sum + hour.revenue, 0);
+      const dailyIndianSpend = meta.reduce((sum, account) => sum + (account.dailySpendInr[day]?.indian || 0), 0);
+      return indianAdGstApplies(day) ? calculateProfitSheetGst(dailyRevenue, 0.18, dailyIndianSpend).gst : dailyRevenue * 0.05;
+    }).reduce((sum, value) => sum + value, 0);
+  const profitAvailable = meta.every((result) => !result.account.error) && campaigns.every((row) => row.spendInr !== null || row.spend === 0);
   return {
     accounts: meta.map((result) => result.account), campaigns: joined.campaigns, hourly: joined.hourly,
+    accountDailySpendInr: Object.fromEntries(meta.map((result) => [result.account.id, result.dailySpendInr])),
     totals: {
-      spendInr: campaigns.reduce((sum, row) => sum + (row.spendInr || 0), 0),
+      spendInr, indianSpendInr, gst, profit: profitAvailable ? revenue - gst - spendInr : null,
       orders: sales.length, attributedOrders: joined.attributedOrders, grossRevenue,
-      refundAmount, revenue: grossRevenue - refundAmount,
+      refundAmount, revenue,
     },
     dates, fxRate: rate.rate, fxRateSource: rate.source, warnings, fetchedAt: new Date().toISOString(),
   };

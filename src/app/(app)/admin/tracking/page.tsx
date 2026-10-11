@@ -1,12 +1,15 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { Activity, ArrowDown, ArrowLeft, ArrowUp, ChevronDown, ChevronRight, Columns3, GripVertical, RefreshCw, Search, ShoppingBag, X } from "lucide-react";
-import type { TrackingCampaign, TrackingSale, TrackingSummary } from "@/lib/tracking-dashboard";
+import { Activity, ArrowDown, ArrowLeft, ArrowUp, ChevronDown, Columns3, GripVertical, RefreshCw, Search, ShoppingBag, X } from "lucide-react";
+import type { TrackingActivity, TrackingCampaign, TrackingSale, TrackingSummary } from "@/lib/tracking-dashboard";
 import type { TrackingSavedView, TrackingViewConfig } from "@/lib/tracking-views";
 import TrackingDateRangePicker, { type TrackingRange } from "./TrackingDateRangePicker";
+import TrackingCampaignRows from "./TrackingCampaignRows";
+import TrackingHourlyModal from "./TrackingHourlyModal";
+import { calculateProfitSheetGst, indianAdGstApplies } from "@/lib/profit-sheet-gst";
 
 type LiveData = { sales: TrackingSale[]; todayCount: number; todayRevenue: number; fetchedAt: string };
 type Column = { id: string; label: string; group: "Identity" | "Meta" | "AstroRekha"; value: (row: TrackingCampaign) => string; sort: (row: TrackingCampaign) => string | number; align?: "right" };
@@ -71,11 +74,6 @@ function businessToday() {
   const value = (kind: string) => parts.find((part) => part.type === kind)?.value || "00";
   return `${value("year")}-${value("month")}-${value("day")}`;
 }
-function dateDaysAgo(days: number) {
-  const date = new Date(`${businessToday()}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() - days);
-  return date.toISOString().slice(0, 10);
-}
 function displayIst(iso: string) {
   return new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 }
@@ -87,7 +85,7 @@ function hourLabel(bucket: number) {
 export default function TrackingPage() {
   const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
-  const [dates, setDates] = useState({ start: dateDaysAgo(6), end: businessToday() });
+  const [dates, setDates] = useState({ start: businessToday(), end: businessToday() });
   const [summary, setSummary] = useState<TrackingSummary | null>(null);
   const [live, setLive] = useState<LiveData | null>(null);
   const [error, setError] = useState("");
@@ -95,6 +93,13 @@ export default function TrackingPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [accountId, setAccountId] = useState("all");
   const [search, setSearch] = useState("");
+  const [activeOnly, setActiveOnly] = useState(false);
+  const [activities, setActivities] = useState<TrackingActivity[]>([]);
+  const [activityWarnings, setActivityWarnings] = useState<string[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [hourCampaignKey, setHourCampaignKey] = useState<string | null>(null);
+  const [hourSpend, setHourSpend] = useState<number[] | null>(null);
+  const [hourSpendError, setHourSpendError] = useState("");
   const [columnIds, setColumnIds] = useState<string[]>(DEFAULT_COLUMNS);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [viewsOpen, setViewsOpen] = useState(false);
@@ -106,7 +111,6 @@ export default function TrackingPage() {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<{ id: string; before: boolean } | null>(null);
   const [sort, setSort] = useState({ id: "spendInr", desc: true });
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [hourDate, setHourDate] = useState(dates.end);
   const [hourMetric, setHourMetric] = useState<"orders" | "revenue">("orders");
   const [newSaleIds, setNewSaleIds] = useState<string[]>([]);
@@ -183,6 +187,37 @@ export default function TrackingPage() {
     if (!token) return;
     void fetchSummary(token, dates);
   }, [token, dates, fetchSummary]);
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    const load = async () => {
+      if (document.visibilityState !== "visible") return;
+      setActivityLoading(true);
+      try {
+        const params = new URLSearchParams({ mode: "activities", ...dates, accountId });
+        const response = await fetch(`/api/admin/tracking/details?${params}`, { headers: { "x-admin-session": token }, cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Meta action log unavailable");
+        if (active) { setActivities(data.activities || []); setActivityWarnings(data.warnings || []); }
+      } catch (cause) { if (active) setActivityWarnings([cause instanceof Error ? cause.message : "Meta action log unavailable"]); }
+      finally { if (active) setActivityLoading(false); }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), dates.end === businessToday() ? 60_000 : 300_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [token, dates, accountId]);
+  useEffect(() => {
+    const row = summary?.campaigns.find((item) => item.key === hourCampaignKey);
+    if (!token || !row || !row.accountId || !row.campaignId) { setHourSpend(null); setHourSpendError(""); return; }
+    const controller = new AbortController();
+    setHourSpend(null); setHourSpendError("");
+    const params = new URLSearchParams({ mode: "hourly", start: hourDate, end: hourDate, accountId: row.accountId, campaignId: row.campaignId });
+    fetch(`/api/admin/tracking/details?${params}`, { headers: { "x-admin-session": token }, cache: "no-store", signal: controller.signal })
+      .then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error || "Hourly spend unavailable"); return data; })
+      .then((data: { spendInr: number[] }) => setHourSpend(data.spendInr))
+      .catch((cause) => { if (!controller.signal.aborted) setHourSpendError(cause instanceof Error ? cause.message : "Hourly spend unavailable"); });
+    return () => controller.abort();
+  }, [token, summary, hourCampaignKey, hourDate]);
   const fetchViews = useCallback(async (session: string) => {
     await fetch("/api/admin/tracking/views", { headers: { "x-admin-session": session }, cache: "no-store" })
       .then(async (response) => { if (!response.ok) throw new Error("Unable to load saved views"); return response.json(); })
@@ -258,12 +293,13 @@ export default function TrackingPage() {
   };
   const activeColumns = columnIds.map((id) => COLUMNS.find((column) => column.id === id)).filter((column): column is Column => !!column);
   const selectedView = savedViews.find((view) => view.id === selectedViewId);
-  const currentViewConfig = (): TrackingViewConfig => ({ columnIds, sort, accountId, search, hourMetric });
+  const currentViewConfig = (): TrackingViewConfig => ({ columnIds, sort, accountId, search, hourMetric, activeOnly });
   const applyView = (view: TrackingSavedView) => {
     setColumns(view.columnIds);
     setSort(view.sort);
     setAccountId(view.accountId);
     setSearch(view.search);
+    setActiveOnly(view.activeOnly === true);
     setHourMetric(view.hourMetric);
     setSelectedViewId(view.id);
     setViewName(view.name);
@@ -306,6 +342,7 @@ export default function TrackingPage() {
     const needle = search.trim().toLowerCase();
     const rows = (summary?.campaigns || []).filter((row) =>
       (accountId === "all" || row.accountId === accountId) &&
+      (!activeOnly || row.status === "ACTIVE") &&
       (!needle || [row.campaignName, row.campaignId, row.accountName, ...row.utmTerms, ...row.utmContents].join(" ").toLowerCase().includes(needle))
     );
     const column = COLUMNS.find((item) => item.id === sort.id);
@@ -315,7 +352,7 @@ export default function TrackingPage() {
       const comparison = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
       return sort.desc ? -comparison : comparison;
     });
-  }, [summary, accountId, search, sort]);
+  }, [summary, accountId, search, sort, activeOnly]);
 
   const visibleTotals = useMemo(() => {
     const rows = accountId === "all" ? summary?.campaigns || [] : (summary?.campaigns || []).filter((row) => row.accountId === accountId);
@@ -327,9 +364,24 @@ export default function TrackingPage() {
       refunds: rows.reduce((sum, row) => sum + row.refundAmount, 0),
     };
   }, [summary, accountId]);
+  const visibleProfit = useMemo(() => {
+    if (!summary) return null;
+    if (accountId === "all") return summary.totals.profit;
+    if (summary.accounts.find((account) => account.id === accountId)?.error) return null;
+    const accountRows = summary.campaigns.filter((row) => row.accountId === accountId);
+    if (accountRows.some((row) => row.spendInr == null && row.spend > 0)) return null;
+    const keys = new Set(accountRows.map((row) => row.key));
+    let gst = 0;
+    for (let day = dates.start; day <= dates.end; day = new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)) {
+      const revenue = summary.hourly.filter((item) => item.date === day && keys.has(item.campaignKey)).reduce((sum, item) => sum + item.revenue, 0);
+      const indianSpend = summary.accountDailySpendInr[accountId]?.[day]?.indian || 0;
+      gst += indianAdGstApplies(day) ? calculateProfitSheetGst(revenue, 0.18, indianSpend).gst : revenue * 0.05;
+    }
+    return visibleTotals.revenue - visibleTotals.spend - gst;
+  }, [summary, accountId, dates, visibleTotals.revenue, visibleTotals.spend]);
 
   const hourly = useMemo(() => {
-    const visible = new Set((summary?.campaigns || []).filter((row) => accountId === "all" || row.accountId === accountId).map((row) => row.key));
+    const visible = new Set(filtered.map((row) => row.key));
     const rows = (summary?.hourly || []).filter((item) => item.date === hourDate && visible.has(item.campaignKey));
     const byCampaign = new Map<string, number[]>();
     const totals = Array.from({ length: 24 }, () => 0);
@@ -340,14 +392,14 @@ export default function TrackingPage() {
       totals[row.hour] += value;
       byCampaign.set(row.campaignKey, hours);
     }
-    const names = new Map((summary?.campaigns || []).map((row) => [row.key, row.campaignName]));
-    return { totals, campaigns: Array.from(byCampaign.entries()).sort((a, b) => b[1].reduce((sum, n) => sum + n, 0) - a[1].reduce((sum, n) => sum + n, 0)).map(([key, hours]) => ({ key, name: names.get(key) || key, hours })) };
-  }, [summary, accountId, hourDate, hourMetric]);
+    return { totals, campaigns: filtered.map((row) => ({ key: row.key, name: row.campaignName, hours: byCampaign.get(row.key) || Array.from({ length: 24 }, () => 0) })).sort((a, b) => b.hours.reduce((sum, n) => sum + n, 0) - a.hours.reduce((sum, n) => sum + n, 0)) };
+  }, [summary, filtered, hourDate, hourMetric]);
   const maxHour = hourly.campaigns.reduce((max, row) => Math.max(max, ...row.hours), Math.max(1, ...hourly.totals));
   const hourDates = useMemo(() => Array.from(
     { length: Math.floor((Date.parse(dates.end) - Date.parse(dates.start)) / 86_400_000) + 1 },
     (_, index) => new Date(Date.parse(`${dates.start}T00:00:00Z`) + index * 86_400_000).toISOString().slice(0, 10)
   ), [dates]);
+  const hourCampaign = summary?.campaigns.find((row) => row.key === hourCampaignKey) || null;
 
   function applyDates(range: TrackingRange) {
     setSummary(null);
@@ -358,6 +410,7 @@ export default function TrackingPage() {
 
   return (
     <div className="min-h-screen bg-[#0A0E1A] text-slate-100">
+      {hourCampaign && <TrackingHourlyModal campaign={hourCampaign} day={hourDate} hours={summary?.hourly || []} spend={hourSpend} error={hourSpendError} onClose={() => setHourCampaignKey(null)} />}
       <div aria-live="polite" className="pointer-events-none fixed right-4 top-4 z-50 flex w-[min(380px,calc(100vw-2rem))] flex-col gap-2">
         <AnimatePresence initial={false}>{toastSales.map((sale) => <motion.div key={sale.id} role="status" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 40 }} transition={{ duration: 0.2 }} className="pointer-events-auto rounded-xl border border-emerald-400/35 bg-[#1b2437] p-4 shadow-2xl shadow-black/50">
           <div className="flex items-start gap-3"><div className="rounded-full bg-emerald-400/15 p-2 text-emerald-300"><ShoppingBag size={17} /></div><div className="min-w-0 flex-1"><div className="text-xs font-semibold uppercase tracking-wide text-emerald-300">New sale · {sale.productType}</div><p className="mt-1 break-all text-sm font-medium">{sale.email}</p><p className="mt-1 text-xs text-slate-300">bought {sale.productName}</p>{sale.campaign && <p className="mt-2 whitespace-normal break-words text-xs text-slate-400">Campaign: {sale.campaign}</p>}<div className="mt-2 flex items-center justify-between gap-2 text-xs"><span className="text-slate-500">{displayIst(sale.at)} IST</span><span className="font-semibold text-emerald-300">{inr(sale.amount)}</span></div></div><button aria-label="Dismiss sale notification" onClick={() => { const timer = toastTimers.current.get(sale.id); if (timer) window.clearTimeout(timer); toastTimers.current.delete(sale.id); setToastSales((current) => current.filter((item) => item.id !== sale.id)); }} className="text-slate-500 hover:text-white"><X size={16} /></button></div>
@@ -379,16 +432,17 @@ export default function TrackingPage() {
         {error && <div role="alert" className="mb-5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div>}
         {summary?.warnings?.length ? <div className="mb-5 border-l-2 border-amber-400/70 pl-3 text-xs text-amber-100/75">{summary.warnings.join(" · ")}</div> : null}
 
-        <div className="mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/10 bg-white/10 md:grid-cols-5">
+        <div className="mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/10 bg-white/10 md:grid-cols-3 xl:grid-cols-6">
           {[
             ["Meta spend · INR", inr(visibleTotals.spend)],
             ["Paid orders", count(visibleTotals.orders)],
             ["Net sales", inr(visibleTotals.revenue)],
+            ["Profit after GST & ads", visibleProfit == null ? "—" : inr(visibleProfit)],
             ["Blended ROAS", ratio(visibleTotals.revenue, visibleTotals.spend)],
             ["Matched to Meta", `${visibleTotals.matched} / ${visibleTotals.orders}`],
           ].map(([label, value]) => <div key={label} className="bg-[#141b2b] px-4 py-4"><div className="text-xs uppercase tracking-wider text-slate-500">{label}</div><div className="mt-2 text-xl font-semibold tabular-nums">{value}</div></div>)}
         </div>
-        <p className="-mt-4 mb-6 text-xs text-slate-500">Matched to Meta counts paid orders whose saved campaign ID or unique Meta UTM campaign name matches a campaign fetched for this range. Unmatched orders still count in AR sales.</p>
+        <p className="-mt-4 mb-6 text-xs text-slate-500">Profit follows the Profit Sheet: confirmed net sales minus live Meta spend and net GST, including Indian ad GST credit. Matched to Meta counts paid orders whose campaign ID or unique UTM name matches a Meta campaign; unmatched orders still count in AR sales.</p>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_330px]">
           <main className="min-w-0 space-y-7">
@@ -412,8 +466,9 @@ export default function TrackingPage() {
 
             <section>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                <div><h2 className="text-lg font-semibold">Campaigns <span className="ml-2 text-sm font-normal text-slate-500">{filtered.length}</span></h2><p className="text-xs text-slate-500">Meta metrics and paid-order UTMs are separate sources. Click a row for ad set and ad names from UTMs.</p></div>
+                <div><h2 className="text-lg font-semibold">Campaigns <span className="ml-2 text-sm font-normal text-slate-500">{filtered.length}</span></h2><p className="text-xs text-slate-500">Expand a campaign for Meta ad sets, then an ad set for ads. AR sales use saved UTMs.</p></div>
                 <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><input type="checkbox" checked={activeOnly} onChange={(event) => setActiveOnly(event.target.checked)} className="accent-cyan-400" /> Active only</label>
                   <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2"><Search size={15} className="text-slate-500" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search campaign or ad" className="w-44 bg-transparent text-sm outline-none placeholder:text-slate-600" /></label>
                   <div className="relative">
                     <button onClick={() => { if (!viewsOpen && token) void fetchViews(token); setViewsOpen(!viewsOpen); setColumnsOpen(false); }} className="flex items-center gap-2 rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm hover:bg-white/5">{selectedView?.name || "Saved views"} <ChevronDown size={14} /></button>
@@ -422,7 +477,7 @@ export default function TrackingPage() {
                       <div className="max-h-44 space-y-1 overflow-y-auto">{savedViews.length ? savedViews.map((view) => <button key={view.id} onClick={() => applyView(view)} className={`block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-white/10 ${selectedViewId === view.id ? "bg-cyan-400/10 text-cyan-200" : "text-slate-200"}`}>{view.name}</button>) : <p className="px-2 py-2 text-xs text-slate-500">No shared views yet.</p>}</div>
                       <div className="mt-3 border-t border-white/10 pt-3"><label className="text-xs text-slate-400">View name<input value={viewName} onChange={(event) => setViewName(event.target.value)} maxLength={60} placeholder="My campaign view" className="mt-1 w-full rounded border border-white/10 bg-[#141b2b] px-2 py-2 text-sm text-white outline-none focus:border-cyan-400/50" /></label>
                         <div className="mt-2 flex flex-wrap gap-2"><button disabled={viewBusy} onClick={() => void saveView(false)} className="rounded bg-cyan-500 px-2.5 py-1.5 text-xs font-semibold text-[#0A0E1A] disabled:opacity-50">Save new</button>{selectedView && <><button disabled={viewBusy} onClick={() => void saveView(true)} className="rounded border border-white/15 px-2.5 py-1.5 text-xs disabled:opacity-50">Update</button><button disabled={viewBusy} onClick={() => void deleteView()} className="rounded border border-rose-400/30 px-2.5 py-1.5 text-xs text-rose-300 disabled:opacity-50">Delete</button></>}</div>
-                        <p className="mt-2 text-[11px] text-slate-500">Columns, account, search, sort, and hourly metric are shared with admins. Dates stay separate.</p>{viewError && <p role="alert" className="mt-2 text-xs text-rose-300">{viewError}</p>}
+                        <p className="mt-2 text-[11px] text-slate-500">Columns, account, active filter, search, sort, and hourly metric are shared with admins. Dates stay separate.</p>{viewError && <p role="alert" className="mt-2 text-xs text-rose-300">{viewError}</p>}
                       </div>
                     </div>}
                   </div>
@@ -454,7 +509,7 @@ export default function TrackingPage() {
                         </div>
                       </th>)}</tr>
                   </thead>
-                  <tbody>{filtered.map((row) => <Fragment key={row.key}><tr onClick={() => setExpanded(expanded === row.key ? null : row.key)} className="cursor-pointer border-b border-white/5 transition-colors hover:bg-white/5"><td className="px-2 py-3 text-slate-500"><button type="button" aria-label={`${expanded === row.key ? "Collapse" : "Expand"} ${row.campaignName}`} onClick={(event) => { event.stopPropagation(); setExpanded(expanded === row.key ? null : row.key); }}>{expanded === row.key ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button></td>{activeColumns.map((column) => <td key={column.id} title={column.value(row)} className={`max-w-[240px] truncate px-3 py-3 tabular-nums ${column.align === "right" ? "text-right" : "text-left"} ${column.id === "campaign" ? "font-medium text-white" : "text-slate-300"}`}>{column.value(row)}</td>)}</tr>{expanded === row.key && <tr key={`${row.key}:detail`} className="bg-[#111827]"><td colSpan={activeColumns.length + 1} className="px-5 py-4"><div className="mb-2 flex flex-wrap gap-3 text-xs text-slate-400"><span>Match: {row.attribution === "meta_id" ? "saved campaign ID" : row.attribution === "utm_id" ? "UTM campaign ID" : row.attribution === "unique_name" ? "unique campaign name" : row.attribution === "utm_only" ? "UTM only" : "no matched sales"}</span><span>Campaign ID: {row.campaignId || "—"}</span><span>Currency: {row.currency}</span></div><h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">UTM ad set / ad breakdown</h3>{row.adBreakdown.length ? <div className="max-h-48 overflow-auto"><table className="w-full text-xs"><thead className="text-slate-500"><tr><th className="py-1 text-left">utm_term · ad set</th><th className="py-1 text-left">utm_content · ad</th><th className="py-1 text-right">Orders</th><th className="py-1 text-right">Gross sales</th></tr></thead><tbody>{row.adBreakdown.slice().sort((a, b) => b.revenue - a.revenue).map((item, index) => <tr key={`${item.term}:${item.content}:${index}`} className="border-t border-white/5"><td className="py-2 pr-3">{item.term}</td><td className="py-2 pr-3">{item.content}</td><td className="py-2 text-right">{item.orders}</td><td className="py-2 text-right">{inr(item.revenue)}</td></tr>)}</tbody></table></div> : <p className="text-xs text-slate-500">No attributed orders in this range.</p>}</td></tr>}</Fragment> )}</tbody>
+                  <TrackingCampaignRows key={`${dates.start}:${dates.end}`} rows={filtered} columns={activeColumns} token={token} dates={dates} refreshKey={summary?.fetchedAt || ""} />
                 </table>
                 {!loading && filtered.length === 0 && <div className="p-10 text-center text-sm text-slate-500">No campaigns or UTM orders for these filters.</div>}
                 {loading && <div className="p-10 text-center text-sm text-slate-500">Loading campaigns and orders…</div>}
@@ -464,7 +519,7 @@ export default function TrackingPage() {
 
             <section>
               <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Hourly sales by campaign</h2><p className="text-xs text-slate-500">Hourly windows begin at 11:30 AM IST, matching the Profit Sheet. Refunds reduce revenue in the window recorded.</p></div><div className="flex items-center gap-2"><select aria-label="Hourly breakdown day" value={hourDate} onChange={(event) => setHourDate(event.target.value)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm">{hourDates.map((day) => <option key={day} value={day}>{new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`))}</option>)}</select><select value={hourMetric} onChange={(event) => setHourMetric(event.target.value as "orders" | "revenue")} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="orders">Orders</option><option value="revenue">Net sales</option></select></div></div>
-              <div className="overflow-x-auto rounded-xl border border-white/10 bg-[#141b2b]"><table className="min-w-[1550px] w-full border-collapse text-xs"><thead className="bg-[#1b2437] text-slate-500"><tr><th className="sticky left-0 z-10 min-w-48 bg-[#1b2437] px-3 py-3 text-left">Campaign</th>{Array.from({ length: 24 }, (_, hour) => <th key={hour} title={`${hourLabel(hour)}–${hourLabel(hour + 1)} IST`} className="min-w-[104px] whitespace-nowrap px-1 py-3 text-center">{hourLabel(hour)}–{hourLabel(hour + 1)}</th>)}</tr></thead><tbody><tr className="border-b border-white/10 font-semibold"><td className="sticky left-0 bg-[#141b2b] px-3 py-3">All shown campaigns</td>{hourly.totals.map((value, hour) => <td key={hour} title={hourMetric === "revenue" ? inr(value) : `${value} orders`} className="px-1 py-3 text-center tabular-nums">{value ? hourMetric === "orders" ? count(value) : decimal(value) : "·"}</td>)}</tr>{hourly.campaigns.map((row) => <tr key={row.key} className="border-b border-white/5 hover:bg-white/5"><td title={row.name} className="sticky left-0 max-w-48 truncate bg-[#141b2b] px-3 py-2">{row.name}</td>{row.hours.map((value, hour) => <td key={hour} title={hourMetric === "revenue" ? inr(value) : `${value} orders`} style={{ backgroundColor: value > 0 ? `rgba(229,27,80,${Math.min(0.55, 0.12 + Math.abs(value) / maxHour * 0.43)})` : undefined }} className="px-1 py-2 text-center tabular-nums text-slate-200">{value ? hourMetric === "orders" ? count(value) : decimal(value) : "·"}</td>)}</tr>)}</tbody></table>{!hourly.campaigns.length && <div className="p-6 text-center text-xs text-slate-500">No paid sales for this date and account filter.</div>}</div>
+              <div className="overflow-x-auto rounded-xl border border-white/10 bg-[#141b2b]"><table className="min-w-[1550px] w-full border-collapse text-xs"><thead className="bg-[#1b2437] text-slate-500"><tr><th className="sticky left-0 z-10 min-w-48 bg-[#1b2437] px-3 py-3 text-left">Campaign</th>{Array.from({ length: 24 }, (_, hour) => <th key={hour} title={`${hourLabel(hour)}–${hourLabel(hour + 1)} IST`} className="min-w-[104px] whitespace-nowrap px-1 py-3 text-center">{hourLabel(hour)}–{hourLabel(hour + 1)}</th>)}</tr></thead><tbody><tr className="border-b border-white/10 font-semibold"><td className="sticky left-0 bg-[#141b2b] px-3 py-3">All shown campaigns</td>{hourly.totals.map((value, hour) => <td key={hour} title={hourMetric === "revenue" ? inr(value) : `${value} orders`} className="px-1 py-3 text-center tabular-nums">{value ? hourMetric === "orders" ? count(value) : decimal(value) : "·"}</td>)}</tr>{hourly.campaigns.map((row) => <tr key={row.key} className="border-b border-white/5 hover:bg-white/5"><td title={row.name} className="sticky left-0 max-w-48 bg-[#141b2b] px-3 py-2"><button type="button" onClick={() => setHourCampaignKey(row.key)} className="max-w-48 truncate text-left text-cyan-200 hover:underline" title={`Open hourly result for ${row.name}`}>{row.name}</button></td>{row.hours.map((value, hour) => <td key={hour} title={hourMetric === "revenue" ? inr(value) : `${value} orders`} style={{ backgroundColor: value > 0 ? `rgba(229,27,80,${Math.min(0.55, 0.12 + Math.abs(value) / maxHour * 0.43)})` : undefined }} className="px-1 py-2 text-center tabular-nums text-slate-200">{value ? hourMetric === "orders" ? count(value) : decimal(value) : "·"}</td>)}</tr>)}</tbody></table>{!hourly.campaigns.length && <div className="p-6 text-center text-xs text-slate-500">No campaigns for this date and filter.</div>}</div>
             </section>
           </main>
 
@@ -479,6 +534,12 @@ export default function TrackingPage() {
             </div>
           </aside>
         </div>
+        <section className="mt-8 border-t border-white/10 pt-6">
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Meta action log</h2><p className="text-xs text-slate-500">Campaign, ad set and ad edits recorded by Meta for the selected date range and account.</p></div><span className="text-xs text-slate-500">{activityLoading ? "Refreshing…" : `${activities.length} changes shown`}</span></div>
+          {activityWarnings.length > 0 && <div role="alert" className="mb-3 border-l-2 border-amber-400/70 pl-3 text-xs text-amber-200">{activityWarnings.join(" · ")}</div>}
+          <div className="max-h-[520px] overflow-auto rounded-xl border border-white/10 bg-[#141b2b]"><table className="w-full min-w-[740px] text-sm"><thead className="sticky top-0 bg-[#1b2437] text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3 text-left">Time · IST</th><th className="px-4 py-3 text-left">Account</th><th className="px-4 py-3 text-left">Changed by</th><th className="px-4 py-3 text-left">Action</th><th className="px-4 py-3 text-left">Campaign / ad set / ad</th><th className="px-4 py-3 text-left">Change</th></tr></thead><tbody>{activities.map((item) => <tr key={item.id} className="border-t border-white/5"><td className="whitespace-nowrap px-4 py-3 text-slate-400">{item.at ? displayIst(item.at) : "—"}</td><td className="px-4 py-3 text-slate-400">{item.accountName}</td><td className="px-4 py-3 text-slate-300">{item.actor}</td><td className="px-4 py-3 text-white">{item.action}</td><td className="px-4 py-3 text-slate-300">{item.objectType && <span className="mr-2 rounded border border-cyan-400/25 px-1.5 py-0.5 text-[10px] uppercase text-cyan-300">{item.objectType}</span>}{item.object}</td><td className="px-4 py-3 text-cyan-200">{item.detail || "—"}</td></tr>)}</tbody></table>{!activities.length && !activityLoading && <div className="px-5 py-8 text-center text-sm text-slate-500">No Meta edits were returned for this range.</div>}</div>
+          <p className="mt-2 text-xs text-slate-500">Read directly from Meta account activities. Meta may omit or delay some history, and older changes outside the selected range are excluded.</p>
+        </section>
       </div>
     </div>
   );
