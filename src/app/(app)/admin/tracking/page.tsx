@@ -2,7 +2,8 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Activity, ArrowDown, ArrowLeft, ArrowUp, ChevronDown, ChevronRight, Columns3, RefreshCw, Search, ShoppingBag } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Activity, ArrowDown, ArrowLeft, ArrowUp, ChevronDown, ChevronRight, Columns3, RefreshCw, Search, ShoppingBag, X } from "lucide-react";
 import type { TrackingCampaign, TrackingSale, TrackingSummary } from "@/lib/tracking-dashboard";
 
 type LiveData = { sales: TrackingSale[]; todayCount: number; todayRevenue: number; fetchedAt: string };
@@ -63,24 +64,28 @@ const PRESETS: Record<string, string[]> = {
 };
 const DEFAULT_COLUMNS = PRESETS.Performance;
 
-function istToday() {
-  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+function businessToday() {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(Date.now() - (11 * 60 + 30) * 60_000));
   const value = (kind: string) => parts.find((part) => part.type === kind)?.value || "00";
   return `${value("year")}-${value("month")}-${value("day")}`;
 }
 function dateDaysAgo(days: number) {
-  const date = new Date(`${istToday()}T00:00:00Z`);
+  const date = new Date(`${businessToday()}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() - days);
   return date.toISOString().slice(0, 10);
 }
 function displayIst(iso: string) {
   return new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 }
+function hourLabel(bucket: number) {
+  const minutes = (11 * 60 + 30 + bucket * 60) % (24 * 60);
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
 
 export default function TrackingPage() {
   const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
-  const [dates, setDates] = useState({ start: dateDaysAgo(6), end: istToday() });
+  const [dates, setDates] = useState({ start: dateDaysAgo(6), end: businessToday() });
   const [draft, setDraft] = useState(dates);
   const [summary, setSummary] = useState<TrackingSummary | null>(null);
   const [live, setLive] = useState<LiveData | null>(null);
@@ -96,7 +101,9 @@ export default function TrackingPage() {
   const [hourDate, setHourDate] = useState(dates.end);
   const [hourMetric, setHourMetric] = useState<"orders" | "revenue">("orders");
   const [newSaleIds, setNewSaleIds] = useState<string[]>([]);
+  const [toastSales, setToastSales] = useState<TrackingSale[]>([]);
   const seenSales = useRef<Set<string> | null>(null);
+  const toastTimers = useRef<Map<string, number>>(new Map());
   const summaryRequest = useRef(0);
   const liveLoading = useRef(false);
 
@@ -136,10 +143,20 @@ export default function TrackingPage() {
       const data = await response.json() as LiveData;
       const ids = new Set(data.sales.map((sale) => sale.id));
       if (seenSales.current) {
-        const fresh = data.sales.filter((sale) => !seenSales.current?.has(sale.id)).map((sale) => sale.id);
-        if (fresh.length) setNewSaleIds(fresh);
+        const fresh = data.sales.filter((sale) => !seenSales.current?.has(sale.id));
+        if (fresh.length) {
+          setNewSaleIds(fresh.map((sale) => sale.id));
+          setToastSales((current) => [...fresh, ...current].slice(0, 4));
+          for (const sale of fresh) {
+            const timer = window.setTimeout(() => {
+              setToastSales((current) => current.filter((item) => item.id !== sale.id));
+              toastTimers.current.delete(sale.id);
+            }, 8_000);
+            toastTimers.current.set(sale.id, timer);
+          }
+        }
       }
-      seenSales.current = ids;
+      seenSales.current = new Set([...(seenSales.current || []), ...ids]);
       setLive(data);
     } catch { /* Preserve the last successful live feed. */ }
     finally { liveLoading.current = false; }
@@ -152,9 +169,13 @@ export default function TrackingPage() {
   useEffect(() => {
     if (!token) return;
     void fetchLive(token);
-    const timer = window.setInterval(() => void fetchLive(token), 10_000);
+    const timer = window.setInterval(() => void fetchLive(token), 5_000);
     return () => window.clearInterval(timer);
   }, [token, fetchLive]);
+  useEffect(() => {
+    const timers = toastTimers.current;
+    return () => { for (const timer of timers.values()) window.clearTimeout(timer); };
+  }, []);
   useEffect(() => {
     if (!newSaleIds.length) return;
     const timer = window.setTimeout(() => setNewSaleIds([]), 6_000);
@@ -221,19 +242,24 @@ export default function TrackingPage() {
   const maxHour = hourly.campaigns.reduce((max, row) => Math.max(max, ...row.hours), Math.max(1, ...hourly.totals));
 
   function applyRange() {
-    if (draft.start > draft.end || draft.end > istToday() || (Date.parse(draft.end) - Date.parse(draft.start)) / 86_400_000 > 30) {
+    if (draft.start > draft.end || draft.end > businessToday() || (Date.parse(draft.end) - Date.parse(draft.start)) / 86_400_000 > 30) {
       setError("Choose a valid date range of up to 31 days."); return;
     }
     setDates(draft);
     setHourDate(draft.end);
   }
   function preset(days: number) {
-    const next = { start: dateDaysAgo(days - 1), end: istToday() };
+    const next = { start: dateDaysAgo(days - 1), end: businessToday() };
     setDraft(next); setDates(next); setHourDate(next.end);
   }
 
   return (
     <div className="min-h-screen bg-[#0A0E1A] text-slate-100">
+      <div aria-live="polite" className="pointer-events-none fixed right-4 top-4 z-50 flex w-[min(380px,calc(100vw-2rem))] flex-col gap-2">
+        <AnimatePresence initial={false}>{toastSales.map((sale) => <motion.div key={sale.id} role="status" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 40 }} transition={{ duration: 0.2 }} className="pointer-events-auto rounded-xl border border-emerald-400/35 bg-[#1b2437] p-4 shadow-2xl shadow-black/50">
+          <div className="flex items-start gap-3"><div className="rounded-full bg-emerald-400/15 p-2 text-emerald-300"><ShoppingBag size={17} /></div><div className="min-w-0 flex-1"><div className="text-xs font-semibold uppercase tracking-wide text-emerald-300">New sale · {sale.productType}</div><p className="mt-1 break-all text-sm font-medium">{sale.email}</p><p className="mt-1 text-xs text-slate-300">bought {sale.productName}</p><div className="mt-2 flex items-center justify-between gap-2 text-xs"><span className="text-slate-500">{displayIst(sale.at)} IST</span><span className="font-semibold text-emerald-300">{inr(sale.amount)}</span></div></div><button aria-label="Dismiss sale notification" onClick={() => { const timer = toastTimers.current.get(sale.id); if (timer) window.clearTimeout(timer); toastTimers.current.delete(sale.id); setToastSales((current) => current.filter((item) => item.id !== sale.id)); }} className="text-slate-500 hover:text-white"><X size={16} /></button></div>
+        </motion.div>)}</AnimatePresence>
+      </div>
       <div className="mx-auto max-w-[1800px] px-4 py-6 lg:px-8">
         <header className="mb-6 flex flex-wrap items-start justify-between gap-4 border-b border-white/10 pb-6">
           <div>
@@ -246,7 +272,7 @@ export default function TrackingPage() {
             <button onClick={() => preset(7)} className="rounded-lg border border-white/10 px-3 py-2 text-sm hover:bg-white/5">7 days</button>
             <button onClick={() => preset(30)} className="rounded-lg border border-white/10 px-3 py-2 text-sm hover:bg-white/5">30 days</button>
             <label className="text-xs text-slate-400">From<input type="date" value={draft.start} max={draft.end} onChange={(event) => setDraft({ ...draft, start: event.target.value })} className="mt-1 block rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm text-white" /></label>
-            <label className="text-xs text-slate-400">To<input type="date" value={draft.end} min={draft.start} max={istToday()} onChange={(event) => setDraft({ ...draft, end: event.target.value })} className="mt-1 block rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm text-white" /></label>
+            <label className="text-xs text-slate-400">To<input type="date" value={draft.end} min={draft.start} max={businessToday()} onChange={(event) => setDraft({ ...draft, end: event.target.value })} className="mt-1 block rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm text-white" /></label>
             <button onClick={applyRange} className="rounded-lg bg-[#e51b50] px-4 py-2 text-sm font-semibold hover:bg-[#f02a5e]">Apply</button>
             <button onClick={() => token && void fetchSummary(token, dates, true)} title="Refresh Meta and orders" className="rounded-lg border border-white/10 p-2 hover:bg-white/5"><RefreshCw size={18} className={refreshing ? "animate-spin" : ""} /></button>
           </div>
@@ -307,16 +333,25 @@ export default function TrackingPage() {
                 {!loading && filtered.length === 0 && <div className="p-10 text-center text-sm text-slate-500">No campaigns or UTM orders for these filters.</div>}
                 {loading && <div className="p-10 text-center text-sm text-slate-500">Loading campaigns and orders…</div>}
               </div>
-              <p className="mt-2 text-xs text-slate-500">Meta spend uses each account&apos;s timezone. Paid-order dates and hourly sales use IST. USD spend is converted with {summary?.fxRateSource || "the saved Profit Sheet rate"}; other currencies show no INR ROAS.</p>
+              <p className="mt-2 text-xs text-slate-500">Meta spend uses each account&apos;s calendar dates and timezone. Paid-order dates and hourly sales use the Profit Sheet 11:30 AM IST business day. USD spend is converted with {summary?.fxRateSource || "the saved Profit Sheet rate"}; other currencies show no INR ROAS.</p>
             </section>
 
             <section>
-              <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Hourly sales by campaign</h2><p className="text-xs text-slate-500">Every hour in IST. Refunds reduce revenue in the hour recorded.</p></div><div className="flex items-center gap-2"><input type="date" min={dates.start} max={dates.end} value={hourDate} onChange={(event) => setHourDate(event.target.value)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm" /><select value={hourMetric} onChange={(event) => setHourMetric(event.target.value as "orders" | "revenue")} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="orders">Orders</option><option value="revenue">Net sales</option></select></div></div>
-              <div className="overflow-x-auto rounded-xl border border-white/10 bg-[#141b2b]"><table className="min-w-[1250px] w-full border-collapse text-xs"><thead className="bg-[#1b2437] text-slate-500"><tr><th className="sticky left-0 z-10 min-w-48 bg-[#1b2437] px-3 py-3 text-left">Campaign</th>{Array.from({ length: 24 }, (_, hour) => <th key={hour} className="min-w-10 px-1 py-3 text-center">{String(hour).padStart(2, "0")}</th>)}</tr></thead><tbody><tr className="border-b border-white/10 font-semibold"><td className="sticky left-0 bg-[#141b2b] px-3 py-3">All shown campaigns</td>{hourly.totals.map((value, hour) => <td key={hour} title={hourMetric === "revenue" ? inr(value) : `${value} orders`} className="px-1 py-3 text-center tabular-nums">{value ? hourMetric === "orders" ? count(value) : decimal(value) : "·"}</td>)}</tr>{hourly.campaigns.map((row) => <tr key={row.key} className="border-b border-white/5 hover:bg-white/5"><td title={row.name} className="sticky left-0 max-w-48 truncate bg-[#141b2b] px-3 py-2">{row.name}</td>{row.hours.map((value, hour) => <td key={hour} title={hourMetric === "revenue" ? inr(value) : `${value} orders`} style={{ backgroundColor: value > 0 ? `rgba(229,27,80,${Math.min(0.55, 0.12 + Math.abs(value) / maxHour * 0.43)})` : undefined }} className="px-1 py-2 text-center tabular-nums text-slate-200">{value ? hourMetric === "orders" ? count(value) : decimal(value) : "·"}</td>)}</tr>)}</tbody></table>{!hourly.campaigns.length && <div className="p-6 text-center text-xs text-slate-500">No paid sales for this date and account filter.</div>}</div>
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Hourly sales by campaign</h2><p className="text-xs text-slate-500">Hourly windows begin at 11:30 AM IST, matching the Profit Sheet. Refunds reduce revenue in the window recorded.</p></div><div className="flex items-center gap-2"><input type="date" min={dates.start} max={dates.end} value={hourDate} onChange={(event) => setHourDate(event.target.value)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm" /><select value={hourMetric} onChange={(event) => setHourMetric(event.target.value as "orders" | "revenue")} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="orders">Orders</option><option value="revenue">Net sales</option></select></div></div>
+              <div className="overflow-x-auto rounded-xl border border-white/10 bg-[#141b2b]"><table className="min-w-[1550px] w-full border-collapse text-xs"><thead className="bg-[#1b2437] text-slate-500"><tr><th className="sticky left-0 z-10 min-w-48 bg-[#1b2437] px-3 py-3 text-left">Campaign</th>{Array.from({ length: 24 }, (_, hour) => <th key={hour} title={`${hourLabel(hour)}–${hourLabel(hour + 1)} IST`} className="min-w-12 px-1 py-3 text-center">{hourLabel(hour)}</th>)}</tr></thead><tbody><tr className="border-b border-white/10 font-semibold"><td className="sticky left-0 bg-[#141b2b] px-3 py-3">All shown campaigns</td>{hourly.totals.map((value, hour) => <td key={hour} title={hourMetric === "revenue" ? inr(value) : `${value} orders`} className="px-1 py-3 text-center tabular-nums">{value ? hourMetric === "orders" ? count(value) : decimal(value) : "·"}</td>)}</tr>{hourly.campaigns.map((row) => <tr key={row.key} className="border-b border-white/5 hover:bg-white/5"><td title={row.name} className="sticky left-0 max-w-48 truncate bg-[#141b2b] px-3 py-2">{row.name}</td>{row.hours.map((value, hour) => <td key={hour} title={hourMetric === "revenue" ? inr(value) : `${value} orders`} style={{ backgroundColor: value > 0 ? `rgba(229,27,80,${Math.min(0.55, 0.12 + Math.abs(value) / maxHour * 0.43)})` : undefined }} className="px-1 py-2 text-center tabular-nums text-slate-200">{value ? hourMetric === "orders" ? count(value) : decimal(value) : "·"}</td>)}</tr>)}</tbody></table>{!hourly.campaigns.length && <div className="p-6 text-center text-xs text-slate-500">No paid sales for this date and account filter.</div>}</div>
             </section>
           </main>
 
-          <aside className="min-w-0"><div className="sticky top-5 overflow-hidden rounded-xl border border-white/10 bg-[#141b2b]"><div className="border-b border-white/10 px-4 py-4"><div className="flex items-center justify-between"><h2 className="flex items-center gap-2 text-lg font-semibold"><Activity size={18} className="text-[#e51b50]" /> Live sales</h2><span className="flex items-center gap-1 text-xs text-emerald-300"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" /> {newSaleIds.length ? `${newSaleIds.length} new` : "10s refresh"}</span></div><div className="mt-4 flex items-end justify-between"><div><div className="text-xs text-slate-500">Today · IST</div><div className="text-3xl font-semibold tabular-nums">{live?.todayCount ?? "—"}</div></div><div className="text-right"><div className="text-xs text-slate-500">Gross sales</div><div className="text-lg font-medium tabular-nums">{live ? inr(live.todayRevenue) : "—"}</div></div></div></div><div className="max-h-[70vh] overflow-y-auto">{live?.sales.map((sale) => <div key={sale.id} className={`border-b border-white/5 px-4 py-3 transition-colors duration-700 ${newSaleIds.includes(sale.id) ? "bg-[#e51b50]/20" : ""}`}><div className="flex gap-3"><div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-300"><ShoppingBag size={15} /></div><div className="min-w-0 flex-1"><p className="break-all text-sm font-medium">{sale.email}</p><p className="mt-1 text-xs text-slate-300">bought <span className="font-medium text-white">{sale.productName}</span></p><div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500"><span className="truncate">{sale.productType}{sale.campaign ? ` · ${sale.campaign}` : ""}</span><span className="shrink-0">{displayIst(sale.at)}</span></div></div></div><div className="mt-1 text-right text-xs font-semibold text-emerald-300">{inr(sale.amount)}</div></div>)}{!live?.sales.length && <div className="px-4 py-8 text-center text-sm text-slate-500">No paid sales today yet.</div>}</div><div className="border-t border-white/10 px-4 py-3 text-xs text-slate-500">A new paid order highlights here on the next refresh. Only admins can view customer emails.</div></div></aside>
+          <aside className="min-w-0">
+            <div className="sticky top-5 overflow-hidden rounded-xl border border-white/10 bg-[#141b2b]">
+              <div className="border-b border-white/10 px-4 py-4">
+                <div className="flex items-center justify-between"><h2 className="flex items-center gap-2 text-lg font-semibold"><Activity size={18} className="text-[#e51b50]" /> Live sales</h2><span className="flex items-center gap-1 text-xs text-emerald-300"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" /> {newSaleIds.length ? `${newSaleIds.length} new` : "5s refresh"}</span></div>
+                <div className="mt-4 flex items-end justify-between"><div><div className="text-xs text-slate-500">Business day · 11:30 AM IST</div><div className="text-3xl font-semibold tabular-nums">{live?.todayCount ?? "—"}</div></div><div className="text-right"><div className="text-xs text-slate-500">Gross sales</div><div className="text-lg font-medium tabular-nums">{live ? inr(live.todayRevenue) : "—"}</div></div></div>
+              </div>
+              <div className="max-h-[70vh] overflow-y-auto">{live?.sales.map((sale) => <div key={sale.id} className={`border-b border-white/5 px-4 py-3 transition-colors duration-700 ${newSaleIds.includes(sale.id) ? "bg-[#e51b50]/20" : ""}`}><div className="flex gap-3"><div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-300"><ShoppingBag size={15} /></div><div className="min-w-0 flex-1"><p className="break-all text-sm font-medium">{sale.email}</p><p className="mt-1 text-xs text-slate-300">bought <span className="font-medium text-white">{sale.productName}</span></p><div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500"><span className="truncate">{sale.productType}{sale.campaign ? ` · ${sale.campaign}` : ""}</span><span className="shrink-0">{displayIst(sale.at)}</span></div></div></div><div className="mt-1 text-right text-xs font-semibold text-emerald-300">{inr(sale.amount)}</div></div>)}{!live?.sales.length && <div className="px-4 py-8 text-center text-sm text-slate-500">No paid sales in this business day yet.</div>}</div>
+              <div className="border-t border-white/10 px-4 py-3 text-xs text-slate-500">New paid orders appear here and in a top-right notification after payment confirmation. The listed time is the transaction time. Only admins can view customer emails.</div>
+            </div>
+          </aside>
         </div>
       </div>
     </div>

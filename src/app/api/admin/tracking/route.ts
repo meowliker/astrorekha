@@ -4,8 +4,8 @@ import { DEFAULT_PRICING, normalizePricing } from "@/lib/pricing";
 import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromEnv, getMetaAccountWindowForRequest } from "@/lib/meta-ad-accounts";
 import { fetchMetaTrackingAccount } from "@/lib/tracking-meta";
 import {
-  campaignNameKey, isMetaSource, istDate, istDayStartUtc, istHour,
-  nextIstDayStartUtc, paidAt, productLabel,
+  businessDate, businessDayStartUtc, businessHourBucket, campaignNameKey, isMetaSource,
+  nextBusinessDayStartUtc, paidAt, productLabel,
   type TrackingCampaign, type TrackingHour, type TrackingPayment, type TrackingSale, type TrackingSummary,
 } from "@/lib/tracking-dashboard";
 
@@ -27,7 +27,7 @@ function validDate(value: string | null): value is string {
 }
 
 function defaultDates(): { start: string; end: string } {
-  const end = istDate(new Date());
+  const end = businessDate(new Date());
   const start = new Date(`${end}T00:00:00Z`);
   start.setUTCDate(start.getUTCDate() - 6);
   return { start: start.toISOString().slice(0, 10), end };
@@ -133,8 +133,7 @@ function attachOrders(campaigns: TrackingCampaign[], sales: TrackingPayment[], r
 
   function addHour(payment: TrackingPayment, row: TrackingCampaign, amount: number, isRefund: boolean) {
     const at = new Date(isRefund ? payment.created_at : paidAt(payment));
-    const date = istDate(at);
-    const hour = istHour(at);
+    const { date, hour } = businessHourBucket(at);
     const key = `${date}:${hour}:${row.key}`;
     const bucket = hourMap.get(key) || { date, hour, campaignKey: row.key, orders: 0, revenue: 0 };
     bucket.orders += isRefund ? 0 : 1;
@@ -176,8 +175,8 @@ function attachOrders(campaigns: TrackingCampaign[], sales: TrackingPayment[], r
 }
 
 async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { start: string; end: string }): Promise<TrackingSummary> {
-  const start = istDayStartUtc(dates.start);
-  const end = nextIstDayStartUtc(dates.end);
+  const start = businessDayStartUtc(dates.start);
+  const end = nextBusinessDayStartUtc(dates.end);
   const [rate, sales, refunds] = await Promise.all([fxRate(supabase), paidPayments(supabase, start, end), refundPayments(supabase, start, end)]);
   const parents = new Map(sales.map((sale) => [sale.id, sale]));
   const missingParentIds = Array.from(new Set(refunds.map((row) => row.payu_txn_id).filter((id): id is string => !!id && !parents.has(id))));
@@ -212,8 +211,8 @@ async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { s
 }
 
 async function live(supabase: ReturnType<typeof getSupabaseAdmin>): Promise<{ sales: TrackingSale[]; todayCount: number; todayRevenue: number; fetchedAt: string }> {
-  const today = istDate(new Date());
-  const start = istDayStartUtc(today);
+  const today = businessDate(new Date());
+  const start = businessDayStartUtc(today);
   const end = new Date().toISOString();
   const [payments, settings] = await Promise.all([
     paidPayments(supabase, start, end),
@@ -245,7 +244,7 @@ export async function GET(request: NextRequest) {
     const defaults = defaultDates();
     const start = params.get("start") || defaults.start;
     const end = params.get("end") || defaults.end;
-    if (!validDate(start) || !validDate(end) || start > end || end > istDate(new Date()) ||
+    if (!validDate(start) || !validDate(end) || start > end || end > businessDate(new Date()) ||
         (Date.parse(end) - Date.parse(start)) / 86_400_000 > 30) {
       return json({ error: "Choose a valid IST date range of up to 31 days." }, 400);
     }

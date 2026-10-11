@@ -91,18 +91,25 @@ export function istDate(date: Date): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
-export function istHour(date: Date): number {
-  return Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", hourCycle: "h23" }).format(date));
+// Match the Profit Sheet: a reporting day runs from 11:30 AM IST to 11:29 AM IST.
+export function businessDate(date: Date): string {
+  return istDate(new Date(date.getTime() - (11 * 60 + 30) * 60_000));
 }
 
-export function istDayStartUtc(date: string): string {
-  return new Date(`${date}T00:00:00+05:30`).toISOString();
+export function businessDayStartUtc(date: string): string {
+  return new Date(`${date}T11:30:00+05:30`).toISOString();
 }
 
-export function nextIstDayStartUtc(date: string): string {
-  const next = new Date(istDayStartUtc(date));
+export function nextBusinessDayStartUtc(date: string): string {
+  const next = new Date(businessDayStartUtc(date));
   next.setUTCDate(next.getUTCDate() + 1);
   return next.toISOString();
+}
+
+export function businessHourBucket(date: Date): { date: string; hour: number } {
+  const day = businessDate(date);
+  const hour = Math.floor((date.getTime() - new Date(businessDayStartUtc(day)).getTime()) / 3_600_000);
+  return { date: day, hour };
 }
 
 export function paidAt(payment: TrackingPayment): string {
