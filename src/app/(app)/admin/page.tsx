@@ -14,6 +14,7 @@ import {
   Tag,
   ShoppingBag,
   MessageCircle,
+  Radar,
   type LucideIcon,
 } from "lucide-react";
 
@@ -45,6 +46,15 @@ const adminOptions: AdminOption[] = [
     href: "/admin/orders",
     color: "text-cyan-400",
     bgColor: "bg-cyan-500/20",
+  },
+  {
+    id: "tracking",
+    title: "Tracking",
+    description: "Meta campaigns, UTM sales, hourly orders, and live purchases",
+    icon: Radar,
+    href: "/admin/tracking",
+    color: "text-rose-400",
+    bgColor: "bg-rose-500/20",
   },
   {
     id: "whatsapp",
