@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing } from "@/lib/pricing";
-import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromEnv, getMetaAccountWindowForRequest } from "@/lib/meta-ad-accounts";
+import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
 import { fetchMetaTrackingAccount } from "@/lib/tracking-meta";
 import {
   businessDate, businessDayStartUtc, businessHourBucket, campaignNameKey, isMetaSource,
@@ -189,8 +189,7 @@ async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { s
   const credentials = configured.length ? configured : getMetaAccountCredentialsFromEnv({ startDate: dates.start, endDate: dates.end });
   const distinct = Array.from(new Map(credentials.map((credential) => [credential.accountId, credential])).values());
   const meta = await Promise.all(distinct.map(async (credential) => {
-    const window = getMetaAccountWindowForRequest(credential, dates.start, dates.end, "calendar_ist");
-    return fetchMetaTrackingAccount(credential, window ? { start: window.startDate, end: window.endDate } : dates, rate.rate);
+    return fetchMetaTrackingAccount(credential, dates, rate.rate);
   }));
   const campaigns = meta.flatMap((result) => result.campaigns);
   const joined = attachOrders(campaigns, sales, refunds, parents);

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { Activity, ArrowDown, ArrowLeft, ArrowUp, ChevronDown, ChevronRight, Columns3, GripVertical, RefreshCw, Search, ShoppingBag, X } from "lucide-react";
 import type { TrackingCampaign, TrackingSale, TrackingSummary } from "@/lib/tracking-dashboard";
+import type { TrackingSavedView, TrackingViewConfig } from "@/lib/tracking-views";
 import TrackingDateRangePicker, { type TrackingRange } from "./TrackingDateRangePicker";
 
 type LiveData = { sales: TrackingSale[]; todayCount: number; todayRevenue: number; fetchedAt: string };
@@ -19,8 +20,8 @@ const pct = (numerator: number, denominator: number) => denominator > 0 ? `${dec
 const labels = (values: string[]) => values.length ? values.slice(0, 2).join(", ") + (values.length > 2 ? ` +${values.length - 2}` : "") : "—";
 
 const COLUMNS: Column[] = [
-  { id: "account", label: "Ad account", group: "Identity", value: (r) => r.accountName, sort: (r) => r.accountName },
   { id: "campaign", label: "Campaign", group: "Identity", value: (r) => r.campaignName, sort: (r) => r.campaignName },
+  { id: "account", label: "Ad account", group: "Identity", value: (r) => r.accountName, sort: (r) => r.accountName },
   { id: "campaignId", label: "Campaign ID", group: "Identity", value: (r) => r.campaignId || "—", sort: (r) => r.campaignId || "" },
   { id: "status", label: "Status", group: "Identity", value: (r) => r.status || "—", sort: (r) => r.status || "" },
   { id: "objective", label: "Objective", group: "Identity", value: (r) => r.objective?.replace(/_/g, " ") || "—", sort: (r) => r.objective || "" },
@@ -35,16 +36,16 @@ const COLUMNS: Column[] = [
   { id: "linkClicks", label: "Link clicks", group: "Meta", value: (r) => count(r.linkClicks), sort: (r) => r.linkClicks, align: "right" },
   { id: "linkCtr", label: "Link CTR", group: "Meta", value: (r) => pct(r.linkClicks, r.impressions), sort: (r) => r.impressions ? r.linkClicks / r.impressions : 0, align: "right" },
   { id: "ctr", label: "CTR", group: "Meta", value: (r) => pct(r.clicks, r.impressions), sort: (r) => r.impressions ? r.clicks / r.impressions : 0, align: "right" },
-  { id: "cpc", label: "Meta CPC", group: "Meta", value: (r) => r.clicks ? amount(r.spend / r.clicks, r.currency) : "—", sort: (r) => r.clicks ? r.spend / r.clicks : 0, align: "right" },
-  { id: "cpm", label: "CPM", group: "Meta", value: (r) => r.impressions ? amount(r.spend / r.impressions * 1000, r.currency) : "—", sort: (r) => r.impressions ? r.spend / r.impressions * 1000 : 0, align: "right" },
+  { id: "cpc", label: "Meta CPC", group: "Meta", value: (r) => r.clicks ? amount((r.metaCalendarSpend ?? r.spend) / r.clicks, r.currency) : "—", sort: (r) => r.clicks ? (r.metaCalendarSpend ?? r.spend) / r.clicks : 0, align: "right" },
+  { id: "cpm", label: "CPM", group: "Meta", value: (r) => r.impressions ? amount((r.metaCalendarSpend ?? r.spend) / r.impressions * 1000, r.currency) : "—", sort: (r) => r.impressions ? (r.metaCalendarSpend ?? r.spend) / r.impressions * 1000 : 0, align: "right" },
   { id: "landingPageViews", label: "Landing views", group: "Meta", value: (r) => count(r.landingPageViews), sort: (r) => r.landingPageViews, align: "right" },
   { id: "addToCarts", label: "Add to carts", group: "Meta", value: (r) => count(r.addToCarts), sort: (r) => r.addToCarts, align: "right" },
   { id: "checkouts", label: "Checkouts", group: "Meta", value: (r) => count(r.checkouts), sort: (r) => r.checkouts, align: "right" },
   { id: "leads", label: "Leads", group: "Meta", value: (r) => count(r.leads), sort: (r) => r.leads, align: "right" },
   { id: "metaPurchases", label: "Meta purchases", group: "Meta", value: (r) => count(r.metaPurchases), sort: (r) => r.metaPurchases, align: "right" },
-  { id: "metaCostPerPurchase", label: "Meta cost / purchase", group: "Meta", value: (r) => r.metaPurchases ? amount(r.spend / r.metaPurchases, r.currency) : "—", sort: (r) => r.metaPurchases ? r.spend / r.metaPurchases : 0, align: "right" },
+  { id: "metaCostPerPurchase", label: "Meta cost / purchase", group: "Meta", value: (r) => r.metaPurchases ? amount((r.metaCalendarSpend ?? r.spend) / r.metaPurchases, r.currency) : "—", sort: (r) => r.metaPurchases ? (r.metaCalendarSpend ?? r.spend) / r.metaPurchases : 0, align: "right" },
   { id: "metaPurchaseValue", label: "Meta purchase value", group: "Meta", value: (r) => amount(r.metaPurchaseValue, r.currency), sort: (r) => r.metaPurchaseValue, align: "right" },
-  { id: "metaRoas", label: "Meta ROAS", group: "Meta", value: (r) => ratio(r.metaPurchaseValue, r.spend), sort: (r) => r.spend ? r.metaPurchaseValue / r.spend : 0, align: "right" },
+  { id: "metaRoas", label: "Meta ROAS", group: "Meta", value: (r) => ratio(r.metaPurchaseValue, r.metaCalendarSpend ?? r.spend), sort: (r) => (r.metaCalendarSpend ?? r.spend) ? r.metaPurchaseValue / (r.metaCalendarSpend ?? r.spend) : 0, align: "right" },
   { id: "orders", label: "AR sales", group: "AstroRekha", value: (r) => count(r.orders), sort: (r) => r.orders, align: "right" },
   { id: "grossRevenue", label: "AR gross sales", group: "AstroRekha", value: (r) => inr(r.grossRevenue), sort: (r) => r.grossRevenue, align: "right" },
   { id: "refunds", label: "Refunds", group: "AstroRekha", value: (r) => count(r.refunds), sort: (r) => r.refunds, align: "right" },
@@ -59,8 +60,8 @@ const COLUMNS: Column[] = [
   { id: "utmContent", label: "UTM content / ad", group: "AstroRekha", value: (r) => labels(r.utmContents), sort: (r) => r.utmContents.join(",") },
 ];
 const PRESETS: Record<string, string[]> = {
-  Performance: ["account", "campaign", "status", "spendInr", "impressions", "clicks", "ctr", "cpc", "metaPurchases", "metaCostPerPurchase", "metaRoas", "orders", "revenue", "utmRoas", "cpa"],
-  Attribution: ["account", "campaign", "campaignId", "utmSource", "utmMedium", "utmTerm", "utmContent", "orders", "grossRevenue", "refundAmount", "revenue", "utmRoas"],
+  Performance: ["campaign", "account", "status", "spendInr", "impressions", "clicks", "ctr", "cpc", "metaPurchases", "metaCostPerPurchase", "metaRoas", "orders", "revenue", "utmRoas", "cpa"],
+  Attribution: ["campaign", "account", "campaignId", "utmSource", "utmMedium", "utmTerm", "utmContent", "orders", "grossRevenue", "refundAmount", "revenue", "utmRoas"],
   All: COLUMNS.map((column) => column.id),
 };
 const DEFAULT_COLUMNS = PRESETS.Performance;
@@ -96,8 +97,14 @@ export default function TrackingPage() {
   const [search, setSearch] = useState("");
   const [columnIds, setColumnIds] = useState<string[]>(DEFAULT_COLUMNS);
   const [columnsOpen, setColumnsOpen] = useState(false);
+  const [viewsOpen, setViewsOpen] = useState(false);
+  const [savedViews, setSavedViews] = useState<TrackingSavedView[]>([]);
+  const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
+  const [viewName, setViewName] = useState("");
+  const [viewError, setViewError] = useState("");
+  const [viewBusy, setViewBusy] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState<{ id: string; before: boolean } | null>(null);
   const [sort, setSort] = useState({ id: "spendInr", desc: true });
   const [expanded, setExpanded] = useState<string | null>(null);
   const [hourDate, setHourDate] = useState(dates.end);
@@ -120,7 +127,13 @@ export default function TrackingPage() {
       const stored = JSON.parse(localStorage.getItem("ar_tracking_columns_v1") || "null");
       if (Array.isArray(stored)) {
         const valid = stored.filter((id: unknown) => typeof id === "string" && COLUMNS.some((column) => column.id === id));
-        if (valid.length) setColumnIds(Array.from(new Set(valid)));
+        if (valid.length) {
+          const unique = Array.from(new Set(valid));
+          // Migrate the previous default while preserving deliberately reordered layouts.
+          if (unique[0] === "account" && unique[1] === "campaign") unique.splice(0, 2, "campaign", "account");
+          setColumnIds(unique);
+          localStorage.setItem("ar_tracking_columns_v1", JSON.stringify(unique));
+        }
       }
     } catch { /* Use the default view. */ }
   }, [router]);
@@ -170,6 +183,13 @@ export default function TrackingPage() {
     if (!token) return;
     void fetchSummary(token, dates);
   }, [token, dates, fetchSummary]);
+  const fetchViews = useCallback(async (session: string) => {
+    await fetch("/api/admin/tracking/views", { headers: { "x-admin-session": session }, cache: "no-store" })
+      .then(async (response) => { if (!response.ok) throw new Error("Unable to load saved views"); return response.json(); })
+      .then((data: { views: TrackingSavedView[] }) => setSavedViews(data.views || []))
+      .catch(() => setViewError("Saved views could not be loaded."));
+  }, []);
+  useEffect(() => { if (token) void fetchViews(token); }, [token, fetchViews]);
   useEffect(() => {
     if (!token) return;
     void fetchLive(token);
@@ -227,17 +247,60 @@ export default function TrackingPage() {
     [next[index], next[target]] = [next[target], next[index]];
     setColumns(next);
   };
-  const reorderColumn = (fromId: string, toId: string) => {
+  const reorderColumn = (fromId: string, toId: string, before: boolean) => {
     if (fromId === toId) return;
     const next = [...columnIds];
     const from = next.indexOf(fromId);
-    const to = next.indexOf(toId);
-    if (from < 0 || to < 0) return;
+    if (from < 0 || !next.includes(toId)) return;
     next.splice(from, 1);
-    next.splice(to, 0, fromId);
+    next.splice(next.indexOf(toId) + (before ? 0 : 1), 0, fromId);
     setColumns(next);
   };
   const activeColumns = columnIds.map((id) => COLUMNS.find((column) => column.id === id)).filter((column): column is Column => !!column);
+  const selectedView = savedViews.find((view) => view.id === selectedViewId);
+  const currentViewConfig = (): TrackingViewConfig => ({ columnIds, sort, accountId, search, hourMetric });
+  const applyView = (view: TrackingSavedView) => {
+    setColumns(view.columnIds);
+    setSort(view.sort);
+    setAccountId(view.accountId);
+    setSearch(view.search);
+    setHourMetric(view.hourMetric);
+    setSelectedViewId(view.id);
+    setViewName(view.name);
+    setViewError("");
+    setViewsOpen(false);
+  };
+  const saveView = async (update: boolean) => {
+    if (!token || viewBusy) return;
+    const name = viewName.trim();
+    if (!name) { setViewError("Enter a view name."); return; }
+    setViewBusy(true); setViewError("");
+    try {
+      const response = await fetch("/api/admin/tracking/views", {
+        method: update ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json", "x-admin-session": token },
+        body: JSON.stringify({ id: update ? selectedViewId : undefined, name, config: currentViewConfig() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to save view");
+      const view = data.view as TrackingSavedView;
+      setSavedViews((current) => [...current.filter((item) => item.id !== view.id), view].sort((a, b) => a.name.localeCompare(b.name)));
+      setSelectedViewId(view.id);
+      setViewName(view.name);
+    } catch (cause) { setViewError(cause instanceof Error ? cause.message : "Unable to save view"); }
+    finally { setViewBusy(false); }
+  };
+  const deleteView = async () => {
+    if (!token || !selectedViewId || viewBusy) return;
+    setViewBusy(true); setViewError("");
+    try {
+      const response = await fetch(`/api/admin/tracking/views?id=${encodeURIComponent(selectedViewId)}`, { method: "DELETE", headers: { "x-admin-session": token } });
+      if (!response.ok) throw new Error("Unable to delete view");
+      setSavedViews((current) => current.filter((view) => view.id !== selectedViewId));
+      setSelectedViewId(null); setViewName("");
+    } catch (cause) { setViewError(cause instanceof Error ? cause.message : "Unable to delete view"); }
+    finally { setViewBusy(false); }
+  };
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -325,6 +388,7 @@ export default function TrackingPage() {
             ["Matched to Meta", `${visibleTotals.matched} / ${visibleTotals.orders}`],
           ].map(([label, value]) => <div key={label} className="bg-[#141b2b] px-4 py-4"><div className="text-xs uppercase tracking-wider text-slate-500">{label}</div><div className="mt-2 text-xl font-semibold tabular-nums">{value}</div></div>)}
         </div>
+        <p className="-mt-4 mb-6 text-xs text-slate-500">Matched to Meta counts paid orders whose saved campaign ID or unique Meta UTM campaign name matches a campaign fetched for this range. Unmatched orders still count in AR sales.</p>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_330px]">
           <main className="min-w-0 space-y-7">
@@ -352,6 +416,17 @@ export default function TrackingPage() {
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2"><Search size={15} className="text-slate-500" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search campaign or ad" className="w-44 bg-transparent text-sm outline-none placeholder:text-slate-600" /></label>
                   <div className="relative">
+                    <button onClick={() => { if (!viewsOpen && token) void fetchViews(token); setViewsOpen(!viewsOpen); setColumnsOpen(false); }} className="flex items-center gap-2 rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm hover:bg-white/5">{selectedView?.name || "Saved views"} <ChevronDown size={14} /></button>
+                    {viewsOpen && <div className="absolute right-0 top-11 z-30 w-80 rounded-xl border border-white/15 bg-[#1b2437] p-3 shadow-2xl">
+                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Shared views</div>
+                      <div className="max-h-44 space-y-1 overflow-y-auto">{savedViews.length ? savedViews.map((view) => <button key={view.id} onClick={() => applyView(view)} className={`block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-white/10 ${selectedViewId === view.id ? "bg-cyan-400/10 text-cyan-200" : "text-slate-200"}`}>{view.name}</button>) : <p className="px-2 py-2 text-xs text-slate-500">No shared views yet.</p>}</div>
+                      <div className="mt-3 border-t border-white/10 pt-3"><label className="text-xs text-slate-400">View name<input value={viewName} onChange={(event) => setViewName(event.target.value)} maxLength={60} placeholder="My campaign view" className="mt-1 w-full rounded border border-white/10 bg-[#141b2b] px-2 py-2 text-sm text-white outline-none focus:border-cyan-400/50" /></label>
+                        <div className="mt-2 flex flex-wrap gap-2"><button disabled={viewBusy} onClick={() => void saveView(false)} className="rounded bg-cyan-500 px-2.5 py-1.5 text-xs font-semibold text-[#0A0E1A] disabled:opacity-50">Save new</button>{selectedView && <><button disabled={viewBusy} onClick={() => void saveView(true)} className="rounded border border-white/15 px-2.5 py-1.5 text-xs disabled:opacity-50">Update</button><button disabled={viewBusy} onClick={() => void deleteView()} className="rounded border border-rose-400/30 px-2.5 py-1.5 text-xs text-rose-300 disabled:opacity-50">Delete</button></>}</div>
+                        <p className="mt-2 text-[11px] text-slate-500">Columns, account, search, sort, and hourly metric are shared with admins. Dates stay separate.</p>{viewError && <p role="alert" className="mt-2 text-xs text-rose-300">{viewError}</p>}
+                      </div>
+                    </div>}
+                  </div>
+                  <div className="relative">
                     <button onClick={() => setColumnsOpen(!columnsOpen)} className="flex items-center gap-2 rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm hover:bg-white/5"><Columns3 size={15} /> Columns <ChevronDown size={14} /></button>
                     {columnsOpen && <div className="absolute right-0 top-11 z-30 max-h-[70vh] w-80 overflow-y-auto rounded-xl border border-white/15 bg-[#1b2437] p-3 shadow-2xl">
                       <div className="mb-3 flex gap-1">{Object.keys(PRESETS).map((name) => <button key={name} onClick={() => setColumns(PRESETS[name])} className="rounded-md bg-white/5 px-2 py-1 text-xs hover:bg-white/10">{name}</button>)}</div>
@@ -367,11 +442,12 @@ export default function TrackingPage() {
                       <th key={column.id}
                         draggable
                         onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", column.id); setDraggingId(column.id); }}
-                        onDragEnd={() => { setDraggingId(null); setDragOverId(null); }}
-                        onDragOver={(event) => { event.preventDefault(); setDragOverId(column.id); }}
-                        onDrop={(event) => { event.preventDefault(); const source = event.dataTransfer.getData("text/plain") || draggingId; if (source) reorderColumn(source, column.id); setDraggingId(null); setDragOverId(null); }}
-                        onDragLeave={() => setDragOverId((current) => current === column.id ? null : current)}
-                        className={`whitespace-nowrap border-b border-white/10 px-3 py-3 font-medium ${column.align === "right" ? "text-right" : "text-left"} ${dragOverId === column.id && draggingId !== column.id ? "bg-[#e51b50]/20 ring-2 ring-inset ring-[#e51b50]/50" : ""}`}>
+                        onDragEnd={() => { setDraggingId(null); setDragOver(null); }}
+                        onDragOver={(event) => { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); const before = event.clientX < rect.left + rect.width / 2; setDragOver((current) => current?.id === column.id && current.before === before ? current : { id: column.id, before }); }}
+                        onDrop={(event) => { event.preventDefault(); const source = event.dataTransfer.getData("text/plain") || draggingId; const rect = event.currentTarget.getBoundingClientRect(); if (source) reorderColumn(source, column.id, event.clientX < rect.left + rect.width / 2); setDraggingId(null); setDragOver(null); }}
+                        onDragLeave={() => setDragOver((current) => current?.id === column.id ? null : current)}
+                        className={`relative whitespace-nowrap border-b border-white/10 px-3 py-3 font-medium ${column.align === "right" ? "text-right" : "text-left"}`}>
+                        {dragOver?.id === column.id && draggingId !== column.id && <span aria-hidden="true" className={`pointer-events-none absolute inset-y-1 w-[3px] rounded-full bg-cyan-300 shadow-[0_0_12px_rgba(103,232,249,0.9)] ${dragOver.before ? "left-0" : "right-0"}`} />}
                         <div className={`inline-flex items-center gap-1 ${column.align === "right" ? "justify-end" : "justify-start"}`}>
                           <span title={`Drag ${column.label} to reposition`} aria-label={`Drag ${column.label} to reposition`} className="cursor-grab touch-none text-slate-500 hover:text-white active:cursor-grabbing"><GripVertical size={14} /></span>
                           <button onClick={() => setSort({ id: column.id, desc: sort.id === column.id ? !sort.desc : true })} className="inline-flex items-center gap-1 hover:text-white">{column.label}{sort.id === column.id && <span>{sort.desc ? "↓" : "↑"}</span>}</button>
@@ -383,7 +459,7 @@ export default function TrackingPage() {
                 {!loading && filtered.length === 0 && <div className="p-10 text-center text-sm text-slate-500">No campaigns or UTM orders for these filters.</div>}
                 {loading && <div className="p-10 text-center text-sm text-slate-500">Loading campaigns and orders…</div>}
               </div>
-              <p className="mt-2 text-xs text-slate-500">Drag column headers to reorder them. Meta data is requested directly from its API every 60 seconds for today; Meta reporting itself can lag. Paid-order dates and hourly sales use the Profit Sheet 11:30 AM IST business day. USD spend is converted with {summary?.fxRateSource || "the saved Profit Sheet rate"}; other currencies show no INR ROAS.</p>
+              <p className="mt-2 text-xs text-slate-500">Drag column headers to reorder them. Meta spend and AR sales use the Profit Sheet 11:30 AM IST business day; other Meta insight metrics use each account&apos;s calendar reporting window. Direct Meta API data refreshes every 60 seconds for today, but Meta reporting itself can lag. USD spend is converted with {summary?.fxRateSource || "the saved Profit Sheet rate"}; other currencies show no INR ROAS.</p>
             </section>
 
             <section>

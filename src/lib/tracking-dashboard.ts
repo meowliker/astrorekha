@@ -38,6 +38,8 @@ export type TrackingCampaign = {
   dailyBudget: number | null;
   lifetimeBudget: number | null;
   spend: number;
+  /** Meta's account-calendar spend, paired with its calendar insight metrics. */
+  metaCalendarSpend?: number;
   spendInr: number | null;
   impressions: number;
   reach: number;

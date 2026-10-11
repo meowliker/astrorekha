@@ -1,5 +1,6 @@
-import type { MetaAccountCredential } from "@/lib/meta-ad-accounts";
+import { getMetaAccountWindowForRequest, type MetaAccountCredential } from "@/lib/meta-ad-accounts";
 import type { TrackingCampaign } from "@/lib/tracking-dashboard";
+import { bufferedMetaRange, campaignSpendForBusinessDays, type CampaignSpendRow } from "@/lib/tracking-meta-spend";
 
 const META_BASE = "https://graph.facebook.com/v21.0";
 const PURCHASE_ACTIONS = ["website_purchase", "onsite_web_purchase", "offsite_conversion.fb_pixel_purchase", "omni_purchase", "purchase"];
@@ -62,8 +63,8 @@ export async function fetchMetaTrackingAccount(
   const fallbackName = credential.label || `Ad account ${accountId}`;
 
   try {
-    const metadata = await metaJson<{ name?: string; currency?: string; timezone_name?: string }>(
-      `${accountUrl}?${new URLSearchParams({ access_token: credential.accessToken, fields: "name,currency,timezone_name" })}`
+    const metadata = await metaJson<{ name?: string; currency?: string; timezone_name?: string; timezone_offset_hours_utc?: number }>(
+      `${accountUrl}?${new URLSearchParams({ access_token: credential.accessToken, fields: "name,currency,timezone_name,timezone_offset_hours_utc" })}`
     );
     const currency = String(metadata.currency || "INR").toUpperCase();
     const accountName = metadata.name || fallbackName;
@@ -81,13 +82,45 @@ export async function fetchMetaTrackingAccount(
       fields: "id,name,objective,effective_status,daily_budget,lifetime_budget",
       limit: "200",
     });
-    const [insights, metadataRows] = await Promise.all([
+    const buffered = bufferedMetaRange(dates.start, dates.end);
+    const hourlyParams = new URLSearchParams({
+      access_token: credential.accessToken,
+      fields: "campaign_id,date_start,spend",
+      level: "campaign",
+      time_increment: "1",
+      breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone",
+      time_range: JSON.stringify(buffered),
+      limit: "5000",
+    });
+    const dailyParams = new URLSearchParams({
+      access_token: credential.accessToken,
+      fields: "campaign_id,date_start,spend",
+      level: "campaign",
+      time_increment: "1",
+      time_range: JSON.stringify(buffered),
+      limit: "5000",
+    });
+    const [insights, metadataRows, hourlySpend, dailySpend] = await Promise.all([
       collectPages<MetaInsight>(`${accountUrl}/insights?${insightParams}`, 20),
       collectPages<MetaCampaign>(`${accountUrl}/campaigns?${campaignParams}`, 20),
+      collectPages<CampaignSpendRow>(`${accountUrl}/insights?${hourlyParams}`, 20),
+      collectPages<CampaignSpendRow>(`${accountUrl}/insights?${dailyParams}`, 20),
     ]);
     const warnings: string[] = [];
     if (insights.truncated) warnings.push(`${accountName}: Meta insights exceeded 4,000 campaigns; narrow the date range.`);
     if (metadataRows.truncated) warnings.push(`${accountName}: campaign metadata exceeded 4,000 rows; some statuses may be missing.`);
+    if (hourlySpend.truncated || dailySpend.truncated) throw new Error(`Hourly campaign spend is incomplete for ${accountName}; narrow the date range.`);
+    if (!hourlySpend.rows.length && dailySpend.rows.some((row) => number(row.spend) > 0)) {
+      throw new Error(`Hourly campaign spend is unavailable for ${accountName}; spend cannot match the Profit Sheet yet.`);
+    }
+    const offset = Number(metadata.timezone_offset_hours_utc);
+    if (!Number.isFinite(offset)) throw new Error(`Meta did not return the timezone offset for ${accountName}.`);
+    const accountWindow = getMetaAccountWindowForRequest(credential, dates.start, dates.end, "business_1130_ist");
+    if (!accountWindow) throw new Error(`No active reporting window for ${accountName}.`);
+    const spendByCampaign = campaignSpendForBusinessDays({
+      hourly: hourlySpend.rows, daily: dailySpend.rows, start: dates.start, end: dates.end,
+      timezoneOffsetHoursUtc: offset, accountWindow, nowMillis: Date.now(),
+    });
     const byId = new Map<string, TrackingCampaign>();
 
     function baseCampaign(id: string, name: string): TrackingCampaign {
@@ -96,6 +129,7 @@ export async function fetchMetaTrackingAccount(
         campaignId: id, campaignName: name, objective: null, status: null,
         dailyBudget: null, lifetimeBudget: null,
         spend: 0, spendInr: currency === "INR" || currency === "USD" ? 0 : null,
+        metaCalendarSpend: 0,
         impressions: 0, reach: 0, clicks: 0, linkClicks: 0,
         landingPageViews: 0, addToCarts: 0, checkouts: 0, metaPurchases: 0,
         metaPurchaseValue: 0, leads: 0, orders: 0, grossRevenue: 0,
@@ -120,8 +154,8 @@ export async function fetchMetaTrackingAccount(
       if (!id) continue;
       const row = byId.get(id) || baseCampaign(id, insight.campaign_name || id);
       row.campaignName = insight.campaign_name || row.campaignName;
-      row.spend += number(insight.spend);
-      row.spendInr = currency === "INR" ? row.spend : currency === "USD" ? row.spend * usdInrRate : null;
+      // Other Meta insight metrics still use the account's calendar-day attribution window.
+      row.metaCalendarSpend = (row.metaCalendarSpend || 0) + number(insight.spend);
       row.impressions += number(insight.impressions);
       row.reach += number(insight.reach);
       row.clicks += number(insight.clicks);
@@ -132,6 +166,12 @@ export async function fetchMetaTrackingAccount(
       row.metaPurchases += action(insight.actions, PURCHASE_ACTIONS);
       row.metaPurchaseValue += action(insight.action_values, PURCHASE_ACTIONS);
       row.leads += action(insight.actions, ["lead", "offsite_conversion.fb_pixel_lead"]);
+      byId.set(id, row);
+    }
+    for (const [id, spend] of spendByCampaign) {
+      const row = byId.get(id) || baseCampaign(id, id);
+      row.spend = spend;
+      row.spendInr = currency === "INR" ? spend : currency === "USD" ? spend * usdInrRate : null;
       byId.set(id, row);
     }
     return { account, campaigns: Array.from(byId.values()), warnings };
