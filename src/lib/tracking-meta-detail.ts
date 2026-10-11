@@ -40,11 +40,37 @@ function activityValue(value: unknown, currency: string, budget: boolean): strin
   return String(value);
 }
 
+function budgetAmount(value: unknown, currency: string, minorUnits = false): string | null {
+  if (value == null) return null;
+  if (typeof value === "object" && !Array.isArray(value)) {
+    const fields = value as Record<string, unknown>;
+    const ownCurrency = typeof fields.currency === "string" && /^[A-Z]{3}$/.test(fields.currency) ? fields.currency : currency;
+    for (const key of ["old_value", "new_value", "value", "amount", "daily_budget", "lifetime_budget", "budget"]) {
+      if (fields[key] != null) return budgetAmount(fields[key], ownCurrency, /budget$/.test(key));
+    }
+    return null;
+  }
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const text = String(value).trim();
+  const match = text.match(/-?\d[\d,]*(?:\.\d+)?/);
+  if (!match) return null;
+  const raw = Number(match[0].replace(/,/g, ""));
+  if (!Number.isFinite(raw)) return null;
+  const amount = minorUnits && !/[₹$€£]/.test(text) ? raw / 100 : raw;
+  const code = currency || (text.includes("₹") ? "INR" : text.includes("$") ? "USD" : text.includes("€") ? "EUR" : text.includes("£") ? "GBP" : "");
+  return code ? new Intl.NumberFormat("en-IN", { style: "currency", currency: code, useGrouping: false, minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(amount) : amount.toLocaleString("en-IN", { useGrouping: false, maximumFractionDigits: 2 });
+}
+
 function activityDetail(extra: Record<string, unknown>, item: RawActivity, currency: string): string {
   const budget = /budget/i.test(`${item.event_type || ""} ${item.translated_event_type || ""}`);
   const oldValue = extra.old_value ?? extra.old_budget;
   const newValue = extra.new_value ?? extra.new_budget;
   if (oldValue == null && newValue == null) return "";
+  if (budget) {
+    const before = budgetAmount(oldValue, currency, extra.old_value == null);
+    const after = budgetAmount(newValue, currency, extra.new_value == null);
+    if (before || after) return `${before || "—"} → ${after || "—"}`;
+  }
   return `${activityValue(oldValue, currency, budget)} → ${activityValue(newValue, currency, budget)}`;
 }
 
