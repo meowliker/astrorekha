@@ -3,8 +3,9 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { Activity, ArrowDown, ArrowLeft, ArrowUp, ChevronDown, ChevronRight, Columns3, RefreshCw, Search, ShoppingBag, X } from "lucide-react";
+import { Activity, ArrowDown, ArrowLeft, ArrowUp, ChevronDown, ChevronRight, Columns3, GripVertical, RefreshCw, Search, ShoppingBag, X } from "lucide-react";
 import type { TrackingCampaign, TrackingSale, TrackingSummary } from "@/lib/tracking-dashboard";
+import TrackingDateRangePicker, { type TrackingRange } from "./TrackingDateRangePicker";
 
 type LiveData = { sales: TrackingSale[]; todayCount: number; todayRevenue: number; fetchedAt: string };
 type Column = { id: string; label: string; group: "Identity" | "Meta" | "AstroRekha"; value: (row: TrackingCampaign) => string; sort: (row: TrackingCampaign) => string | number; align?: "right" };
@@ -34,7 +35,7 @@ const COLUMNS: Column[] = [
   { id: "linkClicks", label: "Link clicks", group: "Meta", value: (r) => count(r.linkClicks), sort: (r) => r.linkClicks, align: "right" },
   { id: "linkCtr", label: "Link CTR", group: "Meta", value: (r) => pct(r.linkClicks, r.impressions), sort: (r) => r.impressions ? r.linkClicks / r.impressions : 0, align: "right" },
   { id: "ctr", label: "CTR", group: "Meta", value: (r) => pct(r.clicks, r.impressions), sort: (r) => r.impressions ? r.clicks / r.impressions : 0, align: "right" },
-  { id: "cpc", label: "CPC", group: "Meta", value: (r) => r.clicks ? amount(r.spend / r.clicks, r.currency) : "—", sort: (r) => r.clicks ? r.spend / r.clicks : 0, align: "right" },
+  { id: "cpc", label: "Meta CPC", group: "Meta", value: (r) => r.clicks ? amount(r.spend / r.clicks, r.currency) : "—", sort: (r) => r.clicks ? r.spend / r.clicks : 0, align: "right" },
   { id: "cpm", label: "CPM", group: "Meta", value: (r) => r.impressions ? amount(r.spend / r.impressions * 1000, r.currency) : "—", sort: (r) => r.impressions ? r.spend / r.impressions * 1000 : 0, align: "right" },
   { id: "landingPageViews", label: "Landing views", group: "Meta", value: (r) => count(r.landingPageViews), sort: (r) => r.landingPageViews, align: "right" },
   { id: "addToCarts", label: "Add to carts", group: "Meta", value: (r) => count(r.addToCarts), sort: (r) => r.addToCarts, align: "right" },
@@ -44,13 +45,13 @@ const COLUMNS: Column[] = [
   { id: "metaCostPerPurchase", label: "Meta cost / purchase", group: "Meta", value: (r) => r.metaPurchases ? amount(r.spend / r.metaPurchases, r.currency) : "—", sort: (r) => r.metaPurchases ? r.spend / r.metaPurchases : 0, align: "right" },
   { id: "metaPurchaseValue", label: "Meta purchase value", group: "Meta", value: (r) => amount(r.metaPurchaseValue, r.currency), sort: (r) => r.metaPurchaseValue, align: "right" },
   { id: "metaRoas", label: "Meta ROAS", group: "Meta", value: (r) => ratio(r.metaPurchaseValue, r.spend), sort: (r) => r.spend ? r.metaPurchaseValue / r.spend : 0, align: "right" },
-  { id: "orders", label: "UTM orders", group: "AstroRekha", value: (r) => count(r.orders), sort: (r) => r.orders, align: "right" },
-  { id: "grossRevenue", label: "Gross sales", group: "AstroRekha", value: (r) => inr(r.grossRevenue), sort: (r) => r.grossRevenue, align: "right" },
+  { id: "orders", label: "AR sales", group: "AstroRekha", value: (r) => count(r.orders), sort: (r) => r.orders, align: "right" },
+  { id: "grossRevenue", label: "AR gross sales", group: "AstroRekha", value: (r) => inr(r.grossRevenue), sort: (r) => r.grossRevenue, align: "right" },
   { id: "refunds", label: "Refunds", group: "AstroRekha", value: (r) => count(r.refunds), sort: (r) => r.refunds, align: "right" },
   { id: "refundAmount", label: "Refund amount", group: "AstroRekha", value: (r) => inr(r.refundAmount), sort: (r) => r.refundAmount, align: "right" },
-  { id: "revenue", label: "Net sales", group: "AstroRekha", value: (r) => inr(r.revenue), sort: (r) => r.revenue, align: "right" },
-  { id: "utmRoas", label: "UTM ROAS", group: "AstroRekha", value: (r) => ratio(r.revenue, r.spendInr), sort: (r) => r.spendInr ? r.revenue / r.spendInr : 0, align: "right" },
-  { id: "cpa", label: "UTM CPA", group: "AstroRekha", value: (r) => r.orders && r.spendInr != null ? inr(r.spendInr / r.orders) : "—", sort: (r) => r.orders && r.spendInr ? r.spendInr / r.orders : 0, align: "right" },
+  { id: "revenue", label: "AR net sales", group: "AstroRekha", value: (r) => inr(r.revenue), sort: (r) => r.revenue, align: "right" },
+  { id: "utmRoas", label: "AR ROAS", group: "AstroRekha", value: (r) => ratio(r.revenue, r.spendInr), sort: (r) => r.spendInr ? r.revenue / r.spendInr : 0, align: "right" },
+  { id: "cpa", label: "AR CPA", group: "AstroRekha", value: (r) => r.orders && r.spendInr != null ? inr(r.spendInr / r.orders) : "—", sort: (r) => r.orders && r.spendInr ? r.spendInr / r.orders : 0, align: "right" },
   { id: "aov", label: "AOV", group: "AstroRekha", value: (r) => r.orders ? inr(r.grossRevenue / r.orders) : "—", sort: (r) => r.orders ? r.grossRevenue / r.orders : 0, align: "right" },
   { id: "utmSource", label: "UTM source", group: "AstroRekha", value: (r) => labels(r.utmSources), sort: (r) => r.utmSources.join(",") },
   { id: "utmMedium", label: "UTM medium", group: "AstroRekha", value: (r) => labels(r.utmMediums), sort: (r) => r.utmMediums.join(",") },
@@ -86,7 +87,6 @@ export default function TrackingPage() {
   const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
   const [dates, setDates] = useState({ start: dateDaysAgo(6), end: businessToday() });
-  const [draft, setDraft] = useState(dates);
   const [summary, setSummary] = useState<TrackingSummary | null>(null);
   const [live, setLive] = useState<LiveData | null>(null);
   const [error, setError] = useState("");
@@ -96,6 +96,8 @@ export default function TrackingPage() {
   const [search, setSearch] = useState("");
   const [columnIds, setColumnIds] = useState<string[]>(DEFAULT_COLUMNS);
   const [columnsOpen, setColumnsOpen] = useState(false);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [sort, setSort] = useState({ id: "spendInr", desc: true });
   const [expanded, setExpanded] = useState<string | null>(null);
   const [hourDate, setHourDate] = useState(dates.end);
@@ -106,6 +108,8 @@ export default function TrackingPage() {
   const toastTimers = useRef<Map<string, number>>(new Map());
   const summaryRequest = useRef(0);
   const liveLoading = useRef(false);
+  const reconciliationLoading = useRef(false);
+  const metaAutoLoading = useRef(false);
 
   useEffect(() => {
     const session = localStorage.getItem("admin_session_token");
@@ -173,6 +177,33 @@ export default function TrackingPage() {
     return () => window.clearInterval(timer);
   }, [token, fetchLive]);
   useEffect(() => {
+    if (!token) return;
+    const timer = window.setInterval(async () => {
+      if (document.visibilityState !== "visible" || metaAutoLoading.current) return;
+      metaAutoLoading.current = true;
+      try { await fetchSummary(token, dates, true); }
+      finally { metaAutoLoading.current = false; }
+    }, dates.end === businessToday() ? 60_000 : 300_000);
+    return () => window.clearInterval(timer);
+  }, [token, dates, fetchSummary]);
+  useEffect(() => {
+    if (!token) return;
+    const reconcile = async () => {
+      if (document.visibilityState !== "visible" || reconciliationLoading.current) return;
+      reconciliationLoading.current = true;
+      try {
+        const response = await fetch("/api/admin/tracking/reconcile", { method: "POST", headers: { "x-admin-session": token }, cache: "no-store" });
+        if (!response.ok) return;
+        const result = await response.json() as { recovered?: number };
+        if (result.recovered) { await Promise.all([fetchLive(token), fetchSummary(token, dates, true)]); }
+      } catch { /* The existing hourly PayU reconciliation remains the fallback. */ }
+      finally { reconciliationLoading.current = false; }
+    };
+    void reconcile();
+    const timer = window.setInterval(() => void reconcile(), 60_000);
+    return () => window.clearInterval(timer);
+  }, [token, dates, fetchLive, fetchSummary]);
+  useEffect(() => {
     const timers = toastTimers.current;
     return () => { for (const timer of timers.values()) window.clearTimeout(timer); };
   }, []);
@@ -194,6 +225,16 @@ export default function TrackingPage() {
     if (index < 0 || target < 0 || target >= columnIds.length) return;
     const next = [...columnIds];
     [next[index], next[target]] = [next[target], next[index]];
+    setColumns(next);
+  };
+  const reorderColumn = (fromId: string, toId: string) => {
+    if (fromId === toId) return;
+    const next = [...columnIds];
+    const from = next.indexOf(fromId);
+    const to = next.indexOf(toId);
+    if (from < 0 || to < 0) return;
+    next.splice(from, 1);
+    next.splice(to, 0, fromId);
     setColumns(next);
   };
   const activeColumns = columnIds.map((id) => COLUMNS.find((column) => column.id === id)).filter((column): column is Column => !!column);
@@ -241,16 +282,11 @@ export default function TrackingPage() {
   }, [summary, accountId, hourDate, hourMetric]);
   const maxHour = hourly.campaigns.reduce((max, row) => Math.max(max, ...row.hours), Math.max(1, ...hourly.totals));
 
-  function applyRange() {
-    if (draft.start > draft.end || draft.end > businessToday() || (Date.parse(draft.end) - Date.parse(draft.start)) / 86_400_000 > 30) {
-      setError("Choose a valid date range of up to 31 days."); return;
-    }
-    setDates(draft);
-    setHourDate(draft.end);
-  }
-  function preset(days: number) {
-    const next = { start: dateDaysAgo(days - 1), end: businessToday() };
-    setDraft(next); setDates(next); setHourDate(next.end);
+  function applyDates(range: TrackingRange) {
+    setSummary(null);
+    setDates(range);
+    setHourDate(range.end);
+    setError("");
   }
 
   return (
@@ -268,12 +304,7 @@ export default function TrackingPage() {
             <p className="mt-1 text-sm text-slate-400">Meta campaign performance and AstroRekha paid orders, joined by saved UTMs.</p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
-            <button onClick={() => preset(1)} className="rounded-lg border border-white/10 px-3 py-2 text-sm hover:bg-white/5">Today</button>
-            <button onClick={() => preset(7)} className="rounded-lg border border-white/10 px-3 py-2 text-sm hover:bg-white/5">7 days</button>
-            <button onClick={() => preset(30)} className="rounded-lg border border-white/10 px-3 py-2 text-sm hover:bg-white/5">30 days</button>
-            <label className="text-xs text-slate-400">From<input type="date" value={draft.start} max={draft.end} onChange={(event) => setDraft({ ...draft, start: event.target.value })} className="mt-1 block rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm text-white" /></label>
-            <label className="text-xs text-slate-400">To<input type="date" value={draft.end} min={draft.start} max={businessToday()} onChange={(event) => setDraft({ ...draft, end: event.target.value })} className="mt-1 block rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm text-white" /></label>
-            <button onClick={applyRange} className="rounded-lg bg-[#e51b50] px-4 py-2 text-sm font-semibold hover:bg-[#f02a5e]">Apply</button>
+            <TrackingDateRangePicker value={dates} maxDate={businessToday()} onChange={applyDates} />
             <button onClick={() => token && void fetchSummary(token, dates, true)} title="Refresh Meta and orders" className="rounded-lg border border-white/10 p-2 hover:bg-white/5"><RefreshCw size={18} className={refreshing ? "animate-spin" : ""} /></button>
           </div>
         </header>
@@ -296,7 +327,7 @@ export default function TrackingPage() {
             <section>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <div><h2 className="text-lg font-semibold">Ad accounts</h2><p className="text-xs text-slate-500">Select an account to focus the campaign table and hourly sales.</p></div>
-                <span className="text-xs text-slate-500">{summary ? `Meta fetched ${displayIst(summary.fetchedAt)} IST` : "Loading Meta"}</span>
+                <span className="text-xs text-slate-500">{summary ? `Direct Meta API · refreshes every ${dates.end === businessToday() ? "60s" : "5m"} · fetched ${displayIst(summary.fetchedAt)} IST` : "Loading Meta"}</span>
               </div>
               <div className="overflow-x-auto border-y border-white/10">
                 <div className="flex min-w-max gap-0">
@@ -327,13 +358,28 @@ export default function TrackingPage() {
               </div>
               <div className="overflow-x-auto rounded-xl border border-white/10 bg-[#141b2b]">
                 <table className="w-full min-w-max border-collapse text-sm">
-                  <thead className="sticky top-0 bg-[#1b2437] text-xs text-slate-400"><tr><th className="w-8 px-2 py-3" />{activeColumns.map((column) => <th key={column.id} className={`whitespace-nowrap border-b border-white/10 px-3 py-3 font-medium ${column.align === "right" ? "text-right" : "text-left"}`}><button onClick={() => setSort({ id: column.id, desc: sort.id === column.id ? !sort.desc : true })} className="inline-flex items-center gap-1 hover:text-white">{column.label}{sort.id === column.id && <span>{sort.desc ? "↓" : "↑"}</span>}</button></th>)}</tr></thead>
+                  <thead className="sticky top-0 bg-[#1b2437] text-xs text-slate-400">
+                    <tr><th className="w-8 px-2 py-3" />{activeColumns.map((column) =>
+                      <th key={column.id}
+                        draggable
+                        onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", column.id); setDraggingId(column.id); }}
+                        onDragEnd={() => { setDraggingId(null); setDragOverId(null); }}
+                        onDragOver={(event) => { event.preventDefault(); setDragOverId(column.id); }}
+                        onDrop={(event) => { event.preventDefault(); const source = event.dataTransfer.getData("text/plain") || draggingId; if (source) reorderColumn(source, column.id); setDraggingId(null); setDragOverId(null); }}
+                        onDragLeave={() => setDragOverId((current) => current === column.id ? null : current)}
+                        className={`whitespace-nowrap border-b border-white/10 px-3 py-3 font-medium ${column.align === "right" ? "text-right" : "text-left"} ${dragOverId === column.id && draggingId !== column.id ? "bg-[#e51b50]/20 ring-2 ring-inset ring-[#e51b50]/50" : ""}`}>
+                        <div className={`inline-flex items-center gap-1 ${column.align === "right" ? "justify-end" : "justify-start"}`}>
+                          <span title={`Drag ${column.label} to reposition`} aria-label={`Drag ${column.label} to reposition`} className="cursor-grab touch-none text-slate-500 hover:text-white active:cursor-grabbing"><GripVertical size={14} /></span>
+                          <button onClick={() => setSort({ id: column.id, desc: sort.id === column.id ? !sort.desc : true })} className="inline-flex items-center gap-1 hover:text-white">{column.label}{sort.id === column.id && <span>{sort.desc ? "↓" : "↑"}</span>}</button>
+                        </div>
+                      </th>)}</tr>
+                  </thead>
                   <tbody>{filtered.map((row) => <Fragment key={row.key}><tr onClick={() => setExpanded(expanded === row.key ? null : row.key)} className="cursor-pointer border-b border-white/5 transition-colors hover:bg-white/5"><td className="px-2 py-3 text-slate-500"><button type="button" aria-label={`${expanded === row.key ? "Collapse" : "Expand"} ${row.campaignName}`} onClick={(event) => { event.stopPropagation(); setExpanded(expanded === row.key ? null : row.key); }}>{expanded === row.key ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button></td>{activeColumns.map((column) => <td key={column.id} title={column.value(row)} className={`max-w-[240px] truncate px-3 py-3 tabular-nums ${column.align === "right" ? "text-right" : "text-left"} ${column.id === "campaign" ? "font-medium text-white" : "text-slate-300"}`}>{column.value(row)}</td>)}</tr>{expanded === row.key && <tr key={`${row.key}:detail`} className="bg-[#111827]"><td colSpan={activeColumns.length + 1} className="px-5 py-4"><div className="mb-2 flex flex-wrap gap-3 text-xs text-slate-400"><span>Match: {row.attribution === "meta_id" ? "saved campaign ID" : row.attribution === "utm_id" ? "UTM campaign ID" : row.attribution === "unique_name" ? "unique campaign name" : row.attribution === "utm_only" ? "UTM only" : "no matched sales"}</span><span>Campaign ID: {row.campaignId || "—"}</span><span>Currency: {row.currency}</span></div><h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">UTM ad set / ad breakdown</h3>{row.adBreakdown.length ? <div className="max-h-48 overflow-auto"><table className="w-full text-xs"><thead className="text-slate-500"><tr><th className="py-1 text-left">utm_term · ad set</th><th className="py-1 text-left">utm_content · ad</th><th className="py-1 text-right">Orders</th><th className="py-1 text-right">Gross sales</th></tr></thead><tbody>{row.adBreakdown.slice().sort((a, b) => b.revenue - a.revenue).map((item, index) => <tr key={`${item.term}:${item.content}:${index}`} className="border-t border-white/5"><td className="py-2 pr-3">{item.term}</td><td className="py-2 pr-3">{item.content}</td><td className="py-2 text-right">{item.orders}</td><td className="py-2 text-right">{inr(item.revenue)}</td></tr>)}</tbody></table></div> : <p className="text-xs text-slate-500">No attributed orders in this range.</p>}</td></tr>}</Fragment> )}</tbody>
                 </table>
                 {!loading && filtered.length === 0 && <div className="p-10 text-center text-sm text-slate-500">No campaigns or UTM orders for these filters.</div>}
                 {loading && <div className="p-10 text-center text-sm text-slate-500">Loading campaigns and orders…</div>}
               </div>
-              <p className="mt-2 text-xs text-slate-500">Meta spend uses each account&apos;s calendar dates and timezone. Paid-order dates and hourly sales use the Profit Sheet 11:30 AM IST business day. USD spend is converted with {summary?.fxRateSource || "the saved Profit Sheet rate"}; other currencies show no INR ROAS.</p>
+              <p className="mt-2 text-xs text-slate-500">Drag column headers to reorder them. Meta data is requested directly from its API every 60 seconds for today; Meta reporting itself can lag. Paid-order dates and hourly sales use the Profit Sheet 11:30 AM IST business day. USD spend is converted with {summary?.fxRateSource || "the saved Profit Sheet rate"}; other currencies show no INR ROAS.</p>
             </section>
 
             <section>
