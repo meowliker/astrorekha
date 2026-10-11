@@ -14,6 +14,7 @@ export type TrackingViewConfig = {
   search: string;
   hourMetric: "orders" | "revenue";
   activeOnly?: boolean;
+  activeScope?: "campaign" | "adset" | "ad" | "all";
 };
 
 export type TrackingSavedView = TrackingViewConfig & {
@@ -38,5 +39,6 @@ export function normalizeTrackingView(input: unknown): TrackingViewConfig | null
     search: typeof value.search === "string" ? value.search.slice(0, 120) : "",
     hourMetric: value.hourMetric === "revenue" ? "revenue" : "orders",
     activeOnly: value.activeOnly === true,
+    activeScope: ["campaign", "adset", "ad", "all"].includes(String(value.activeScope)) ? value.activeScope as TrackingViewConfig["activeScope"] : "all",
   };
 }

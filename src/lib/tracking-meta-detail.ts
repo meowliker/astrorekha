@@ -11,6 +11,43 @@ type RawActivity = { event_time?: string; event_type?: string; translated_event_
 const numeric = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : 0;
 const action = (items: Action[] | undefined, kinds: string[]) => kinds.reduce((value, kind) => value || numeric(items?.find((item) => item.action_type === kind)?.value), 0);
 
+function activityLevel(item: RawActivity): string {
+  const label = (item.translated_event_type || "").toLowerCase();
+  if (/ad set|adset/.test(label)) return "Ad set";
+  if (/\bad\b/.test(label)) return "Ad";
+  if (/campaign/.test(label)) return "Campaign";
+  // Meta's activity object types use its internal hierarchy names.
+  const kind = (item.object_type || "").toUpperCase();
+  if (kind === "CAMPAIGN_GROUP") return "Campaign";
+  if (kind === "CAMPAIGN") return "Ad set";
+  if (kind === "ADGROUP" || kind === "AD") return "Ad";
+  return kind.replace(/_/g, " ") || "Account";
+}
+
+function activityValue(value: unknown, currency: string, budget: boolean): string {
+  if (value == null) return "—";
+  if (typeof value === "object") {
+    if (Array.isArray(value)) return value.map((item) => activityValue(item, currency, budget)).join(", ");
+    const entries = Object.entries(value as Record<string, unknown>);
+    const budgetEntry = entries.find(([key]) => /^(daily|lifetime)_budget$|^amount$/i.test(key));
+    if (budgetEntry) return `${budgetEntry[0].replace(/_/g, " ")}: ${activityValue(budgetEntry[1], currency, true)}`;
+    return entries.map(([key, item]) => `${key.replace(/_/g, " ")}: ${activityValue(item, currency, budget)}`).join(", ") || "—";
+  }
+  if (budget && Number.isFinite(Number(value)) && String(value).trim() !== "") {
+    const amount = Number(value) / 100;
+    return currency ? new Intl.NumberFormat("en-IN", { style: "currency", currency, maximumFractionDigits: 2 }).format(amount) : `${amount.toLocaleString("en-IN", { maximumFractionDigits: 2 })} (account currency)`;
+  }
+  return String(value);
+}
+
+function activityDetail(extra: Record<string, unknown>, item: RawActivity, currency: string): string {
+  const budget = /budget/i.test(`${item.event_type || ""} ${item.translated_event_type || ""}`);
+  const oldValue = extra.old_value ?? extra.old_budget;
+  const newValue = extra.new_value ?? extra.new_budget;
+  if (oldValue == null && newValue == null) return "";
+  return `${activityValue(oldValue, currency, budget)} → ${activityValue(newValue, currency, budget)}`;
+}
+
 async function pages<T>(url: string, maxPages = 20): Promise<T[]> {
   const rows: T[] = [];
   let next: string | undefined = url;
@@ -108,20 +145,22 @@ export async function fetchMetaTrackingChildren(credential: MetaAccountCredentia
 export async function fetchMetaTrackingActivities(credential: MetaAccountCredential, dates: { start: string; end: string }): Promise<TrackingActivity[]> {
   const since = new Date(`${dates.start}T11:30:00+05:30`).toISOString();
   const until = new Date(Date.parse(`${dates.end}T11:30:00+05:30`) + 86_400_000).toISOString();
-  const raw = await pages<RawActivity>(url(`act_${credential.accountId}/activities`, credential.accessToken, {
+  const [raw, currency] = await Promise.all([pages<RawActivity>(url(`act_${credential.accountId}/activities`, credential.accessToken, {
     fields: "event_time,event_type,translated_event_type,object_id,object_name,object_type,actor_name,extra_data",
     since, until, limit: "100",
-  }), 20);
+  }), 20), fetch(url(`act_${credential.accountId}`, credential.accessToken, { fields: "currency" }), { cache: "no-store", signal: AbortSignal.timeout(20_000) })
+    .then(async (response) => {
+      const account = await response.json().catch(() => ({})) as { currency?: string };
+      return response.ok && /^[A-Z]{3}$/.test(account.currency || "") ? account.currency! : "";
+    }).catch(() => "")]);
   return raw.filter((item) => /^(create_|delete_|update_|edit_|merge_|ad_account_(update|remove|reset)_|campaign_ended)/.test(item.event_type || "")).map((item, index) => {
     let extra: Record<string, unknown> = {};
     try { extra = typeof item.extra_data === "string" ? JSON.parse(item.extra_data) : item.extra_data || {}; } catch { /* Meta sometimes returns non-JSON detail. */ }
-    const oldValue = extra.old_value ?? extra.old_budget;
-    const newValue = extra.new_value ?? extra.new_budget;
-    const detail = oldValue != null || newValue != null ? `${String(oldValue ?? "—")} → ${String(newValue ?? "—")}` : "";
+    const detail = activityDetail(extra, item, currency);
     return { id: `${credential.accountId}:${item.event_time || ""}:${item.object_id || ""}:${index}`,
       accountId: credential.accountId, accountName: credential.label || credential.accountId,
       at: item.event_time || "", actor: item.actor_name || "Meta", action: item.translated_event_type || (item.event_type || "Changed").replace(/_/g, " "),
-      object: item.object_name || item.object_id || "Ad account", objectType: (item.object_type || "").replace(/_/g, " "), detail };
+      object: item.object_name || item.object_id || "Ad account", objectType: activityLevel(item), detail };
   });
 }
 
