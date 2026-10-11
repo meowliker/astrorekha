@@ -266,6 +266,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
     .from("payments")
     .select("*")
     .eq("payu_txn_id", txnid)
+    .not("id", "like", "pay_refund_%")
     .maybeSingle();
 
   if (lookupError) throw lookupError;
@@ -294,7 +295,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
         payment_status: "failed",
         payu_payment_id: mihpayid || null,
       })
-      .eq("payu_txn_id", txnid);
+      .eq("id", existingPayment.id);
 
     await recordMarketingEvent({
       eventName: "payment_failed",
@@ -356,7 +357,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
     const { error: updateError } = await supabase
       .from("payments")
       .update(updatePayload)
-      .eq("payu_txn_id", txnid);
+      .eq("id", existingPayment.id);
     if (updateError) throw updateError;
   }
 

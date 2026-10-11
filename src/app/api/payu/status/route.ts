@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
       .from("payments")
       .select("id, payu_txn_id, payu_payment_id, user_id, type, bundle_id, feature, coins, customer_email, payment_status, amount")
       .eq("payu_txn_id", txnid)
+      .not("id", "like", "pay_refund_%")
       .maybeSingle();
     if (lookupError) throw lookupError;
     if (!payment) {
