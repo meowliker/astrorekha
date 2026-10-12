@@ -54,7 +54,8 @@ export async function fetchMetaTrackingExactHourlySpend(
   credential: MetaAccountCredential,
   day: string,
   usdInrRate: number,
-): Promise<Record<string, number[]>> {
+): Promise<{ hourlySpendInr: Record<string, number[]>; hourlyLinkClicks: Record<string, number[]> }> {
+  const empty = { hourlySpendInr: {}, hourlyLinkClicks: {} };
   const accountId = credential.accountId;
   const accountUrl = `${META_BASE}/act_${accountId}`;
   const metadata = await metaJson<{ currency?: string; timezone_offset_hours_utc?: number }>(
@@ -64,20 +65,20 @@ export async function fetchMetaTrackingExactHourlySpend(
   if (!Number.isFinite(offset)) throw new Error("Meta account timezone is unavailable");
   const currency = String(metadata.currency || "INR").toUpperCase();
   const multiplier = currency === "INR" ? 1 : currency === "USD" ? usdInrRate : null;
-  if (multiplier == null) return {};
+  if (multiplier == null) return empty;
   const window = getMetaAccountWindowForRequest(credential, day, day, "business_1130_ist");
-  if (!window) return {};
+  if (!window) return empty;
   const businessStart = Date.parse(businessDayStartUtc(day));
   const start = Math.max(businessStart, window.startMillis);
   const end = Math.min(businessStart + 86_400_000, window.endMillis, Date.now());
-  if (end <= start) return {};
+  if (end <= start) return empty;
   const accountDate = (time: number) => new Date(time + offset * 3_600_000).toISOString().slice(0, 10);
   const first = accountDate(start);
   const last = accountDate(end - 1);
   const accountDays = first === last ? [first] : [first, last];
   const results = await Promise.all(accountDays.map(async (accountDay) => {
     const params = new URLSearchParams({
-      access_token: credential.accessToken, fields: "campaign_id,date_start,spend", level: "campaign",
+      access_token: credential.accessToken, fields: "campaign_id,date_start,spend,inline_link_clicks", level: "campaign",
       time_increment: "1", breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone",
       time_range: JSON.stringify({ since: accountDay, until: accountDay }), limit: "5000",
     });
@@ -85,13 +86,15 @@ export async function fetchMetaTrackingExactHourlySpend(
     if (response.truncated) throw new Error(`Meta hourly spend is incomplete for ${accountDay}`);
     return response.rows;
   }));
-  const spend = campaignHourlySpendForBusinessDays({
-    hourly: results.flat(), daily: [], start: day, end: day,
-    timezoneOffsetHoursUtc: offset, accountWindow: window, nowMillis: Date.now(),
-  });
-  return Object.fromEntries(Array.from(spend, ([campaignId, days]) => [
-    `meta:${accountId}:${campaignId}`, (days[day] || Array(24).fill(0)).map((value) => value * multiplier),
-  ]));
+  const base = { hourly: results.flat(), daily: [], start: day, end: day,
+    timezoneOffsetHoursUtc: offset, accountWindow: window, nowMillis: Date.now() };
+  const metricRows = (metric: "spend" | "inline_link_clicks") => {
+    const rows = campaignHourlySpendForBusinessDays({ ...base, metric });
+    return Object.fromEntries(Array.from(rows, ([campaignId, days]) => [
+      `meta:${accountId}:${campaignId}`, (days[day] || Array(24).fill(0)).map((value) => metric === "spend" ? value * multiplier : value),
+    ]));
+  };
+  return { hourlySpendInr: metricRows("spend"), hourlyLinkClicks: metricRows("inline_link_clicks") };
 }
 
 export async function fetchMetaTrackingAccount(
@@ -132,7 +135,7 @@ export async function fetchMetaTrackingAccount(
     const buffered = bufferedMetaRange(dates.start, dates.end);
     const hourlyParams = new URLSearchParams({
       access_token: credential.accessToken,
-      fields: "campaign_id,date_start,spend",
+      fields: "campaign_id,date_start,spend,inline_link_clicks",
       level: "campaign",
       time_increment: "1",
       breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone",
@@ -173,6 +176,10 @@ export async function fetchMetaTrackingAccount(
       hourly: normalizedHourly, daily: dailySpend.rows, start: dates.start, end: dates.end,
       timezoneOffsetHoursUtc: offset, accountWindow, nowMillis: Date.now(),
     });
+    const clicksByCampaign = campaignHourlySpendForBusinessDays({
+      hourly: normalizedHourly, daily: [], start: dates.start, end: dates.end,
+      timezoneOffsetHoursUtc: offset, accountWindow, nowMillis: Date.now(), metric: "inline_link_clicks",
+    });
     const multiplier = currency === "INR" ? 1 : currency === "USD" ? usdInrRate : null;
     const hourlySpendInr: Record<string, Record<string, number[]>> = {};
     if (multiplier != null) for (const [id, days] of hourlyByCampaign) {
@@ -194,7 +201,7 @@ export async function fetchMetaTrackingAccount(
         dailyBudget: null, lifetimeBudget: null,
         spend: 0, spendInr: currency === "INR" || currency === "USD" ? 0 : null,
         metaCalendarSpend: 0,
-        impressions: 0, reach: 0, clicks: 0, linkClicks: 0,
+        impressions: 0, reach: 0, clicks: 0, linkClicks: 0, businessLinkClicks: 0,
         landingPageViews: 0, addToCarts: 0, checkouts: 0, metaPurchases: 0,
         metaPurchaseValue: 0, leads: 0, orders: 0, grossRevenue: 0,
         refunds: 0, refundAmount: 0, revenue: 0,
@@ -236,6 +243,11 @@ export async function fetchMetaTrackingAccount(
       const row = byId.get(id) || baseCampaign(id, id);
       row.spend = spend;
       row.spendInr = currency === "INR" ? spend : currency === "USD" ? spend * usdInrRate : null;
+      byId.set(id, row);
+    }
+    for (const [id, days] of clicksByCampaign) {
+      const row = byId.get(id) || baseCampaign(id, id);
+      row.businessLinkClicks = Object.values(days).flat().reduce((sum, value) => sum + value, 0);
       byId.set(id, row);
     }
     return { account, campaigns: Array.from(byId.values()), dailySpendInr, hourlySpendInr, warnings };

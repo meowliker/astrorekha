@@ -3,7 +3,7 @@ export const TRACKING_VIEW_COLUMN_IDS = new Set([
   "dailyBudget", "lifetimeBudget", "impressions", "reach", "frequency", "clicks",
   "linkClicks", "linkCtr", "ctr", "cpc", "cpm", "landingPageViews", "addToCarts",
   "checkouts", "leads", "metaPurchases", "metaCostPerPurchase", "metaPurchaseValue",
-  "metaRoas", "orders", "grossRevenue", "refunds", "refundAmount", "revenue",
+  "metaRoas", "orders", "conversionRate", "grossRevenue", "refunds", "refundAmount", "revenue",
   "utmRoas", "cpa", "aov", "utmSource", "utmMedium", "utmTerm", "utmContent",
 ]);
 
@@ -12,7 +12,7 @@ export type TrackingViewConfig = {
   sort: { id: string; desc: boolean };
   accountId: string;
   search: string;
-  hourMetric: "orders" | "revenue" | "roas";
+  hourMetric: "orders" | "revenue" | "roas" | "cvr";
   activeOnly?: boolean;
   activeScope?: "campaign" | "adset" | "ad" | "all";
 };
@@ -37,7 +37,7 @@ export function normalizeTrackingView(input: unknown): TrackingViewConfig | null
     sort: { id: sortId, desc: rawSort.desc !== false },
     accountId: typeof value.accountId === "string" ? value.accountId.slice(0, 100) : "all",
     search: typeof value.search === "string" ? value.search.slice(0, 120) : "",
-    hourMetric: value.hourMetric === "revenue" || value.hourMetric === "roas" ? value.hourMetric : "orders",
+    hourMetric: value.hourMetric === "revenue" || value.hourMetric === "roas" || value.hourMetric === "cvr" ? value.hourMetric : "orders",
     activeOnly: value.activeOnly === true,
     activeScope: ["campaign", "adset", "ad", "all"].includes(String(value.activeScope)) ? value.activeScope as TrackingViewConfig["activeScope"] : "all",
   };

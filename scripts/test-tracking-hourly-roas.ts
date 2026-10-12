@@ -48,6 +48,13 @@ const istWindow = campaignHourlySpendForBusinessDays({
   nowMillis: start + 86_400_000,
 });
 assert.equal(Number(istWindow.get("123")?.[day][0].toFixed(2)), 1820.43);
+const hourlyClicks = campaignHourlySpendForBusinessDays({
+  hourly: [{ campaign_id: "123", date_start: day, spend: "120", inline_link_clicks: "12", hourly_stats_aggregated_by_advertiser_time_zone: "11:00:00 - 11:59:59" }],
+  daily: [], start: day, end: day, timezoneOffsetHoursUtc: 5.5,
+  accountWindow: { startMillis: start, endMillis: start + 86_400_000 }, nowMillis: start + 86_400_000,
+  metric: "inline_link_clicks",
+});
+assert.equal(hourlyClicks.get("123")?.[day][0], 6);
 
 const campaigns = [
   { key: "meta:1:123", campaignName: "Meta campaign", accountId: "1", spendInr: 240 },
@@ -60,17 +67,23 @@ const summary = {
   ],
   hourlySpendInr: { "meta:1:123": { [day]: aligned.get("123")?.[day] || [] } },
 };
-const roas = buildTrackingHourlyTable(summary, campaigns, day, "roas");
+const clicks = { "meta:1:123": { [day]: [12, 6] } };
+const roas = buildTrackingHourlyTable(summary, campaigns, day, "roas", true, new Set(), clicks);
 assert.equal(roas.totals[0], 2.5);
 assert.equal(roas.totals[1], 0);
 assert.equal(roas.totals[2], null);
 assert.equal(roas.campaigns.find((row) => row.key === "meta:1:123")?.hours[0], 2);
 assert.equal(roas.campaigns.find((row) => row.key === "unattributed")?.hours[0], null);
-assert.deepEqual(roas.campaigns.find((row) => row.key === "meta:1:123")?.details[0], { orders: 1, revenue: 240, spend: 120, roas: 2 });
-assert.deepEqual(roas.totalDetails[0], { orders: 2, revenue: 300, spend: 120, roas: 2.5 });
+assert.deepEqual({ ...roas.campaigns.find((row) => row.key === "meta:1:123")?.details[0], cvr: null }, { orders: 1, revenue: 240, spend: 120, clicks: 12, roas: 2, cvr: null });
+assert.equal(roas.campaigns.find((row) => row.key === "meta:1:123")?.details[0].cvr?.toFixed(2), "8.33");
+assert.deepEqual({ ...roas.totalDetails[0], cvr: null }, { orders: 2, revenue: 300, spend: 120, clicks: 12, roas: 2.5, cvr: null });
+assert.equal(roas.totalDetails[0].cvr?.toFixed(2), "8.33");
 assert.equal(buildTrackingHourlyTable(summary, campaigns, day, "roas", false).totalDetails[0].spend, null);
 assert.equal(buildTrackingHourlyTable(summary, campaigns, day, "roas", true, new Set(["1"])).campaigns[0].details[0].spend, null);
 assert.equal(buildTrackingHourlyTable(summary, campaigns, day, "orders").totals[0], 2);
 assert.equal(buildTrackingHourlyTable(summary, campaigns, day, "revenue").totals[0], 300);
+assert.equal(buildTrackingHourlyTable(summary, campaigns, day, "cvr", true, new Set(), clicks).totals[0]?.toFixed(2), "8.33");
+assert.equal(roas.totals.length, 24);
 assert.equal(normalizeTrackingView({ columnIds: ["campaign"], hourMetric: "roas" })?.hourMetric, "roas");
+assert.equal(normalizeTrackingView({ columnIds: ["conversionRate"], hourMetric: "cvr" })?.hourMetric, "cvr");
 console.log("Tracking hourly ROAS checks passed");

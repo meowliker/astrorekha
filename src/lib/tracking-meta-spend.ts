@@ -4,6 +4,7 @@ export type CampaignSpendRow = {
   campaign_id?: string;
   date_start?: string;
   spend?: string;
+  inline_link_clicks?: string;
   hourly_stats_aggregated_by_advertiser_time_zone?: string;
 };
 
@@ -82,7 +83,7 @@ export function campaignSpendForBusinessDays(input: {
   return result;
 }
 
-/** Split Meta's account-local hourly spend into 11:30 AM IST business-hour buckets. */
+/** Allocate account-local clock-hour metrics into 11:30 AM IST business windows. */
 export function campaignHourlySpendForBusinessDays(input: {
   hourly: CampaignSpendRow[];
   daily: CampaignSpendRow[];
@@ -91,8 +92,10 @@ export function campaignHourlySpendForBusinessDays(input: {
   timezoneOffsetHoursUtc: number;
   accountWindow: { startMillis: number; endMillis: number };
   nowMillis: number;
+  metric?: "spend" | "inline_link_clicks";
 }): Map<string, Record<string, number[]>> {
   const { hourly, daily, start, end, timezoneOffsetHoursUtc, accountWindow, nowMillis } = input;
+  const metric = input.metric || "spend";
   const result = new Map<string, Record<string, number[]>>();
   const rangeStart = Date.parse(`${start}T11:30:00+05:30`);
   const rangeEnd = Date.parse(`${shiftDay(end, 1)}T11:30:00+05:30`);
@@ -107,7 +110,7 @@ export function campaignHourlySpendForBusinessDays(input: {
     const clippedStart = Math.max(rawStart, accountWindow.startMillis, rangeStart);
     const clippedEnd = Math.min(observedEnd, accountWindow.endMillis, rangeEnd);
     if (clippedEnd <= clippedStart) continue;
-    const spend = amount(row.spend) * (clippedEnd - clippedStart) / (observedEnd - rawStart);
+    const spend = amount(row[metric]) * (clippedEnd - clippedStart) / (observedEnd - rawStart);
     const days = result.get(campaignId) || {};
     for (let bucket = Math.floor((clippedStart - rangeStart) / HOUR_MS); bucket <= Math.floor((clippedEnd - rangeStart - 1) / HOUR_MS); bucket++) {
       const bucketStart = rangeStart + bucket * HOUR_MS;
@@ -122,7 +125,7 @@ export function campaignHourlySpendForBusinessDays(input: {
 
   // When the ad account calendar aligns exactly with the business day, the
   // dashboard uses Meta's daily total. Scale its hourly shape to that total.
-  if (Math.abs(timezoneOffsetHoursUtc + 6) < 0.01) for (const row of daily) {
+  if (metric === "spend" && Math.abs(timezoneOffsetHoursUtc + 6) < 0.01) for (const row of daily) {
     const campaignId = row.campaign_id || "";
     const day = row.date_start || "";
     if (!campaignId || day < start || day > end) continue;

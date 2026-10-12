@@ -53,6 +53,7 @@ const COLUMNS: Column[] = [
   { id: "metaPurchaseValue", label: "Meta purchase value", group: "Meta", value: (r) => amount(r.metaPurchaseValue, r.currency), sort: (r) => r.metaPurchaseValue, align: "right" },
   { id: "metaRoas", label: "Meta ROAS", group: "Meta", value: (r) => ratio(r.metaPurchaseValue, r.metaCalendarSpend ?? r.spend), sort: (r) => (r.metaCalendarSpend ?? r.spend) ? r.metaPurchaseValue / (r.metaCalendarSpend ?? r.spend) : 0, align: "right" },
   { id: "orders", label: "AR sales", group: "AstroRekha", value: (r) => count(r.orders), sort: (r) => r.orders, align: "right" },
+  { id: "conversionRate", label: "Conversion rate", group: "AstroRekha", value: (r) => r.businessLinkClicks != null ? pct(r.orders, r.businessLinkClicks) : "—", sort: (r) => r.businessLinkClicks ? r.orders / r.businessLinkClicks : 0, align: "right" },
   { id: "grossRevenue", label: "AR gross sales", group: "AstroRekha", value: (r) => inr(r.grossRevenue), sort: (r) => r.grossRevenue, align: "right" },
   { id: "refunds", label: "Refunds", group: "AstroRekha", value: (r) => count(r.refunds), sort: (r) => r.refunds, align: "right" },
   { id: "refundAmount", label: "Refund amount", group: "AstroRekha", value: (r) => inr(r.refundAmount), sort: (r) => r.refundAmount, align: "right" },
@@ -66,7 +67,7 @@ const COLUMNS: Column[] = [
   { id: "utmContent", label: "UTM content / ad", group: "AstroRekha", value: (r) => labels(r.utmContents), sort: (r) => r.utmContents.join(",") },
 ];
 const PRESETS: Record<string, string[]> = {
-  Performance: ["campaign", "account", "status", "budget", "spendInr", "impressions", "clicks", "ctr", "cpc", "metaPurchases", "metaCostPerPurchase", "metaRoas", "orders", "revenue", "utmRoas", "cpa"],
+  Performance: ["campaign", "account", "status", "budget", "spendInr", "impressions", "clicks", "ctr", "cpc", "metaPurchases", "metaCostPerPurchase", "metaRoas", "orders", "conversionRate", "revenue", "utmRoas", "cpa"],
   Attribution: ["campaign", "account", "campaignId", "utmSource", "utmMedium", "utmTerm", "utmContent", "orders", "grossRevenue", "refundAmount", "revenue", "utmRoas"],
   All: COLUMNS.map((column) => column.id),
 };
@@ -98,7 +99,7 @@ export default function TrackingPage() {
   const [activityWarnings, setActivityWarnings] = useState<string[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const [hourCampaignKey, setHourCampaignKey] = useState<string | null>(null);
-  const [exactHourlySpend, setExactHourlySpend] = useState<{ day: string; values: Record<string, number[]>; failedAccountIds: string[] } | null>(null);
+  const [exactHourlySpend, setExactHourlySpend] = useState<{ day: string; hourlySpendInr: Record<string, number[]>; hourlyLinkClicks: Record<string, number[]>; failedAccountIds: string[] } | null>(null);
   const [exactHourlyError, setExactHourlyError] = useState("");
   const [columnIds, setColumnIds] = useState<string[]>(DEFAULT_COLUMNS);
   const [columnsOpen, setColumnsOpen] = useState(false);
@@ -216,9 +217,9 @@ export default function TrackingPage() {
     const params = new URLSearchParams({ mode: "hourly-spend", day: hourDate });
     fetch(`/api/admin/tracking?${params}`, { headers: { "x-admin-session": token }, cache: "no-store", signal: controller.signal })
       .then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error || "Hourly spend unavailable"); return data; })
-      .then((data: { hourlySpendInr: Record<string, number[]>; failedAccountIds?: string[]; warnings?: string[] }) => {
+      .then((data: { hourlySpendInr: Record<string, number[]>; hourlyLinkClicks: Record<string, number[]>; failedAccountIds?: string[]; warnings?: string[] }) => {
         if (controller.signal.aborted) return;
-        setExactHourlySpend({ day: hourDate, values: data.hourlySpendInr, failedAccountIds: data.failedAccountIds || [] });
+        setExactHourlySpend({ day: hourDate, hourlySpendInr: data.hourlySpendInr, hourlyLinkClicks: data.hourlyLinkClicks, failedAccountIds: data.failedAccountIds || [] });
         setExactHourlyError((data.warnings || []).join(" · "));
       })
       .catch((cause) => { if (!controller.signal.aborted) setExactHourlyError(cause instanceof Error ? cause.message : "Hourly spend unavailable"); });
@@ -385,17 +386,20 @@ export default function TrackingPage() {
     return visibleTotals.revenue - visibleTotals.spend - gst;
   }, [summary, accountId, dates, visibleTotals.revenue, visibleTotals.spend]);
 
-  const exactSpend = exactHourlySpend?.day === hourDate ? exactHourlySpend.values : null;
+  const exactSpend = exactHourlySpend?.day === hourDate ? exactHourlySpend.hourlySpendInr : null;
+  const exactClicks = exactHourlySpend?.day === hourDate ? exactHourlySpend.hourlyLinkClicks : null;
   const failedHourlyAccounts = useMemo(() => new Set(exactHourlySpend?.day === hourDate ? exactHourlySpend.failedAccountIds : []), [exactHourlySpend, hourDate]);
   const hourly = useMemo(() => buildTrackingHourlyTable(summary ? { hourly: summary.hourly, hourlySpendInr: exactSpend
     ? Object.fromEntries(Object.entries(exactSpend).map(([key, values]) => [key, { [hourDate]: values }])) : {} } : null,
-    filtered, hourDate, hourMetric, exactSpend !== null, failedHourlyAccounts), [summary, exactSpend, failedHourlyAccounts, filtered, hourDate, hourMetric]);
+    filtered, hourDate, hourMetric, exactSpend !== null, failedHourlyAccounts,
+    exactClicks ? Object.fromEntries(Object.entries(exactClicks).map(([key, values]) => [key, { [hourDate]: values }])) : {}), [summary, exactSpend, exactClicks, failedHourlyAccounts, filtered, hourDate, hourMetric]);
   const hourDates = useMemo(() => Array.from(
     { length: Math.floor((Date.parse(dates.end) - Date.parse(dates.start)) / 86_400_000) + 1 },
     (_, index) => new Date(Date.parse(`${dates.start}T00:00:00Z`) + index * 86_400_000).toISOString().slice(0, 10)
   ), [dates]);
   const hourCampaign = summary?.campaigns.find((row) => row.key === hourCampaignKey) || null;
   const hourSpend = hourCampaign?.accountId && exactSpend && !failedHourlyAccounts.has(hourCampaign.accountId) ? exactSpend[hourCampaign.key] || Array(24).fill(0) : null;
+  const hourClicks = hourCampaign?.accountId && exactClicks && !failedHourlyAccounts.has(hourCampaign.accountId) ? exactClicks[hourCampaign.key] || Array(24).fill(0) : null;
 
   function applyDates(range: TrackingRange) {
     setSummary(null);
@@ -407,7 +411,7 @@ export default function TrackingPage() {
 
   return (
     <div className="min-h-screen bg-[#0A0E1A] text-slate-100">
-      {hourCampaign && <TrackingHourlyModal campaign={hourCampaign} day={hourDate} hours={summary?.hourly || []} spend={hourSpend} error={!hourCampaign.accountId ? "No matched Meta campaign for this row" : failedHourlyAccounts.has(hourCampaign.accountId) ? exactHourlyError : !exactSpend ? exactHourlyError : ""} onClose={() => setHourCampaignKey(null)} />}
+      {hourCampaign && <TrackingHourlyModal campaign={hourCampaign} day={hourDate} hours={summary?.hourly || []} spend={hourSpend} clicks={hourClicks} error={!hourCampaign.accountId ? "No matched Meta campaign for this row" : failedHourlyAccounts.has(hourCampaign.accountId) ? exactHourlyError : !exactSpend ? exactHourlyError : ""} onClose={() => setHourCampaignKey(null)} />}
       <div aria-live="polite" className="pointer-events-none fixed right-4 top-4 z-50 flex w-[min(380px,calc(100vw-2rem))] flex-col gap-2">
         <AnimatePresence initial={false}>{toastSales.map((sale) => <motion.div key={sale.id} role="status" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 40 }} transition={{ duration: 0.2 }} className="pointer-events-auto rounded-xl border border-emerald-400/35 bg-[#1b2437] p-4 shadow-2xl shadow-black/50">
           <div className="flex items-start gap-3"><div className="rounded-full bg-emerald-400/15 p-2 text-emerald-300"><ShoppingBag size={17} /></div><div className="min-w-0 flex-1"><div className="text-xs font-semibold uppercase tracking-wide text-emerald-300">New sale · {sale.productType}</div><p className="mt-1 break-all text-sm font-medium">{sale.email}</p><p className="mt-1 text-xs text-slate-300">bought {sale.productName}</p>{sale.campaign && <p className="mt-2 whitespace-normal break-words text-xs text-slate-400">Campaign: {sale.campaign}</p>}<div className="mt-2 flex items-center justify-between gap-2 text-xs"><span className="text-slate-500">{displayIst(sale.at)} IST</span><span className="font-semibold text-emerald-300">{inr(sale.amount)}</span></div></div><button aria-label="Dismiss sale notification" onClick={() => { const timer = toastTimers.current.get(sale.id); if (timer) window.clearTimeout(timer); toastTimers.current.delete(sale.id); setToastSales((current) => current.filter((item) => item.id !== sale.id)); }} className="text-slate-500 hover:text-white"><X size={16} /></button></div>
@@ -512,11 +516,11 @@ export default function TrackingPage() {
                 {!loading && filtered.length === 0 && <div className="p-10 text-center text-sm text-slate-500">No campaigns or UTM orders for these filters.</div>}
                 {loading && <div className="p-10 text-center text-sm text-slate-500">Loading campaigns and orders…</div>}
               </div>
-              <p className="mt-2 text-xs text-slate-500">Drag column headers to reorder them. Meta spend and AR sales use the Profit Sheet 11:30 AM IST business day; other Meta insight metrics use each account&apos;s calendar reporting window. Meta data refreshes every 5 minutes or when you press Refresh; its reporting can still lag. Live sales refresh every 5 seconds. USD spend is converted with {summary?.fxRateSource || "the saved Profit Sheet rate"}; other currencies show no INR ROAS.</p>
+              <p className="mt-2 text-xs text-slate-500">Drag column headers to reorder them. Meta spend, AR sales and campaign conversion rate use the Profit Sheet 11:30 AM IST business day; other Meta insight metrics use each account&apos;s calendar reporting window. Meta data refreshes every 5 minutes or when you press Refresh; its reporting can still lag. Live sales refresh every 5 seconds. USD spend is converted with {summary?.fxRateSource || "the saved Profit Sheet rate"}; other currencies show no INR ROAS.</p>
             </section>
 
             <section>
-              <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Hourly sales by campaign</h2><p className="text-xs text-slate-500">Hourly windows begin at 11:30 AM IST. Meta shows clock hours, so these spend cells split adjacent Meta hours evenly. Hover a cell for its spend, net sales, orders and ROAS.</p>{exactHourlyError && <p className="mt-1 text-xs text-amber-300">{exactHourlyError}</p>}{!exactSpend && !exactHourlyError && <p className="mt-1 text-xs text-cyan-300">Loading single-day Meta hourly spend…</p>}</div><div className="flex items-center gap-2"><select aria-label="Hourly breakdown day" value={hourDate} onChange={(event) => setHourDate(event.target.value)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm">{hourDates.map((day) => <option key={day} value={day}>{new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`))}</option>)}</select><select aria-label="Hourly breakdown metric" value={hourMetric} onChange={(event) => setHourMetric(event.target.value as TrackingHourlyMetric)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="orders">Orders</option><option value="revenue">Net sales</option><option value="roas">ROAS</option></select></div></div>
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Hourly sales by campaign</h2><p className="text-xs text-slate-500">AR sales use exact payment times. Meta spend and clicks in 11:30 AM IST windows are allocated from Meta clock hours, so hourly ROAS and CVR are estimates.</p>{exactHourlyError && <p className="mt-1 text-xs text-amber-300">{exactHourlyError}</p>}{!exactSpend && !exactHourlyError && <p className="mt-1 text-xs text-cyan-300">Loading selected-day Meta metrics…</p>}</div><div className="flex items-center gap-2"><select aria-label="Hourly breakdown day" value={hourDate} onChange={(event) => setHourDate(event.target.value)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm">{hourDates.map((day) => <option key={day} value={day}>{new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`))}</option>)}</select><select aria-label="Hourly breakdown metric" value={hourMetric} onChange={(event) => setHourMetric(event.target.value as TrackingHourlyMetric)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="orders">Orders</option><option value="revenue">Net sales</option><option value="roas">ROAS</option><option value="cvr">CVR</option></select></div></div>
               <TrackingHourlyTable rows={hourly.campaigns} totals={hourly.totals} totalDetails={hourly.totalDetails} metric={hourMetric} onOpen={setHourCampaignKey} />
             </section>
           </main>

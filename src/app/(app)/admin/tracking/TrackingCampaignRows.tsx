@@ -134,6 +134,7 @@ export default function TrackingCampaignRows({ rows, columns, token, dates, refr
   const mixedCurrencies = currencies.length > 1;
   const total = useMemo(() => rows.reduce<TrackingCampaign>((sum, row) => {
     for (const key of ["spend", "metaCalendarSpend", "impressions", "reach", "clicks", "linkClicks", "landingPageViews", "addToCarts", "checkouts", "metaPurchases", "metaPurchaseValue", "leads", "orders", "grossRevenue", "refunds", "refundAmount", "revenue"] as const) sum[key] = (sum[key] || 0) + (row[key] || 0);
+    if (row.businessLinkClicks != null) sum.businessLinkClicks = (sum.businessLinkClicks || 0) + row.businessLinkClicks;
     sum.spendInr = (sum.spendInr || 0) + (row.spendInr || 0);
     sum.dailyBudget = (sum.dailyBudget || 0) + (row.dailyBudget || 0);
     sum.lifetimeBudget = (sum.lifetimeBudget || 0) + (row.lifetimeBudget || 0);
@@ -146,9 +147,11 @@ export default function TrackingCampaignRows({ rows, columns, token, dates, refr
     leads: 0, orders: 0, grossRevenue: 0, refunds: 0, refundAmount: 0, revenue: 0,
     utmSources: [], utmMediums: [], utmTerms: [], utmContents: [], attribution: "none", adBreakdown: [],
   }), [rows, currencies]);
+  const matchedOrders = rows.filter((row) => row.businessLinkClicks != null).reduce((sum, row) => sum + row.orders, 0);
+  const conversionRate = total.businessLinkClicks ? `${(matchedOrders / total.businessLinkClicks * 100).toLocaleString("en-IN", { maximumFractionDigits: 2 })}%` : "—";
 
   return <>
     <tbody>{rows.map((row) => <CampaignRow key={row.key} row={row} columns={columns} token={token} dates={dates} refreshKey={refreshKey} activeOnly={activeOnly} activeScope={activeScope} onBudgetSaved={onBudgetSaved} />)}</tbody>
-    <tfoot><tr className="border-t-2 border-cyan-400/40 bg-[#202d40] text-sm font-semibold"><td className="px-2 py-3" />{columns.map((column) => <td key={column.id} className={`max-w-[240px] px-3 py-3 tabular-nums ${column.align === "right" ? "text-right" : "text-left"}`} title={column.id === "budget" ? "Campaign and ad set budgets cannot be combined reliably in this total." : mixedCurrencies && ["spend", "cpc", "cpm", "metaCostPerPurchase", "metaPurchaseValue", "metaRoas", "dailyBudget", "lifetimeBudget"].includes(column.id) ? "Mixed account currencies; use Spend INR and AR metrics." : undefined}>{column.id === "budget" ? "—" : mixedCurrencies && ["spend", "cpc", "cpm", "metaCostPerPurchase", "metaPurchaseValue", "metaRoas", "dailyBudget", "lifetimeBudget"].includes(column.id) ? "—" : column.id === "spend" ? new Intl.NumberFormat("en-IN", { style: "currency", currency: total.currency, maximumFractionDigits: 2 }).format(total.spend) : column.id === "campaign" ? "Overall result" : column.id === "account" ? "All shown" : column.id === "refundAmount" ? money(total.refundAmount) : column.value(total)}</td>)}</tr></tfoot>
+    <tfoot><tr className="border-t-2 border-cyan-400/40 bg-[#202d40] text-sm font-semibold"><td className="px-2 py-3" />{columns.map((column) => <td key={column.id} className={`max-w-[240px] px-3 py-3 tabular-nums ${column.align === "right" ? "text-right" : "text-left"}`} title={column.id === "budget" ? "Campaign and ad set budgets cannot be combined reliably in this total." : mixedCurrencies && ["spend", "cpc", "cpm", "metaCostPerPurchase", "metaPurchaseValue", "metaRoas", "dailyBudget", "lifetimeBudget"].includes(column.id) ? "Mixed account currencies; use Spend INR and AR metrics." : undefined}>{column.id === "budget" ? "—" : column.id === "conversionRate" ? conversionRate : mixedCurrencies && ["spend", "cpc", "cpm", "metaCostPerPurchase", "metaPurchaseValue", "metaRoas", "dailyBudget", "lifetimeBudget"].includes(column.id) ? "—" : column.id === "spend" ? new Intl.NumberFormat("en-IN", { style: "currency", currency: total.currency, maximumFractionDigits: 2 }).format(total.spend) : column.id === "campaign" ? "Overall result" : column.id === "account" ? "All shown" : column.id === "refundAmount" ? money(total.refundAmount) : column.value(total)}</td>)}</tr></tfoot>
   </>;
 }

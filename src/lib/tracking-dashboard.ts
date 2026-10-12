@@ -45,6 +45,8 @@ export type TrackingCampaign = {
   reach: number;
   clicks: number;
   linkClicks: number;
+  /** Meta link clicks allocated into the 11:30 AM IST business-day range. */
+  businessLinkClicks?: number;
   landingPageViews: number;
   addToCarts: number;
   checkouts: number;

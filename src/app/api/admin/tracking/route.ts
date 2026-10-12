@@ -267,9 +267,10 @@ export async function GET(request: NextRequest) {
       const rate = await fxRate(supabase);
       const results = await Promise.all(Array.from(new Map(credentials.map((credential) => [credential.accountId, credential])).values()).map(async (credential) => {
         try { return { accountId: credential.accountId, spend: await fetchMetaTrackingExactHourlySpend(credential, day, rate.rate), warning: null }; }
-        catch (error) { return { accountId: credential.accountId, spend: {}, warning: `${credential.label || credential.accountId}: ${error instanceof Error ? error.message : "Meta hourly spend unavailable"}` }; }
+        catch (error) { return { accountId: credential.accountId, spend: { hourlySpendInr: {}, hourlyLinkClicks: {} }, warning: `${credential.label || credential.accountId}: ${error instanceof Error ? error.message : "Meta hourly spend unavailable"}` }; }
       }));
-      return json({ hourlySpendInr: Object.assign({}, ...results.map((result) => result.spend)),
+      return json({ hourlySpendInr: Object.assign({}, ...results.map((result) => result.spend.hourlySpendInr)),
+        hourlyLinkClicks: Object.assign({}, ...results.map((result) => result.spend.hourlyLinkClicks)),
         failedAccountIds: results.filter((result) => result.warning).map((result) => result.accountId),
         warnings: results.map((result) => result.warning).filter(Boolean), fetchedAt: new Date().toISOString() });
     }
