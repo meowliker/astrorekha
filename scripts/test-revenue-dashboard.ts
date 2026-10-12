@@ -233,7 +233,9 @@ console.log(
   "Revenue dashboard: date boundaries, pagination-sized input, money, refunds, deduplication, attribution, identity, offer conversion and reconciliation passed.",
 );
 
-// Bundle cohort CVR uses people, includes report and combo paths, and keeps refunds separate.
+// Bundle cohort CVR uses people, excludes standalone reports and includes add-on combos, and keeps refunds separate.
+const noStandaloneCatalog = (dashboard: ReturnType<typeof build>) =>
+  dashboard.upsells.cohorts[0].reports.map((r) => r.id);
 const cohortRows = [
   payment("ba", { user_id: "A", customer_email: "a@example.test" }),
   payment("ba-repeat", {
@@ -255,8 +257,8 @@ const cohortRows = [
   payment("a-report-repeat", {
     user_id: "guest-A",
     customer_email: "A@example.test",
-    type: "report",
-    bundle_id: "report-compatibility",
+    type: "upsell",
+    bundle_id: "compatibilityTest",
     created_at: "2026-10-10T10:00:00Z",
   }),
   payment("b-combo", {
@@ -322,11 +324,11 @@ assert.equal(
 );
 assert.equal(cohort.paidBundleOrders, 6);
 assert.equal(cohort.unidentifiedBundleOrders, 1);
-assert.equal(cohort.buyers, 3);
-assert.equal(cohort.cvr, 75);
-assert.equal(cohort.dropOffRate, 25);
-assert.equal(cohort.retainedBuyers, 2);
-assert.equal(cohort.retainedCvr, 50);
+assert.equal(cohort.buyers, 2);
+assert.equal(cohort.cvr, 50);
+assert.equal(cohort.dropOffRate, 50);
+assert.equal(cohort.retainedBuyers, 1);
+assert.equal(cohort.retainedCvr, 25);
 const compat = cohort.reports.find((r) => r.id === "compatibilityTest")!;
 assert.equal(
   compat.buyers,
@@ -344,11 +346,25 @@ assert.equal(compat.retainedCvr, 25);
 const pastLife = cohort.reports.find((r) => r.id === "pastLifeReport")!;
 assert.equal(
   pastLife.buyers,
-  2,
-  "combo and standalone report paths both count",
+  1,
+  "only the add-on combo counts; a standalone report after a bundle does not",
 );
-assert.equal(pastLife.cvr, 50);
-assert.equal(pastLife.retainedBuyers, 1);
+assert.equal(pastLife.cvr, 25);
+assert.equal(pastLife.retainedBuyers, 0);
+assert.equal(
+  pastLife.checkoutBuyers,
+  1,
+  "standalone report checkouts do not enter the upsell funnel",
+);
+assert.equal(
+  cohort.linkedNetPaise,
+  20000,
+  "standalone report revenue is excluded from matched add-ons",
+);
+assert.ok(
+  !noStandaloneCatalog(build([])).includes("birthChart"),
+  "report-store-only rows are not seeded into add-on table",
+);
 assert.equal(
   cohortData.upsells.cohorts.find((c) => c.id === "second-bundle")!.buyers,
   0,
@@ -368,5 +384,17 @@ assert.ok(
   noBuyers.reports.every((r) => r.cvr === null && r.checkoutCvr === null),
 );
 console.log(
-  "Upsell cohorts: buyer denominators, repeat purchases, report aliases, standalone/combo paths, per-bundle timing, refunds, unknown identities, device isolation and exact percentages passed.",
+  "Upsell cohorts: buyer denominators, repeat purchases, report aliases, standalone report exclusion, add-on combos, per-bundle timing, refunds, unknown identities, device isolation and exact percentages passed.",
+);
+
+assert.deepEqual(
+  [...noStandaloneCatalog(build([]))].sort(),
+  [
+    "compatibilityTest",
+    "prediction2026",
+    "pastLifeReport",
+    "numerologyReport",
+    "spiritAnimalReport",
+  ].sort(),
+  "empty cohort shows the post-bundle add-on catalog, not every standalone report",
 );

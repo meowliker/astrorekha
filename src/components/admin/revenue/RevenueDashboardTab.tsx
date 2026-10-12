@@ -890,15 +890,15 @@ export default function RevenueDashboardTab({
                 visitor IDs. Missing coverage is shown as —.
               </p>
               <p>
-                <b>Bundle → report CVR.</b> Distinct identified paid bundle
-                buyers who then bought the report ÷ distinct identified paid
-                bundle buyers. Both checkout dates must be inside the selected
-                range; the report checkout must be at or after that buyer’s
-                first matching bundle checkout. Paid conversions include
-                subsequently refunded purchases. Retained CVR counts buyers with
-                a positive remaining order amount. Failed and open bundle
-                checkouts are excluded. Drop-off is the share without a
-                purchase, not a measured session bounce rate.
+                <b>Bundle → add-on CVR.</b> Distinct identified paid bundle
+                buyers who then bought a post-bundle add-on ÷ distinct
+                identified paid bundle buyers. Only payments recorded as upsells
+                qualify; standalone report-store purchases are excluded. Both
+                checkout dates must be inside the selected range, with the
+                add-on checkout at or after the buyer’s first matching bundle
+                checkout. Paid conversions include later refunds; retained-order
+                CVR counts positive remaining order value. Drop-off is the share
+                without an add-on purchase.
               </p>
               <p>
                 <b>UTM tracking.</b> Orders show saved last-touch UTMs, falling
@@ -1088,11 +1088,11 @@ export default function RevenueDashboardTab({
                         <strong>{money(totals.refundPendingPaise)}</strong>
                       </div>
                       <div>
-                        <span>Bundle → report CVR</span>
+                        <span>Bundle → add-on CVR</span>
                         <strong>{percent(data.upsells.attachRate)}</strong>
                       </div>
                       <div>
-                        <span>Bundle buyers who bought an extra report</span>
+                        <span>Bundle buyers who bought an add-on</span>
                         <strong>
                           {number(data.upsells.attachedBuyers)} /{" "}
                           {number(data.upsells.bundleBuyers)}
@@ -1268,8 +1268,8 @@ export default function RevenueDashboardTab({
             {tab === "Upsells" && upsellCohort && (
               <>
                 <Section
-                  title="Bundle buyers → report purchases"
-                  description="Bundle and report checkout dates must both be in the selected range. Each buyer counts once per report, including purchases through a combination."
+                  title="Bundle buyers → post-bundle add-ons"
+                  description="Only add-on checkouts from the upsell flow after a bundle purchase. Both checkout dates must be in the selected range; standalone report purchases are excluded."
                 >
                   <div className={styles.tableTools}>
                     <label>
@@ -1294,12 +1294,12 @@ export default function RevenueDashboardTab({
                   </div>
                   <div className={styles.threeMetrics}>
                     <Metric
-                      label="Bought any extra report"
+                      label="Bought a post-bundle add-on"
                       value={percent(upsellCohort.cvr)}
                       detail={`${number(upsellCohort.buyers)} buyers ÷ ${number(upsellCohort.bundleBuyers)} bundle buyers`}
                     />
                     <Metric
-                      label="No report purchased · drop-off"
+                      label="No add-on purchased · drop-off"
                       value={percent(upsellCohort.dropOffRate)}
                       detail={`${number(upsellCohort.notPurchased)} buyers ÷ ${number(upsellCohort.bundleBuyers)} bundle buyers`}
                     />
@@ -1310,11 +1310,12 @@ export default function RevenueDashboardTab({
                     />
                   </div>
                   <p className={styles.footnote}>
-                    CVR = bought report ÷ bundle buyers × 100. Drop-off = no
-                    purchase ÷ bundle buyers × 100. Checkout CVR = bought report
+                    CVR = bought add-on ÷ bundle buyers × 100. Drop-off = no
+                    purchase ÷ bundle buyers × 100. Checkout CVR = bought add-on
                     ÷ buyers who started its checkout × 100. These are buyer
                     counts, not payment counts. Purchases before the bundle and
-                    reports included inside a bundle are excluded.
+                    standalone report purchases and bundle-included reports are
+                    excluded.
                   </p>
                   {!!upsellCohort.unidentifiedBundleOrders && (
                     <p className={styles.footnote}>
@@ -1327,9 +1328,9 @@ export default function RevenueDashboardTab({
                   )}
                   {!!upsellCohort.unknownReportOrders && (
                     <p className={styles.footnote}>
-                      {number(upsellCohort.unknownReportOrders)} matched report
-                      checkouts lack an identifiable report and are excluded
-                      from report conversion.
+                      {number(upsellCohort.unknownReportOrders)} matched add-on
+                      checkouts lack an identifiable add-on and are excluded
+                      from add-on conversion.
                     </p>
                   )}
                   {!upsellCohort.bundleBuyers && (
@@ -1339,7 +1340,7 @@ export default function RevenueDashboardTab({
                     </Empty>
                   )}
                   <Table
-                    filterLabel="Filter upsell reports"
+                    filterLabel="Filter add-ons"
                     values={upsellCohort.reports.map((r) => [
                       r.name,
                       r.bundleBuyers,
@@ -1356,11 +1357,11 @@ export default function RevenueDashboardTab({
                       r.refundRate,
                     ])}
                     headers={[
-                      "Report",
+                      "Add-on",
                       "Bundle buyers",
                       "Started checkout",
                       "Checkout start %",
-                      "Bought report",
+                      "Bought add-on",
                       "Buyer CVR %",
                       "No purchase",
                       "Drop-off %",
@@ -1393,12 +1394,12 @@ export default function RevenueDashboardTab({
                     ))}
                   </Table>
                   <p className={styles.footnote}>
-                    A buyer can purchase several reports, so report CVRs should
+                    A buyer can purchase several add-ons, so add-on CVRs should
                     not be added. Order refund rate = buyers with a completed
-                    refund on an order containing the report ÷ its buyers.
+                    refund on an order containing the add-on ÷ its buyers.
                     Retained-order buyers have a positive amount left on such an
                     order. Partial combination refunds cannot be assigned to
-                    individual reports. Pending refunds remain retained until
+                    individual add-ons. Pending refunds remain retained until
                     completed. No-purchase drop-off can include people who never
                     saw an offer; a true page bounce rate requires session
                     tracking.
@@ -1409,7 +1410,13 @@ export default function RevenueDashboardTab({
                   description="Recorded orders and amounts for each exact combination within the selected dates. Checkout conversion below uses orders, separately from the buyer cohort above."
                 >
                   <ProductTable
-                    rows={data.products.filter((p) => p.category === "upsell")}
+                    rows={data.products.filter(
+                      (p) =>
+                        p.category === "upsell" &&
+                        p.items.some((id) =>
+                          upsellCohort.reports.some((r) => r.id === id),
+                        ),
+                    )}
                     onSelect={selectProduct}
                   />
                 </Section>

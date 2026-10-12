@@ -664,6 +664,21 @@ export function buildRevenueDashboard(input: {
   });
   // Buyer cohorts use payment identities only; shared tracking visitors must not merge customers.
   const cohortPerson = identityResolver(payments);
+  // The add-on screen after bundle checkout offers these items, not the report store.
+  // Keep recorded historical upsell items visible even after an offer is retired.
+  const addOnIds = new Set(
+    [
+      "compatibility",
+      "2026-predictions",
+      "past-life",
+      "numerology",
+      "spirit-animal",
+    ].flatMap((id) => product("upsell", id).items),
+  );
+  for (const row of products.values()) {
+    if (row.category === "upsell" && row.attempts > 0)
+      for (const item of row.items) addOnIds.add(item);
+  }
   const upsellCohorts = buildUpsellCohorts(
     payments
       .filter((p) => paymentState(p) !== "adjustment")
@@ -684,7 +699,7 @@ export function buildRevenueDashboard(input: {
           refunded: (p.refundPaise || 0) > 0 || state === "refunded",
         };
       }),
-    reports,
+    reports.filter((report) => addOnIds.has(report.id)),
     pricing.bundles,
   );
   const allUpsells = upsellCohorts[0];

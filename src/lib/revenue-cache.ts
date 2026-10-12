@@ -17,7 +17,7 @@ import {
 export const REVENUE_BUCKET = "admin-revenue-cache";
 const VERSION = 1;
 // Recalculate reports after formula changes without rereading source payment history.
-const REPORT_VERSION = 2;
+const REPORT_VERSION = 3;
 type Manifest = { version: number; id: string; generatedAt: string };
 type Source = Manifest & {
   payments: PaymentRow[];

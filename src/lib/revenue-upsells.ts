@@ -56,7 +56,7 @@ export function buildUpsellCohorts(
     let linkedNetPaise = 0,
       unknownReportOrders = 0;
     for (const p of purchases) {
-      if (!p.buyer || !["report", "upsell"].includes(p.category)) continue;
+      if (!p.buyer || p.category !== "upsell") continue;
       const bundledAt = cohort.get(p.buyer);
       if (bundledAt === undefined || Date.parse(p.createdAt) < bundledAt)
         continue;
