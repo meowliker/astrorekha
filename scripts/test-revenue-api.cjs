@@ -26,10 +26,50 @@ const rows = Array.from({ length: 1601 }, (_, i) => ({
   bundle_id: "report-past-life",
   amount: 49900,
   currency: "INR",
+  utm_source: i % 3 ? "google" : "facebook",
+  utm_campaign: i % 5 ? "alpha" : "beta",
   payment_status: i % 2 ? "bounced" : "paid",
   created_at: "2026-10-10T08:00:00Z",
 }));
+const objects = new Map();
+let writes = 0;
 const fakeDb = {
+  storage: {
+    async getBucket() {
+      return { data: { public: false }, error: null };
+    },
+    async createBucket() {
+      return { data: {}, error: null };
+    },
+    from() {
+      return {
+        async download(path) {
+          return objects.has(path)
+            ? { data: new Blob([objects.get(path)]), error: null }
+            : {
+                data: null,
+                error: {
+                  message: "{}",
+                  originalError: new Response(
+                    JSON.stringify({
+                      message: "Object not found",
+                      statusCode: "404",
+                    }),
+                    { status: 400 },
+                  ),
+                },
+              };
+        },
+        async upload(path, data) {
+          writes++;
+          if (mode === "save-error")
+            return { error: { message: "Storage unavailable" } };
+          objects.set(path, data);
+          return { error: null };
+        },
+      };
+    },
+  },
   from(table) {
     const filters = [];
     const query = {
@@ -134,7 +174,7 @@ require.cache[adminModule] = {
   exports: { getSupabaseAdmin: () => fakeDb },
 };
 const { NextRequest } = require("next/server");
-const { GET } = require("../src/app/api/admin/revenue-dashboard/route");
+const { GET, POST } = require("../src/app/api/admin/revenue-dashboard/route");
 const request = (
   query = "startDate=2026-10-10&endDate=2026-10-11",
   auth = true,
@@ -191,14 +231,22 @@ const request = (
   assert.equal(filteredPage.orderPage.total, 801);
   assert.ok(filteredPage.orders.every((row) => row.state === "paid"));
   const exported = [];
-  pageParams.set('orderState','all'); pageParams.set('orderLimit','250');
+  pageParams.set("orderState", "all");
+  pageParams.set("orderLimit", "250");
   while (exported.length < report.orderPage.total) {
-    pageParams.set('orderOffset', String(exported.length));
+    pageParams.set("orderOffset", String(exported.length));
     const batch = await (await GET(request(pageParams.toString()))).json();
     exported.push(...batch.orders);
   }
-  assert.equal(new Set(exported.map(row => row.id)).size, report.orderPage.total);
-  assert.equal(exported.reduce((sum,row) => sum + row.netPaise,0),report.totals.netPaise,'complete export reconciles across pages');
+  assert.equal(
+    new Set(exported.map((row) => row.id)).size,
+    report.orderPage.total,
+  );
+  assert.equal(
+    exported.reduce((sum, row) => sum + row.netPaise, 0),
+    report.totals.netPaise,
+    "complete export reconciles across pages",
+  );
   pageParams.set("snapshot", "outdated");
   assert.equal(
     (await GET(request(pageParams.toString()))).status,
@@ -206,18 +254,124 @@ const request = (
     "never mix records from different snapshots in an export",
   );
 
-  mode = "event-error";
-  const eventFailure = await (await GET(request())).json();
-  assert.equal(eventFailure.quality.eventsAvailable, false);
-  assert.equal(eventFailure.products[0].offerCvr, null);
-  assert.equal(eventFailure.totals.attempts, 1601);
-  mode = "payment-error";
-  paymentReads = 0;
-  const failure = await GET(request());
-  assert.equal(failure.status, 503, "never serves truncated financial totals");
-  assert.equal((await failure.json()).totals, undefined);
+  const beforeReads = paymentReads;
+  await GET(request());
+  await GET(request("startDate=2026-10-09&endDate=2026-10-11"));
+  assert.equal(
+    paymentReads,
+    beforeReads,
+    "existing and new date ranges read saved data, never payment history",
+  );
+  rows[1600].amount = 99900;
+  const stale = await (await GET(request())).json();
+  assert.equal(
+    stale.totals.collectedPaise,
+    report.totals.collectedPaise,
+    "snapshot remains stable until refresh",
+  );
+  const updated = await (await POST(request())).json();
+  assert.equal(
+    updated.totals.collectedPaise,
+    report.totals.collectedPaise + 50000,
+  );
+  assert.notEqual(updated.snapshot, report.snapshot);
+  assert.ok(
+    paymentReads > beforeReads,
+    "refresh rereads complete payment history",
+  );
+  const currentReads = paymentReads;
+  const revisited = await (await GET(request())).json();
+  assert.equal(revisited.snapshot, updated.snapshot);
+  assert.equal(paymentReads, currentReads, "refresh persists the new data");
+  pageParams.set("snapshot", report.snapshot);
+  assert.equal(
+    (await GET(request(pageParams.toString()))).status,
+    409,
+    "a refresh invalidates pinned exports safely",
+  );
+  const oldAsOf = await GET(
+    request(
+      "startDate=2026-10-10&endDate=2026-10-11&asOf=2026-10-09T12:00:00Z",
+    ),
+  );
+  assert.equal(
+    oldAsOf.status,
+    200,
+    "stored snapshots can predate selected dates without breaking pagination",
+  );
+  const asc = await (
+    await GET(
+      request(
+        "startDate=2026-10-10&endDate=2026-10-11&orderState=paid&orderSort=amountPaise&orderDirection=desc&orderLimit=1",
+      ),
+    )
+  ).json();
+  assert.equal(
+    asc.orders[0].amountPaise,
+    99900,
+    "sort applies before pagination",
+  );
+  const category = await (
+    await GET(
+      request("startDate=2026-10-10&endDate=2026-10-11&orderCategory=coins"),
+    )
+  ).json();
+  assert.equal(category.orderPage.total, 0);
+  assert.equal(
+    category.totals.paid,
+    801,
+    "order-only filters do not mislabel report-wide totals",
+  );
+  const source = await (
+    await GET(
+      request("startDate=2026-10-10&endDate=2026-10-11&orderSource=missing"),
+    )
+  ).json();
+  assert.equal(source.orderPage.total, 0);
+  const combined = await (
+    await GET(
+      request(
+        "startDate=2026-10-10&endDate=2026-10-11&orderSource=google&orderCampaign=beta&orderState=paid&orderLimit=2000",
+      ),
+    )
+  ).json();
+  const expected = rows.filter(
+    (r) =>
+      r.utm_source === "google" &&
+      r.utm_campaign === "beta" &&
+      r.payment_status === "paid",
+  ).length;
+  assert.equal(
+    combined.orderPage.total,
+    expected,
+    "status and UTM filters combine across the complete data set",
+  );
+  assert.ok(
+    combined.orders.every(
+      (o) =>
+        o.source === "google" && o.campaign === "beta" && o.state === "paid",
+    ),
+  );
+  for (mode of ["event-error", "payment-error", "save-error"]) {
+    paymentReads = 0;
+    const failure = await POST(request());
+    assert.equal(
+      failure.status,
+      503,
+      "failed refresh must not replace a complete snapshot",
+    );
+    assert.equal((await failure.json()).totals, undefined);
+    mode = "ok";
+    const retained = await (await GET(request())).json();
+    assert.equal(
+      retained.snapshot,
+      updated.snapshot,
+      "previous snapshot is retained after failure",
+    );
+  }
+  assert.ok(writes > 0);
   console.log(
-    "Revenue API: auth, expiry, invalid dates, full pagination, event degradation, financial failure and cache policy passed.",
+    "Revenue API: auth, expiry, invalid dates, full pagination, saved data reuse, refresh persistence, failure retention, global sorting, filters and snapshot consistency passed.",
   );
 })().catch((error) => {
   console.error(error);

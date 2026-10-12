@@ -747,6 +747,7 @@ export function buildRevenueDashboard(input: {
   };
 }
 export type RevenueDashboard = ReturnType<typeof buildRevenueDashboard> & {
+  filters?: { sources: string[]; campaigns: string[] };
   generatedAt: string;
   snapshot: string;
   orderPage: { total: number; offset: number; limit: number };

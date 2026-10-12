@@ -1,9 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Children,
+  isValidElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowUpRight,
+  ArrowUpDown,
+  RefreshCw,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -23,6 +33,8 @@ import {
   type RevenueOrder,
 } from "@/lib/revenue-dashboard";
 import styles from "./revenue.module.css";
+import RevenueDateRange from "./RevenueDateRange";
+import { compareValues, type SortDirection } from "@/lib/revenue-table";
 
 const money = (paise: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -57,6 +69,15 @@ const tabs = [
   "Orders",
 ] as const;
 type Tab = (typeof tabs)[number];
+const orderSortKeys = [
+  "createdAt",
+  "product",
+  "customer",
+  "state",
+  "amountPaise",
+  "netPaise",
+  "source",
+];
 const stateLabels: Record<string, string> = {
   paid: "Paid",
   refunded: "Refunded",
@@ -113,42 +134,150 @@ function Section({
 function Empty({ children }: { children: React.ReactNode }) {
   return <div className={styles.empty}>{children}</div>;
 }
+type CellValue = string | number | null | undefined;
+function textOf(node: React.ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (isValidElement<{ children?: React.ReactNode }>(node))
+    return textOf(node.props.children);
+  return Children.toArray(node)
+    .map((child) =>
+      isValidElement<{ children?: React.ReactNode }>(child)
+        ? textOf(child.props.children)
+        : String(child),
+    )
+    .join(" ");
+}
 function Table({
   headers,
   children,
+  values,
+  sort,
+  onSort,
+  filterLabel,
 }: {
   headers: string[];
   children: React.ReactNode;
+  values?: CellValue[][];
+  sort?: { column: number; direction: SortDirection };
+  onSort?: (column: number, direction: SortDirection) => void;
+  filterLabel?: string;
 }) {
+  const [localSort, setLocalSort] = useState<{
+    column: number;
+    direction: SortDirection;
+  } | null>(null);
+  const [query, setQuery] = useState("");
+  const active = sort || localSort;
+  let rows = Children.toArray(children).map((node, index) => ({ node, index }));
+  if (query)
+    rows = rows.filter((row) =>
+      textOf(row.node).toLowerCase().includes(query.toLowerCase()),
+    );
+  if (active && values && !onSort)
+    rows.sort(
+      (a, b) =>
+        compareValues(
+          values[a.index]?.[active.column],
+          values[b.index]?.[active.column],
+          active.direction,
+        ) || a.index - b.index,
+    );
   return (
-    <div className={styles.tableWrap}>
-      <table className={styles.table}>
-        <thead>
-          <tr>
-            {headers.map((label, i) => (
-              <th key={`${i}-${label}`} scope="col">
-                {label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>{children}</tbody>
-      </table>
-    </div>
+    <>
+      {filterLabel && (
+        <label className={styles.tableSearch}>
+          <Search size={15} />
+          <input
+            aria-label={filterLabel}
+            placeholder={filterLabel}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </label>
+      )}
+      <div className={styles.tableWrap}>
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              {headers.map((label, i) => (
+                <th
+                  key={`${i}-${label}`}
+                  scope="col"
+                  aria-sort={
+                    active?.column === i
+                      ? active.direction === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : "none"
+                  }
+                >
+                  {values || onSort ? (
+                    <button
+                      className={styles.sortButton}
+                      onClick={() => {
+                        const direction =
+                          active?.column === i && active.direction === "asc"
+                            ? "desc"
+                            : "asc";
+                        if (onSort) onSort(i, direction);
+                        else setLocalSort({ column: i, direction });
+                      }}
+                    >
+                      {label}
+                      <span aria-hidden="true">
+                        {active?.column === i ? (
+                          active.direction === "asc" ? (
+                            "↑"
+                          ) : (
+                            "↓"
+                          )
+                        ) : (
+                          <ArrowUpDown size={12} />
+                        )}
+                      </span>
+                    </button>
+                  ) : (
+                    label
+                  )}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>{rows.map((row) => row.node)}</tbody>
+        </table>
+      </div>
+      {query && !rows.length && <Empty>No rows match this search.</Empty>}
+    </>
   );
 }
 function ProductTable({
   rows,
   onSelect,
   showOffers = false,
+  searchable = true,
 }: {
   rows: ProductMetric[];
   onSelect: (key: string) => void;
   showOffers?: boolean;
+  searchable?: boolean;
 }) {
   if (!rows.length) return <Empty>No products match this filter.</Empty>;
   return (
     <Table
+      filterLabel={searchable ? "Filter products in table" : undefined}
+      values={rows.map((p) => [
+        p.name,
+        p.attempts,
+        p.paid,
+        p.buyers,
+        p.checkoutCvr,
+        p.collectedPaise,
+        p.refundedPaise,
+        p.netPaise,
+        p.viewers,
+        p.convertedViewers,
+        p.offerCvr,
+      ])}
       headers={[
         "Product",
         "Checkouts",
@@ -354,6 +483,11 @@ async function readOrderPage(
     query?: string;
     product?: string;
     state?: string;
+    category?: string;
+    source?: string;
+    campaign?: string;
+    sort?: string;
+    direction?: SortDirection;
     offset?: number;
     limit?: number;
   },
@@ -370,6 +504,11 @@ async function readOrderPage(
     orderQuery: options.query || "",
     orderProduct: options.product || "",
     orderState: options.state || "all",
+    orderCategory: options.category || "all",
+    orderSource: options.source || "all",
+    orderCampaign: options.campaign || "all",
+    orderSort: options.sort || "createdAt",
+    orderDirection: options.direction || "desc",
     orderOffset: String(options.offset || 0),
     orderLimit: String(options.limit || 50),
   });
@@ -394,7 +533,7 @@ export default function RevenueDashboardTab({
     const today = istDate(new Date());
     return { start: shiftDate(today, -6), end: today };
   });
-  const [draft, setDraft] = useState(range);
+
   const attribution = "last";
   const [tab, setTab] = useState<Tab>("Overview");
   const [data, setData] = useState<RevenueDashboard | null>(null);
@@ -405,6 +544,16 @@ export default function RevenueDashboardTab({
   const [productCategory, setProductCategory] = useState("all");
   const [orderProduct, setOrderProduct] = useState("");
   const [orderState, setOrderState] = useState("all");
+  const [orderCategory, setOrderCategory] = useState("all");
+  const [orderSource, setOrderSource] = useState("all");
+  const [orderCampaign, setOrderCampaign] = useState("all");
+  const [orderSort, setOrderSort] = useState({
+    column: 0,
+    direction: "desc" as SortDirection,
+  });
+  const [productActivity, setProductActivity] = useState("all");
+  const lastRefresh = useRef({ revision: 0, signal: refreshSignal });
+  const refreshPending = useRef(false);
   const [page, setPage] = useState(0);
   const [orderRows, setOrderRows] = useState<RevenueOrder[]>([]);
   const [orderTotal, setOrderTotal] = useState(0);
@@ -419,6 +568,11 @@ export default function RevenueDashboardTab({
   useEffect(() => {
     const controller = new AbortController();
     exportController.current?.abort();
+    const requestedRefresh =
+      revision !== lastRefresh.current.revision ||
+      refreshSignal !== lastRefresh.current.signal;
+    if (requestedRefresh) refreshPending.current = true;
+    lastRefresh.current = { revision, signal: refreshSignal };
     async function read() {
       setLoading(true);
       setError(null);
@@ -435,6 +589,7 @@ export default function RevenueDashboardTab({
           attribution,
         });
         const response = await fetch(`/api/admin/revenue-dashboard?${params}`, {
+          method: refreshPending.current ? "POST" : "GET",
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
           signal: controller.signal,
@@ -447,7 +602,10 @@ export default function RevenueDashboardTab({
         const result = await response.json();
         if (!response.ok)
           throw new Error(result.error || "Unable to load the report.");
-        if (!controller.signal.aborted) setData(result);
+        if (!controller.signal.aborted) {
+          refreshPending.current = false;
+          setData(result);
+        }
       } catch (err) {
         if (!controller.signal.aborted)
           setError(
@@ -462,7 +620,16 @@ export default function RevenueDashboardTab({
   }, [range, attribution, revision, refreshSignal, router]);
   useEffect(() => {
     setPage(0);
-  }, [search, orderProduct, orderState, data]);
+  }, [
+    search,
+    orderProduct,
+    orderState,
+    orderCategory,
+    orderSource,
+    orderCampaign,
+    orderSort,
+    data,
+  ]);
   useEffect(() => {
     if (!selectedOrder) return;
     const escape = (e: KeyboardEvent) => {
@@ -476,9 +643,15 @@ export default function RevenueDashboardTab({
       data?.products.filter(
         (p) =>
           (productCategory === "all" || p.category === productCategory) &&
+          (productActivity === "all" ||
+            (productActivity === "paid"
+              ? p.paid > 0
+              : productActivity === "refunds"
+                ? p.refundedPaise > 0
+                : p.attempts > 0)) &&
           `${p.name} ${p.id}`.toLowerCase().includes(search.toLowerCase()),
       ) || [],
-    [data, productCategory, search],
+    [data, productCategory, productActivity, search],
   );
   useEffect(() => {
     if (!data || tab !== "Orders") return;
@@ -489,7 +662,15 @@ export default function RevenueDashboardTab({
     const timer = setTimeout(
       () => {
         const result =
-          !search && !orderProduct && orderState === "all" && page === 0
+          !search &&
+          !orderProduct &&
+          orderState === "all" &&
+          orderCategory === "all" &&
+          orderSource === "all" &&
+          orderCampaign === "all" &&
+          orderSort.column === 0 &&
+          orderSort.direction === "desc" &&
+          page === 0
             ? Promise.resolve({
                 orders: data.orders,
                 orderPage: data.orderPage,
@@ -500,6 +681,11 @@ export default function RevenueDashboardTab({
                   query: search,
                   product: orderProduct,
                   state: orderState,
+                  category: orderCategory,
+                  source: orderSource,
+                  campaign: orderCampaign,
+                  sort: orderSortKeys[orderSort.column],
+                  direction: orderSort.direction,
                   offset: page * 50,
                 },
                 controller.signal,
@@ -531,7 +717,18 @@ export default function RevenueDashboardTab({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [data, tab, search, orderProduct, orderState, page]);
+  }, [
+    data,
+    tab,
+    search,
+    orderProduct,
+    orderState,
+    orderCategory,
+    orderSource,
+    orderCampaign,
+    orderSort,
+    page,
+  ]);
   useEffect(() => () => exportController.current?.abort(), []);
   async function exportReport(filtered = false) {
     if (!data || exporting) return;
@@ -549,6 +746,11 @@ export default function RevenueDashboardTab({
             query: filtered ? search : "",
             product: filtered ? orderProduct : "",
             state: filtered ? orderState : "all",
+            category: filtered ? orderCategory : "all",
+            source: filtered ? orderSource : "all",
+            campaign: filtered ? orderCampaign : "all",
+            sort: filtered ? orderSortKeys[orderSort.column] : "createdAt",
+            direction: filtered ? orderSort.direction : "desc",
             offset: orders.length,
             limit: 2000,
           },
@@ -579,28 +781,24 @@ export default function RevenueDashboardTab({
     }
   }
   const selectProduct = (key: string) => {
+    setOrderCategory("all");
+    setOrderSource("all");
+    setOrderCampaign("all");
+    setPage(0);
     setOrderProduct(key);
     setOrderState("all");
     setSearch("");
     setTab("Orders");
   };
   const switchTab = (next: Tab) => {
+    setOrderCategory("all");
+    setOrderSource("all");
+    setOrderCampaign("all");
+    setPage(0);
     setTab(next);
     setSearch("");
     setOrderProduct("");
     setOrderState("all");
-  };
-  const preset = (days: number) => {
-    const today = istDate(new Date());
-    const next =
-      days === 0
-        ? { start: shiftDate(today, -1), end: shiftDate(today, -1) }
-        : {
-            start: days === -1 ? "2026-03-13" : shiftDate(today, 1 - days),
-            end: today,
-          };
-    setDraft(next);
-    setRange(next);
   };
   const totals = data?.totals;
   return (
@@ -638,54 +836,14 @@ export default function RevenueDashboardTab({
           </div>
         )}
         <div className={styles.toolbar}>
-          <form
-            className={styles.dateForm}
-            onSubmit={(e) => {
-              e.preventDefault();
-              setRange({ ...draft });
-            }}
-          >
-            <label>
-              From
-              <input
-                type="date"
-                aria-label="Start date"
-                value={draft.start}
-                min="2026-03-13"
-                max={draft.end}
-                onChange={(e) => setDraft({ ...draft, start: e.target.value })}
-                required
-              />
-            </label>
-            <span className={styles.dateArrow}>→</span>
-            <label>
-              Through
-              <input
-                type="date"
-                aria-label="End date"
-                value={draft.end}
-                min={draft.start}
-                max={istDate(new Date())}
-                onChange={(e) => setDraft({ ...draft, end: e.target.value })}
-                required
-              />
-            </label>
-            <button type="submit">Apply</button>
+          <div className={styles.dateForm}>
+            <RevenueDateRange value={range} onChange={setRange} />
             <span className={styles.timezone}>IST · INR · 00:00–23:59</span>
-          </form>
-          <div className={styles.presets}>
-            {[
-              ["Today", 1],
-              ["Yesterday", 0],
-              ["7 days", 7],
-              ["30 days", 30],
-              ["All time", -1],
-            ].map(([label, days]) => (
-              <button key={label} onClick={() => preset(Number(days))}>
-                {label}
-              </button>
-            ))}
           </div>
+          <button onClick={load} disabled={loading}>
+            <RefreshCw size={15} className={loading ? styles.spin : ""} />
+            {loading ? "Loading…" : "Refresh data"}
+          </button>
         </div>
         <div className={styles.scope}>
           <span>
@@ -694,9 +852,9 @@ export default function RevenueDashboardTab({
           </span>
           <span>
             {data
-              ? `Updated ${dateTime(data.generatedAt)} IST`
+              ? `Saved in Supabase · synced ${dateTime(data.generatedAt)} IST`
               : loading
-                ? "Reading complete payment records…"
+                ? "Loading saved revenue data…"
                 : "Data unavailable"}
           </span>
         </div>
@@ -744,6 +902,13 @@ export default function RevenueDashboardTab({
                 balances and usage are not measured here.
               </p>
               <p>
+                <b>Saved data.</b> Reports calculate from the last complete
+                snapshot saved in private Supabase storage. Date changes,
+                sorting and filters reuse it. Refresh data rereads recorded
+                payments and tracking, then saves a new snapshot. It does not
+                query payment gateways.
+              </p>
+              <p>
                 <b>Recorded truth.</b> Records are reconciled by gateway order.
                 Existing legacy backfills may contain fallback values; this
                 dashboard does not independently verify gateway settlements or
@@ -767,8 +932,11 @@ export default function RevenueDashboardTab({
         {loading && (
           <div className={styles.loading} role="status">
             <Loader2 className={styles.spin} size={24} />
-            <h2>Reconciling your records</h2>
-            <p>Loading payments, refunds and offer tracking.</p>
+            <h2>Loading revenue data</h2>
+            <p>
+              Reading the saved snapshot. First load and Refresh sync payment
+              history.
+            </p>
           </div>
         )}
         {error && (
@@ -944,6 +1112,7 @@ export default function RevenueDashboardTab({
                   }
                 >
                   <ProductTable
+                    searchable={false}
                     rows={data.products
                       .filter((p) => p.attempts > 0)
                       .slice(0, 8)}
@@ -953,6 +1122,15 @@ export default function RevenueDashboardTab({
                 <details className={styles.daily}>
                   <summary>Daily ledger · {data.daily.length} days</summary>
                   <Table
+                    values={data.daily.map((d) => [
+                      d.date,
+                      d.attempts,
+                      d.paid,
+                      d.checkoutCvr,
+                      d.collectedPaise,
+                      d.refundedPaise,
+                      d.netPaise,
+                    ])}
                     headers={[
                       "IST checkout date",
                       "Checkouts",
@@ -1005,9 +1183,20 @@ export default function RevenueDashboardTab({
                       </option>
                     ))}
                   </select>
+                  <select
+                    aria-label="Product activity"
+                    value={productActivity}
+                    onChange={(e) => setProductActivity(e.target.value)}
+                  >
+                    <option value="all">All products</option>
+                    <option value="attempts">With checkouts</option>
+                    <option value="paid">With paid orders</option>
+                    <option value="refunds">With refunds</option>
+                  </select>
                 </div>
                 <ProductTable
                   rows={filteredProducts}
+                  searchable={false}
                   onSelect={selectProduct}
                   showOffers
                 />
@@ -1024,6 +1213,15 @@ export default function RevenueDashboardTab({
                 description="Retained purchases only. Shared combination revenue is reported under Upsells; bundle contents are not inferred from today’s catalog."
               >
                 <Table
+                  filterLabel="Filter reports"
+                  values={data.reports.map((r) => [
+                    r.name,
+                    r.standaloneOrders,
+                    r.upsellOrders,
+                    r.standalonePaise,
+                    r.singleUpsellPaise,
+                    r.sharedOrders,
+                  ])}
                   headers={[
                     "Report",
                     "Standalone orders",
@@ -1104,6 +1302,19 @@ export default function RevenueDashboardTab({
                   description="Quantities from paid order records. Fully refunded purchases are excluded from coin totals."
                 >
                   <Table
+                    filterLabel="Filter coin packages"
+                    values={data.products
+                      .filter((p) => p.category === "coins")
+                      .map((p) => [
+                        p.name,
+                        p.attempts,
+                        p.paid,
+                        p.checkoutCvr,
+                        p.coins,
+                        p.missingCoinOrders,
+                        p.refundedPaise,
+                        p.netPaise,
+                      ])}
                     headers={[
                       "Package",
                       "Checkouts",
@@ -1196,6 +1407,74 @@ export default function RevenueDashboardTab({
                       </option>
                     ))}
                   </select>
+                  <select
+                    aria-label="Order product"
+                    value={orderProduct}
+                    onChange={(e) => setOrderProduct(e.target.value)}
+                  >
+                    <option value="">All products</option>
+                    {data.products.map((p) => (
+                      <option key={p.key} value={p.key}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label="Order category"
+                    value={orderCategory}
+                    onChange={(e) => setOrderCategory(e.target.value)}
+                  >
+                    <option value="all">All categories</option>
+                    {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
+                      <option key={key} value={key}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label="UTM source"
+                    value={orderSource}
+                    onChange={(e) => setOrderSource(e.target.value)}
+                  >
+                    <option value="all">All sources</option>
+                    {data.filters?.sources.map((source) => (
+                      <option key={source} value={source}>
+                        {source}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label="UTM campaign"
+                    value={orderCampaign}
+                    onChange={(e) => setOrderCampaign(e.target.value)}
+                  >
+                    <option value="all">All campaigns</option>
+                    {data.filters?.campaigns.map((campaign) => (
+                      <option key={campaign} value={campaign}>
+                        {campaign}
+                      </option>
+                    ))}
+                  </select>
+                  {(search ||
+                    orderProduct ||
+                    orderState !== "all" ||
+                    orderCategory !== "all" ||
+                    orderSource !== "all" ||
+                    orderCampaign !== "all") && (
+                    <button
+                      onClick={() => {
+                        setSearch("");
+                        setOrderProduct("");
+                        setOrderState("all");
+                        setOrderCategory("all");
+                        setOrderSource("all");
+                        setOrderCampaign("all");
+                        setPage(0);
+                      }}
+                    >
+                      Reset filters
+                    </button>
+                  )}
                   {orderProduct && (
                     <button onClick={() => setOrderProduct("")}>
                       Clear product filter <X size={14} />
@@ -1204,6 +1483,11 @@ export default function RevenueDashboardTab({
                   <span>{number(orderTotal)} orders</span>
                 </div>
                 <Table
+                  sort={orderSort}
+                  onSort={(column, direction) => {
+                    setPage(0);
+                    setOrderSort({ column, direction });
+                  }}
                   headers={[
                     "Order / checkout IST",
                     "Product",
