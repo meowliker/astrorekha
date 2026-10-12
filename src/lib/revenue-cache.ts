@@ -16,6 +16,8 @@ import {
 // Private Storage persists across deployments. No public URLs or browser credentials.
 export const REVENUE_BUCKET = "admin-revenue-cache";
 const VERSION = 1;
+// Recalculate reports after formula changes without rereading source payment history.
+const REPORT_VERSION = 2;
 type Manifest = { version: number; id: string; generatedAt: string };
 type Source = Manifest & {
   payments: PaymentRow[];
@@ -178,7 +180,7 @@ export async function savedRevenueReport(
     source = await syncSource(db);
     manifest = source;
   }
-  const path = `reports/${range.start}_${range.end}_${attribution}.json.gz`;
+  const path = `reports/v${REPORT_VERSION}/${range.start}_${range.end}_${attribution}.json.gz`;
   const saved = await read<RevenueDashboard & { sourceId: string }>(db, path);
   if (saved?.sourceId === manifest.id) return saved;
   source ||= await read<Source>(db, `sources/${manifest.id}.json.gz`);
@@ -205,7 +207,9 @@ export async function savedRevenueReport(
     generatedAt: source.generatedAt,
     sourceId: source.id,
     snapshot: createHash("sha256")
-      .update(`${source.id}:${range.start}:${range.end}:${attribution}`)
+      .update(
+        `${REPORT_VERSION}:${source.id}:${range.start}:${range.end}:${attribution}`,
+      )
       .digest("hex"),
     orderPage: {
       total: result.orders.length,

@@ -552,6 +552,7 @@ export default function RevenueDashboardTab({
     direction: "desc" as SortDirection,
   });
   const [productActivity, setProductActivity] = useState("all");
+  const [upsellBundle, setUpsellBundle] = useState("all");
   const lastRefresh = useRef({ revision: 0, signal: refreshSignal });
   const refreshPending = useRef(false);
   const [page, setPage] = useState(0);
@@ -801,6 +802,9 @@ export default function RevenueDashboardTab({
     setOrderState("all");
   };
   const totals = data?.totals;
+  const upsellCohort =
+    data?.upsells.cohorts.find((c) => c.id === upsellBundle) ||
+    data?.upsells.cohorts[0];
   return (
     <div className={styles.dashboard}>
       <div className={styles.dashboardTools}>
@@ -886,10 +890,15 @@ export default function RevenueDashboardTab({
                 visitor IDs. Missing coverage is shown as —.
               </p>
               <p>
-                <b>Upsell attachment.</b> Bundle buyers with a later retained
-                upsell in the same range ÷ retained bundle buyers in that range.
-                This is not lifetime attachment. Unidentified buyers cannot be
-                matched.
+                <b>Bundle → report CVR.</b> Distinct identified paid bundle
+                buyers who then bought the report ÷ distinct identified paid
+                bundle buyers. Both checkout dates must be inside the selected
+                range; the report checkout must be at or after that buyer’s
+                first matching bundle checkout. Paid conversions include
+                subsequently refunded purchases. Retained CVR counts buyers with
+                a positive remaining order amount. Failed and open bundle
+                checkouts are excluded. Drop-off is the share without a
+                purchase, not a measured session bounce rate.
               </p>
               <p>
                 <b>UTM tracking.</b> Orders show saved last-touch UTMs, falling
@@ -1079,11 +1088,11 @@ export default function RevenueDashboardTab({
                         <strong>{money(totals.refundPendingPaise)}</strong>
                       </div>
                       <div>
-                        <span>Bundle → upsell attachment</span>
+                        <span>Bundle → report CVR</span>
                         <strong>{percent(data.upsells.attachRate)}</strong>
                       </div>
                       <div>
-                        <span>Matched bundle buyers with upsells</span>
+                        <span>Bundle buyers who bought an extra report</span>
                         <strong>
                           {number(data.upsells.attachedBuyers)} /{" "}
                           {number(data.upsells.bundleBuyers)}
@@ -1256,42 +1265,153 @@ export default function RevenueDashboardTab({
                 </p>
               </Section>
             )}
-            {tab === "Upsells" && (
+            {tab === "Upsells" && upsellCohort && (
               <>
-                <div className={styles.threeMetrics}>
-                  <Metric
-                    label="Bundle buyers with an upsell"
-                    value={percent(data.upsells.attachRate)}
-                    detail={`${number(data.upsells.attachedBuyers)} of ${number(data.upsells.bundleBuyers)} retained bundle buyers`}
-                  />
-                  <Metric
-                    label="Matched upsell net collected"
-                    value={money(data.upsells.linkedUpsellPaise)}
-                    detail="Upsells placed after a bundle in this date range"
-                  />
-                  <Metric
-                    label="All upsell net collected"
-                    value={money(
-                      data.categories.find((c) => c.key === "upsell")!.netPaise,
-                    )}
-                    detail="Includes purchases without a matched bundle"
-                  />
-                </div>
                 <Section
-                  title="Upsells & combinations"
-                  description="Each exact combination keeps its actual collected amount. No equal price allocation between reports."
+                  title="Bundle buyers → report purchases"
+                  description="Bundle and report checkout dates must both be in the selected range. Each buyer counts once per report, including purchases through a combination."
+                >
+                  <div className={styles.tableTools}>
+                    <label>
+                      Bundle cohort{" "}
+                      <select
+                        aria-label="Upsell bundle cohort"
+                        value={upsellBundle}
+                        onChange={(e) => setUpsellBundle(e.target.value)}
+                      >
+                        {data.upsells.cohorts.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} · {number(c.bundleBuyers)} buyers
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <span>
+                      {number(upsellCohort.paidBundleOrders)} paid bundle orders
+                      · {number(upsellCohort.bundleBuyers)} distinct identified
+                      buyers
+                    </span>
+                  </div>
+                  <div className={styles.threeMetrics}>
+                    <Metric
+                      label="Bought any extra report"
+                      value={percent(upsellCohort.cvr)}
+                      detail={`${number(upsellCohort.buyers)} buyers ÷ ${number(upsellCohort.bundleBuyers)} bundle buyers`}
+                    />
+                    <Metric
+                      label="No report purchased · drop-off"
+                      value={percent(upsellCohort.dropOffRate)}
+                      detail={`${number(upsellCohort.notPurchased)} buyers ÷ ${number(upsellCohort.bundleBuyers)} bundle buyers`}
+                    />
+                    <Metric
+                      label="Retained-order CVR"
+                      value={percent(upsellCohort.retainedCvr)}
+                      detail={`${number(upsellCohort.retainedBuyers)} buyers with order value remaining ÷ ${number(upsellCohort.bundleBuyers)} bundle buyers`}
+                    />
+                  </div>
+                  <p className={styles.footnote}>
+                    CVR = bought report ÷ bundle buyers × 100. Drop-off = no
+                    purchase ÷ bundle buyers × 100. Checkout CVR = bought report
+                    ÷ buyers who started its checkout × 100. These are buyer
+                    counts, not payment counts. Purchases before the bundle and
+                    reports included inside a bundle are excluded.
+                  </p>
+                  {!!upsellCohort.unidentifiedBundleOrders && (
+                    <p className={styles.footnote}>
+                      {number(upsellCohort.unidentifiedBundleOrders)} paid
+                      bundle orders lack a customer identity and cannot be
+                      included in buyer conversion. Identity coverage:{" "}
+                      {percent(upsellCohort.identityCoverage)} of paid bundle
+                      orders.
+                    </p>
+                  )}
+                  {!!upsellCohort.unknownReportOrders && (
+                    <p className={styles.footnote}>
+                      {number(upsellCohort.unknownReportOrders)} matched report
+                      checkouts lack an identifiable report and are excluded
+                      from report conversion.
+                    </p>
+                  )}
+                  {!upsellCohort.bundleBuyers && (
+                    <Empty>
+                      No identified paid bundle buyers in this cohort. Rates are
+                      unavailable (—), not zero.
+                    </Empty>
+                  )}
+                  <Table
+                    filterLabel="Filter upsell reports"
+                    values={upsellCohort.reports.map((r) => [
+                      r.name,
+                      r.bundleBuyers,
+                      r.checkoutBuyers,
+                      r.checkoutStartRate,
+                      r.buyers,
+                      r.cvr,
+                      r.notPurchased,
+                      r.dropOffRate,
+                      r.checkoutCvr,
+                      r.retainedBuyers,
+                      r.retainedCvr,
+                      r.refundedBuyers,
+                      r.refundRate,
+                    ])}
+                    headers={[
+                      "Report",
+                      "Bundle buyers",
+                      "Started checkout",
+                      "Checkout start %",
+                      "Bought report",
+                      "Buyer CVR %",
+                      "No purchase",
+                      "Drop-off %",
+                      "Checkout CVR %",
+                      "Retained-order buyers",
+                      "Retained-order CVR %",
+                      "Buyers with order refunds",
+                      "Order refund rate %",
+                    ]}
+                  >
+                    {upsellCohort.reports.map((r) => (
+                      <tr key={r.id}>
+                        <td>
+                          {r.name}
+                          <small>{r.id}</small>
+                        </td>
+                        <td>{number(r.bundleBuyers)}</td>
+                        <td>{number(r.checkoutBuyers)}</td>
+                        <td>{percent(r.checkoutStartRate)}</td>
+                        <td>{number(r.buyers)}</td>
+                        <td className={styles.emphasis}>{percent(r.cvr)}</td>
+                        <td>{number(r.notPurchased)}</td>
+                        <td>{percent(r.dropOffRate)}</td>
+                        <td>{percent(r.checkoutCvr)}</td>
+                        <td>{number(r.retainedBuyers)}</td>
+                        <td>{percent(r.retainedCvr)}</td>
+                        <td>{number(r.refundedBuyers)}</td>
+                        <td>{percent(r.refundRate)}</td>
+                      </tr>
+                    ))}
+                  </Table>
+                  <p className={styles.footnote}>
+                    A buyer can purchase several reports, so report CVRs should
+                    not be added. Order refund rate = buyers with a completed
+                    refund on an order containing the report ÷ its buyers.
+                    Retained-order buyers have a positive amount left on such an
+                    order. Partial combination refunds cannot be assigned to
+                    individual reports. Pending refunds remain retained until
+                    completed. No-purchase drop-off can include people who never
+                    saw an offer; a true page bounce rate requires session
+                    tracking.
+                  </p>
+                </Section>
+                <Section
+                  title="Upsell payment detail"
+                  description="Recorded orders and amounts for each exact combination within the selected dates. Checkout conversion below uses orders, separately from the buyer cohort above."
                 >
                   <ProductTable
                     rows={data.products.filter((p) => p.category === "upsell")}
                     onSelect={selectProduct}
-                    showOffers
                   />
-                  <p className={styles.footnote}>
-                    Attachment uses identified buyers with both purchases in
-                    this range. Increase the range to include earlier bundle
-                    purchases. Offer conversion requires a recorded exposure
-                    before the purchase.
-                  </p>
                 </Section>
               </>
             )}

@@ -232,3 +232,141 @@ assert.equal(
 console.log(
   "Revenue dashboard: date boundaries, pagination-sized input, money, refunds, deduplication, attribution, identity, offer conversion and reconciliation passed.",
 );
+
+// Bundle cohort CVR uses people, includes report and combo paths, and keeps refunds separate.
+const cohortRows = [
+  payment("ba", { user_id: "A", customer_email: "a@example.test" }),
+  payment("ba-repeat", {
+    user_id: "A",
+    bundle_id: "second-bundle",
+    created_at: "2026-10-10T12:00:00Z",
+  }),
+  payment("bb", { user_id: "B" }),
+  payment("bc", { user_id: "C" }),
+  payment("bd", { user_id: "D", payment_status: "refunded" }),
+  payment("no-identity", { user_id: null, customer_email: null }),
+  payment("failed-bundle", { user_id: "E", payment_status: "failed" }),
+  payment("a-report", {
+    user_id: "A",
+    type: "upsell",
+    bundle_id: "compatibility",
+    created_at: "2026-10-10T09:00:00Z",
+  }),
+  payment("a-report-repeat", {
+    user_id: "guest-A",
+    customer_email: "A@example.test",
+    type: "report",
+    bundle_id: "report-compatibility",
+    created_at: "2026-10-10T10:00:00Z",
+  }),
+  payment("b-combo", {
+    user_id: "B",
+    type: "upsell",
+    bundle_id: "compatibility,past-life",
+    payment_status: "refunded",
+    created_at: "2026-10-10T10:00:00Z",
+  }),
+  payment("c-standalone", {
+    user_id: "C",
+    type: "report",
+    bundle_id: "past-life",
+    created_at: "2026-10-10T10:00:00Z",
+  }),
+  payment("d-failed-report", {
+    user_id: "D",
+    type: "upsell",
+    bundle_id: "compatibility",
+    payment_status: "failed",
+    created_at: "2026-10-10T10:00:00Z",
+  }),
+  payment("outsider-report", {
+    user_id: "E",
+    type: "upsell",
+    bundle_id: "compatibility",
+    created_at: "2026-10-10T10:00:00Z",
+  }),
+  payment("before-bundle", {
+    user_id: "A",
+    type: "upsell",
+    bundle_id: "future-partner",
+    created_at: "2026-10-10T07:00:00Z",
+  }),
+  payment("outside-dates", {
+    user_id: "A",
+    type: "upsell",
+    bundle_id: "past-life",
+    created_at: range.to,
+  }),
+];
+const cohortData = build(cohortRows, [
+  {
+    id: "bridge-a",
+    event_name: "upsell_view",
+    user_id: "A",
+    visitor_id: "shared-device",
+    created_at: "2026-10-10T09:00:00Z",
+  },
+  {
+    id: "bridge-b",
+    event_name: "upsell_view",
+    user_id: "B",
+    visitor_id: "shared-device",
+    created_at: "2026-10-10T09:00:00Z",
+  },
+]);
+const cohort = cohortData.upsells.cohorts[0];
+assert.equal(
+  cohort.bundleBuyers,
+  4,
+  "repeated bundle orders deduplicate; shared tracking device does not merge buyers",
+);
+assert.equal(cohort.paidBundleOrders, 6);
+assert.equal(cohort.unidentifiedBundleOrders, 1);
+assert.equal(cohort.buyers, 3);
+assert.equal(cohort.cvr, 75);
+assert.equal(cohort.dropOffRate, 25);
+assert.equal(cohort.retainedBuyers, 2);
+assert.equal(cohort.retainedCvr, 50);
+const compat = cohort.reports.find((r) => r.id === "compatibilityTest")!;
+assert.equal(
+  compat.buyers,
+  2,
+  "repeated report purchases and aliases count a buyer once",
+);
+assert.equal(compat.cvr, 50);
+assert.equal(compat.checkoutBuyers, 3);
+assert.equal(compat.checkoutCvr, (2 / 3) * 100);
+assert.equal(compat.notPurchased, 2);
+assert.equal(compat.dropOffRate, 50);
+assert.equal(compat.refundedBuyers, 1);
+assert.equal(compat.refundRate, 50);
+assert.equal(compat.retainedCvr, 25);
+const pastLife = cohort.reports.find((r) => r.id === "pastLifeReport")!;
+assert.equal(
+  pastLife.buyers,
+  2,
+  "combo and standalone report paths both count",
+);
+assert.equal(pastLife.cvr, 50);
+assert.equal(pastLife.retainedBuyers, 1);
+assert.equal(
+  cohortData.upsells.cohorts.find((c) => c.id === "second-bundle")!.buyers,
+  0,
+  "report before the selected bundle is excluded",
+);
+for (const row of cohort.reports) {
+  assert.equal(row.buyers + row.notPurchased, row.bundleBuyers);
+  assert.equal(row.cvr! + row.dropOffRate!, 100);
+  assert.ok(
+    row.buyers <= row.checkoutBuyers && row.checkoutBuyers <= row.bundleBuyers,
+  );
+}
+const noBuyers = build([]).upsells.cohorts[0];
+assert.equal(noBuyers.cvr, null);
+assert.equal(noBuyers.dropOffRate, null);
+assert.ok(
+  noBuyers.reports.every((r) => r.cvr === null && r.checkoutCvr === null),
+);
+console.log(
+  "Upsell cohorts: buyer denominators, repeat purchases, report aliases, standalone/combo paths, per-bundle timing, refunds, unknown identities, device isolation and exact percentages passed.",
+);

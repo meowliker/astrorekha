@@ -1,3 +1,4 @@
+import { buildUpsellCohorts } from "./revenue-upsells";
 import type { PricingConfig } from "./pricing";
 
 export type PaymentRow = {
@@ -493,10 +494,7 @@ export function buildRevenueDashboard(input: {
     if (!buyerSets.has(key)) buyerSets.set(key, new Set());
     buyerSets.get(key)!.add(id);
   };
-  const bundleBuyers = new Map<string, string>();
-  const upsellBuyers = new Set<string>();
-  let linkedUpsellPaise = 0,
-    unidentifiedBuyers = 0,
+  let unidentifiedBuyers = 0,
     attributedPaid = 0;
   const orders: RevenueOrder[] = [];
   for (const p of payments) {
@@ -540,12 +538,6 @@ export function buildRevenueDashboard(input: {
         attributedPaid++;
     }
     if (state === "paid" || state === "refund_pending") {
-      const buyer = person(p);
-      if (info.category === "bundle" && buyer)
-        bundleBuyers.set(
-          buyer,
-          [bundleBuyers.get(buyer) || p.created_at, p.created_at].sort()[0],
-        );
       if (info.category === "coins") {
         if (p.coins && Number.isSafeInteger(p.coins) && p.coins > 0)
           metric.coins += p.coins;
@@ -572,20 +564,6 @@ export function buildRevenueDashboard(input: {
       coins: p.coins ?? null,
       ...attribution,
     });
-  }
-  for (const p of payments) {
-    const buyer = person(p),
-      bundleDate = buyer ? bundleBuyers.get(buyer) : null;
-    if (
-      category(p.type) === "upsell" &&
-      ["paid", "refund_pending"].includes(paymentState(p)) &&
-      buyer &&
-      bundleDate &&
-      Date.parse(p.created_at) >= Date.parse(bundleDate)
-    ) {
-      upsellBuyers.add(buyer);
-      linkedUpsellPaise += Number(p.amount) - (p.refundPaise || 0);
-    }
   }
   const views = new Map<string, Map<string, string>>();
   for (const e of events || []) {
@@ -684,6 +662,32 @@ export function buildRevenueDashboard(input: {
       sharedOrders,
     };
   });
+  // Buyer cohorts use payment identities only; shared tracking visitors must not merge customers.
+  const cohortPerson = identityResolver(payments);
+  const upsellCohorts = buildUpsellCohorts(
+    payments
+      .filter((p) => paymentState(p) !== "adjustment")
+      .map((p) => {
+        const info = product(p.type, p.bundle_id, p.feature, p.coins),
+          state = paymentState(p);
+        return {
+          buyer: cohortPerson(p),
+          createdAt: p.created_at,
+          category: info.category,
+          productId: info.id,
+          productName: info.name,
+          items: info.items,
+          paid: ["paid", "refunded", "refund_pending"].includes(state),
+          netPaise: ["paid", "refund_pending"].includes(state)
+            ? Number(p.amount) - (p.refundPaise || 0)
+            : 0,
+          refunded: (p.refundPaise || 0) > 0 || state === "refunded",
+        };
+      }),
+    reports,
+    pricing.bundles,
+  );
+  const allUpsells = upsellCohorts[0];
   const warnings = [...(input.warnings || [])];
   const unidentifiedProducts = Array.from(products.values())
     .filter((p) => p.id === "unidentified")
@@ -727,10 +731,11 @@ export function buildRevenueDashboard(input: {
     daily: Array.from(daily.values()),
     orders: orders.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     upsells: {
-      bundleBuyers: bundleBuyers.size,
-      attachedBuyers: upsellBuyers.size,
-      attachRate: ratio(upsellBuyers.size, bundleBuyers.size),
-      linkedUpsellPaise,
+      bundleBuyers: allUpsells.bundleBuyers,
+      attachedBuyers: allUpsells.buyers,
+      attachRate: allUpsells.cvr,
+      linkedUpsellPaise: allUpsells.linkedNetPaise,
+      cohorts: upsellCohorts,
     },
     quality: {
       rawRows: input.payments.length,
