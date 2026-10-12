@@ -1,4 +1,4 @@
-import { businessDate } from "@/lib/tracking-dashboard";
+import { businessDate } from "./tracking-dashboard";
 
 export type CampaignSpendRow = {
   campaign_id?: string;
@@ -63,6 +63,60 @@ export function campaignSpendForBusinessDays(input: {
     const firstShare = (boundary - clippedStart) / (clippedEnd - clippedStart);
     if (firstDay >= start && firstDay <= end) add(campaignId, spend * firstShare);
     if (lastDay >= start && lastDay <= end) add(campaignId, spend * (1 - firstShare));
+  }
+  return result;
+}
+
+/** Split Meta's account-local hourly spend into 11:30 AM IST business-hour buckets. */
+export function campaignHourlySpendForBusinessDays(input: {
+  hourly: CampaignSpendRow[];
+  daily: CampaignSpendRow[];
+  start: string;
+  end: string;
+  timezoneOffsetHoursUtc: number;
+  accountWindow: { startMillis: number; endMillis: number };
+  nowMillis: number;
+}): Map<string, Record<string, number[]>> {
+  const { hourly, daily, start, end, timezoneOffsetHoursUtc, accountWindow, nowMillis } = input;
+  const result = new Map<string, Record<string, number[]>>();
+  const rangeStart = Date.parse(`${start}T11:30:00+05:30`);
+  const rangeEnd = Date.parse(`${shiftDay(end, 1)}T11:30:00+05:30`);
+  for (const row of hourly) {
+    const campaignId = row.campaign_id || "";
+    const day = row.date_start || "";
+    const hour = Number(String(row.hourly_stats_aggregated_by_advertiser_time_zone || "").match(/^(\d{1,2}):\d{2}:\d{2}/)?.[1]);
+    if (!campaignId || !/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isInteger(hour) || hour < 0 || hour > 23) continue;
+    const rawStart = Date.parse(`${day}T00:00:00Z`) + (hour - timezoneOffsetHoursUtc) * HOUR_MS;
+    const observedEnd = Math.min(rawStart + HOUR_MS, nowMillis);
+    if (observedEnd <= rawStart) continue;
+    const clippedStart = Math.max(rawStart, accountWindow.startMillis, rangeStart);
+    const clippedEnd = Math.min(observedEnd, accountWindow.endMillis, rangeEnd);
+    if (clippedEnd <= clippedStart) continue;
+    const spend = amount(row.spend) * (clippedEnd - clippedStart) / (observedEnd - rawStart);
+    const days = result.get(campaignId) || {};
+    for (let bucket = Math.floor((clippedStart - rangeStart) / HOUR_MS); bucket <= Math.floor((clippedEnd - rangeStart - 1) / HOUR_MS); bucket++) {
+      const bucketStart = rangeStart + bucket * HOUR_MS;
+      const overlap = Math.min(clippedEnd, bucketStart + HOUR_MS) - Math.max(clippedStart, bucketStart);
+      const businessDay = shiftDay(start, Math.floor(bucket / 24));
+      const values = days[businessDay] || Array(24).fill(0);
+      values[bucket % 24] += spend * overlap / (clippedEnd - clippedStart);
+      days[businessDay] = values;
+    }
+    result.set(campaignId, days);
+  }
+
+  // When the ad account calendar aligns exactly with the business day, the
+  // dashboard uses Meta's daily total. Scale its hourly shape to that total.
+  if (Math.abs(timezoneOffsetHoursUtc + 6) < 0.01) for (const row of daily) {
+    const campaignId = row.campaign_id || "";
+    const day = row.date_start || "";
+    if (!campaignId || day < start || day > end) continue;
+    const dayStart = Date.parse(`${day}T11:30:00+05:30`);
+    if (accountWindow.startMillis > dayStart || accountWindow.endMillis < dayStart + DAY_MS) continue;
+    const target = amount(row.spend);
+    const values = result.get(campaignId)?.[day];
+    const current = values?.reduce((sum, value) => sum + value, 0) || 0;
+    if (target > 0 && current > 0) values!.forEach((value, index) => { values![index] = value * target / current; });
   }
   return result;
 }

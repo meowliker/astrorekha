@@ -1,6 +1,6 @@
 import { getMetaAccountWindowForRequest, type MetaAccountCredential } from "@/lib/meta-ad-accounts";
 import type { TrackingCampaign } from "@/lib/tracking-dashboard";
-import { bufferedMetaRange, campaignSpendForBusinessDays, type CampaignSpendRow } from "@/lib/tracking-meta-spend";
+import { bufferedMetaRange, campaignHourlySpendForBusinessDays, campaignSpendForBusinessDays, type CampaignSpendRow } from "@/lib/tracking-meta-spend";
 
 const META_BASE = "https://graph.facebook.com/v21.0";
 const PURCHASE_ACTIONS = ["website_purchase", "onsite_web_purchase", "offsite_conversion.fb_pixel_purchase", "omni_purchase", "purchase"];
@@ -57,6 +57,7 @@ export async function fetchMetaTrackingAccount(
   account: { id: string; name: string; currency: string; timezone: string | null; error?: string };
   campaigns: TrackingCampaign[];
   dailySpendInr: Record<string, { total: number; indian: number }>;
+  hourlySpendInr: Record<string, Record<string, number[]>>;
   warnings: string[];
 }> {
   const accountId = credential.accountId;
@@ -122,6 +123,15 @@ export async function fetchMetaTrackingAccount(
       hourly: hourlySpend.rows, daily: dailySpend.rows, start: dates.start, end: dates.end,
       timezoneOffsetHoursUtc: offset, accountWindow, nowMillis: Date.now(),
     });
+    const hourlyByCampaign = campaignHourlySpendForBusinessDays({
+      hourly: hourlySpend.rows, daily: dailySpend.rows, start: dates.start, end: dates.end,
+      timezoneOffsetHoursUtc: offset, accountWindow, nowMillis: Date.now(),
+    });
+    const multiplier = currency === "INR" ? 1 : currency === "USD" ? usdInrRate : null;
+    const hourlySpendInr: Record<string, Record<string, number[]>> = {};
+    if (multiplier != null) for (const [id, days] of hourlyByCampaign) {
+      hourlySpendInr[`meta:${accountId}:${id}`] = Object.fromEntries(Object.entries(days).map(([day, values]) => [day, values.map((value) => value * multiplier)]));
+    }
     const dailySpendInr: Record<string, { total: number; indian: number }> = {};
     for (let day = dates.start; day <= dates.end; day = new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)) {
       const daily = campaignSpendForBusinessDays({ hourly: hourlySpend.rows, daily: dailySpend.rows,
@@ -182,9 +192,9 @@ export async function fetchMetaTrackingAccount(
       row.spendInr = currency === "INR" ? spend : currency === "USD" ? spend * usdInrRate : null;
       byId.set(id, row);
     }
-    return { account, campaigns: Array.from(byId.values()), dailySpendInr, warnings };
+    return { account, campaigns: Array.from(byId.values()), dailySpendInr, hourlySpendInr, warnings };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Meta request failed";
-    return { account: { id: accountId, name: fallbackName, currency: "INR", timezone: null, error: message }, campaigns: [], dailySpendInr: {}, warnings: [`${fallbackName}: ${message}`] };
+    return { account: { id: accountId, name: fallbackName, currency: "INR", timezone: null, error: message }, campaigns: [], dailySpendInr: {}, hourlySpendInr: {}, warnings: [`${fallbackName}: ${message}`] };
   }
 }

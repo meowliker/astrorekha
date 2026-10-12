@@ -11,6 +11,7 @@ import TrackingCampaignRows from "./TrackingCampaignRows";
 import TrackingHourlyModal from "./TrackingHourlyModal";
 import TrackingHourlyTable from "./TrackingHourlyTable";
 import { calculateProfitSheetGst, indianAdGstApplies } from "@/lib/profit-sheet-gst";
+import { buildTrackingHourlyTable, type TrackingHourlyMetric } from "@/lib/tracking-hourly-table";
 
 type LiveData = { sales: TrackingSale[]; todayCount: number; todayRevenue: number; fetchedAt: string };
 type Column = { id: string; label: string; group: "Identity" | "Meta" | "AstroRekha"; value: (row: TrackingCampaign) => string; sort: (row: TrackingCampaign) => string | number; align?: "right" };
@@ -111,7 +112,7 @@ export default function TrackingPage() {
   const [dragOver, setDragOver] = useState<{ id: string; before: boolean } | null>(null);
   const [sort, setSort] = useState({ id: "spendInr", desc: true });
   const [hourDate, setHourDate] = useState(dates.end);
-  const [hourMetric, setHourMetric] = useState<"orders" | "revenue">("orders");
+  const [hourMetric, setHourMetric] = useState<TrackingHourlyMetric>("orders");
   const [newSaleIds, setNewSaleIds] = useState<string[]>([]);
   const [toastSales, setToastSales] = useState<TrackingSale[]>([]);
   const seenSales = useRef<Set<string> | null>(null);
@@ -204,7 +205,7 @@ export default function TrackingPage() {
       finally { if (active) setActivityLoading(false); }
     };
     void load();
-    const timer = window.setInterval(() => void load(), dates.end === businessToday() ? 60_000 : 300_000);
+    const timer = window.setInterval(() => void load(), 300_000);
     return () => { active = false; window.clearInterval(timer); };
   }, [token, dates, accountId]);
   useEffect(() => {
@@ -239,7 +240,7 @@ export default function TrackingPage() {
       metaAutoLoading.current = true;
       try { await fetchSummary(token, dates, true); }
       finally { metaAutoLoading.current = false; }
-    }, dates.end === businessToday() ? 60_000 : 300_000);
+    }, 300_000);
     return () => window.clearInterval(timer);
   }, [token, dates, fetchSummary]);
   useEffect(() => {
@@ -250,15 +251,13 @@ export default function TrackingPage() {
       try {
         const response = await fetch("/api/admin/tracking/reconcile", { method: "POST", headers: { "x-admin-session": token }, cache: "no-store" });
         if (!response.ok) return;
-        const result = await response.json() as { recovered?: number };
-        if (result.recovered) { await Promise.all([fetchLive(token), fetchSummary(token, dates, true)]); }
       } catch { /* The existing hourly PayU reconciliation remains the fallback. */ }
       finally { reconciliationLoading.current = false; }
     };
     void reconcile();
     const timer = window.setInterval(() => void reconcile(), 60_000);
     return () => window.clearInterval(timer);
-  }, [token, dates, fetchLive, fetchSummary]);
+  }, [token]);
   useEffect(() => {
     const timers = toastTimers.current;
     return () => { for (const timer of timers.values()) window.clearTimeout(timer); };
@@ -354,7 +353,7 @@ export default function TrackingPage() {
       const comparison = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
       return sort.desc ? -comparison : comparison;
     });
-  }, [summary, accountId, search, sort, activeOnly, activeScope]);
+  }, [summary, accountId, search, sort, activeOnly]);
 
   const visibleTotals = useMemo(() => {
     const rows = accountId === "all" ? summary?.campaigns || [] : (summary?.campaigns || []).filter((row) => row.accountId === accountId);
@@ -382,20 +381,7 @@ export default function TrackingPage() {
     return visibleTotals.revenue - visibleTotals.spend - gst;
   }, [summary, accountId, dates, visibleTotals.revenue, visibleTotals.spend]);
 
-  const hourly = useMemo(() => {
-    const visible = new Set(filtered.map((row) => row.key));
-    const rows = (summary?.hourly || []).filter((item) => item.date === hourDate && visible.has(item.campaignKey));
-    const byCampaign = new Map<string, number[]>();
-    const totals = Array.from({ length: 24 }, () => 0);
-    for (const row of rows) {
-      const value = hourMetric === "orders" ? row.orders : row.revenue;
-      const hours = byCampaign.get(row.campaignKey) || Array.from({ length: 24 }, () => 0);
-      hours[row.hour] += value;
-      totals[row.hour] += value;
-      byCampaign.set(row.campaignKey, hours);
-    }
-    return { totals, campaigns: filtered.map((row) => ({ key: row.key, name: row.campaignName, hours: byCampaign.get(row.key) || Array.from({ length: 24 }, () => 0) })).sort((a, b) => b.hours.reduce((sum, n) => sum + n, 0) - a.hours.reduce((sum, n) => sum + n, 0)) };
-  }, [summary, filtered, hourDate, hourMetric]);
+  const hourly = useMemo(() => buildTrackingHourlyTable(summary, filtered, hourDate, hourMetric), [summary, filtered, hourDate, hourMetric]);
   const hourDates = useMemo(() => Array.from(
     { length: Math.floor((Date.parse(dates.end) - Date.parse(dates.start)) / 86_400_000) + 1 },
     (_, index) => new Date(Date.parse(`${dates.start}T00:00:00Z`) + index * 86_400_000).toISOString().slice(0, 10)
@@ -450,7 +436,7 @@ export default function TrackingPage() {
             <section>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <div><h2 className="text-lg font-semibold">Ad accounts</h2><p className="text-xs text-slate-500">Select an account to focus the campaign table and hourly sales.</p></div>
-                <span className="text-xs text-slate-500">{summary ? `Direct Meta API · refreshes every ${dates.end === businessToday() ? "60s" : "5m"} · fetched ${displayIst(summary.fetchedAt)} IST` : "Loading Meta"}</span>
+                <span className="text-xs text-slate-500">{summary ? `Direct Meta API · refreshes every 5m or manually · fetched ${displayIst(summary.fetchedAt)} IST` : "Loading Meta"}</span>
               </div>
               <div className="overflow-x-auto border-y border-white/10">
                 <div className="flex min-w-max gap-0">
@@ -516,11 +502,11 @@ export default function TrackingPage() {
                 {!loading && filtered.length === 0 && <div className="p-10 text-center text-sm text-slate-500">No campaigns or UTM orders for these filters.</div>}
                 {loading && <div className="p-10 text-center text-sm text-slate-500">Loading campaigns and orders…</div>}
               </div>
-              <p className="mt-2 text-xs text-slate-500">Drag column headers to reorder them. Meta spend and AR sales use the Profit Sheet 11:30 AM IST business day; other Meta insight metrics use each account&apos;s calendar reporting window. Direct Meta API data refreshes every 60 seconds for today, but Meta reporting itself can lag. USD spend is converted with {summary?.fxRateSource || "the saved Profit Sheet rate"}; other currencies show no INR ROAS.</p>
+              <p className="mt-2 text-xs text-slate-500">Drag column headers to reorder them. Meta spend and AR sales use the Profit Sheet 11:30 AM IST business day; other Meta insight metrics use each account&apos;s calendar reporting window. Meta data refreshes every 5 minutes or when you press Refresh; its reporting can still lag. Live sales refresh every 5 seconds. USD spend is converted with {summary?.fxRateSource || "the saved Profit Sheet rate"}; other currencies show no INR ROAS.</p>
             </section>
 
             <section>
-              <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Hourly sales by campaign</h2><p className="text-xs text-slate-500">Hourly windows begin at 11:30 AM IST, matching the Profit Sheet. Refunds reduce revenue in the window recorded.</p></div><div className="flex items-center gap-2"><select aria-label="Hourly breakdown day" value={hourDate} onChange={(event) => setHourDate(event.target.value)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm">{hourDates.map((day) => <option key={day} value={day}>{new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`))}</option>)}</select><select value={hourMetric} onChange={(event) => setHourMetric(event.target.value as "orders" | "revenue")} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="orders">Orders</option><option value="revenue">Net sales</option></select></div></div>
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Hourly sales by campaign</h2><p className="text-xs text-slate-500">Hourly windows begin at 11:30 AM IST, matching the Profit Sheet. Refunds reduce revenue in the window recorded. ROAS is net sales divided by that hour&apos;s Meta spend.</p></div><div className="flex items-center gap-2"><select aria-label="Hourly breakdown day" value={hourDate} onChange={(event) => setHourDate(event.target.value)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm">{hourDates.map((day) => <option key={day} value={day}>{new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`))}</option>)}</select><select aria-label="Hourly breakdown metric" value={hourMetric} onChange={(event) => setHourMetric(event.target.value as TrackingHourlyMetric)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="orders">Orders</option><option value="revenue">Net sales</option><option value="roas">ROAS</option></select></div></div>
               <TrackingHourlyTable rows={hourly.campaigns} totals={hourly.totals} metric={hourMetric} onOpen={setHourCampaignKey} />
             </section>
           </main>

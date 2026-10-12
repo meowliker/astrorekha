@@ -1,4 +1,4 @@
-import { CHAT_UNLIMITED_PASS_NAME, CHAT_UNLIMITED_PASS_TYPE } from "@/lib/chat-unlimited-pass";
+import { CHAT_UNLIMITED_PASS_NAME, CHAT_UNLIMITED_PASS_TYPE } from "./chat-unlimited-pass";
 import type { PricingConfig } from "@/lib/pricing";
 
 export type TrackingPayment = {
@@ -84,6 +84,7 @@ export type TrackingSummary = {
   accounts: Array<{ id: string; name: string; currency: string; timezone: string | null; error?: string }>;
   campaigns: TrackingCampaign[];
   hourly: TrackingHour[];
+  hourlySpendInr: Record<string, Record<string, number[]>>;
   totals: { spendInr: number; indianSpendInr: number; gst: number; profit: number | null; orders: number; attributedOrders: number; grossRevenue: number; refundAmount: number; revenue: number };
   accountDailySpendInr: Record<string, Record<string, { total: number; indian: number }>>;
   dates: { start: string; end: string };

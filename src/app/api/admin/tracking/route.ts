@@ -217,6 +217,7 @@ async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { s
   const profitAvailable = meta.every((result) => !result.account.error) && campaigns.every((row) => row.spendInr !== null || row.spend === 0);
   return {
     accounts: meta.map((result) => result.account), campaigns: joined.campaigns, hourly: joined.hourly,
+    hourlySpendInr: Object.assign({}, ...meta.map((result) => result.hourlySpendInr)),
     accountDailySpendInr: Object.fromEntries(meta.map((result) => [result.account.id, result.dailySpendInr])),
     totals: {
       spendInr, indianSpendInr, gst, profit: profitAvailable ? revenue - gst - spendInr : null,
