@@ -3,6 +3,7 @@ import type { TrackingCampaign } from "../src/lib/tracking-dashboard";
 import { buildTrackingHourlyTable } from "../src/lib/tracking-hourly-table";
 import { campaignHourlySpendForBusinessDays, normalizeHourlySpendToDailyTotals } from "../src/lib/tracking-meta-spend";
 import { normalizeTrackingView } from "../src/lib/tracking-views";
+import { parseTrackedUtmVisit } from "../src/lib/tracking-utm-visits";
 
 const day = "2026-10-12";
 const start = Date.parse(`${day}T11:30:00+05:30`);
@@ -66,23 +67,30 @@ const summary = {
     { date: day, hour: 0, campaignKey: "unattributed", orders: 1, revenue: 60 },
   ],
   hourlySpendInr: { "meta:1:123": { [day]: aligned.get("123")?.[day] || [] } },
+  hourlyUtmVisits: { "meta:1:123": { [day]: [8, 6] } },
+  utmVisitsAvailable: true,
 };
-const clicks = { "meta:1:123": { [day]: [12, 6] } };
-const roas = buildTrackingHourlyTable(summary, campaigns, day, "roas", true, new Set(), clicks);
+const roas = buildTrackingHourlyTable(summary, campaigns, day, "roas");
 assert.equal(roas.totals[0], 2.5);
 assert.equal(roas.totals[1], 0);
 assert.equal(roas.totals[2], null);
 assert.equal(roas.campaigns.find((row) => row.key === "meta:1:123")?.hours[0], 2);
 assert.equal(roas.campaigns.find((row) => row.key === "unattributed")?.hours[0], null);
-assert.deepEqual({ ...roas.campaigns.find((row) => row.key === "meta:1:123")?.details[0], cvr: null }, { orders: 1, revenue: 240, spend: 120, clicks: 12, roas: 2, cvr: null });
-assert.equal(roas.campaigns.find((row) => row.key === "meta:1:123")?.details[0].cvr?.toFixed(2), "8.33");
-assert.deepEqual({ ...roas.totalDetails[0], cvr: null }, { orders: 2, revenue: 300, spend: 120, clicks: 12, roas: 2.5, cvr: null });
-assert.equal(roas.totalDetails[0].cvr?.toFixed(2), "8.33");
+assert.deepEqual({ ...roas.campaigns.find((row) => row.key === "meta:1:123")?.details[0], cvr: null }, { orders: 1, revenue: 240, spend: 120, visits: 8, roas: 2, cvr: null });
+assert.equal(roas.campaigns.find((row) => row.key === "meta:1:123")?.details[0].cvr?.toFixed(2), "12.50");
+assert.deepEqual({ ...roas.totalDetails[0], cvr: null }, { orders: 2, revenue: 300, spend: 120, visits: 8, roas: 2.5, cvr: null });
+assert.equal(roas.totalDetails[0].cvr?.toFixed(2), "12.50");
 assert.equal(buildTrackingHourlyTable(summary, campaigns, day, "roas", false).totalDetails[0].spend, null);
 assert.equal(buildTrackingHourlyTable(summary, campaigns, day, "roas", true, new Set(["1"])).campaigns[0].details[0].spend, null);
 assert.equal(buildTrackingHourlyTable(summary, campaigns, day, "orders").totals[0], 2);
 assert.equal(buildTrackingHourlyTable(summary, campaigns, day, "revenue").totals[0], 300);
-assert.equal(buildTrackingHourlyTable(summary, campaigns, day, "cvr", true, new Set(), clicks).totals[0]?.toFixed(2), "8.33");
+assert.equal(buildTrackingHourlyTable(summary, campaigns, day, "cvr").totals[0]?.toFixed(2), "12.50");
+assert.equal(buildTrackingHourlyTable(summary, campaigns, day, "cvr", false).totals[0]?.toFixed(2), "12.50");
+assert.equal(buildTrackingHourlyTable({ ...summary, utmVisitsAvailable: false }, campaigns, day, "cvr").totals[0], null);
+assert.equal(parseTrackedUtmVisit({ created_at: `${day}T13:00:00Z`, url: "https://astrorekha.com/?utm_source=facebook&utm_campaign=TEST&campaign_id=123" })?.campaignId, "123");
+assert.equal(parseTrackedUtmVisit({ created_at: `${day}T13:00:00Z`, url: "https://astrorekha.com/dashboard?utm_source=facebook" }), null);
+assert.equal(parseTrackedUtmVisit({ created_at: `${day}T13:00:00Z`, url: "https://astrorekha.com/?utm_campaign=TEST" }), null);
+assert.equal(parseTrackedUtmVisit({ created_at: `${day}T13:00:00Z`, url: "https://astrorekha.com/?utm_campaign=12345678" })?.campaignName, "12345678");
 assert.equal(roas.totals.length, 24);
 assert.equal(normalizeTrackingView({ columnIds: ["campaign"], hourMetric: "roas" })?.hourMetric, "roas");
 assert.equal(normalizeTrackingView({ columnIds: ["conversionRate"], hourMetric: "cvr" })?.hourMetric, "cvr");

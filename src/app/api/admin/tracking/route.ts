@@ -4,6 +4,7 @@ import { DEFAULT_PRICING, normalizePricing } from "@/lib/pricing";
 import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
 import { fetchMetaTrackingAccount, fetchMetaTrackingExactHourlySpend } from "@/lib/tracking-meta";
 import { calculateProfitSheetGst, indianAdGstApplies } from "@/lib/profit-sheet-gst";
+import { readTrackedUtmVisits, visitHour, type TrackingUtmVisit } from "@/lib/tracking-utm-visits";
 import {
   businessDate, businessDayStartUtc, businessHourBucket, campaignNameKey, isMetaSource,
   nextBusinessDayStartUtc, paidAt, productLabel,
@@ -180,10 +181,58 @@ function attachOrders(campaigns: TrackingCampaign[], sales: TrackingPayment[], r
   return { campaigns: campaigns.concat(Array.from(extra.values())), hourly: Array.from(hourMap.values()), attributedOrders };
 }
 
+function attachUtmVisits(campaigns: TrackingCampaign[], visits: TrackingUtmVisit[]) {
+  const byId = new Map(campaigns.filter((row) => row.campaignId).map((row) => [row.campaignId!, row]));
+  const byName = new Map<string, TrackingCampaign[]>();
+  for (const row of campaigns.filter((item) => item.accountId)) {
+    const key = campaignNameKey(row.campaignName);
+    byName.set(key, [...(byName.get(key) || []), row]);
+  }
+  const byKey = new Map(campaigns.map((row) => [row.key, row]));
+  const hourly: Record<string, Record<string, number[]>> = {};
+  for (const row of campaigns) { row.utmVisits = 0; row.utmVisitBreakdown = []; }
+  for (const visit of visits) {
+    // Use the tags on the actual landing URL, never attribution inherited from a later page view.
+    const campaignId = visit.campaignId || (/^\d{8,24}$/.test(visit.campaignName || "") ? visit.campaignName : null);
+    let row = campaignId ? byId.get(campaignId) : undefined;
+    if (!row && campaignId) {
+      const key = `utm-id:${campaignId}`;
+      row = byKey.get(key);
+      if (!row) { row = emptyUtmCampaign(key, campaignId, visit.campaignName || campaignId, "utm_only"); byKey.set(key, row); campaigns.push(row); }
+    }
+    if (!row && visit.campaignName && isMetaSource(visit.source)) {
+      const nameKey = campaignNameKey(visit.campaignName);
+      const matches = byName.get(nameKey) || [];
+      if (matches.length === 1) row = matches[0];
+      else {
+        const key = `utm-name:${nameKey}`;
+        row = byKey.get(key);
+        if (!row) { row = emptyUtmCampaign(key, null, visit.campaignName, "utm_only"); byKey.set(key, row); campaigns.push(row); }
+      }
+    }
+    if (!row) continue;
+    row.utmVisits = (row.utmVisits || 0) + 1;
+    row.utmVisitBreakdown ||= [];
+    const term = visit.term || "—";
+    const content = visit.content || "—";
+    const detail = row.utmVisitBreakdown!.find((item) => item.adsetId === visit.adsetId && item.adId === visit.adId && item.term === term && item.content === content);
+    if (detail) detail.visits++;
+    else row.utmVisitBreakdown!.push({ adsetId: visit.adsetId, adId: visit.adId, term, content, visits: 1 });
+    const { date, hour } = visitHour(visit);
+    const buckets = (hourly[row.key] ||= {});
+    (buckets[date] ||= Array(24).fill(0))[hour]++;
+  }
+  return hourly;
+}
+
 async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { start: string; end: string }): Promise<TrackingSummary> {
   const start = businessDayStartUtc(dates.start);
   const end = nextBusinessDayStartUtc(dates.end);
-  const [rate, sales, refunds] = await Promise.all([fxRate(supabase), paidPayments(supabase, start, end), refundPayments(supabase, start, end)]);
+  const [rate, sales, refunds, visitResult] = await Promise.all([
+    fxRate(supabase), paidPayments(supabase, start, end), refundPayments(supabase, start, end),
+    readTrackedUtmVisits(supabase, start, end).then((visits) => ({ visits, error: null as string | null }))
+      .catch((error) => ({ visits: [] as TrackingUtmVisit[], error: error instanceof Error ? error.message : "UTM arrivals unavailable" })),
+  ]);
   const parents = new Map(sales.map((sale) => [sale.id, sale]));
   const missingParentIds = Array.from(new Set(refunds.map((row) => row.payu_txn_id).filter((id): id is string => !!id && !parents.has(id))));
   for (let i = 0; i < missingParentIds.length; i += 200) {
@@ -199,9 +248,11 @@ async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { s
   }));
   const campaigns = meta.flatMap((result) => result.campaigns);
   const joined = attachOrders(campaigns, sales, refunds, parents);
+  const hourlyUtmVisits = visitResult.error ? {} : attachUtmVisits(joined.campaigns, visitResult.visits);
   const grossRevenue = sales.reduce((sum, row) => sum + Number(row.amount || 0) / 100, 0);
   const refundAmount = refunds.reduce((sum, row) => sum + Math.abs(Number(row.amount || 0)) / 100, 0);
   const warnings = meta.flatMap((result) => result.warnings);
+  if (visitResult.error) warnings.push(`${visitResult.error}. AR CVR is unavailable.`);
   if (!credentials.length) warnings.push("No Meta ad accounts are configured for this range. UTM orders are still shown.");
   if (joined.attributedOrders < sales.length) warnings.push(`${sales.length - joined.attributedOrders} paid orders could not be matched to a unique Meta campaign.`);
   // Match the Profit Sheet's net GST calculation and 11:30 AM IST business day.
@@ -217,6 +268,7 @@ async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { s
   const profitAvailable = meta.every((result) => !result.account.error) && campaigns.every((row) => row.spendInr !== null || row.spend === 0);
   return {
     accounts: meta.map((result) => result.account), campaigns: joined.campaigns, hourly: joined.hourly,
+    hourlyUtmVisits, utmVisitsAvailable: !visitResult.error,
     hourlySpendInr: Object.assign({}, ...meta.map((result) => result.hourlySpendInr)),
     accountDailySpendInr: Object.fromEntries(meta.map((result) => [result.account.id, result.dailySpendInr])),
     totals: {
@@ -267,10 +319,9 @@ export async function GET(request: NextRequest) {
       const rate = await fxRate(supabase);
       const results = await Promise.all(Array.from(new Map(credentials.map((credential) => [credential.accountId, credential])).values()).map(async (credential) => {
         try { return { accountId: credential.accountId, spend: await fetchMetaTrackingExactHourlySpend(credential, day, rate.rate), warning: null }; }
-        catch (error) { return { accountId: credential.accountId, spend: { hourlySpendInr: {}, hourlyLinkClicks: {} }, warning: `${credential.label || credential.accountId}: ${error instanceof Error ? error.message : "Meta hourly spend unavailable"}` }; }
+        catch (error) { return { accountId: credential.accountId, spend: { hourlySpendInr: {} }, warning: `${credential.label || credential.accountId}: ${error instanceof Error ? error.message : "Meta hourly spend unavailable"}` }; }
       }));
       return json({ hourlySpendInr: Object.assign({}, ...results.map((result) => result.spend.hourlySpendInr)),
-        hourlyLinkClicks: Object.assign({}, ...results.map((result) => result.spend.hourlyLinkClicks)),
         failedAccountIds: results.filter((result) => result.warning).map((result) => result.accountId),
         warnings: results.map((result) => result.warning).filter(Boolean), fetchedAt: new Date().toISOString() });
     }

@@ -88,10 +88,20 @@ function CampaignRow({ row, columns, token, dates, refreshKey, activeOnly, activ
       if (parent) addOrder(parent, item, Boolean(item.adsetId || item.adId));
       if (ad) addOrder(ad, item, Boolean(item.adId));
     }
+    if (row.utmVisits != null) {
+      for (const item of [...adsets, ...ads]) item.utmVisits = 0;
+      for (const visit of row.utmVisitBreakdown || []) {
+        const adset = matchUnique(adsets, visit.adsetId, visit.term);
+        const ad = matchUnique(ads, visit.adId, visit.content, adset?.id);
+        const parent = adset || (ad ? adsets.find((candidate) => candidate.id === ad.parentId) : null);
+        if (parent) parent.utmVisits = (parent.utmVisits || 0) + visit.visits;
+        if (ad) ad.utmVisits = (ad.utmVisits || 0) + visit.visits;
+      }
+    }
     adsets.sort((a, b) => (b.spendInr || 0) - (a.spendInr || 0));
     ads.sort((a, b) => (b.spendInr || 0) - (a.spendInr || 0));
     return { adsets, ads };
-  }, [cached, row.adBreakdown]);
+  }, [cached, row.adBreakdown, row.utmVisitBreakdown, row.utmVisits]);
   const shownAds = hierarchy?.ads.filter((item) => !activeOnly || !["ad", "all"].includes(activeScope) || item.status === "ACTIVE") || [];
   const shownAdsets = hierarchy?.adsets.filter((item) =>
     !activeOnly || activeScope === "campaign" ||
@@ -134,7 +144,7 @@ export default function TrackingCampaignRows({ rows, columns, token, dates, refr
   const mixedCurrencies = currencies.length > 1;
   const total = useMemo(() => rows.reduce<TrackingCampaign>((sum, row) => {
     for (const key of ["spend", "metaCalendarSpend", "impressions", "reach", "clicks", "linkClicks", "landingPageViews", "addToCarts", "checkouts", "metaPurchases", "metaPurchaseValue", "leads", "orders", "grossRevenue", "refunds", "refundAmount", "revenue"] as const) sum[key] = (sum[key] || 0) + (row[key] || 0);
-    if (row.businessLinkClicks != null) sum.businessLinkClicks = (sum.businessLinkClicks || 0) + row.businessLinkClicks;
+    if (row.utmVisits != null) sum.utmVisits = (sum.utmVisits || 0) + row.utmVisits;
     sum.spendInr = (sum.spendInr || 0) + (row.spendInr || 0);
     sum.dailyBudget = (sum.dailyBudget || 0) + (row.dailyBudget || 0);
     sum.lifetimeBudget = (sum.lifetimeBudget || 0) + (row.lifetimeBudget || 0);
@@ -147,8 +157,8 @@ export default function TrackingCampaignRows({ rows, columns, token, dates, refr
     leads: 0, orders: 0, grossRevenue: 0, refunds: 0, refundAmount: 0, revenue: 0,
     utmSources: [], utmMediums: [], utmTerms: [], utmContents: [], attribution: "none", adBreakdown: [],
   }), [rows, currencies]);
-  const matchedOrders = rows.filter((row) => row.businessLinkClicks != null).reduce((sum, row) => sum + row.orders, 0);
-  const conversionRate = total.businessLinkClicks ? `${(matchedOrders / total.businessLinkClicks * 100).toLocaleString("en-IN", { maximumFractionDigits: 2 })}%` : "—";
+  const attributedOrders = rows.filter((row) => row.key !== "unattributed" && row.utmVisits != null).reduce((sum, row) => sum + row.orders, 0);
+  const conversionRate = total.utmVisits ? `${(attributedOrders / total.utmVisits * 100).toLocaleString("en-IN", { maximumFractionDigits: 2 })}%` : "—";
 
   return <>
     <tbody>{rows.map((row) => <CampaignRow key={row.key} row={row} columns={columns} token={token} dates={dates} refreshKey={refreshKey} activeOnly={activeOnly} activeScope={activeScope} onBudgetSaved={onBudgetSaved} />)}</tbody>

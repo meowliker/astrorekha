@@ -3,7 +3,7 @@ export const TRACKING_VIEW_COLUMN_IDS = new Set([
   "dailyBudget", "lifetimeBudget", "impressions", "reach", "frequency", "clicks",
   "linkClicks", "linkCtr", "ctr", "cpc", "cpm", "landingPageViews", "addToCarts",
   "checkouts", "leads", "metaPurchases", "metaCostPerPurchase", "metaPurchaseValue",
-  "metaRoas", "orders", "conversionRate", "grossRevenue", "refunds", "refundAmount", "revenue",
+  "metaRoas", "utmVisits", "orders", "conversionRate", "grossRevenue", "refunds", "refundAmount", "revenue",
   "utmRoas", "cpa", "aov", "utmSource", "utmMedium", "utmTerm", "utmContent",
 ]);
 

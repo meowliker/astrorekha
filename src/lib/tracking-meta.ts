@@ -54,8 +54,8 @@ export async function fetchMetaTrackingExactHourlySpend(
   credential: MetaAccountCredential,
   day: string,
   usdInrRate: number,
-): Promise<{ hourlySpendInr: Record<string, number[]>; hourlyLinkClicks: Record<string, number[]> }> {
-  const empty = { hourlySpendInr: {}, hourlyLinkClicks: {} };
+): Promise<{ hourlySpendInr: Record<string, number[]> }> {
+  const empty = { hourlySpendInr: {} };
   const accountId = credential.accountId;
   const accountUrl = `${META_BASE}/act_${accountId}`;
   const metadata = await metaJson<{ currency?: string; timezone_offset_hours_utc?: number }>(
@@ -78,7 +78,7 @@ export async function fetchMetaTrackingExactHourlySpend(
   const accountDays = first === last ? [first] : [first, last];
   const results = await Promise.all(accountDays.map(async (accountDay) => {
     const params = new URLSearchParams({
-      access_token: credential.accessToken, fields: "campaign_id,date_start,spend,inline_link_clicks", level: "campaign",
+      access_token: credential.accessToken, fields: "campaign_id,date_start,spend", level: "campaign",
       time_increment: "1", breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone",
       time_range: JSON.stringify({ since: accountDay, until: accountDay }), limit: "5000",
     });
@@ -88,13 +88,13 @@ export async function fetchMetaTrackingExactHourlySpend(
   }));
   const base = { hourly: results.flat(), daily: [], start: day, end: day,
     timezoneOffsetHoursUtc: offset, accountWindow: window, nowMillis: Date.now() };
-  const metricRows = (metric: "spend" | "inline_link_clicks") => {
-    const rows = campaignHourlySpendForBusinessDays({ ...base, metric });
+  const metricRows = () => {
+    const rows = campaignHourlySpendForBusinessDays({ ...base, metric: "spend" });
     return Object.fromEntries(Array.from(rows, ([campaignId, days]) => [
-      `meta:${accountId}:${campaignId}`, (days[day] || Array(24).fill(0)).map((value) => metric === "spend" ? value * multiplier : value),
+      `meta:${accountId}:${campaignId}`, (days[day] || Array(24).fill(0)).map((value) => value * multiplier),
     ]));
   };
-  return { hourlySpendInr: metricRows("spend"), hourlyLinkClicks: metricRows("inline_link_clicks") };
+  return { hourlySpendInr: metricRows() };
 }
 
 export async function fetchMetaTrackingAccount(

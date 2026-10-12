@@ -32,7 +32,7 @@ export default function TrackingHourlyTable({ rows, totals, totalDetails, metric
   useEffect(() => { const timer = setTimeout(() => setHover(null), 0); return () => clearTimeout(timer); }, [metric]);
   const maximum = Math.max(1, ...totals.filter((value): value is number => value != null), ...rows.flatMap((row) => row.hours).filter((value): value is number => value != null));
   const valueText = (value: number | null) => metric === "roas" ? value == null ? "—" : `${value.toFixed(2)}×` : metric === "cvr" ? value == null ? "—" : `${value.toFixed(2)}%` : value ? value.toLocaleString("en-IN", { maximumFractionDigits: metric === "orders" ? 0 : 2 }) : "·";
-  const valueTitle = (value: number | null) => metric === "roas" ? value == null ? "No hourly Meta spend for ROAS" : `${value.toFixed(2)}× ROAS` : metric === "cvr" ? value == null ? "No Meta link clicks for CVR" : `${value.toFixed(2)}% CVR` : metric === "orders" ? `${value || 0} orders` : money(value || 0);
+  const valueTitle = (value: number | null) => metric === "roas" ? value == null ? "No hourly Meta spend for ROAS" : `${value.toFixed(2)}× ROAS` : metric === "cvr" ? value == null ? "No tagged site arrivals for AR CVR" : `${value.toFixed(2)}% AR CVR` : metric === "orders" ? `${value || 0} orders` : money(value || 0);
   const label = (hour: number) => `${hourLabel(hour)}–${hourLabel(hour + 1)}`;
   const cellProps = (name: string, hour: number, cell: TrackingHourlyCell) => ({
     tabIndex: 0,
@@ -44,10 +44,11 @@ export default function TrackingHourlyTable({ rows, totals, totalDetails, metric
   });
   const details = hover ? [
     ["Spend", hover.cell.spend == null ? "—" : money(hover.cell.spend)],
+    ["AR UTM visits", hover.cell.visits == null ? "—" : String(hover.cell.visits)],
     ...(metric === "revenue" ? [] : [["Net sales", money(hover.cell.revenue)]]),
     ...(metric === "orders" ? [] : [["Orders", String(hover.cell.orders)]]),
     ...(metric === "roas" ? [] : [["ROAS", hover.cell.roas == null ? "—" : `${hover.cell.roas.toFixed(2)}×`]]),
-    ...(metric === "cvr" ? [] : [["CVR", hover.cell.cvr == null ? "—" : `${hover.cell.cvr.toFixed(2)}%`]]),
+    ...(metric === "cvr" ? [] : [["AR CVR", hover.cell.cvr == null ? "—" : `${hover.cell.cvr.toFixed(2)}%`]]),
   ] : [];
 
   return <div className="overflow-x-auto rounded-xl border border-white/10 bg-[#141b2b]">

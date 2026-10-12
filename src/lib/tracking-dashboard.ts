@@ -47,6 +47,9 @@ export type TrackingCampaign = {
   linkClicks: number;
   /** Meta link clicks allocated into the 11:30 AM IST business-day range. */
   businessLinkClicks?: number;
+  /** Tagged arrivals recorded on AstroRekha during the selected 11:30 AM IST business days. */
+  utmVisits?: number;
+  utmVisitBreakdown?: Array<{ adsetId: string | null; adId: string | null; term: string; content: string; visits: number }>;
   landingPageViews: number;
   addToCarts: number;
   checkouts: number;
@@ -86,6 +89,8 @@ export type TrackingSummary = {
   accounts: Array<{ id: string; name: string; currency: string; timezone: string | null; error?: string }>;
   campaigns: TrackingCampaign[];
   hourly: TrackingHour[];
+  hourlyUtmVisits: Record<string, Record<string, number[]>>;
+  utmVisitsAvailable: boolean;
   hourlySpendInr: Record<string, Record<string, number[]>>;
   totals: { spendInr: number; indianSpendInr: number; gst: number; profit: number | null; orders: number; attributedOrders: number; grossRevenue: number; refundAmount: number; revenue: number };
   accountDailySpendInr: Record<string, Record<string, { total: number; indian: number }>>;

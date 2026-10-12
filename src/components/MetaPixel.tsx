@@ -15,9 +15,12 @@ function PageViewTracker() {
 
   useEffect(() => {
     const attribution = captureMarketingAttribution();
+    const taggedLanding = ["utm_campaign", "campaign_id", "meta_campaign_id"].some((key) => new URLSearchParams(search).has(key));
     void trackMarketingEvent({
       eventName: "page_view",
       attribution,
+      // A second arrival on the same tagged URL is another site visit; only suppress immediate duplicate effects.
+      dedupeTtlMs: taggedLanding ? 2_000 : undefined,
       metadata: {
         pathname,
         search,
@@ -25,9 +28,8 @@ function PageViewTracker() {
     });
 
     // Track page view on route change
-    if (typeof window !== "undefined" && (window as any).fbq) {
-      (window as any).fbq("track", "PageView");
-    }
+    const fbq = (window as Window & { fbq?: (...args: string[]) => void }).fbq;
+    fbq?.("track", "PageView");
   }, [pathname, search]);
 
   return null;
