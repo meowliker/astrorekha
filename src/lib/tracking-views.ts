@@ -1,5 +1,5 @@
 export const TRACKING_VIEW_COLUMN_IDS = new Set([
-  "campaign", "account", "campaignId", "status", "objective", "spend", "spendInr",
+  "campaign", "account", "campaignId", "status", "objective", "budget", "spend", "spendInr",
   "dailyBudget", "lifetimeBudget", "impressions", "reach", "frequency", "clicks",
   "linkClicks", "linkCtr", "ctr", "cpc", "cpm", "landingPageViews", "addToCarts",
   "checkouts", "leads", "metaPurchases", "metaCostPerPurchase", "metaPurchaseValue",

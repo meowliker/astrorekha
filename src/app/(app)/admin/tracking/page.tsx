@@ -28,6 +28,7 @@ const COLUMNS: Column[] = [
   { id: "account", label: "Ad account", group: "Identity", value: (r) => r.accountName, sort: (r) => r.accountName },
   { id: "campaignId", label: "Campaign ID", group: "Identity", value: (r) => r.campaignId || "—", sort: (r) => r.campaignId || "" },
   { id: "status", label: "Status", group: "Identity", value: (r) => r.status || "—", sort: (r) => r.status || "" },
+  { id: "budget", label: "Budget", group: "Meta", value: (r) => r.dailyBudget != null ? `${amount(r.dailyBudget, r.currency)} / day` : r.lifetimeBudget != null ? `${amount(r.lifetimeBudget, r.currency)} lifetime` : "—", sort: (r) => r.dailyBudget ?? r.lifetimeBudget ?? 0, align: "right" },
   { id: "objective", label: "Objective", group: "Identity", value: (r) => r.objective?.replace(/_/g, " ") || "—", sort: (r) => r.objective || "" },
   { id: "spend", label: "Meta spend", group: "Meta", value: (r) => r.accountId ? amount(r.spend, r.currency) : "—", sort: (r) => r.spend, align: "right" },
   { id: "spendInr", label: "Spend INR", group: "Meta", value: (r) => r.spendInr == null ? "—" : inr(r.spendInr), sort: (r) => r.spendInr || 0, align: "right" },
@@ -64,7 +65,7 @@ const COLUMNS: Column[] = [
   { id: "utmContent", label: "UTM content / ad", group: "AstroRekha", value: (r) => labels(r.utmContents), sort: (r) => r.utmContents.join(",") },
 ];
 const PRESETS: Record<string, string[]> = {
-  Performance: ["campaign", "account", "status", "spendInr", "impressions", "clicks", "ctr", "cpc", "metaPurchases", "metaCostPerPurchase", "metaRoas", "orders", "revenue", "utmRoas", "cpa"],
+  Performance: ["campaign", "account", "status", "budget", "spendInr", "impressions", "clicks", "ctr", "cpc", "metaPurchases", "metaCostPerPurchase", "metaRoas", "orders", "revenue", "utmRoas", "cpa"],
   Attribution: ["campaign", "account", "campaignId", "utmSource", "utmMedium", "utmTerm", "utmContent", "orders", "grossRevenue", "refundAmount", "revenue", "utmRoas"],
   All: COLUMNS.map((column) => column.id),
 };
@@ -133,6 +134,8 @@ export default function TrackingPage() {
           const unique = Array.from(new Set(valid));
           // Migrate the previous default while preserving deliberately reordered layouts.
           if (unique[0] === "account" && unique[1] === "campaign") unique.splice(0, 2, "campaign", "account");
+          // Expose the new Budget column in existing local layouts.
+          if (!unique.includes("budget") && unique.includes("status") && unique.includes("spendInr")) unique.splice(unique.indexOf("status") + 1, 0, "budget");
           setColumnIds(unique);
           localStorage.setItem("ar_tracking_columns_v1", JSON.stringify(unique));
         }
@@ -508,7 +511,7 @@ export default function TrackingPage() {
                         </div>
                       </th>)}</tr>
                   </thead>
-                  <TrackingCampaignRows key={`${dates.start}:${dates.end}`} rows={filtered} columns={activeColumns} token={token} dates={dates} refreshKey={summary?.fetchedAt || ""} activeOnly={activeOnly} activeScope={activeScope} />
+                  <TrackingCampaignRows key={`${dates.start}:${dates.end}`} rows={filtered} columns={activeColumns} token={token} dates={dates} refreshKey={summary?.fetchedAt || ""} activeOnly={activeOnly} activeScope={activeScope} onBudgetSaved={() => { if (token) void fetchSummary(token, dates, true); }} />
                 </table>
                 {!loading && filtered.length === 0 && <div className="p-10 text-center text-sm text-slate-500">No campaigns or UTM orders for these filters.</div>}
                 {loading && <div className="p-10 text-center text-sm text-slate-500">Loading campaigns and orders…</div>}
