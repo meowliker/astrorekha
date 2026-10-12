@@ -1,5 +1,7 @@
 "use client";
 
+import ProductOfferTracker from "@/components/ProductOfferTracker";
+
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Send, HelpCircle, X, Loader2, Sparkles } from "lucide-react";
@@ -1388,6 +1390,7 @@ export default function ChatPage() {
                         : "border-white/10 hover:border-white/20"
                     }`}
                   >
+                    <ProductOfferTracker type="coins" id={pkg.packageId}/>
                     {/* Discount Badge */}
                     {pkg.discount && (
                       <div className="absolute -top-1.5 -right-1.5 sm:-top-2 sm:-right-2 bg-gradient-to-r from-primary to-purple-600 text-white text-[10px] sm:text-xs font-bold px-2 py-0.5 sm:px-3 sm:py-1 rounded-full shadow-lg">

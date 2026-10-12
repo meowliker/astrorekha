@@ -1,5 +1,7 @@
 "use client";
 
+import ProductOfferTracker from "@/components/ProductOfferTracker";
+
 import { motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fadeUp } from "@/lib/motion";
@@ -788,6 +790,7 @@ export default function BundlePricingPage() {
                   : "border-border/50 bg-card/50"
               }`}
             >
+              <ProductOfferTracker type="bundle" id={plan.id} name={plan.name}/>
               {/* Badge */}
               {plan.popular && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-4 py-1 rounded-full font-semibold flex items-center gap-1">

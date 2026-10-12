@@ -1,5 +1,7 @@
 "use client";
 
+import ProductOfferTracker from "@/components/ProductOfferTracker";
+
 import { AnimatePresence, motion } from "framer-motion";
 import { useMemo, useState, useEffect, Suspense } from "react";
 import { fadeUp } from "@/lib/motion";
@@ -531,6 +533,7 @@ function BundleUpsellContent() {
                         : "border-white/10 bg-white/5 hover:border-primary/50"
                     }`}
                   >
+                    <ProductOfferTracker type="upsell" id={offer.id} name={offer.name}/>
                     <div className="flex items-center gap-3 p-3">
                       <button
                         type="button"

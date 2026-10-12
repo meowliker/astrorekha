@@ -1,5 +1,7 @@
 "use client";
 
+import ProductOfferTracker from "@/components/ProductOfferTracker";
+
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Lock, Sparkles, Loader2 } from "lucide-react";
@@ -241,6 +243,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
             onClick={(e) => e.stopPropagation()}
             className="bg-gradient-to-b from-[#1A1F2E] to-[#0A0E1A] rounded-3xl w-full max-w-sm p-6 border border-white/10"
           >
+            <ProductOfferTracker type="report" id={featureToReportId[feature]} name={featureNames[feature]}/>
             {/* Close Button */}
             <button
               onClick={onClose}
