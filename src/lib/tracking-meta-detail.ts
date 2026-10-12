@@ -1,5 +1,5 @@
 import { getMetaAccountWindowForRequest, type MetaAccountCredential } from "@/lib/meta-ad-accounts";
-import { bufferedMetaRange, campaignSpendForBusinessDays, type CampaignSpendRow } from "@/lib/tracking-meta-spend";
+import { bufferedMetaRange, campaignSpendForBusinessDays, normalizeHourlySpendToDailyTotals, type CampaignSpendRow } from "@/lib/tracking-meta-spend";
 import { businessDayStartUtc, type TrackingActivity, type TrackingChild } from "@/lib/tracking-dashboard";
 
 const BASE = "https://graph.facebook.com/v21.0";
@@ -154,7 +154,7 @@ export async function fetchMetaTrackingChildren(credential: MetaAccountCredentia
       rows.set(id, row);
     }
     const keyed = (items: Array<CampaignSpendRow & Record<string, string>>) => items.map((item) => ({ ...item, campaign_id: item[idField] }));
-    const spend = campaignSpendForBusinessDays({ hourly: keyed(hourly), daily: keyed(daily), start: dates.start, end: dates.end,
+    const spend = campaignSpendForBusinessDays({ hourly: normalizeHourlySpendToDailyTotals(keyed(hourly), keyed(daily)), daily: keyed(daily), start: dates.start, end: dates.end,
       timezoneOffsetHoursUtc: offset, accountWindow: window, nowMillis: Date.now() });
     for (const [id, value] of spend) {
       const row = rows.get(id) || emptyChild({ id }, level, account, campaignId);

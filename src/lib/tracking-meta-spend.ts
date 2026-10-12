@@ -12,6 +12,21 @@ const DAY_MS = 24 * HOUR_MS;
 const shiftDay = (day: string, count: number) => new Date(Date.parse(`${day}T00:00:00Z`) + count * DAY_MS).toISOString().slice(0, 10);
 const amount = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : 0;
 
+/** Meta can return hourly rows for a multi-day range whose sum differs from its daily spend. Keep the hourly shape, anchored to the daily total. */
+export function normalizeHourlySpendToDailyTotals(hourly: CampaignSpendRow[], daily: CampaignSpendRow[]): CampaignSpendRow[] {
+  const key = (row: CampaignSpendRow) => `${row.campaign_id || ""}:${row.date_start || ""}`;
+  const hourlyTotals = new Map<string, number>();
+  const dailyTotals = new Map<string, number>();
+  for (const row of hourly) hourlyTotals.set(key(row), (hourlyTotals.get(key(row)) || 0) + amount(row.spend));
+  for (const row of daily) dailyTotals.set(key(row), (dailyTotals.get(key(row)) || 0) + amount(row.spend));
+  return hourly.map((row) => {
+    const total = hourlyTotals.get(key(row)) || 0;
+    const target = dailyTotals.get(key(row));
+    if (total <= 0 || target == null) return row;
+    return { ...row, spend: String(amount(row.spend) * target / total) };
+  });
+}
+
 /** Allocate Meta's account-local hourly spend to the Profit Sheet's 11:30 IST reporting window. */
 export function campaignSpendForBusinessDays(input: {
   hourly: CampaignSpendRow[];

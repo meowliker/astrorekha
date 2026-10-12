@@ -98,8 +98,8 @@ export default function TrackingPage() {
   const [activityWarnings, setActivityWarnings] = useState<string[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const [hourCampaignKey, setHourCampaignKey] = useState<string | null>(null);
-  const [hourSpend, setHourSpend] = useState<number[] | null>(null);
-  const [hourSpendError, setHourSpendError] = useState("");
+  const [exactHourlySpend, setExactHourlySpend] = useState<{ day: string; values: Record<string, number[]>; failedAccountIds: string[] } | null>(null);
+  const [exactHourlyError, setExactHourlyError] = useState("");
   const [columnIds, setColumnIds] = useState<string[]>(DEFAULT_COLUMNS);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [viewsOpen, setViewsOpen] = useState(false);
@@ -121,6 +121,7 @@ export default function TrackingPage() {
   const liveLoading = useRef(false);
   const reconciliationLoading = useRef(false);
   const metaAutoLoading = useRef(false);
+  const summaryFetchedAt = summary?.fetchedAt;
 
   useEffect(() => {
     const session = localStorage.getItem("admin_session_token");
@@ -209,17 +210,20 @@ export default function TrackingPage() {
     return () => { active = false; window.clearInterval(timer); };
   }, [token, dates, accountId]);
   useEffect(() => {
-    const row = summary?.campaigns.find((item) => item.key === hourCampaignKey);
-    if (!token || !row || !row.accountId || !row.campaignId) { setHourSpend(null); setHourSpendError(""); return; }
+    if (!token || !summaryFetchedAt || hourDate < dates.start || hourDate > dates.end) return;
     const controller = new AbortController();
-    setHourSpend(null); setHourSpendError("");
-    const params = new URLSearchParams({ mode: "hourly", start: hourDate, end: hourDate, accountId: row.accountId, campaignId: row.campaignId });
-    fetch(`/api/admin/tracking/details?${params}`, { headers: { "x-admin-session": token }, cache: "no-store", signal: controller.signal })
+    setExactHourlySpend(null); setExactHourlyError("");
+    const params = new URLSearchParams({ mode: "hourly-spend", day: hourDate });
+    fetch(`/api/admin/tracking?${params}`, { headers: { "x-admin-session": token }, cache: "no-store", signal: controller.signal })
       .then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error || "Hourly spend unavailable"); return data; })
-      .then((data: { spendInr: number[] }) => setHourSpend(data.spendInr))
-      .catch((cause) => { if (!controller.signal.aborted) setHourSpendError(cause instanceof Error ? cause.message : "Hourly spend unavailable"); });
+      .then((data: { hourlySpendInr: Record<string, number[]>; failedAccountIds?: string[]; warnings?: string[] }) => {
+        if (controller.signal.aborted) return;
+        setExactHourlySpend({ day: hourDate, values: data.hourlySpendInr, failedAccountIds: data.failedAccountIds || [] });
+        setExactHourlyError((data.warnings || []).join(" · "));
+      })
+      .catch((cause) => { if (!controller.signal.aborted) setExactHourlyError(cause instanceof Error ? cause.message : "Hourly spend unavailable"); });
     return () => controller.abort();
-  }, [token, summary, hourCampaignKey, hourDate]);
+  }, [token, summaryFetchedAt, hourDate, dates.start, dates.end]);
   const fetchViews = useCallback(async (session: string) => {
     await fetch("/api/admin/tracking/views", { headers: { "x-admin-session": session }, cache: "no-store" })
       .then(async (response) => { if (!response.ok) throw new Error("Unable to load saved views"); return response.json(); })
@@ -381,15 +385,21 @@ export default function TrackingPage() {
     return visibleTotals.revenue - visibleTotals.spend - gst;
   }, [summary, accountId, dates, visibleTotals.revenue, visibleTotals.spend]);
 
-  const hourly = useMemo(() => buildTrackingHourlyTable(summary, filtered, hourDate, hourMetric), [summary, filtered, hourDate, hourMetric]);
+  const exactSpend = exactHourlySpend?.day === hourDate ? exactHourlySpend.values : null;
+  const failedHourlyAccounts = useMemo(() => new Set(exactHourlySpend?.day === hourDate ? exactHourlySpend.failedAccountIds : []), [exactHourlySpend, hourDate]);
+  const hourly = useMemo(() => buildTrackingHourlyTable(summary ? { hourly: summary.hourly, hourlySpendInr: exactSpend
+    ? Object.fromEntries(Object.entries(exactSpend).map(([key, values]) => [key, { [hourDate]: values }])) : {} } : null,
+    filtered, hourDate, hourMetric, exactSpend !== null, failedHourlyAccounts), [summary, exactSpend, failedHourlyAccounts, filtered, hourDate, hourMetric]);
   const hourDates = useMemo(() => Array.from(
     { length: Math.floor((Date.parse(dates.end) - Date.parse(dates.start)) / 86_400_000) + 1 },
     (_, index) => new Date(Date.parse(`${dates.start}T00:00:00Z`) + index * 86_400_000).toISOString().slice(0, 10)
   ), [dates]);
   const hourCampaign = summary?.campaigns.find((row) => row.key === hourCampaignKey) || null;
+  const hourSpend = hourCampaign?.accountId && exactSpend && !failedHourlyAccounts.has(hourCampaign.accountId) ? exactSpend[hourCampaign.key] || Array(24).fill(0) : null;
 
   function applyDates(range: TrackingRange) {
     setSummary(null);
+    setExactHourlySpend(null);
     setDates(range);
     setHourDate(range.end);
     setError("");
@@ -397,7 +407,7 @@ export default function TrackingPage() {
 
   return (
     <div className="min-h-screen bg-[#0A0E1A] text-slate-100">
-      {hourCampaign && <TrackingHourlyModal campaign={hourCampaign} day={hourDate} hours={summary?.hourly || []} spend={hourSpend} error={hourSpendError} onClose={() => setHourCampaignKey(null)} />}
+      {hourCampaign && <TrackingHourlyModal campaign={hourCampaign} day={hourDate} hours={summary?.hourly || []} spend={hourSpend} error={!hourCampaign.accountId ? "No matched Meta campaign for this row" : failedHourlyAccounts.has(hourCampaign.accountId) ? exactHourlyError : !exactSpend ? exactHourlyError : ""} onClose={() => setHourCampaignKey(null)} />}
       <div aria-live="polite" className="pointer-events-none fixed right-4 top-4 z-50 flex w-[min(380px,calc(100vw-2rem))] flex-col gap-2">
         <AnimatePresence initial={false}>{toastSales.map((sale) => <motion.div key={sale.id} role="status" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 40 }} transition={{ duration: 0.2 }} className="pointer-events-auto rounded-xl border border-emerald-400/35 bg-[#1b2437] p-4 shadow-2xl shadow-black/50">
           <div className="flex items-start gap-3"><div className="rounded-full bg-emerald-400/15 p-2 text-emerald-300"><ShoppingBag size={17} /></div><div className="min-w-0 flex-1"><div className="text-xs font-semibold uppercase tracking-wide text-emerald-300">New sale · {sale.productType}</div><p className="mt-1 break-all text-sm font-medium">{sale.email}</p><p className="mt-1 text-xs text-slate-300">bought {sale.productName}</p>{sale.campaign && <p className="mt-2 whitespace-normal break-words text-xs text-slate-400">Campaign: {sale.campaign}</p>}<div className="mt-2 flex items-center justify-between gap-2 text-xs"><span className="text-slate-500">{displayIst(sale.at)} IST</span><span className="font-semibold text-emerald-300">{inr(sale.amount)}</span></div></div><button aria-label="Dismiss sale notification" onClick={() => { const timer = toastTimers.current.get(sale.id); if (timer) window.clearTimeout(timer); toastTimers.current.delete(sale.id); setToastSales((current) => current.filter((item) => item.id !== sale.id)); }} className="text-slate-500 hover:text-white"><X size={16} /></button></div>
@@ -506,8 +516,8 @@ export default function TrackingPage() {
             </section>
 
             <section>
-              <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Hourly sales by campaign</h2><p className="text-xs text-slate-500">Hourly windows begin at 11:30 AM IST, matching the Profit Sheet. Refunds reduce revenue in the window recorded. ROAS is net sales divided by that hour&apos;s Meta spend.</p></div><div className="flex items-center gap-2"><select aria-label="Hourly breakdown day" value={hourDate} onChange={(event) => setHourDate(event.target.value)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm">{hourDates.map((day) => <option key={day} value={day}>{new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`))}</option>)}</select><select aria-label="Hourly breakdown metric" value={hourMetric} onChange={(event) => setHourMetric(event.target.value as TrackingHourlyMetric)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="orders">Orders</option><option value="revenue">Net sales</option><option value="roas">ROAS</option></select></div></div>
-              <TrackingHourlyTable rows={hourly.campaigns} totals={hourly.totals} metric={hourMetric} onOpen={setHourCampaignKey} />
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Hourly sales by campaign</h2><p className="text-xs text-slate-500">Hourly windows begin at 11:30 AM IST. Meta shows clock hours, so these spend cells split adjacent Meta hours evenly. Hover a cell for its spend, net sales, orders and ROAS.</p>{exactHourlyError && <p className="mt-1 text-xs text-amber-300">{exactHourlyError}</p>}{!exactSpend && !exactHourlyError && <p className="mt-1 text-xs text-cyan-300">Loading single-day Meta hourly spend…</p>}</div><div className="flex items-center gap-2"><select aria-label="Hourly breakdown day" value={hourDate} onChange={(event) => setHourDate(event.target.value)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm">{hourDates.map((day) => <option key={day} value={day}>{new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`))}</option>)}</select><select aria-label="Hourly breakdown metric" value={hourMetric} onChange={(event) => setHourMetric(event.target.value as TrackingHourlyMetric)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="orders">Orders</option><option value="revenue">Net sales</option><option value="roas">ROAS</option></select></div></div>
+              <TrackingHourlyTable rows={hourly.campaigns} totals={hourly.totals} totalDetails={hourly.totalDetails} metric={hourMetric} onOpen={setHourCampaignKey} />
             </section>
           </main>
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing } from "@/lib/pricing";
 import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
-import { fetchMetaTrackingAccount } from "@/lib/tracking-meta";
+import { fetchMetaTrackingAccount, fetchMetaTrackingExactHourlySpend } from "@/lib/tracking-meta";
 import { calculateProfitSheetGst, indianAdGstApplies } from "@/lib/profit-sheet-gst";
 import {
   businessDate, businessDayStartUtc, businessHourBucket, campaignNameKey, isMetaSource,
@@ -259,6 +259,20 @@ export async function GET(request: NextRequest) {
     if (error || !session || new Date(session.expires_at) <= new Date()) return json({ error: "Session expired" }, 401);
     const params = new URL(request.url).searchParams;
     if (params.get("mode") === "live") return json(await live(supabase));
+    if (params.get("mode") === "hourly-spend") {
+      const day = params.get("day");
+      if (!validDate(day) || day > businessDate(new Date())) return json({ error: "Choose a valid IST day." }, 400);
+      const configured = await getMetaAccountCredentialsForRange(supabase, { startDate: day, endDate: day });
+      const credentials = configured.length ? configured : getMetaAccountCredentialsFromEnv({ startDate: day, endDate: day });
+      const rate = await fxRate(supabase);
+      const results = await Promise.all(Array.from(new Map(credentials.map((credential) => [credential.accountId, credential])).values()).map(async (credential) => {
+        try { return { accountId: credential.accountId, spend: await fetchMetaTrackingExactHourlySpend(credential, day, rate.rate), warning: null }; }
+        catch (error) { return { accountId: credential.accountId, spend: {}, warning: `${credential.label || credential.accountId}: ${error instanceof Error ? error.message : "Meta hourly spend unavailable"}` }; }
+      }));
+      return json({ hourlySpendInr: Object.assign({}, ...results.map((result) => result.spend)),
+        failedAccountIds: results.filter((result) => result.warning).map((result) => result.accountId),
+        warnings: results.map((result) => result.warning).filter(Boolean), fetchedAt: new Date().toISOString() });
+    }
     const defaults = defaultDates();
     const start = params.get("start") || defaults.start;
     const end = params.get("end") || defaults.end;
