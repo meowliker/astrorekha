@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { verifyPayUResponseHash } from "@/lib/payu-response-hash";
 import { sendGa4Purchase } from "@/lib/ga4-purchase";
+import { sendMetaPurchase } from "@/lib/meta-purchase";
 import { sendVastuGuideEmail } from "@/lib/vastu-guide-email";
 import { type PaymentAttributionPayload } from "@/lib/attribution";
 import { recordMarketingEvent } from "@/lib/marketing-events";
@@ -347,17 +348,26 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
       coins: coins ? parseInt(coins, 10) : null,
       customer_email: normalizedEmail,
       payment_status: "paid",
-      fulfilled_at: nowIso,
+      fulfilled_at: alreadyPaid ? existingPayment.fulfilled_at || nowIso : nowIso,
+      meta_purchase_queued_at: alreadyPaid ? existingPayment.meta_purchase_queued_at || null : nowIso,
     };
 
     if (amountInPaise > 0) {
       updatePayload.amount = amountInPaise;
     }
 
-    const { error: updateError } = await supabase
+    let { error: updateError } = await supabase
       .from("payments")
       .update(updatePayload)
       .eq("id", existingPayment.id);
+    if (updateError && /meta_purchase_queued_at/i.test(updateError.message)) {
+      // Keep payment confirmation working during a code-before-migration rollout.
+      delete updatePayload.meta_purchase_queued_at;
+      ({ error: updateError } = await supabase
+        .from("payments")
+        .update(updatePayload)
+        .eq("id", existingPayment.id));
+    }
     if (updateError) throw updateError;
   }
 
@@ -370,6 +380,27 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
       }, payload.productinfo);
     } catch (error) {
       console.error("[payu-fulfillment] GA4 purchase failed without blocking fulfilment", error);
+    }
+  };
+
+  const recordMetaPurchaseSafely = async () => {
+    try {
+      await sendMetaPurchase({
+        ...existingPayment,
+        payment_status: "paid",
+        amount: amountInPaise || existingPayment.amount,
+        fulfilled_at: alreadyPaid ? existingPayment.fulfilled_at || nowIso : nowIso,
+        customer_email: normalizedEmail || existingPayment.customer_email,
+      }, {
+        email: normalizedEmail || existingPayment.customer_email,
+        phone: payload.phone,
+        productName: payload.productinfo,
+      });
+    } catch (error) {
+      console.error("[payu-fulfillment] Meta purchase delivery failed without blocking fulfilment", {
+        orderId: existingPayment.id,
+        error,
+      });
     }
   };
 
@@ -417,7 +448,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
   }
 
   if (!resolvedUserId) {
-    await recordGaPurchaseSafely();
+    await Promise.all([recordGaPurchaseSafely(), recordMetaPurchaseSafely()]);
     return { success: true, alreadyPaid, userId: resolvedUserId || null };
   }
 
@@ -542,6 +573,6 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
     }
   }
 
-  await recordGaPurchaseSafely();
+  await Promise.all([recordGaPurchaseSafely(), recordMetaPurchaseSafely()]);
   return { success: true, alreadyPaid, userId: resolvedUserId };
 }

@@ -18,6 +18,10 @@
     {
       "path": "/api/cron/monitor-system",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/retry-meta-purchases",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

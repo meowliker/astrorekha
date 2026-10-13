@@ -448,6 +448,7 @@ export async function POST(request: NextRequest) {
       fbclid: finalAttribution.fbclid || null,
       fbc: finalAttribution.fbc || null,
       fbp: finalAttribution.fbp || null,
+      meta_client_user_agent: request.headers.get("user-agent")?.slice(0, 1024) || null,
       utm_source: finalAttribution.utm_source || null,
       utm_medium: finalAttribution.utm_medium || null,
       utm_campaign: finalAttribution.utm_campaign || null,
@@ -472,12 +473,12 @@ export async function POST(request: NextRequest) {
       created_at: nowIso,
     };
     let { error: paymentError } = await supabase.from("payments").insert(paymentRecord);
-    if (paymentError && /fb_campaign_id|fb_adset_id|fb_ad_id|first_touch|last_touch|ga_client_id|ga_session_id/i.test(paymentError.message)) {
+    if (paymentError && /fb_campaign_id|fb_adset_id|fb_ad_id|first_touch|last_touch|ga_client_id|ga_session_id|meta_client_user_agent/i.test(paymentError.message)) {
       // Preserve checkout during a code-before-migration rollout; existing UTM columns still save.
       const legacyRecord = { ...paymentRecord } as Record<string, unknown>;
       for (const column of [
         "fb_campaign_id", "fb_adset_id", "fb_ad_id", "first_touch", "last_touch",
-        "ga_client_id", "ga_session_id",
+        "ga_client_id", "ga_session_id", "meta_client_user_agent",
       ]) {
         delete legacyRecord[column];
       }
