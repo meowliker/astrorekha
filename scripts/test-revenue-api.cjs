@@ -45,8 +45,80 @@ const eventRows = Array.from({ length: 701 }, (_, i) => ({
     a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
 );
 const objects = new Map();
+const changes = new Map();
+let serial = 0;
+const markChanged = (table, id) => {
+  const key = `${table}:${id}`,
+    old = changes.get(key);
+  changes.set(key, {
+    id: old?.id || String(++serial).padStart(8, "0"),
+    table_name: table,
+    record_id: id,
+    version: String(++serial),
+  });
+};
+const users = [
+  { id: "customer-0", coins: 2, unlocked_features: { pastLifeReport: true } },
+];
+const chats = [
+  {
+    id: "customer-0",
+    messages: [
+      {
+        role: "user",
+        content: "PRIVATE QUESTION NEVER CACHE",
+        timestamp: "2026-10-10T09:00:00Z",
+      },
+      {
+        role: "assistant",
+        content: "PRIVATE REPLY NEVER CACHE",
+        timestamp: "2026-10-10T09:00:01Z",
+      },
+    ],
+  },
+];
+let syncState = {
+  snapshot_id: null,
+  generated_at: null,
+  source_version: null,
+  lease_token: null,
+};
+const queries = [];
 let writes = 0;
 const fakeDb = {
+  async rpc(name, args = {}) {
+    if (name === "admin_revenue_begin_sync") {
+      if (syncState.lease_token || mode === "busy")
+        return { error: { message: "Refresh in progress" }, data: null };
+      syncState.lease_token = `lease-${++serial}`;
+      return {
+        data: { ...syncState, sync_at: new Date().toISOString() },
+        error: null,
+      };
+    }
+    if (name === "admin_revenue_commit_sync") {
+      if (mode === "commit-error")
+        return { error: { message: "Commit unavailable" } };
+      assert.equal(args.p_token, syncState.lease_token);
+      syncState = {
+        snapshot_id: args.p_snapshot_id,
+        generated_at: args.p_generated_at,
+        source_version: args.p_source_version,
+        lease_token: null,
+      };
+      for (const ack of args.p_ack) {
+        for (const [key, change] of changes)
+          if (change.id === ack.id && change.version === ack.version)
+            changes.delete(key);
+      }
+      return { error: null };
+    }
+    if (name === "admin_revenue_release_sync") {
+      if (syncState.lease_token === args.p_token) syncState.lease_token = null;
+      return { error: null };
+    }
+    throw new Error(`Unexpected RPC ${name}`);
+  },
   storage: {
     async getBucket() {
       return { data: { public: false }, error: null };
@@ -78,25 +150,34 @@ const fakeDb = {
           if (mode === "save-error")
             return { error: { message: "Storage unavailable" } };
           objects.set(path, data);
+          if (mode === "concurrent-change" && path.startsWith("sources/")) {
+            rows[0].amount += 10000;
+            markChanged("payments", rows[0].id);
+          }
           return { error: null };
         },
       };
     },
   },
   from(table) {
-    const filters = [];
-    let cursor = null;
+    const filters = [],
+      ordering = [];
+    let cursor = null,
+      limit = 333;
     const query = {
       select() {
         return query;
       },
-      order() {
+      order(field) {
+        ordering.push(field);
         return query;
       },
-      limit() {
+      limit(n) {
+        limit = Math.min(333, n);
         return query;
       },
-      in() {
+      in(field, value) {
+        filters.push([field, "in", value]);
         return query;
       },
       eq(field, value) {
@@ -119,7 +200,7 @@ const fakeDb = {
         const parts = expression.match(
           /created_at\.gt\.("[^"]+"),and\(created_at\.eq\.("[^"]+"),id\.gt\.("[^"]+")\)/,
         );
-        assert.ok(parts, "offer pagination uses a stable date/ID cursor");
+        assert.ok(parts, "dated pagination uses a stable date/ID cursor");
         cursor = { at: JSON.parse(parts[1]), id: JSON.parse(parts[3]) };
         return query;
       },
@@ -127,6 +208,7 @@ const fakeDb = {
         return query;
       },
       then(fulfilled, rejected) {
+        queries.push({ table, filters: [...filters] });
         let result;
         if (table === "admin_sessions")
           result = {
@@ -144,92 +226,71 @@ const fakeDb = {
                   },
             error: null,
           };
-        if (table === "settings")
+        else if (table === "settings")
           result = {
             data: { value: require("../src/lib/pricing").DEFAULT_PRICING },
             error: null,
           };
-        if (table === "marketing_events")
-          result = {
-            data: eventRows
-              .filter(
-                (row) =>
-                  !cursor ||
-                  row.created_at > cursor.at ||
-                  (row.created_at === cursor.at && row.id > cursor.id),
-              )
-              .slice(0, 333),
-            error:
-              mode === "event-error"
-                ? { message: "Simulated event outage" }
-                : mode === "transient-timeout" && transientTimeouts++ < 1
-                  ? { message: "canceling statement due to statement timeout" }
-                  : null,
+        else if (table === "admin_revenue_sync_state")
+          result = { data: syncState, error: null };
+        else {
+          const tables = {
+            payments: rows,
+            marketing_events: eventRows,
+            users,
+            chat_messages: chats,
+            admin_revenue_changes: [...changes.values()],
           };
-        if (table === "users" || table === "chat_messages") {
-          usageReads++;
-          const usageRows =
-            table === "users"
-              ? [
-                  {
-                    id: "customer-0",
-                    coins: 2,
-                    unlocked_features: { pastLifeReport: true },
-                  },
-                ]
-              : [
-                  {
-                    id: "customer-0",
-                    messages: [
-                      {
-                        role: "user",
-                        content: "PRIVATE QUESTION NEVER CACHE",
-                        timestamp: "2026-10-10T09:00:00Z",
-                      },
-                      {
-                        role: "assistant",
-                        content: "PRIVATE REPLY NEVER CACHE",
-                        timestamp: "2026-10-10T09:00:01Z",
-                      },
-                    ],
-                  },
-                ];
-          result =
-            mode === "usage-error"
-              ? { data: null, error: { message: "Simulated usage outage" } }
-              : {
-                  data: usageRows.filter((row) =>
-                    filters.every(([field, op, value]) =>
-                      op === "gt" ? row[field] > value : true,
-                    ),
-                  ),
-                  error: null,
-                };
-        }
-        if (table === "payments") {
-          paymentReads++;
-          result =
-            mode === "payment-error" && paymentReads > 1
-              ? {
-                  data: null,
-                  error: { message: "Simulated partial read failure" },
-                }
-              : {
-                  data: rows
-                    .filter((row) =>
-                      filters.every(([field, op, value]) =>
-                        op === "gt"
-                          ? row[field] > value
-                          : op === "gte"
-                            ? row[field] >= value
-                            : op === "lt"
-                              ? row[field] < value
-                              : row[field] === value,
-                      ),
-                    )
-                    .slice(0, 333),
-                  error: null,
-                };
+          assert.ok(tables[table], `Unexpected table ${table}`);
+          if (table === "payments") paymentReads++;
+          if (table === "users" || table === "chat_messages") usageReads++;
+          const data = tables[table]
+            .filter((row) =>
+              filters.every(([field, op, value]) =>
+                op === "in"
+                  ? value.includes(row[field])
+                  : op === "gt"
+                    ? row[field] > value
+                    : op === "gte"
+                      ? row[field] >= value
+                      : op === "lt"
+                        ? row[field] < value
+                        : row[field] === value,
+              ),
+            )
+            .filter(
+              (row) =>
+                !cursor ||
+                row.created_at > cursor.at ||
+                (row.created_at === cursor.at && row.id > cursor.id),
+            )
+            .sort((a, b) => {
+              for (const field of ordering) {
+                const n = String(a[field]).localeCompare(String(b[field]));
+                if (n) return n;
+              }
+              return 0;
+            })
+            .slice(0, limit);
+          const error =
+            mode === "event-error" && table === "marketing_events"
+              ? "Simulated event outage"
+              : mode === "payment-error" && table === "payments"
+                ? "Simulated payment outage"
+                : mode === "usage-error" &&
+                    ["users", "chat_messages"].includes(table)
+                  ? "Simulated usage outage"
+                  : mode === "change-error" && table === "admin_revenue_changes"
+                    ? "Change queue unavailable"
+                    : mode === "transient-timeout" &&
+                        table === "marketing_events" &&
+                        transientTimeouts++ < 1
+                      ? "canceling statement due to statement timeout"
+                      : null;
+          result = {
+            data: error ? null : JSON.parse(JSON.stringify(data)),
+            error: error ? { message: error } : null,
+          };
         }
         return Promise.resolve(result).then(fulfilled, rejected);
       },
@@ -362,13 +423,35 @@ const request = (
     "range changes use cached wallet and question metadata",
   );
   rows[1600].amount = 99900;
+  markChanged("payments", rows[1600].id);
   const stale = await (await GET(request())).json();
   assert.equal(
     stale.totals.collectedPaise,
     report.totals.collectedPaise,
     "snapshot remains stable until refresh",
   );
+  const beforeRefreshQueries = queries.length;
   const updated = await (await POST(request())).json();
+  assert.equal(updated.sync.mode, "incremental");
+  assert.equal(
+    usageReads,
+    beforeUsageReads,
+    "unchanged wallets and chats are not reread on refresh",
+  );
+  for (const q of queries
+    .slice(beforeRefreshQueries)
+    .filter((q) => q.table === "payments" || q.table === "marketing_events")) {
+    assert.ok(
+      q.filters.some(([field, op]) => field === "created_at" && op === "gte") ||
+        q.filters.some(([field, op]) => field === "id" && op === "in"),
+      "refresh reads only the recent window or explicitly changed IDs",
+    );
+  }
+  assert.equal(
+    changes.size,
+    0,
+    "published snapshot acknowledges consumed changes",
+  );
   assert.equal(
     updated.totals.collectedPaise,
     report.totals.collectedPaise + 50000,
@@ -376,7 +459,7 @@ const request = (
   assert.notEqual(updated.snapshot, report.snapshot);
   assert.ok(
     paymentReads > beforeReads,
-    "refresh rereads complete payment history",
+    "refresh reads recent payments and historical corrections",
   );
   const currentReads = paymentReads;
   const revisited = await (await GET(request())).json();
@@ -451,7 +534,16 @@ const request = (
         o.source === "google" && o.campaign === "beta" && o.state === "paid",
     ),
   );
-  for (mode of ["event-error", "payment-error", "save-error"]) {
+  markChanged("users", "customer-0");
+  for (mode of [
+    "event-error",
+    "payment-error",
+    "usage-error",
+    "change-error",
+    "save-error",
+    "commit-error",
+    "busy",
+  ]) {
     paymentReads = 0;
     const failure = await POST(request());
     assert.equal(
@@ -477,19 +569,122 @@ const request = (
     "a timeout retry neither loses nor duplicates events",
   );
   assert.ok(transientTimeouts > 1);
-  mode = "usage-error";
-  const missingUsage = await (await POST(request())).json();
-  assert.equal(missingUsage.usage, null);
+  mode = "ok";
+  const baseline = await (await GET(request())).json();
+  rows[0].payment_status = "refunded";
+  markChanged("payments", rows[0].id);
+  const refund = await (await POST(request())).json();
   assert.equal(
-    missingUsage.totals.collectedPaise,
-    updated.totals.collectedPaise,
+    refund.totals.netPaise,
+    baseline.totals.netPaise - 49900,
+    "refund on a historical order corrects its cached checkout period",
   );
+  rows[0].payment_status = "paid";
+  markChanged("payments", rows[0].id);
+  mode = "concurrent-change";
+  const racing = await (await POST(request())).json();
   assert.ok(
-    missingUsage.quality.warnings.some((w) => /usage.*unavailable/i.test(w)),
+    changes.has(`payments:${rows[0].id}`),
+    "an edit during publication remains queued",
   );
+  mode = "ok";
+  const caughtUp = await (await POST(request())).json();
+  assert.equal(caughtUp.totals.netPaise, racing.totals.netPaise + 10000);
+  assert.equal(changes.size, 0);
+  const deleted = rows.splice(0, 1)[0];
+  markChanged("payments", deleted.id);
+  const deletedEvent = eventRows.splice(0, 1)[0];
+  markChanged("marketing_events", deletedEvent.id);
+  users.splice(0, users.length);
+  chats.splice(0, chats.length);
+  markChanged("users", "customer-0");
+  markChanged("chat_messages", "customer-0");
+  const afterDelete = await (await POST(request())).json();
+  assert.equal(
+    afterDelete.totals.attempts,
+    caughtUp.totals.attempts - 1,
+    "historical deletes remove their cached row",
+  );
+  assert.equal(
+    afterDelete.products.find((p) => p.key === "report:pastLifeReport").viewers,
+    700,
+  );
+  assert.equal(afterDelete.usage.balanceKnown, 0);
+  assert.equal(
+    afterDelete.usage.historyQuestions,
+    0,
+    "deleted chat history does not survive in the usage cache",
+  );
+  const beforeBackfill = afterDelete.totals.attempts;
+  rows.push({
+    ...rows[0],
+    id: "backfilled-order",
+    payu_txn_id: "backfilled-gateway",
+    user_id: "late-customer",
+    payment_status: "paid",
+    amount: 12500,
+  });
+  users.push({
+    id: "late-customer",
+    coins: 7,
+    unlocked_features: { pastLifeReport: true },
+  });
+  chats.push({
+    id: "late-customer",
+    messages: [
+      {
+        role: "user",
+        content: "PRIVATE QUESTION NEW",
+        timestamp: "2026-10-10T09:00:00Z",
+      },
+    ],
+  });
+  for (const [table, id] of [
+    ["payments", "backfilled-order"],
+    ["users", "late-customer"],
+    ["chat_messages", "late-customer"],
+  ])
+    markChanged(table, id);
+  const backfilled = await (await POST(request())).json();
+  assert.equal(
+    backfilled.totals.attempts,
+    beforeBackfill + 1,
+    "backdated inserts are caught even outside the 48-hour window",
+  );
+  assert.equal(backfilled.usage.remainingCoins, 7);
+  assert.equal(backfilled.usage.historyQuestions, 1);
+  const repeated = await (await POST(request())).json();
+  assert.equal(
+    repeated.totals.attempts,
+    backfilled.totals.attempts,
+    "repeated refresh is idempotent",
+  );
+  assert.equal(repeated.usage.historyQuestions, 1);
+  const recentAt = new Date(Date.now() - 3600000).toISOString();
+  rows.push({
+    ...rows[0],
+    id: "recent-order",
+    payu_txn_id: "recent-gateway",
+    payment_status: "paid",
+    amount: 15000,
+    created_at: recentAt,
+  });
+  await POST(request());
+  const { istDate } = require("../src/lib/revenue-dashboard");
+  const recentDate = istDate(recentAt);
+  const recent = await (
+    await GET(request(`startDate=${recentDate}&endDate=${recentDate}`))
+  ).json();
+  assert.ok(
+    recent.orders.some((o) => o.id === "recent-order"),
+    "the 48-hour safety scan also catches new recent rows",
+  );
+  for (const bytes of objects.values())
+    assert.ok(!gunzipSync(bytes).toString("utf8").includes("PRIVATE QUESTION"));
+  assert.equal(syncState.lease_token, null);
   assert.ok(writes > 0);
   console.log(
-    "Revenue API: auth, expiry, invalid dates, full pagination, saved data reuse, refresh persistence, failure retention, global sorting, filters and snapshot consistency passed.",
+    "Revenue API: auth, pagination, cache-only loads, incremental refresh, historical refunds/deletes, usage changes, race-safe acknowledgment, failure retention, sorting, filters and snapshot consistency passed.",
   );
 })().catch((error) => {
   console.error(error);
