@@ -16,8 +16,8 @@ function issueExplanation(check: MonitorCheck): string {
   if (key === "sales") return message.startsWith("No paid sales")
     ? "No paid sale was recorded in the last hour. Check the checkout flow and incoming traffic."
     : "We couldn't check recent paid sales. Check the payments data in Supabase.";
-  if (key.startsWith("meta:")) return message.startsWith("No reported spend increase")
-    ? `${message.replace("No reported spend increase", "No new ad spend was reported")}. Check whether ads are running in Meta Ads Manager.`
+  if (key.startsWith("meta:")) return message.startsWith("No new Meta Insights spend")
+    ? `${message}. Meta can report spend late; check Ads Manager before assuming ads have stopped.`
     : "We couldn't get a reliable update from this ad account. Check its status in Meta Ads Manager.";
   if (key === "meta") return "We couldn't check the connected ad accounts. Check the Meta account connection.";
   if (key === "payment_reconciliation") return message.includes("remain created/pending")

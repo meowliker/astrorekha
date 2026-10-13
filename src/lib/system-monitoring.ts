@@ -79,17 +79,43 @@ async function metaChecks(db: SupabaseClient, now: number): Promise<MonitorCheck
   const unique = Array.from(new Map(credentials.map((item) => [item.accountId, item])).values());
   if (!unique.length) return [result("meta", "Meta Ads", "unconfigured", "No active ad account is configured", started)];
   return Promise.all(unique.map((credential) => probe(`meta:${credential.accountId}`, credential.label || `Ad account ${credential.accountId}`, async () => {
-    const params = new URLSearchParams({ fields: "id,name,currency,account_status,amount_spent" });
+    const params = new URLSearchParams({ fields: "id,name,currency,account_status,timezone_offset_hours_utc" });
     // The token stays in the server-only Authorization header and never reaches logs or alerts.
     const response = await fetch(`https://graph.facebook.com/v21.0/act_${credential.accountId}?${params}`, {
       headers: { Authorization: `Bearer ${credential.accessToken}` }, cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (response.status === 429) return { status: "warning", message: "Meta API is rate limiting requests" };
     if (!response.ok) return { status: "down", message: `Meta API returned HTTP ${response.status}` };
-    const account = await response.json() as { name?: string; account_status?: number; amount_spent?: string | number };
+    const account = await response.json() as { name?: string; account_status?: number; timezone_offset_hours_utc?: number };
     if (account.account_status !== 1) return { status: "warning", message: `Ad account status ${account.account_status ?? "unknown"}` };
-    const amount = Number(account.amount_spent);
-    if (!Number.isFinite(amount)) return { status: "warning", message: "Meta did not return cumulative spend" };
+    const offset = Number(account.timezone_offset_hours_utc);
+    if (!Number.isFinite(offset)) return { status: "warning", message: "Meta did not return the ad account timezone" };
+    const accountDate = new Date(now + offset * 60 * 60_000).toISOString().slice(0, 10);
+    const insightsParams = new URLSearchParams({
+      fields: "spend,date_start", level: "account", time_increment: "1",
+      breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone",
+      time_range: JSON.stringify({ since: accountDate, until: accountDate }), limit: "100",
+    });
+    const insightsResponse = await fetch(`https://graph.facebook.com/v21.0/act_${credential.accountId}/insights?${insightsParams}`, {
+      headers: { Authorization: `Bearer ${credential.accessToken}` }, cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (insightsResponse.status === 429) return { status: "warning", message: "Meta Insights is rate limiting requests" };
+    if (!insightsResponse.ok) return { status: "down", message: `Meta Insights returned HTTP ${insightsResponse.status}` };
+    const insights = await insightsResponse.json() as {
+      data?: Array<{ spend?: string | number }>;
+      paging?: { next?: string };
+      error?: { message?: string };
+    };
+    if (insights.error || insights.paging?.next || !Array.isArray(insights.data)) {
+      return { status: "warning", message: "Meta returned incomplete hourly spend data" };
+    }
+    const amounts = insights.data.map((row) => Number(row.spend));
+    if (amounts.some((value) => !Number.isFinite(value))) {
+      return { status: "warning", message: "Meta returned invalid hourly spend data" };
+    }
+    // Use the same hourly Insights spend source as Tracking. The account's
+    // amount_spent billing counter can remain unchanged while ads are spending.
+    const amount = amounts.reduce((sum, value) => sum + value, 0);
     const { data: previous, error: readError } = await db.from("monitoring_meta_snapshots")
       .select("amount_spent,captured_at").eq("account_id", credential.accountId).maybeSingle();
     if (readError) return { status: "down", message: "Unable to read previous spend snapshot" };
@@ -104,11 +130,11 @@ async function metaChecks(db: SupabaseClient, now: number): Promise<MonitorCheck
     if (writeError) return { status: "down", message: "Unable to save spend snapshot" };
     if (!previous) return { status: "warming", message: "First spend snapshot saved; comparison starts next run" };
     if (amount < Number(previous.amount_spent)) {
-      return { status: "warming", message: "Meta spend counter reset; new comparison window started" };
+      return { status: "warming", message: "Meta Insights spend baseline changed; new comparison window started" };
     }
     return amount > Number(previous.amount_spent)
-      ? { status: "ok", message: "Meta reported spend increased since the prior check" }
-      : { status: "warning", message: `No reported spend increase for ${Math.floor(elapsedMinutes)} minutes` };
+      ? { status: "ok", message: "Meta Insights reported spend increased since the prior check" }
+      : { status: "warning", message: `No new Meta Insights spend was reported for ${Math.floor(elapsedMinutes)} minutes` };
   })));
 }
 

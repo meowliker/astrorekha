@@ -16,6 +16,12 @@ assert.doesNotMatch(issue.slackText, /Monitoring cannot save its run/);
 assert.match(issue.emailHtml, /Orders and other live data may be affected/);
 assert.doesNotMatch(issue.emailHtml, /<!here>/);
 
+const meta = buildMonitoringAlert([
+  { check: check("meta:123", "Ad account", "No new Meta Insights spend was reported for 30 minutes"), event: "issue" },
+], at);
+assert.match(meta.slackText, /Meta can report spend late/);
+assert.doesNotMatch(meta.slackText, /ads are running/);
+
 const recovered = buildMonitoringAlert([
   { check: check("supabase", "Supabase database", "Database read succeeded"), event: "recovery" },
 ], at);
