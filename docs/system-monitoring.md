@@ -2,6 +2,8 @@
 
 The `/admin/monitoring` page shows the latest service checks, prior runs, open issues, alert delivery history, and alert destinations. Admin sessions protect both the page's API and destination management. Slack webhook URLs are stored in a service-role-only Supabase table and are masked in API responses.
 
+Email and Slack alerts explain the impact in plain language and link to this page for diagnostic details. New Slack issues include `@here`; recovery messages do not ping the channel. Slack's `@here` reaches active channel members according to their notification settings.
+
 ## Deploy
 
 1. Apply `supabase/migrations/20261013120000_create_system_monitoring.sql` to the production Supabase project before deploying this code.

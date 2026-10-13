@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendEmail } from "@/lib/brevo";
 import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
 import { verifyPayUTransaction } from "@/lib/payu-api";
+import { buildMonitoringAlert } from "@/lib/monitoring-alerts";
 
 export type MonitorStatus = "ok" | "warning" | "down" | "unconfigured" | "warming";
 export type MonitorCheck = {
@@ -271,36 +272,30 @@ export function validSlackChatId(value: string): boolean {
   return /^[CDGU][A-Z0-9]{8,20}$/.test(value);
 }
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] || char);
-}
-
 async function sendAlert(db: SupabaseClient | null, runId: string | null, changed: Array<{ check: MonitorCheck; event: "issue" | "recovery" }>): Promise<number> {
   if (!changed.length) return 0;
   const { data } = db ? await db.from("monitoring_destinations").select("id,kind,label,address,enabled").eq("enabled", true) : { data: [] };
   const destinations = Array.from(new Map([...(data || []) as Destination[], ...destinationsFromEnv()]
     .map((item) => [`${item.kind}:${item.address}`, item])).values());
   if (!destinations.length) return 0;
-  const lines = changed.map(({ check, event }) => `${event === "issue" ? "ISSUE" : "RECOVERED"}: ${check.name} — ${check.message}`);
-  const text = `AstroRekha system monitoring\n${lines.join("\n")}\nChecked: ${new Date().toISOString()}\nhttps://astrorekha.com/admin/monitoring`;
-  const html = `<p>AstroRekha system monitoring</p><ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul><p><a href="https://astrorekha.com/admin/monitoring">View status</a></p>`;
+  const { subject, slackText, emailHtml } = buildMonitoringAlert(changed);
   const deliveries = await Promise.all(destinations.map(async (destination) => {
     let delivered = false;
     let error: string | null = null;
     try {
-      if (destination.kind === "email") delivered = await sendEmail({ email: destination.address }, "AstroRekha system status", html);
+      if (destination.kind === "email") delivered = await sendEmail({ email: destination.address }, subject, emailHtml);
       else if (destination.kind === "slack_chat") {
         if (!process.env.SLACK_BOT_TOKEN) throw new Error("Slack bot token is not configured");
         const response = await fetch("https://slack.com/api/chat.postMessage", {
           method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` },
-          body: JSON.stringify({ channel: destination.address, text }), signal: AbortSignal.timeout(TIMEOUT_MS),
+          body: JSON.stringify({ channel: destination.address, text: slackText, link_names: true }), signal: AbortSignal.timeout(TIMEOUT_MS),
         });
         const body = await response.json().catch(() => null) as { ok?: boolean; error?: string } | null;
         delivered = response.ok && body?.ok === true;
         if (!delivered) error = body?.error || `Slack returned HTTP ${response.status}`;
       } else {
         const response = await fetch(destination.address, { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }), signal: AbortSignal.timeout(TIMEOUT_MS) });
+          body: JSON.stringify({ text: slackText }), signal: AbortSignal.timeout(TIMEOUT_MS) });
         delivered = response.ok;
         if (!delivered) error = `Slack returned HTTP ${response.status}`;
       }
