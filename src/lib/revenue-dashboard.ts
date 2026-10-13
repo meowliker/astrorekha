@@ -1,3 +1,4 @@
+import { buildRevenueUsage, type UsageSource } from "./revenue-usage";
 import { buildUpsellCohorts } from "./revenue-upsells";
 import type { PricingConfig } from "./pricing";
 
@@ -374,6 +375,7 @@ export function buildRevenueDashboard(input: {
   range: ReturnType<typeof resolveRevenueRange>;
   attribution: "first" | "last";
   warnings?: string[];
+  usage?: UsageSource | null;
 }) {
   const { range, pricing } = input;
   const deduped = deduplicatePayments(input.payments);
@@ -703,6 +705,28 @@ export function buildRevenueDashboard(input: {
     pricing.bundles,
   );
   const allUpsells = upsellCohorts[0];
+  const usage = buildRevenueUsage(
+    deduped.payments
+      .filter(
+        (p) => Number.isSafeInteger(Number(p.amount)) && p.currency === "INR",
+      )
+      .map((p) => ({ ...p, payment_status: paymentState(p) })),
+    input.usage || null,
+    range,
+    reports,
+  );
+  const reportAnalytics = reports.map((r) => {
+    const direct = getProduct(product("report", r.id));
+    const addOn = allUpsells.reports.find((a) => a.id === r.id);
+    return {
+      ...r,
+      direct,
+      individualAddOnOrders: r.upsellOrders - r.sharedOrders,
+      addOnBuyers: addOn?.buyers || 0,
+      addOnCvr: addOn?.cvr ?? null,
+      holders: usage?.holders.find((h) => h.id === r.id) || null,
+    };
+  });
   const warnings = [...(input.warnings || [])];
   const unidentifiedProducts = Array.from(products.values())
     .filter((p) => p.id === "unidentified")
@@ -740,6 +764,8 @@ export function buildRevenueDashboard(input: {
       (a, b) => b.netPaise - a.netPaise || a.name.localeCompare(b.name),
     ),
     reports,
+    reportAnalytics,
+    usage,
     campaigns: Array.from(campaignMap.values()).sort(
       (a, b) => b.netPaise - a.netPaise,
     ),

@@ -10,7 +10,8 @@ import {
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-export const maxDuration = 60;
+// A manual refresh paginates the complete payment, account and retained-usage history.
+export const maxDuration = 300;
 const headers = { "Cache-Control": "private, no-store, max-age=0" };
 async function handle(request: NextRequest, refresh = false) {
   try {

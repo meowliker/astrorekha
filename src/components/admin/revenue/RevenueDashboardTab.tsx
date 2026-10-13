@@ -15,13 +15,10 @@ import {
   ArrowUpDown,
   RefreshCw,
   Check,
-  ChevronLeft,
-  ChevronRight,
   Download,
   Info,
   Loader2,
   Search,
-  X,
 } from "lucide-react";
 import {
   CATEGORY_LABELS,
@@ -60,33 +57,8 @@ const dateTime = (value: string) =>
     minute: "2-digit",
     timeZone: "Asia/Kolkata",
   });
-const tabs = [
-  "Overview",
-  "Products",
-  "Reports",
-  "Upsells",
-  "Coins & passes",
-  "Orders",
-] as const;
+const tabs = ["Overview", "Bundles", "Add-ons", "Coins", "Reports"] as const;
 type Tab = (typeof tabs)[number];
-const orderSortKeys = [
-  "createdAt",
-  "product",
-  "customer",
-  "state",
-  "amountPaise",
-  "netPaise",
-  "source",
-];
-const stateLabels: Record<string, string> = {
-  paid: "Paid",
-  refunded: "Refunded",
-  refund_pending: "Refund pending",
-  pending: "Open",
-  failed: "Failed / abandoned",
-  unknown: "Unknown",
-  adjustment: "Adjustment",
-};
 
 function Metric({
   label,
@@ -252,12 +224,10 @@ function Table({
 }
 function ProductTable({
   rows,
-  onSelect,
   showOffers = false,
   searchable = true,
 }: {
   rows: ProductMetric[];
-  onSelect: (key: string) => void;
   showOffers?: boolean;
   searchable?: boolean;
 }) {
@@ -295,13 +265,7 @@ function ProductTable({
       {rows.map((row) => (
         <tr key={row.key}>
           <td>
-            <button
-              className={styles.productLink}
-              onClick={() => onSelect(row.key)}
-            >
-              {row.name}
-              <ArrowUpRight size={13} />
-            </button>
+            <strong>{row.name}</strong>
             <small>
               {CATEGORY_LABELS[row.category]} · {row.id}
             </small>
@@ -541,30 +505,16 @@ export default function RevenueDashboardTab({
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [search, setSearch] = useState("");
-  const [productCategory, setProductCategory] = useState("all");
-  const [orderProduct, setOrderProduct] = useState("");
-  const [orderState, setOrderState] = useState("all");
-  const [orderCategory, setOrderCategory] = useState("all");
-  const [orderSource, setOrderSource] = useState("all");
-  const [orderCampaign, setOrderCampaign] = useState("all");
-  const [orderSort, setOrderSort] = useState({
-    column: 0,
-    direction: "desc" as SortDirection,
-  });
+  const [reportView, setReportView] = useState("performance");
+  const [addOnView, setAddOnView] = useState("all");
   const [productActivity, setProductActivity] = useState("all");
   const [upsellBundle, setUpsellBundle] = useState("all");
   const lastRefresh = useRef({ revision: 0, signal: refreshSignal });
   const refreshPending = useRef(false);
-  const [page, setPage] = useState(0);
-  const [orderRows, setOrderRows] = useState<RevenueOrder[]>([]);
-  const [orderTotal, setOrderTotal] = useState(0);
-  const [orderLoading, setOrderLoading] = useState(false);
-  const [orderError, setOrderError] = useState<string | null>(null);
   const [exportStatus, setExportStatus] = useState("");
   const [exporting, setExporting] = useState(false);
   const exportController = useRef<AbortController | null>(null);
   const [definitions, setDefinitions] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState<RevenueOrder | null>(null);
   const load = useCallback(() => setRevision((v) => v + 1), []);
   useEffect(() => {
     const controller = new AbortController();
@@ -619,31 +569,11 @@ export default function RevenueDashboardTab({
     void read();
     return () => controller.abort();
   }, [range, attribution, revision, refreshSignal, router]);
-  useEffect(() => {
-    setPage(0);
-  }, [
-    search,
-    orderProduct,
-    orderState,
-    orderCategory,
-    orderSource,
-    orderCampaign,
-    orderSort,
-    data,
-  ]);
-  useEffect(() => {
-    if (!selectedOrder) return;
-    const escape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSelectedOrder(null);
-    };
-    window.addEventListener("keydown", escape);
-    return () => window.removeEventListener("keydown", escape);
-  }, [selectedOrder]);
   const filteredProducts = useMemo(
     () =>
       data?.products.filter(
         (p) =>
-          (productCategory === "all" || p.category === productCategory) &&
+          p.category === "bundle" &&
           (productActivity === "all" ||
             (productActivity === "paid"
               ? p.paid > 0
@@ -652,86 +582,10 @@ export default function RevenueDashboardTab({
                 : p.attempts > 0)) &&
           `${p.name} ${p.id}`.toLowerCase().includes(search.toLowerCase()),
       ) || [],
-    [data, productCategory, productActivity, search],
+    [data, productActivity, search],
   );
-  useEffect(() => {
-    if (!data || tab !== "Orders") return;
-    const controller = new AbortController();
-    setOrderLoading(true);
-    setOrderError(null);
-    setOrderRows([]);
-    const timer = setTimeout(
-      () => {
-        const result =
-          !search &&
-          !orderProduct &&
-          orderState === "all" &&
-          orderCategory === "all" &&
-          orderSource === "all" &&
-          orderCampaign === "all" &&
-          orderSort.column === 0 &&
-          orderSort.direction === "desc" &&
-          page === 0
-            ? Promise.resolve({
-                orders: data.orders,
-                orderPage: data.orderPage,
-              })
-            : readOrderPage(
-                data,
-                {
-                  query: search,
-                  product: orderProduct,
-                  state: orderState,
-                  category: orderCategory,
-                  source: orderSource,
-                  campaign: orderCampaign,
-                  sort: orderSortKeys[orderSort.column],
-                  direction: orderSort.direction,
-                  offset: page * 50,
-                },
-                controller.signal,
-              );
-        result
-          .then((value) => {
-            if (!controller.signal.aborted) {
-              setOrderRows(value.orders);
-              setOrderTotal(value.orderPage.total);
-            }
-          })
-          .catch((failure) => {
-            if (!controller.signal.aborted) {
-              setOrderError(
-                failure instanceof Error
-                  ? failure.message
-                  : "Unable to load orders.",
-              );
-              setOrderTotal(0);
-            }
-          })
-          .finally(() => {
-            if (!controller.signal.aborted) setOrderLoading(false);
-          });
-      },
-      search ? 250 : 0,
-    );
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [
-    data,
-    tab,
-    search,
-    orderProduct,
-    orderState,
-    orderCategory,
-    orderSource,
-    orderCampaign,
-    orderSort,
-    page,
-  ]);
   useEffect(() => () => exportController.current?.abort(), []);
-  async function exportReport(filtered = false) {
+  async function exportReport() {
     if (!data || exporting) return;
     const controller = new AbortController();
     exportController.current = controller;
@@ -744,14 +598,6 @@ export default function RevenueDashboardTab({
         const result = await readOrderPage(
           data,
           {
-            query: filtered ? search : "",
-            product: filtered ? orderProduct : "",
-            state: filtered ? orderState : "all",
-            category: filtered ? orderCategory : "all",
-            source: filtered ? orderSource : "all",
-            campaign: filtered ? orderCampaign : "all",
-            sort: filtered ? orderSortKeys[orderSort.column] : "createdAt",
-            direction: filtered ? orderSort.direction : "desc",
             offset: orders.length,
             limit: 2000,
           },
@@ -781,25 +627,9 @@ export default function RevenueDashboardTab({
       setExporting(false);
     }
   }
-  const selectProduct = (key: string) => {
-    setOrderCategory("all");
-    setOrderSource("all");
-    setOrderCampaign("all");
-    setPage(0);
-    setOrderProduct(key);
-    setOrderState("all");
-    setSearch("");
-    setTab("Orders");
-  };
   const switchTab = (next: Tab) => {
-    setOrderCategory("all");
-    setOrderSource("all");
-    setOrderCampaign("all");
-    setPage(0);
     setTab(next);
     setSearch("");
-    setOrderProduct("");
-    setOrderState("all");
   };
   const totals = data?.totals;
   const upsellCohort =
@@ -824,7 +654,7 @@ export default function RevenueDashboardTab({
             disabled={!data || loading || exporting}
             onClick={() => void exportReport()}
           >
-            <Download size={15} /> Export orders
+            <Download size={15} /> Export payments
           </button>
         </div>
       </div>
@@ -907,8 +737,10 @@ export default function RevenueDashboardTab({
               <p>
                 <b>Reports & coins.</b> Shared upsell revenue stays on the
                 combination sold. Bundle prices are not split between reports.
-                Coins are recorded purchased quantities; bonus coins, wallet
-                balances and usage are not measured here.
+                Purchased coins use stored order quantities. Current wallet
+                balances and retained questions are shown in Coins with their
+                coverage; exact coin debits cannot be inferred from chat
+                history.
               </p>
               <p>
                 <b>Saved data.</b> Reports calculate from the last complete
@@ -1024,8 +856,15 @@ export default function RevenueDashboardTab({
                         <button
                           key={c.key}
                           onClick={() => {
-                            setProductCategory(c.key);
-                            switchTab("Products");
+                            switchTab(
+                              c.key === "bundle"
+                                ? "Bundles"
+                                : c.key === "upsell"
+                                  ? "Add-ons"
+                                  : c.key === "coins" || c.key === "chat_pass"
+                                    ? "Coins"
+                                    : "Reports",
+                            );
                           }}
                         >
                           <span>
@@ -1112,11 +951,10 @@ export default function RevenueDashboardTab({
                   action={
                     <button
                       onClick={() => {
-                        setProductCategory("all");
-                        switchTab("Products");
+                        switchTab("Bundles");
                       }}
                     >
-                      View all products <ArrowUpRight size={14} />
+                      View bundles <ArrowUpRight size={14} />
                     </button>
                   }
                 >
@@ -1125,7 +963,6 @@ export default function RevenueDashboardTab({
                     rows={data.products
                       .filter((p) => p.attempts > 0)
                       .slice(0, 8)}
-                    onSelect={selectProduct}
                   />
                 </Section>
                 <details className={styles.daily}>
@@ -1165,39 +1002,27 @@ export default function RevenueDashboardTab({
                 </details>
               </>
             )}
-            {tab === "Products" && (
+            {tab === "Bundles" && (
               <Section
-                title="Product performance"
-                description="Recorded checkout conversion for every bundle, report, upsell, coin package and pass. Select a product to inspect its orders."
+                title="Bundle performance"
+                description="Every bundle SKU, including retired bundles with recorded sales. All amounts use recorded payments."
               >
                 <div className={styles.tableTools}>
                   <label className={styles.search}>
                     <Search size={16} />
                     <input
-                      placeholder="Search products…"
-                      aria-label="Search products"
+                      placeholder="Search bundles…"
+                      aria-label="Search bundles"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                     />
                   </label>
                   <select
-                    aria-label="Product category"
-                    value={productCategory}
-                    onChange={(e) => setProductCategory(e.target.value)}
-                  >
-                    <option value="all">All categories</option>
-                    {Object.entries(CATEGORY_LABELS).map(([id, label]) => (
-                      <option key={id} value={id}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    aria-label="Product activity"
+                    aria-label="Bundle activity"
                     value={productActivity}
                     onChange={(e) => setProductActivity(e.target.value)}
                   >
-                    <option value="all">All products</option>
+                    <option value="all">All bundles</option>
                     <option value="attempts">With checkouts</option>
                     <option value="paid">With paid orders</option>
                     <option value="refunds">With refunds</option>
@@ -1206,66 +1031,137 @@ export default function RevenueDashboardTab({
                 <ProductTable
                   rows={filteredProducts}
                   searchable={false}
-                  onSelect={selectProduct}
                   showOffers
                 />
                 <p className={styles.footnote}>
-                  Offer CVR uses matched viewers, including a single report
-                  purchased in a multi-report upsell. — means no usable audience
-                  denominator.
+                  Checkout CVR = paid orders ÷ recorded checkout attempts. Offer
+                  CVR = matched buyers ÷ tracked offer viewers. — indicates a
+                  missing denominator. Included-report revenue is not counted
+                  again under Reports.
                 </p>
               </Section>
             )}
             {tab === "Reports" && (
               <Section
-                title="Every report, across purchase paths"
-                description="Retained purchases only. Shared combination revenue is reported under Upsells; bundle contents are not inferred from today’s catalog."
+                title="Report analytics"
+                description="All catalog reports and recorded historical reports. Direct purchases, post-bundle add-ons and current access each have their own denominator."
               >
-                <Table
-                  filterLabel="Filter reports"
-                  values={data.reports.map((r) => [
-                    r.name,
-                    r.standaloneOrders,
-                    r.upsellOrders,
-                    r.standalonePaise,
-                    r.singleUpsellPaise,
-                    r.sharedOrders,
-                  ])}
-                  headers={[
-                    "Report",
-                    "Standalone orders",
-                    "Upsell orders",
-                    "Standalone revenue",
-                    "Single-item upsell revenue",
-                    "In multi-report orders",
-                  ]}
-                >
-                  {data.reports.map((r) => (
-                    <tr key={r.id}>
-                      <td>
-                        {r.name}
-                        <small>{r.id}</small>
-                      </td>
-                      <td>{number(r.standaloneOrders)}</td>
-                      <td>{number(r.upsellOrders)}</td>
-                      <td>{money(r.standalonePaise)}</td>
-                      <td>{money(r.singleUpsellPaise)}</td>
-                      <td>
-                        {number(r.sharedOrders)}
-                        <small>Revenue stays on combination</small>
-                      </td>
-                    </tr>
-                  ))}
-                </Table>
-                <p className={styles.footnote}>
-                  These are purchased report entitlements, not generated or
-                  delivered reports. A combination contributes one purchased
-                  item to each included report; those item counts must not be
-                  summed as orders.
-                </p>
+                <div className={styles.tableTools}>
+                  <select
+                    aria-label="Report analytics view"
+                    value={reportView}
+                    onChange={(e) => setReportView(e.target.value)}
+                  >
+                    <option value="performance">
+                      Direct purchase conversion
+                    </option>
+                    <option value="paths">Purchase paths</option>
+                    <option value="access">Current access</option>
+                  </select>
+                </div>
+                {reportView === "performance" && (
+                  <>
+                    <ProductTable
+                      rows={data.reportAnalytics.map((r) => r.direct)}
+                      showOffers
+                    />
+                    <p className={styles.footnote}>
+                      Direct checkout CVR = paid direct report orders ÷ recorded
+                      direct checkouts. Offer CVR requires a recorded view and
+                      subsequent matched purchase; missing tracking is shown as
+                      —.
+                    </p>
+                  </>
+                )}
+                {reportView === "paths" && (
+                  <>
+                    <Table
+                      filterLabel="Filter report purchase paths"
+                      headers={[
+                        "Report",
+                        "Direct orders",
+                        "Individual add-on orders",
+                        "In combined add-ons",
+                        "Bundle-buyer add-on CVR",
+                        "Direct net collected",
+                        "Individual add-on net",
+                      ]}
+                      values={data.reportAnalytics.map((r) => [
+                        r.name,
+                        r.standaloneOrders,
+                        r.individualAddOnOrders,
+                        r.sharedOrders,
+                        r.addOnCvr,
+                        r.standalonePaise,
+                        r.singleUpsellPaise,
+                      ])}
+                    >
+                      {data.reportAnalytics.map((r) => (
+                        <tr key={r.id}>
+                          <td>{r.name}</td>
+                          <td>{number(r.standaloneOrders)}</td>
+                          <td>{number(r.individualAddOnOrders)}</td>
+                          <td>{number(r.sharedOrders)}</td>
+                          <td>{percent(r.addOnCvr)}</td>
+                          <td>{money(r.standalonePaise)}</td>
+                          <td>{money(r.singleUpsellPaise)}</td>
+                        </tr>
+                      ))}
+                    </Table>
+                    <p className={styles.footnote}>
+                      Purchase-path counts exclude fully refunded orders. A
+                      combined basket contributes one unit to each included
+                      report, but its revenue stays on that basket in Add-ons.
+                      Historical bundle contents and item prices were not saved
+                      per order, so neither bundle revenue nor combination
+                      revenue is allocated to reports.
+                    </p>
+                  </>
+                )}
+                {reportView === "access" && (
+                  <>
+                    {data.usage ? (
+                      <Table
+                        filterLabel="Filter report access"
+                        headers={[
+                          "Report",
+                          "Paid customers with access",
+                          "Customers with known access flags",
+                          "Access rate",
+                        ]}
+                        values={data.reportAnalytics.map((r) => [
+                          r.name,
+                          r.holders?.holders,
+                          r.holders?.knownCustomers,
+                          r.holders?.accessRate,
+                        ])}
+                      >
+                        {data.reportAnalytics.map((r) => (
+                          <tr key={r.id}>
+                            <td>{r.name}</td>
+                            <td>{number(r.holders?.holders || 0)}</td>
+                            <td>{number(r.holders?.knownCustomers || 0)}</td>
+                            <td>{percent(r.holders?.accessRate ?? null)}</td>
+                          </tr>
+                        ))}
+                      </Table>
+                    ) : (
+                      <Empty>
+                        Current report access is unavailable. Refresh to reload
+                        complete account data.
+                      </Empty>
+                    )}
+                    <p className={styles.footnote}>
+                      Current access flags among customers with a paid purchase
+                      in the selected dates, as of the last sync. Access is not
+                      proof that a report was generated or read, and is not a
+                      historical bundle entitlement count.
+                    </p>
+                  </>
+                )}
               </Section>
             )}
-            {tab === "Upsells" && upsellCohort && (
+            {tab === "Add-ons" && upsellCohort && (
               <>
                 <Section
                   title="Bundle buyers → post-bundle add-ons"
@@ -1406,24 +1302,196 @@ export default function RevenueDashboardTab({
                   </p>
                 </Section>
                 <Section
-                  title="Upsell payment detail"
-                  description="Recorded orders and amounts for each exact combination within the selected dates. Checkout conversion below uses orders, separately from the buyer cohort above."
+                  title="Individual & combined add-ons"
+                  description="Exact baskets across all bundle cohorts in the selected dates. Checkout conversion uses orders; the bundle filter above applies only to buyer conversion."
                 >
+                  <div className={styles.tableTools}>
+                    <select
+                      aria-label="Add-on basket type"
+                      value={addOnView}
+                      onChange={(e) => setAddOnView(e.target.value)}
+                    >
+                      <option value="all">Individual & combined</option>
+                      <option value="individual">Individual add-ons</option>
+                      <option value="combined">Combined add-ons</option>
+                    </select>
+                  </div>
                   <ProductTable
                     rows={data.products.filter(
                       (p) =>
                         p.category === "upsell" &&
+                        (addOnView === "all" ||
+                          (addOnView === "individual"
+                            ? p.items.length === 1
+                            : p.items.length > 1)) &&
                         p.items.some((id) =>
                           upsellCohort.reports.some((r) => r.id === id),
                         ),
                     )}
-                    onSelect={selectProduct}
                   />
                 </Section>
               </>
             )}
-            {tab === "Coins & passes" && (
+            {tab === "Coins" && (
               <>
+                <Section
+                  title="Usage & remaining balance"
+                  description="Customers with a paid purchase in the selected dates. Balances and retained chat history reflect the last sync; usage is not limited to coin-package buyers."
+                >
+                  {data.usage ? (
+                    <>
+                      <div className={styles.threeMetrics}>
+                        <Metric
+                          label="Paying customers with questions"
+                          value={`${number(data.usage.withQuestions)} / ${number(data.usage.paidCustomers)}`}
+                          detail={`${percent(data.usage.chatActivationRate)} recorded chat activation`}
+                        />
+                        <Metric
+                          label="Current coins remaining"
+                          value={
+                            data.usage.balanceKnown
+                              ? number(data.usage.remainingCoins)
+                              : "—"
+                          }
+                          detail={`${number(data.usage.balanceKnown)} of ${number(data.usage.paidCustomers)} customers have a known balance`}
+                        />
+                        <Metric
+                          label="Bought coin packages"
+                          value={percent(data.usage.coinBuyerCvr)}
+                          detail={`${number(data.usage.coinBuyers)} of ${number(data.usage.paidCustomers)} paid customers · recorded history`}
+                        />
+                      </div>
+                      <Table
+                        headers={["Metric", "Value", "Scope"]}
+                        values={[
+                          [
+                            "Recorded questions",
+                            data.usage.periodQuestions,
+                            "Selected dates",
+                          ],
+                          [
+                            "Retained question history",
+                            data.usage.historyQuestions,
+                            "All retained history",
+                          ],
+                          [
+                            "Balance with no chat",
+                            data.usage.withBalanceNoChat,
+                            "Known wallets",
+                          ],
+                          [
+                            "Inactive 7+ days",
+                            data.usage.inactiveSevenDays,
+                            "Known wallets",
+                          ],
+                          [
+                            "Low balance chat users",
+                            data.usage.lowBalanceChatUsers,
+                            "Known wallets",
+                          ],
+                          [
+                            "Repeat coin buyers",
+                            data.usage.repeatCoinBuyers,
+                            "Recorded history",
+                          ],
+                        ]}
+                      >
+                        <tr>
+                          <td>Recorded questions in selected dates</td>
+                          <td>{number(data.usage.periodQuestions)}</td>
+                          <td>Among this paying-customer cohort</td>
+                        </tr>
+                        <tr>
+                          <td>Recorded questions in retained history</td>
+                          <td>{number(data.usage.historyQuestions)}</td>
+                          <td>
+                            {number(data.usage.undatedQuestions)} undated
+                            questions excluded from date-specific counts
+                          </td>
+                        </tr>
+                        <tr>
+                          <td>Balance remaining, no recorded chat</td>
+                          <td>{number(data.usage.withBalanceNoChat)}</td>
+                          <td>Customers with a known positive balance</td>
+                        </tr>
+                        <tr>
+                          <td>Above, first purchase at least 7 days ago</td>
+                          <td>{number(data.usage.inactiveSevenDays)}</td>
+                          <td>Age measured at last sync</td>
+                        </tr>
+                        <tr>
+                          <td>Chat users with fewer than 3 coins</td>
+                          <td>{number(data.usage.lowBalanceChatUsers)}</td>
+                          <td>
+                            Customers with retained questions and a known
+                            balance
+                          </td>
+                        </tr>
+                        <tr>
+                          <td>Repeat coin-package buyers</td>
+                          <td>
+                            {number(data.usage.repeatCoinBuyers)} ·{" "}
+                            {percent(data.usage.repeatCoinBuyerRate)}
+                          </td>
+                          <td>
+                            Two or more paid coin orders ÷ coin buyers, across
+                            recorded history
+                          </td>
+                        </tr>
+                      </Table>
+                      <p className={styles.footnote}>
+                        Balances are current wallet values, including any
+                        remaining free or bundle credits. History may have been
+                        deleted or overwritten. Recorded questions do not
+                        establish exact coins spent. Duplicate account aliases
+                        use the latest stored account balance once per matched
+                        customer.
+                      </p>
+                    </>
+                  ) : (
+                    <Empty>
+                      Wallet and chat usage could not be fully loaded. Refresh
+                      to retry; payment totals are still available.
+                    </Empty>
+                  )}
+                </Section>
+                {data.usage && (
+                  <Section
+                    title="Usage distribution"
+                    description="Retained questions per paying customer. Coin purchases cover recorded history for the same customers."
+                  >
+                    <Table
+                      headers={[
+                        "Recorded questions",
+                        "Customers",
+                        "Customer share",
+                        "Bought coins",
+                        "Coin buyer CVR",
+                        "Coin purchases",
+                      ]}
+                      values={data.usage.bands.map((b) => [
+                        b.label,
+                        b.customers,
+                        b.share,
+                        b.coinBuyers,
+                        b.coinBuyerCvr,
+                        b.coinPurchases,
+                      ])}
+                    >
+                      {data.usage.bands.map((b) => (
+                        <tr key={b.label}>
+                          <td>{b.label}</td>
+                          <td>{number(b.customers)}</td>
+                          <td>{percent(b.share)}</td>
+                          <td>{number(b.coinBuyers)}</td>
+                          <td>{percent(b.coinBuyerCvr)}</td>
+                          <td>{number(b.coinPurchases)}</td>
+                        </tr>
+                      ))}
+                    </Table>
+                  </Section>
+                )}
+
                 <Section
                   title="Coin purchases"
                   description="Quantities from paid order records. Fully refunded purchases are excluded from coin totals."
@@ -1457,15 +1525,7 @@ export default function RevenueDashboardTab({
                       .filter((p) => p.category === "coins")
                       .map((p) => (
                         <tr key={p.key}>
-                          <td>
-                            <button
-                              className={styles.productLink}
-                              onClick={() => selectProduct(p.key)}
-                            >
-                              {p.name}
-                              <ArrowUpRight size={13} />
-                            </button>
-                          </td>
+                          <td>{p.name}</td>
                           <td>{number(p.attempts)}</td>
                           <td>{number(p.paid)}</td>
                           <td>{percent(p.checkoutCvr)}</td>
@@ -1480,9 +1540,9 @@ export default function RevenueDashboardTab({
                   </Table>
                   <p className={styles.footnote}>
                     Package IDs are historical labels and may differ from coin
-                    quantities. Bonus credits, wallet balances, spending and
-                    refund coin reversals require a separate wallet ledger; they
-                    are not inferred here.
+                    quantities. Exact coins spent and refund coin reversals
+                    require a complete debit ledger; they are not inferred from
+                    question counts.
                   </p>
                 </Section>
                 <Section
@@ -1493,202 +1553,10 @@ export default function RevenueDashboardTab({
                     rows={data.products.filter(
                       (p) => p.category === "chat_pass",
                     )}
-                    onSelect={selectProduct}
                     showOffers
                   />
                 </Section>
               </>
-            )}
-            {tab === "Orders" && (
-              <Section
-                title="Order ledger"
-                description="Inspect the records behind every metric. Refund entries are joined to the original gateway order."
-                action={
-                  <button
-                    onClick={() => void exportReport(true)}
-                    disabled={!orderTotal || exporting || orderLoading}
-                  >
-                    <Download size={14} /> Export filtered
-                  </button>
-                }
-              >
-                <div className={styles.tableTools}>
-                  <label className={styles.search}>
-                    <Search size={16} />
-                    <input
-                      aria-label="Search orders"
-                      placeholder="Order, customer, product or campaign…"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
-                  </label>
-                  <select
-                    aria-label="Payment status"
-                    value={orderState}
-                    onChange={(e) => setOrderState(e.target.value)}
-                  >
-                    <option value="all">All statuses</option>
-                    {Object.entries(stateLabels).map(([id, label]) => (
-                      <option value={id} key={id}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    aria-label="Order product"
-                    value={orderProduct}
-                    onChange={(e) => setOrderProduct(e.target.value)}
-                  >
-                    <option value="">All products</option>
-                    {data.products.map((p) => (
-                      <option key={p.key} value={p.key}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    aria-label="Order category"
-                    value={orderCategory}
-                    onChange={(e) => setOrderCategory(e.target.value)}
-                  >
-                    <option value="all">All categories</option>
-                    {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
-                      <option key={key} value={key}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    aria-label="UTM source"
-                    value={orderSource}
-                    onChange={(e) => setOrderSource(e.target.value)}
-                  >
-                    <option value="all">All sources</option>
-                    {data.filters?.sources.map((source) => (
-                      <option key={source} value={source}>
-                        {source}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    aria-label="UTM campaign"
-                    value={orderCampaign}
-                    onChange={(e) => setOrderCampaign(e.target.value)}
-                  >
-                    <option value="all">All campaigns</option>
-                    {data.filters?.campaigns.map((campaign) => (
-                      <option key={campaign} value={campaign}>
-                        {campaign}
-                      </option>
-                    ))}
-                  </select>
-                  {(search ||
-                    orderProduct ||
-                    orderState !== "all" ||
-                    orderCategory !== "all" ||
-                    orderSource !== "all" ||
-                    orderCampaign !== "all") && (
-                    <button
-                      onClick={() => {
-                        setSearch("");
-                        setOrderProduct("");
-                        setOrderState("all");
-                        setOrderCategory("all");
-                        setOrderSource("all");
-                        setOrderCampaign("all");
-                        setPage(0);
-                      }}
-                    >
-                      Reset filters
-                    </button>
-                  )}
-                  {orderProduct && (
-                    <button onClick={() => setOrderProduct("")}>
-                      Clear product filter <X size={14} />
-                    </button>
-                  )}
-                  <span>{number(orderTotal)} orders</span>
-                </div>
-                <Table
-                  sort={orderSort}
-                  onSort={(column, direction) => {
-                    setPage(0);
-                    setOrderSort({ column, direction });
-                  }}
-                  headers={[
-                    "Order / checkout IST",
-                    "Product",
-                    "Customer",
-                    "Status",
-                    "Amount",
-                    "Net collected",
-                    "UTM source / campaign",
-                  ]}
-                >
-                  {orderRows.map((o) => (
-                    <tr key={o.id}>
-                      <td>
-                        <button
-                          className={styles.productLink}
-                          onClick={() => setSelectedOrder(o)}
-                        >
-                          {o.gatewayId}
-                        </button>
-                        <small>{dateTime(o.createdAt)}</small>
-                      </td>
-                      <td>
-                        {o.product}
-                        <small>{CATEGORY_LABELS[o.category]}</small>
-                      </td>
-                      <td>{o.customer}</td>
-                      <td>
-                        <span
-                          className={`${styles.badge} ${o.state === "paid" ? styles.paid : ""}`}
-                        >
-                          {stateLabels[o.state]}
-                        </span>
-                      </td>
-                      <td>{money(o.amountPaise)}</td>
-                      <td className={styles.emphasis}>{money(o.netPaise)}</td>
-                      <td>
-                        {o.source}
-                        <small>{o.campaign || "No campaign"}</small>
-                      </td>
-                    </tr>
-                  ))}
-                </Table>
-                {orderLoading && <Empty>Loading matching records…</Empty>}
-                {orderError && (
-                  <div className={styles.error} role="alert">
-                    {orderError}
-                    <button onClick={load}>Refresh dashboard</button>
-                  </div>
-                )}
-                {!orderLoading && !orderError && !orderRows.length && (
-                  <Empty>No orders match these filters.</Empty>
-                )}
-                <div className={styles.pagination}>
-                  <span>
-                    {orderTotal
-                      ? `${page * 50 + 1}–${Math.min(orderTotal, page * 50 + 50)} of ${number(orderTotal)}`
-                      : "0 orders"}
-                  </span>
-                  <button
-                    aria-label="Previous page"
-                    disabled={page === 0 || orderLoading}
-                    onClick={() => setPage((v) => v - 1)}
-                  >
-                    <ChevronLeft size={16} />
-                  </button>
-                  <button
-                    aria-label="Next page"
-                    disabled={(page + 1) * 50 >= orderTotal || orderLoading}
-                    onClick={() => setPage((v) => v + 1)}
-                  >
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-              </Section>
             )}
             <footer className={styles.footer}>
               <span>
@@ -1701,47 +1569,6 @@ export default function RevenueDashboardTab({
                 Sources & definitions <Info size={13} />
               </button>
             </footer>
-          </div>
-        )}
-        {selectedOrder && (
-          <div
-            className={styles.orderDetail}
-            role="region"
-            aria-label="Order details"
-          >
-            <div className={styles.sectionHead}>
-              <h2>Order details</h2>
-              <button
-                autoFocus
-                onClick={() => setSelectedOrder(null)}
-                aria-label="Close order details"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <dl>
-              {Object.entries({
-                "Gateway order": selectedOrder.gatewayId,
-                "Record ID": selectedOrder.id,
-                "Checkout (IST)": dateTime(selectedOrder.createdAt),
-                Customer: selectedOrder.customer,
-                Product: selectedOrder.product,
-                "Reconciled status": selectedOrder.rawStatus,
-                "Order amount": money(selectedOrder.amountPaise),
-                "Net collected": money(selectedOrder.netPaise),
-                "Recorded coins": selectedOrder.coins ?? "Not recorded",
-                "UTM source": selectedOrder.source,
-                "UTM medium": selectedOrder.medium || "Not recorded",
-                "UTM campaign": selectedOrder.campaign || "Not recorded",
-                "UTM content": selectedOrder.content || "Not recorded",
-                "UTM term": selectedOrder.term || "Not recorded",
-              }).map(([label, value]) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd>{value}</dd>
-                </div>
-              ))}
-            </dl>
           </div>
         )}
       </div>

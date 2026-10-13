@@ -1,3 +1,4 @@
+import type { UsageSource, UsageUser, UsageChat } from "@/lib/revenue-usage";
 import { createHash, randomUUID } from "node:crypto";
 import { gzipSync, gunzipSync } from "node:zlib";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -15,14 +16,17 @@ import {
 
 // Private Storage persists across deployments. No public URLs or browser credentials.
 export const REVENUE_BUCKET = "admin-revenue-cache";
-const VERSION = 1;
+const VERSION = 2;
+const MANIFEST_PATH = `latest-v${VERSION}.json.gz`;
 // Recalculate reports after formula changes without rereading source payment history.
-const REPORT_VERSION = 3;
+const REPORT_VERSION = 4;
 type Manifest = { version: number; id: string; generatedAt: string };
 type Source = Manifest & {
   payments: PaymentRow[];
   events: OfferEvent[];
   pricing: PricingConfig;
+  usage: UsageSource | null;
+  warnings: string[];
 };
 const PAYMENT_FIELDS =
   "id,payu_txn_id,razorpay_order_id,user_id,customer_email,type,bundle_id,feature,amount,currency,payment_status,coins,created_at,fulfilled_at,utm_source,utm_medium,utm_campaign,utm_content,utm_term,first_touch,last_touch";
@@ -32,14 +36,25 @@ const EVENT_FIELDS =
 /** Keyset pagination avoids PostgREST's default 1,000-row cap. Never return a partial sum. */
 async function readPages<T extends { id: string }>(
   page: (
-    after: string | null,
+    after: T | null,
   ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
   ceiling: number,
 ): Promise<T[]> {
   const rows: T[] = [];
-  let after: string | null = null;
+  let after: T | null = null;
   for (;;) {
-    const { data, error } = await page(after);
+    let result = await page(after);
+    // Retry a transient database timeout at the same cursor; never append a partial page.
+    for (
+      let retry = 0;
+      result.error &&
+      /statement timeout/i.test(result.error.message) &&
+      retry < 2;
+      retry++
+    ) {
+      result = await page(after);
+    }
+    const { data, error } = result;
     if (error) throw new Error(error.message);
     if (!data?.length) return rows;
     rows.push(...data);
@@ -47,8 +62,8 @@ async function readPages<T extends { id: string }>(
       throw new Error(
         "Range exceeds the safe read limit. No partial totals returned.",
       );
-    const next = data[data.length - 1].id;
-    if (next === after)
+    const next = data[data.length - 1];
+    if (next.id === after?.id)
       throw new Error(
         "Pagination did not advance. No partial totals returned.",
       );
@@ -58,7 +73,9 @@ async function readPages<T extends { id: string }>(
 }
 
 async function read<T>(db: SupabaseClient, path: string): Promise<T | null> {
-  const { data, error } = await db.storage.from(REVENUE_BUCKET).download(path);
+  const { data, error } = await db.storage
+    .from(REVENUE_BUCKET)
+    .download(path, {}, { cache: "no-store" });
   if (error) {
     // Blob downloads wrap non-2xx Responses in StorageUnknownError.
     // Inspect the response body so a missing object is not confused with an outage.
@@ -114,10 +131,63 @@ async function ensurePrivateBucket(db: SupabaseClient) {
       throw new Error("Private revenue storage is unavailable.");
   }
 }
+async function readUsage(
+  db: SupabaseClient,
+  capturedAt: string,
+): Promise<UsageSource> {
+  const [users, chats] = await Promise.allSettled([
+    readPages<UsageUser>((after) => {
+      let q = db
+        .from("users")
+        .select("id,email,coins,unlocked_features,updated_at")
+        .order("id")
+        .limit(1000);
+      if (after) q = q.gt("id", after.id);
+      return q;
+    }, 250000),
+    readPages<UsageChat>(async (after) => {
+      let q = db
+        .from("chat_messages")
+        .select("id,messages")
+        .order("id")
+        .limit(25);
+      if (after) q = q.gt("id", after.id);
+      const response = await q;
+      return {
+        error: response.error,
+        data:
+          response.data?.map((row) => {
+            const occurrences = new Map<string, number>();
+            return {
+              id: String(row.id),
+              questions: (Array.isArray(row.messages) ? row.messages : [])
+                .filter((m: { role?: string }) => m?.role === "user")
+                .map((m: { timestamp?: unknown; content?: unknown }) => {
+                  const at =
+                    typeof m.timestamp === "string" &&
+                    Number.isFinite(Date.parse(m.timestamp))
+                      ? new Date(m.timestamp).toISOString()
+                      : null;
+                  const fingerprint = createHash("sha256")
+                    .update(JSON.stringify([m.timestamp, m.content]))
+                    .digest("hex");
+                  const occurrence = occurrences.get(fingerprint) || 0;
+                  occurrences.set(fingerprint, occurrence + 1);
+                  return { at, key: `${fingerprint}:${occurrence}` };
+                }),
+            };
+          }) || null,
+      };
+    }, 250000),
+  ]);
+  if (users.status === "rejected") throw users.reason;
+  if (chats.status === "rejected") throw chats.reason;
+  return { users: users.value, chats: chats.value, capturedAt };
+}
 async function syncSource(db: SupabaseClient): Promise<Source> {
   await ensurePrivateBucket(db);
   const generatedAt = new Date().toISOString();
-  const [payments, events, catalog] = await Promise.all([
+  const [payments, events, catalog, usageResult] = await Promise.all([
     readPages<PaymentRow>((after) => {
       let q = db
         .from("payments")
@@ -125,7 +195,7 @@ async function syncSource(db: SupabaseClient): Promise<Source> {
         .lt("created_at", generatedAt)
         .order("id")
         .limit(1000);
-      if (after) q = q.gt("id", after);
+      if (after) q = q.gt("id", after.id);
       return q;
     }, 150000),
     readPages<OfferEvent>((after) => {
@@ -139,12 +209,23 @@ async function syncSource(db: SupabaseClient): Promise<Source> {
         ])
         .gte("created_at", "2026-03-12T18:30:00Z")
         .lt("created_at", generatedAt)
+        .order("created_at")
         .order("id")
         .limit(1000);
-      if (after) q = q.gt("id", after);
+      if (after) {
+        // Use the date index, with ID as a tie-breaker so equal timestamps are never skipped.
+        const at = JSON.stringify(after.created_at);
+        const id = JSON.stringify(after.id);
+        q = q
+          .gte("created_at", after.created_at)
+          .or(`created_at.gt.${at},and(created_at.eq.${at},id.gt.${id})`);
+      }
       return q;
     }, 500000),
     db.from("settings").select("value").eq("key", "pricing").maybeSingle(),
+    readUsage(db, generatedAt)
+      .then((value) => ({ value, error: false }))
+      .catch(() => ({ value: null, error: true })),
   ]);
   if (catalog.error)
     throw new Error("Product catalog could not be synchronized.");
@@ -154,13 +235,19 @@ async function syncSource(db: SupabaseClient): Promise<Source> {
     generatedAt,
     payments,
     events,
+    usage: usageResult.value,
+    warnings: usageResult.error
+      ? [
+          "Wallet or chat usage could not be fully loaded. Usage and access metrics are unavailable; payment totals remain complete.",
+        ]
+      : [],
     pricing: catalog.data?.value
       ? normalizePricing(catalog.data.value)
       : DEFAULT_PRICING,
   };
   // Publish only after the complete source has been durably written.
   await write(db, `sources/${source.id}.json.gz`, source);
-  await write(db, "latest.json.gz", {
+  await write(db, MANIFEST_PATH, {
     version: VERSION,
     id: source.id,
     generatedAt,
@@ -175,7 +262,15 @@ export async function savedRevenueReport(
   refresh: boolean,
 ) {
   let source: Source | null = null;
-  let manifest = await read<Manifest>(db, "latest.json.gz");
+  let manifest = await read<Manifest>(db, MANIFEST_PATH);
+  if (!manifest && !refresh) {
+    // Reuse an already initialized snapshot while isolating older deployed readers.
+    const legacy = await read<Manifest>(db, "latest.json.gz");
+    if (legacy?.version === VERSION) {
+      manifest = legacy;
+      await write(db, MANIFEST_PATH, manifest);
+    }
+  }
   if (refresh || !manifest || manifest.version !== VERSION) {
     source = await syncSource(db);
     manifest = source;
@@ -201,6 +296,8 @@ export async function savedRevenueReport(
     pricing: source.pricing,
     range: storedRange,
     attribution,
+    usage: source.usage,
+    warnings: source.warnings,
   });
   const report = {
     ...result,

@@ -18,6 +18,8 @@ Module._resolveFilename = function (name, parent, ...rest) {
 };
 let mode = "ok",
   paymentReads = 0;
+let usageReads = 0;
+let transientTimeouts = 0;
 const rows = Array.from({ length: 1601 }, (_, i) => ({
   id: `order-${String(i).padStart(5, "0")}`,
   payu_txn_id: `order-${i}`,
@@ -31,6 +33,17 @@ const rows = Array.from({ length: 1601 }, (_, i) => ({
   payment_status: i % 2 ? "bounced" : "paid",
   created_at: "2026-10-10T08:00:00Z",
 }));
+const eventRows = Array.from({ length: 701 }, (_, i) => ({
+  id: `event-${String(701 - i).padStart(4, "0")}`,
+  event_name: "product_offer_view",
+  product_type: "report",
+  product_id: "report-past-life",
+  user_id: `customer-${i}`,
+  created_at: i < 450 ? "2026-10-10T06:00:00Z" : "2026-10-10T07:00:00Z",
+})).sort(
+  (a, b) =>
+    a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
+);
 const objects = new Map();
 let writes = 0;
 const fakeDb = {
@@ -72,6 +85,7 @@ const fakeDb = {
   },
   from(table) {
     const filters = [];
+    let cursor = null;
     const query = {
       select() {
         return query;
@@ -99,6 +113,14 @@ const fakeDb = {
       },
       lt(field, value) {
         filters.push([field, "lt", value]);
+        return query;
+      },
+      or(expression) {
+        const parts = expression.match(
+          /created_at\.gt\.("[^"]+"),and\(created_at\.eq\.("[^"]+"),id\.gt\.("[^"]+")\)/,
+        );
+        assert.ok(parts, "offer pagination uses a stable date/ID cursor");
+        cursor = { at: JSON.parse(parts[1]), id: JSON.parse(parts[3]) };
         return query;
       },
       maybeSingle() {
@@ -129,12 +151,61 @@ const fakeDb = {
           };
         if (table === "marketing_events")
           result = {
-            data: [],
+            data: eventRows
+              .filter(
+                (row) =>
+                  !cursor ||
+                  row.created_at > cursor.at ||
+                  (row.created_at === cursor.at && row.id > cursor.id),
+              )
+              .slice(0, 333),
             error:
               mode === "event-error"
                 ? { message: "Simulated event outage" }
-                : null,
+                : mode === "transient-timeout" && transientTimeouts++ < 1
+                  ? { message: "canceling statement due to statement timeout" }
+                  : null,
           };
+        if (table === "users" || table === "chat_messages") {
+          usageReads++;
+          const usageRows =
+            table === "users"
+              ? [
+                  {
+                    id: "customer-0",
+                    coins: 2,
+                    unlocked_features: { pastLifeReport: true },
+                  },
+                ]
+              : [
+                  {
+                    id: "customer-0",
+                    messages: [
+                      {
+                        role: "user",
+                        content: "PRIVATE QUESTION NEVER CACHE",
+                        timestamp: "2026-10-10T09:00:00Z",
+                      },
+                      {
+                        role: "assistant",
+                        content: "PRIVATE REPLY NEVER CACHE",
+                        timestamp: "2026-10-10T09:00:01Z",
+                      },
+                    ],
+                  },
+                ];
+          result =
+            mode === "usage-error"
+              ? { data: null, error: { message: "Simulated usage outage" } }
+              : {
+                  data: usageRows.filter((row) =>
+                    filters.every(([field, op, value]) =>
+                      op === "gt" ? row[field] > value : true,
+                    ),
+                  ),
+                  error: null,
+                };
+        }
         if (table === "payments") {
           paymentReads++;
           result =
@@ -209,6 +280,28 @@ const request = (
     "financial totals cover all rows but ledger payloads are bounded",
   );
   assert.equal(report.orderPage.total, 1601);
+  assert.equal(report.usage.paidCustomers, 801);
+  assert.equal(report.usage.withQuestions, 1);
+  assert.equal(report.usage.remainingCoins, 2);
+  assert.equal(
+    report.usage.historyQuestions,
+    1,
+    "only user messages count as questions",
+  );
+  assert.equal(
+    report.products.find((p) => p.key === "report:pastLifeReport").viewers,
+    701,
+    "all offer events survive equal-timestamp pagination",
+  );
+  const { gunzipSync } = require("node:zlib");
+  for (const bytes of objects.values()) {
+    const savedText = gunzipSync(bytes).toString("utf8");
+    assert.ok(
+      !savedText.includes("PRIVATE QUESTION") &&
+        !savedText.includes("PRIVATE REPLY"),
+      "cache never stores chat text",
+    );
+  }
   const pageParams = new URLSearchParams({
     startDate: "2026-10-10",
     endDate: "2026-10-11",
@@ -255,12 +348,18 @@ const request = (
   );
 
   const beforeReads = paymentReads;
+  const beforeUsageReads = usageReads;
   await GET(request());
   await GET(request("startDate=2026-10-09&endDate=2026-10-11"));
   assert.equal(
     paymentReads,
     beforeReads,
     "existing and new date ranges read saved data, never payment history",
+  );
+  assert.equal(
+    usageReads,
+    beforeUsageReads,
+    "range changes use cached wallet and question metadata",
   );
   rows[1600].amount = 99900;
   const stale = await (await GET(request())).json();
@@ -369,6 +468,25 @@ const request = (
       "previous snapshot is retained after failure",
     );
   }
+  mode = "transient-timeout";
+  const recovered = await (await POST(request())).json();
+  assert.equal(recovered.totals.collectedPaise, updated.totals.collectedPaise);
+  assert.equal(
+    recovered.products.find((p) => p.key === "report:pastLifeReport").viewers,
+    701,
+    "a timeout retry neither loses nor duplicates events",
+  );
+  assert.ok(transientTimeouts > 1);
+  mode = "usage-error";
+  const missingUsage = await (await POST(request())).json();
+  assert.equal(missingUsage.usage, null);
+  assert.equal(
+    missingUsage.totals.collectedPaise,
+    updated.totals.collectedPaise,
+  );
+  assert.ok(
+    missingUsage.quality.warnings.some((w) => /usage.*unavailable/i.test(w)),
+  );
   assert.ok(writes > 0);
   console.log(
     "Revenue API: auth, expiry, invalid dates, full pagination, saved data reuse, refresh persistence, failure retention, global sorting, filters and snapshot consistency passed.",
