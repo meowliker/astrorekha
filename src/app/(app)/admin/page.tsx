@@ -15,6 +15,7 @@ import {
   ShoppingBag,
   MessageCircle,
   Radar,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
 
@@ -57,6 +58,15 @@ const adminOptions: AdminOption[] = [
     bgColor: "bg-rose-500/20",
   },
   {
+    id: "system-status",
+    title: "System Status",
+    description: "Service health, monitoring history, and alert destinations",
+    icon: Activity,
+    href: "/admin/monitoring",
+    color: "text-teal-400",
+    bgColor: "bg-teal-500/20",
+  },
+  {
     id: "whatsapp",
     title: "WhatsApp Sends",
     description: "Track AiSensy invoice messages and resend failed deliveries",
@@ -88,6 +98,7 @@ const adminOptions: AdminOption[] = [
 export default function AdminDashboardPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [systemSummary, setSystemSummary] = useState<{ issues: number; checkedAt: string | null } | null>(null);
 
   useEffect(() => {
     // Check for admin session token
@@ -104,6 +115,24 @@ export default function AdminDashboardPage() {
 
     setLoading(false);
   }, [router]);
+
+  useEffect(() => {
+    if (loading) return;
+    let active = true;
+    const update = async () => {
+      const token = localStorage.getItem("admin_session_token");
+      if (!token) return;
+      try {
+        const response = await fetch("/api/admin/monitoring", { headers: { "x-admin-session": token }, cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (active) setSystemSummary({ issues: data.incidents?.length || 0, checkedAt: data.runs?.[0]?.started_at || null });
+      } catch { /* The status page displays the detailed error. */ }
+    };
+    void update();
+    const timer = window.setInterval(update, 60_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [loading]);
 
   const handleLogout = () => {
     localStorage.removeItem("admin_session_token");
@@ -168,6 +197,10 @@ export default function AdminDashboardPage() {
                   <div>
                     <h2 className="text-lg font-semibold text-white mb-1">{option.title}</h2>
                     <p className="text-white/50 text-sm">{option.description}</p>
+                    {option.id === "system-status" && systemSummary && <p className={`mt-3 text-xs font-medium ${!systemSummary.checkedAt || systemSummary.issues ? "text-amber-300" : "text-emerald-300"}`}>
+                      {!systemSummary.checkedAt ? "No checks yet" : systemSummary.issues ? `${systemSummary.issues} open ${systemSummary.issues === 1 ? "issue" : "issues"}` : "No open issues"}
+                      {systemSummary.checkedAt && <span className="ml-2 text-white/40">· Last check {new Date(systemSummary.checkedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" })} IST</span>}
+                    </p>}
                   </div>
                 </div>
                 <ChevronRight className="w-5 h-5 text-white/30 group-hover:text-primary group-hover:translate-x-1 transition-all" />

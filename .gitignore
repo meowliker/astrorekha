@@ -43,6 +43,7 @@ next-env.d.ts
 
 DEPLOYMENT_CHECKLIST.md
 *.md
+!docs/system-monitoring.md
 *.txt
 
 # Local-only mock page gallery. Do not deploy.
