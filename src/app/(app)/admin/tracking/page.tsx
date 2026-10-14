@@ -15,6 +15,8 @@ import { buildTrackingHourlyTable, type TrackingHourlyMetric } from "@/lib/track
 
 type LiveData = { sales: TrackingSale[]; todayCount: number; todayRevenue: number; fetchedAt: string };
 type Column = { id: string; label: string; group: "Identity" | "Meta" | "AstroRekha"; value: (row: TrackingCampaign) => string; sort: (row: TrackingCampaign) => string | number; align?: "right" };
+type AccountTiming = "us" | "india";
+const ACCOUNT_TIMING_STORAGE_KEY = "ar_tracking_account_timing_v1";
 
 const inr = (value: number) => `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
 const amount = (value: number, currency: string) => new Intl.NumberFormat("en-IN", { style: "currency", currency, maximumFractionDigits: 2 }).format(value);
@@ -146,6 +148,7 @@ export default function TrackingPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [accountId, setAccountId] = useState("all");
   const [allTiming, setAllTiming] = useState<"us" | "india" | "both">("us");
+  const [accountTimings, setAccountTimings] = useState<Record<string, AccountTiming>>({});
   const [search, setSearch] = useState("");
   const [activeOnly, setActiveOnly] = useState(false);
   const [activeScope, setActiveScope] = useState<"campaign" | "adset" | "ad" | "all">("all");
@@ -180,9 +183,12 @@ export default function TrackingPage() {
   const reconciliationLoading = useRef(false);
   const metaAutoLoading = useRef(false);
   const knownAccounts = accountCatalog.length ? accountCatalog : summaries.business_1130_ist?.accounts || summaries.calendar_ist?.accounts || [];
+  const accountDefaultMode = accountTrackingDayMode(knownAccounts.find((account) => account.id === accountId)?.timezone);
+  const accountDefaultTiming: AccountTiming = accountDefaultMode === "calendar_ist" ? "india" : "us";
+  const selectedAccountTiming = accountTimings[accountId] || accountDefaultTiming;
   const primaryMode: TrackingDayMode = accountId === "all"
     ? allTiming === "india" ? "calendar_ist" : "business_1130_ist"
-    : accountTrackingDayMode(knownAccounts.find((account) => account.id === accountId)?.timezone);
+    : selectedAccountTiming === "india" ? "calendar_ist" : "business_1130_ist";
   const showBoth = accountId === "all" && allTiming === "both";
   const maxDate = primaryMode === "calendar_ist" && !showBoth ? calendarToday() : businessToday();
   const secondaryMode: TrackingDayMode = "calendar_ist";
@@ -220,6 +226,12 @@ export default function TrackingPage() {
         }
       }
     } catch { /* Use the default view. */ }
+    try {
+      const stored = JSON.parse(localStorage.getItem(ACCOUNT_TIMING_STORAGE_KEY) || "null");
+      if (stored && typeof stored === "object" && !Array.isArray(stored)) {
+        setAccountTimings(Object.fromEntries(Object.entries(stored).filter(([id, timing]) => /^\d+$/.test(id) && (timing === "us" || timing === "india"))) as Record<string, AccountTiming>);
+      }
+    } catch { /* Use each account's Meta timezone. */ }
   }, [router]);
 
   const fetchSummary = useCallback(async (session: string, range: typeof dates, dayMode: TrackingDayMode, quiet = false) => {
@@ -402,12 +414,22 @@ export default function TrackingPage() {
   };
   const activeColumns = columnIds.map((id) => COLUMNS.find((column) => column.id === id)).filter((column): column is Column => !!column);
   const selectedView = savedViews.find((view) => view.id === selectedViewId);
-  const currentViewConfig = (): TrackingViewConfig => ({ columnIds, sort, accountId, search, hourMetric, activeOnly, activeScope, allTiming });
+  const changeAccountTiming = (id: string, timing: AccountTiming) => {
+    const defaultMode = accountTrackingDayMode(knownAccounts.find((account) => account.id === id)?.timezone);
+    const defaultTiming = defaultMode === "calendar_ist" ? "india" : "us";
+    const next = { ...accountTimings };
+    if (timing === defaultTiming) delete next[id];
+    else next[id] = timing;
+    setAccountTimings(next);
+    localStorage.setItem(ACCOUNT_TIMING_STORAGE_KEY, JSON.stringify(next));
+  };
+  const currentViewConfig = (): TrackingViewConfig => ({ columnIds, sort, accountId, search, hourMetric, activeOnly, activeScope, allTiming, accountTiming: accountId === "all" ? undefined : selectedAccountTiming });
   const applyView = (view: TrackingSavedView) => {
     setColumns(view.columnIds);
     setSort(view.sort);
     setAccountId(view.accountId);
     setAllTiming(view.allTiming || "us");
+    if (view.accountId !== "all" && view.accountTiming) changeAccountTiming(view.accountId, view.accountTiming);
     setSearch(view.search);
     setActiveOnly(view.activeOnly === true);
     setActiveScope(view.activeScope || "all");
@@ -531,7 +553,7 @@ export default function TrackingPage() {
           <main className="min-w-0 space-y-7">
             <section>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                <div><h2 className="text-lg font-semibold">Ad accounts</h2><p className="text-xs text-slate-500">Indian time-zone accounts use midnight IST; US time-zone accounts use 11:30 AM IST.</p></div>
+                <div><h2 className="text-lg font-semibold">Ad accounts</h2><p className="text-xs text-slate-500">Each account starts with its Meta timezone. Choose either reporting window below.</p></div>
                 <span className="text-xs text-slate-500">{summary ? `Direct Meta API · refreshes every 5m or manually · fetched ${displayIst(summary.fetchedAt)} IST` : "Loading Meta"}</span>
               </div>
               <div className="overflow-x-auto border-y border-white/10">
@@ -541,11 +563,11 @@ export default function TrackingPage() {
                     const rows = summary?.campaigns.filter((row) => row.accountId === account.id) || [];
                     const spend = rows.reduce((sum, row) => sum + (row.spendInr || 0), 0);
                     const orders = rows.reduce((sum, row) => sum + row.orders, 0);
-                    return <button key={account.id} onClick={() => setAccountId(account.id)} className={`min-w-56 border-r border-white/10 px-4 py-3 text-left ${accountId === account.id ? "bg-white/10" : "hover:bg-white/5"}`}><div className="truncate text-sm font-medium">{account.name}</div><div className="mt-1 text-xs text-cyan-300">{accountTrackingDayMode(account.timezone) === "calendar_ist" ? "Indian timing" : "US timing"}</div><div className="mt-1 text-xs tabular-nums text-slate-400">{summary ? `${inr(spend)} · ${orders} orders · ${account.currency}` : "Loading selected timing…"}</div>{account.error && <div className="mt-1 text-xs text-rose-300">Meta unavailable</div>}</button>;
+                    return <button key={account.id} onClick={() => setAccountId(account.id)} className={`min-w-56 border-r border-white/10 px-4 py-3 text-left ${accountId === account.id ? "bg-white/10" : "hover:bg-white/5"}`}><div className="truncate text-sm font-medium">{account.name}</div><div className="mt-1 text-xs text-cyan-300">Default: {accountTrackingDayMode(account.timezone) === "calendar_ist" ? "Indian timing" : "US timing"}</div><div className="mt-1 text-xs tabular-nums text-slate-400">{summary ? `${inr(spend)} · ${orders} orders · ${account.currency}` : "Loading selected timing…"}</div>{account.error && <div className="mt-1 text-xs text-rose-300">Meta unavailable</div>}</button>;
                   })}
                 </div>
               </div>
-              {accountId === "all" && <div className="mt-3 flex flex-wrap items-center gap-3"><label htmlFor="all-account-timing" className="text-sm text-slate-300">All accounts timing</label><select id="all-account-timing" value={allTiming} onChange={(event) => setAllTiming(event.target.value as typeof allTiming)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="us">US · 11:30 AM IST</option><option value="india">Indian · 12:00 AM IST</option><option value="both">Both</option></select><span className="text-xs text-slate-500">Each table uses its own reporting window.</span></div>}
+              <div className="mt-3 flex flex-wrap items-center gap-3"><label htmlFor="account-timing" className="text-sm text-slate-300">{accountId === "all" ? "All accounts timing" : "Account timing"}</label><select id="account-timing" value={accountId === "all" ? allTiming : selectedAccountTiming} onChange={(event) => accountId === "all" ? setAllTiming(event.target.value as typeof allTiming) : changeAccountTiming(accountId, event.target.value as AccountTiming)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="us">US · 11:30 AM IST{accountId !== "all" && accountDefaultTiming === "us" ? " (default)" : ""}</option><option value="india">Indian · 12:00 AM IST{accountId !== "all" && accountDefaultTiming === "india" ? " (default)" : ""}</option>{accountId === "all" && <option value="both">Both</option>}</select><span className="text-xs text-slate-500">{accountId === "all" ? "Each table uses its own reporting window." : "Saved for this account in this browser."}</span></div>
             </section>
 
             <section>

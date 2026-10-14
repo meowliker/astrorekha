@@ -14,6 +14,7 @@ export type TrackingViewConfig = {
   search: string;
   hourMetric: "orders" | "revenue" | "roas" | "cvr";
   allTiming?: "us" | "india" | "both";
+  accountTiming?: "us" | "india";
   activeOnly?: boolean;
   activeScope?: "campaign" | "adset" | "ad" | "all";
 };
@@ -40,6 +41,7 @@ export function normalizeTrackingView(input: unknown): TrackingViewConfig | null
     search: typeof value.search === "string" ? value.search.slice(0, 120) : "",
     hourMetric: value.hourMetric === "revenue" || value.hourMetric === "roas" || value.hourMetric === "cvr" ? value.hourMetric : "orders",
     allTiming: value.allTiming === "india" || value.allTiming === "both" ? value.allTiming : "us",
+    accountTiming: value.accountTiming === "us" || value.accountTiming === "india" ? value.accountTiming : undefined,
     activeOnly: value.activeOnly === true,
     activeScope: ["campaign", "adset", "ad", "all"].includes(String(value.activeScope)) ? value.activeScope as TrackingViewConfig["activeScope"] : "all",
   };
