@@ -21,6 +21,10 @@ const amount = (value: number, currency: string) => new Intl.NumberFormat("en-IN
 const count = (value: number) => value.toLocaleString("en-IN", { maximumFractionDigits: 0 });
 const decimal = (value: number) => value.toLocaleString("en-IN", { maximumFractionDigits: 2 });
 const ratio = (numerator: number, denominator: number | null) => denominator && denominator > 0 ? `${decimal(numerator / denominator)}×` : "—";
+const businessRoas = (row: TrackingCampaign) => {
+  const value = ratio(row.revenue, row.spendInr);
+  return value !== "—" && !row.metaPurchaseWindowAligned ? `≈${value}` : value;
+};
 const pct = (numerator: number, denominator: number) => denominator > 0 ? `${decimal(numerator / denominator * 100)}%` : "—";
 const labels = (values: string[]) => values.length ? values.slice(0, 2).join(", ") + (values.length > 2 ? ` +${values.length - 2}` : "") : "—";
 
@@ -48,10 +52,10 @@ const COLUMNS: Column[] = [
   { id: "addToCarts", label: "Add to carts", group: "Meta", value: (r) => count(r.addToCarts), sort: (r) => r.addToCarts, align: "right" },
   { id: "checkouts", label: "Checkouts", group: "Meta", value: (r) => count(r.checkouts), sort: (r) => r.checkouts, align: "right" },
   { id: "leads", label: "Leads", group: "Meta", value: (r) => count(r.leads), sort: (r) => r.leads, align: "right" },
-  { id: "metaPurchases", label: "Meta purchases", group: "Meta", value: (r) => count(r.metaPurchases), sort: (r) => r.metaPurchases, align: "right" },
-  { id: "metaCostPerPurchase", label: "Meta cost / purchase", group: "Meta", value: (r) => r.metaPurchases ? amount((r.metaCalendarSpend ?? r.spend) / r.metaPurchases, r.currency) : "—", sort: (r) => r.metaPurchases ? (r.metaCalendarSpend ?? r.spend) / r.metaPurchases : 0, align: "right" },
-  { id: "metaPurchaseValue", label: "Meta purchase value", group: "Meta", value: (r) => amount(r.metaPurchaseValue, r.currency), sort: (r) => r.metaPurchaseValue, align: "right" },
-  { id: "metaRoas", label: "Meta ROAS", group: "Meta", value: (r) => ratio(r.metaPurchaseValue, r.metaCalendarSpend ?? r.spend), sort: (r) => (r.metaCalendarSpend ?? r.spend) ? r.metaPurchaseValue / (r.metaCalendarSpend ?? r.spend) : 0, align: "right" },
+  { id: "metaPurchases", label: "Meta purchases", group: "Meta", value: (r) => r.metaPurchaseWindowAligned ? count(r.metaPurchases) : "—", sort: (r) => r.metaPurchaseWindowAligned ? r.metaPurchases : -1, align: "right" },
+  { id: "metaCostPerPurchase", label: "Meta cost / purchase", group: "Meta", value: (r) => r.metaPurchaseWindowAligned && r.metaPurchases ? amount((r.metaCalendarSpend ?? r.spend) / r.metaPurchases, r.currency) : "—", sort: (r) => r.metaPurchaseWindowAligned && r.metaPurchases ? (r.metaCalendarSpend ?? r.spend) / r.metaPurchases : -1, align: "right" },
+  { id: "metaPurchaseValue", label: "Meta purchase value", group: "Meta", value: (r) => r.metaPurchaseWindowAligned ? amount(r.metaPurchaseValue, r.currency) : "—", sort: (r) => r.metaPurchaseWindowAligned ? r.metaPurchaseValue : -1, align: "right" },
+  { id: "metaRoas", label: "Meta ROAS", group: "Meta", value: (r) => r.metaPurchaseWindowAligned ? ratio(r.metaPurchaseValue, r.metaCalendarSpend ?? r.spend) : "—", sort: (r) => r.metaPurchaseWindowAligned && (r.metaCalendarSpend ?? r.spend) ? r.metaPurchaseValue / (r.metaCalendarSpend ?? r.spend) : -1, align: "right" },
   { id: "orders", label: "AR sales", group: "AstroRekha", value: (r) => count(r.orders), sort: (r) => r.orders, align: "right" },
   { id: "utmVisits", label: "AR UTM visits", group: "AstroRekha", value: (r) => r.utmVisits == null ? "—" : count(r.utmVisits), sort: (r) => r.utmVisits || 0, align: "right" },
   { id: "conversionRate", label: "AR CVR", group: "AstroRekha", value: (r) => r.utmVisits != null ? pct(r.orders, r.utmVisits) : "—", sort: (r) => r.utmVisits ? r.orders / r.utmVisits : 0, align: "right" },
@@ -59,7 +63,7 @@ const COLUMNS: Column[] = [
   { id: "refunds", label: "Refunds", group: "AstroRekha", value: (r) => count(r.refunds), sort: (r) => r.refunds, align: "right" },
   { id: "refundAmount", label: "Refund amount", group: "AstroRekha", value: (r) => inr(r.refundAmount), sort: (r) => r.refundAmount, align: "right" },
   { id: "revenue", label: "AR net sales", group: "AstroRekha", value: (r) => inr(r.revenue), sort: (r) => r.revenue, align: "right" },
-  { id: "utmRoas", label: "AR ROAS", group: "AstroRekha", value: (r) => ratio(r.revenue, r.spendInr), sort: (r) => r.spendInr ? r.revenue / r.spendInr : 0, align: "right" },
+  { id: "utmRoas", label: "AR ROAS", group: "AstroRekha", value: businessRoas, sort: (r) => r.spendInr ? r.revenue / r.spendInr : 0, align: "right" },
   { id: "cpa", label: "AR CPA", group: "AstroRekha", value: (r) => r.orders && r.spendInr != null ? inr(r.spendInr / r.orders) : "—", sort: (r) => r.orders && r.spendInr ? r.spendInr / r.orders : 0, align: "right" },
   { id: "aov", label: "AOV", group: "AstroRekha", value: (r) => r.orders ? inr(r.grossRevenue / r.orders) : "—", sort: (r) => r.orders ? r.grossRevenue / r.orders : 0, align: "right" },
   { id: "utmSource", label: "UTM source", group: "AstroRekha", value: (r) => labels(r.utmSources), sort: (r) => r.utmSources.join(",") },
@@ -361,6 +365,8 @@ export default function TrackingPage() {
       return sort.desc ? -comparison : comparison;
     });
   }, [summary, accountId, search, sort, activeOnly]);
+  const hasUnalignedMetaPurchases = filtered.some((row) => row.accountId && !row.metaPurchaseWindowAligned);
+  const visibleSpendEstimated = (summary?.campaigns || []).some((row) => row.accountId && (accountId === "all" || row.accountId === accountId) && !row.metaPurchaseWindowAligned && (row.spendInr || 0) > 0);
 
   const visibleTotals = useMemo(() => {
     const rows = accountId === "all" ? summary?.campaigns || [] : (summary?.campaigns || []).filter((row) => row.accountId === accountId);
@@ -440,7 +446,7 @@ export default function TrackingPage() {
             ["Paid orders", count(visibleTotals.orders)],
             ["Net sales", inr(visibleTotals.revenue)],
             ["Profit after GST & ads", visibleProfit == null ? "—" : inr(visibleProfit)],
-            ["Blended ROAS", ratio(visibleTotals.revenue, visibleTotals.spend)],
+            ["Blended ROAS", `${visibleSpendEstimated ? "≈" : ""}${ratio(visibleTotals.revenue, visibleTotals.spend)}`],
             ["Matched to Meta", `${visibleTotals.matched} / ${visibleTotals.orders}`],
           ].map(([label, value]) => <div key={label} className="bg-[#141b2b] px-4 py-4"><div className="text-xs uppercase tracking-wider text-slate-500">{label}</div><div className="mt-2 text-xl font-semibold tabular-nums">{value}</div></div>)}
         </div>
@@ -493,11 +499,13 @@ export default function TrackingPage() {
                   </div>
                 </div>
               </div>
+              {hasUnalignedMetaPurchases && <p className="mb-3 rounded-lg border border-cyan-400/20 bg-cyan-400/5 px-3 py-2 text-xs text-cyan-100">Meta purchase figures show “—” where an ad account&apos;s reporting day does not exactly match 11:30 AM IST to 11:30 AM IST. Meta supplies whole-hour totals, so the 11:00 AM–12:00 PM hour cannot be split accurately. AR sales use exact payment times; “≈” marks ROAS based on Meta spend allocated across that boundary.</p>}
               <div className="overflow-x-auto rounded-xl border border-white/10 bg-[#141b2b]">
                 <table className="w-full min-w-max border-collapse text-sm">
                   <thead className="sticky top-0 bg-[#1b2437] text-xs text-slate-400">
                     <tr><th className="w-8 px-2 py-3" />{activeColumns.map((column) =>
                       <th key={column.id}
+                        title={["metaPurchases", "metaCostPerPurchase", "metaPurchaseValue", "metaRoas"].includes(column.id) ? "Shown only when the Meta ad account day exactly matches the 11:30 AM IST business day." : undefined}
                         draggable
                         onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", column.id); setDraggingId(column.id); }}
                         onDragEnd={() => { setDraggingId(null); setDragOver(null); }}
@@ -517,7 +525,7 @@ export default function TrackingPage() {
                 {!loading && filtered.length === 0 && <div className="p-10 text-center text-sm text-slate-500">No campaigns or UTM orders for these filters.</div>}
                 {loading && <div className="p-10 text-center text-sm text-slate-500">Loading campaigns and orders…</div>}
               </div>
-              <p className="mt-2 text-xs text-slate-500">Drag column headers to reorder them. Meta spend, AR sales and AR UTM visits use the Profit Sheet 11:30 AM IST business day. AR CVR is paid orders divided by tagged site arrivals; visits without campaign tags or blocked analytics are excluded. Other Meta insight metrics use each account&apos;s calendar reporting window. Meta data refreshes every 5 minutes or when you press Refresh; its reporting can still lag. Live sales refresh every 5 seconds. USD spend is converted with {summary?.fxRateSource || "the saved Profit Sheet rate"}; other currencies show no INR ROAS.</p>
+              <p className="mt-2 text-xs text-slate-500">Drag column headers to reorder them. Meta spend, AR sales and AR UTM visits use the Profit Sheet 11:30 AM IST business day. Meta purchases and Meta ROAS use that day only when the ad account reporting day matches it exactly; “—” means unavailable, not zero. For other account timezones, Meta spend is allocated from whole-hour totals and “≈” marks ROAS using that spend. AR CVR is paid orders divided by tagged site arrivals; visits without campaign tags or blocked analytics are excluded. Other Meta insight metrics use each account&apos;s calendar reporting window. Meta data refreshes every 5 minutes or when you press Refresh; its reporting can still lag. Live sales refresh every 5 seconds. USD spend is converted with {summary?.fxRateSource || "the saved Profit Sheet rate"}; other currencies show no INR ROAS.</p>
             </section>
 
             <section>

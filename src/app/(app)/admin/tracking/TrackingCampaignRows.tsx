@@ -12,6 +12,8 @@ type ChildData = { adsets: TrackingChild[]; ads: TrackingChild[] };
 type CachedChildren = { data: ChildData; fetchedAt: number };
 const money = (value: number) => `₹${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const CACHE_TTL = 60_000;
+const META_PURCHASE_COLUMNS = new Set(["metaPurchases", "metaCostPerPurchase", "metaPurchaseValue", "metaRoas"]);
+const META_WINDOW_UNAVAILABLE = "Meta cannot report an exact 11:30 AM IST purchase window for this ad account. The dash means unavailable, not zero.";
 
 function readCachedChildren(key: string): CachedChildren | null {
   try {
@@ -79,8 +81,8 @@ function CampaignRow({ row, columns, token, dates, refreshKey, activeOnly, activ
   const hierarchy = useMemo(() => {
     const children = cached?.data;
     if (!children) return null;
-    const adsets = children.adsets.map((item) => ({ ...item }));
-    const ads = children.ads.map((item) => ({ ...item }));
+    const adsets = children.adsets.map((item) => ({ ...item, metaPurchaseWindowAligned: row.metaPurchaseWindowAligned }));
+    const ads = children.ads.map((item) => ({ ...item, metaPurchaseWindowAligned: row.metaPurchaseWindowAligned }));
     for (const item of row.adBreakdown) {
       const adset = matchUnique(adsets, item.adsetId, item.term);
       const ad = matchUnique(ads, item.adId, item.content, adset?.id);
@@ -108,7 +110,7 @@ function CampaignRow({ row, columns, token, dates, refreshKey, activeOnly, activ
     (item.status === "ACTIVE" && (activeScope !== "ad" || shownAds.some((ad) => ad.parentId === item.id)))
   ) || [];
 
-  const cells = (item: TrackingCampaign, level: 0 | 1 | 2) => columns.map((column) => <td key={column.id} title={column.value(item)} className={`max-w-[240px] px-3 py-3 tabular-nums ${column.align === "right" ? "text-right" : "text-left"} ${column.id === "campaign" ? "font-medium text-white" : "text-slate-300"}`}>
+  const cells = (item: TrackingCampaign, level: 0 | 1 | 2) => columns.map((column) => <td key={column.id} title={META_PURCHASE_COLUMNS.has(column.id) && !item.metaPurchaseWindowAligned ? META_WINDOW_UNAVAILABLE : column.value(item)} className={`max-w-[240px] px-3 py-3 tabular-nums ${column.align === "right" ? "text-right" : "text-left"} ${column.id === "campaign" ? "font-medium text-white" : "text-slate-300"}`}>
     {column.id === "budget" ? <span className="inline-flex items-center gap-2 whitespace-nowrap">{column.value(item) === "—" ? (!item.accountId || level === 2 ? "—" : level === 0 ? "At ad set" : "At campaign") : column.value(item)}{token && item.accountId && (level === 1 || (level === 0 && item.campaignId)) && (item.dailyBudget != null || item.lifetimeBudget != null) && <button type="button" aria-label={`Edit ${level === 0 ? "campaign" : "ad set"} budget for ${item.campaignName}`} title="Edit budget in Meta" onClick={(event) => { event.stopPropagation(); setBudgetTarget({ accountId: item.accountId!, id: level === 0 ? item.campaignId! : (item as TrackingChild).id, level: level === 0 ? "campaign" : "adset", name: item.campaignName }); }} className="rounded border border-cyan-400/30 p-1 text-cyan-300 hover:bg-cyan-400/10"><Pencil size={12} /></button>}</span> :
     <span className={column.id === "campaign" ? "flex items-center gap-2" : "block truncate"} style={column.id === "campaign" ? { paddingLeft: `${level * 22}px` } : undefined}>
       {column.id === "campaign" && level > 0 && <span className="shrink-0 rounded border border-cyan-400/25 px-1 text-[10px] uppercase text-cyan-300">{level === 1 ? "Set" : "Ad"}</span>}
@@ -142,6 +144,7 @@ function CampaignRow({ row, columns, token, dates, refreshKey, activeOnly, activ
 export default function TrackingCampaignRows({ rows, columns, token, dates, refreshKey, activeOnly, activeScope, onBudgetSaved }: Props) {
   const currencies = Array.from(new Set(rows.filter((row) => row.accountId).map((row) => row.currency)));
   const mixedCurrencies = currencies.length > 1;
+  const metaPurchaseWindowAligned = rows.some((row) => row.accountId) && rows.filter((row) => row.accountId).every((row) => row.metaPurchaseWindowAligned === true);
   const total = useMemo(() => rows.reduce<TrackingCampaign>((sum, row) => {
     for (const key of ["spend", "metaCalendarSpend", "impressions", "reach", "clicks", "linkClicks", "landingPageViews", "addToCarts", "checkouts", "metaPurchases", "metaPurchaseValue", "leads", "orders", "grossRevenue", "refunds", "refundAmount", "revenue"] as const) sum[key] = (sum[key] || 0) + (row[key] || 0);
     if (row.utmVisits != null) sum.utmVisits = (sum.utmVisits || 0) + row.utmVisits;
@@ -153,15 +156,15 @@ export default function TrackingCampaignRows({ rows, columns, token, dates, refr
     key: "total", accountId: null, accountName: "All shown", currency: currencies[0] || "INR", campaignId: null,
     campaignName: "Overall result", objective: null, status: null, dailyBudget: null, lifetimeBudget: null,
     spend: 0, metaCalendarSpend: 0, spendInr: 0, impressions: 0, reach: 0, clicks: 0, linkClicks: 0,
-    landingPageViews: 0, addToCarts: 0, checkouts: 0, metaPurchases: 0, metaPurchaseValue: 0,
+    landingPageViews: 0, addToCarts: 0, checkouts: 0, metaPurchases: 0, metaPurchaseValue: 0, metaPurchaseWindowAligned,
     leads: 0, orders: 0, grossRevenue: 0, refunds: 0, refundAmount: 0, revenue: 0,
     utmSources: [], utmMediums: [], utmTerms: [], utmContents: [], attribution: "none", adBreakdown: [],
-  }), [rows, currencies]);
+  }), [rows, currencies, metaPurchaseWindowAligned]);
   const attributedOrders = rows.filter((row) => row.key !== "unattributed" && row.utmVisits != null).reduce((sum, row) => sum + row.orders, 0);
   const conversionRate = total.utmVisits ? `${(attributedOrders / total.utmVisits * 100).toLocaleString("en-IN", { maximumFractionDigits: 2 })}%` : "—";
 
   return <>
     <tbody>{rows.map((row) => <CampaignRow key={row.key} row={row} columns={columns} token={token} dates={dates} refreshKey={refreshKey} activeOnly={activeOnly} activeScope={activeScope} onBudgetSaved={onBudgetSaved} />)}</tbody>
-    <tfoot><tr className="border-t-2 border-cyan-400/40 bg-[#202d40] text-sm font-semibold"><td className="px-2 py-3" />{columns.map((column) => <td key={column.id} className={`max-w-[240px] px-3 py-3 tabular-nums ${column.align === "right" ? "text-right" : "text-left"}`} title={column.id === "budget" ? "Campaign and ad set budgets cannot be combined reliably in this total." : mixedCurrencies && ["spend", "cpc", "cpm", "metaCostPerPurchase", "metaPurchaseValue", "metaRoas", "dailyBudget", "lifetimeBudget"].includes(column.id) ? "Mixed account currencies; use Spend INR and AR metrics." : undefined}>{column.id === "budget" ? "—" : column.id === "conversionRate" ? conversionRate : mixedCurrencies && ["spend", "cpc", "cpm", "metaCostPerPurchase", "metaPurchaseValue", "metaRoas", "dailyBudget", "lifetimeBudget"].includes(column.id) ? "—" : column.id === "spend" ? new Intl.NumberFormat("en-IN", { style: "currency", currency: total.currency, maximumFractionDigits: 2 }).format(total.spend) : column.id === "campaign" ? "Overall result" : column.id === "account" ? "All shown" : column.id === "refundAmount" ? money(total.refundAmount) : column.value(total)}</td>)}</tr></tfoot>
+    <tfoot><tr className="border-t-2 border-cyan-400/40 bg-[#202d40] text-sm font-semibold"><td className="px-2 py-3" />{columns.map((column) => <td key={column.id} className={`max-w-[240px] px-3 py-3 tabular-nums ${column.align === "right" ? "text-right" : "text-left"}`} title={column.id === "budget" ? "Campaign and ad set budgets cannot be combined reliably in this total." : META_PURCHASE_COLUMNS.has(column.id) && !metaPurchaseWindowAligned ? META_WINDOW_UNAVAILABLE : mixedCurrencies && ["spend", "cpc", "cpm", "metaCostPerPurchase", "metaPurchaseValue", "metaRoas", "dailyBudget", "lifetimeBudget"].includes(column.id) ? "Mixed account currencies; use Spend INR and AR metrics." : undefined}>{column.id === "budget" ? "—" : column.id === "conversionRate" ? conversionRate : mixedCurrencies && ["spend", "cpc", "cpm", "metaCostPerPurchase", "metaPurchaseValue", "metaRoas", "dailyBudget", "lifetimeBudget"].includes(column.id) ? "—" : column.id === "spend" ? new Intl.NumberFormat("en-IN", { style: "currency", currency: total.currency, maximumFractionDigits: 2 }).format(total.spend) : column.id === "campaign" ? "Overall result" : column.id === "account" ? "All shown" : column.id === "refundAmount" ? money(total.refundAmount) : column.value(total)}</td>)}</tr></tfoot>
   </>;
 }

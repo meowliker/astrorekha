@@ -1,4 +1,4 @@
-import { businessDate } from "./tracking-dashboard";
+import { businessDate, businessDayStartUtc, nextBusinessDayStartUtc } from "./tracking-dashboard";
 
 export type CampaignSpendRow = {
   campaign_id?: string;
@@ -12,6 +12,34 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 const shiftDay = (day: string, count: number) => new Date(Date.parse(`${day}T00:00:00Z`) + count * DAY_MS).toISOString().slice(0, 10);
 const amount = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : 0;
+
+/** Whole Meta reporting days can represent the business day only if every 11:30 AM IST boundary is account-local midnight. */
+export function metaPurchasesMatchBusinessWindow(
+  timezoneName: string | null | undefined,
+  accountWindow: { startMillis: number; endMillis: number },
+  dates: { start: string; end: string },
+): boolean {
+  if (!timezoneName) return false;
+  const start = Date.parse(businessDayStartUtc(dates.start));
+  const end = Date.parse(nextBusinessDayStartUtc(dates.end));
+  if (accountWindow.startMillis > start || accountWindow.endMillis < end) return false;
+  try {
+    const formatter = new Intl.DateTimeFormat("en-GB", {
+      timeZone: timezoneName, year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    });
+    for (let boundary = start, index = 0; boundary <= end; boundary += DAY_MS, index++) {
+      const parts = formatter.formatToParts(new Date(boundary));
+      const value = (type: string) => parts.find((part) => part.type === type)?.value;
+      const localDate = `${value("year")}-${value("month")}-${value("day")}`;
+      const expectedDate = shiftDay(dates.start, index);
+      if (localDate !== expectedDate || value("hour") !== "00" || value("minute") !== "00") return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** Meta can return hourly rows for a multi-day range whose sum differs from its daily spend. Keep the hourly shape, anchored to the daily total. */
 export function normalizeHourlySpendToDailyTotals(hourly: CampaignSpendRow[], daily: CampaignSpendRow[]): CampaignSpendRow[] {

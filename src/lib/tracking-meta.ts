@@ -1,6 +1,6 @@
 import { getMetaAccountWindowForRequest, type MetaAccountCredential } from "@/lib/meta-ad-accounts";
 import { businessDayStartUtc, type TrackingCampaign } from "@/lib/tracking-dashboard";
-import { bufferedMetaRange, campaignHourlySpendForBusinessDays, campaignSpendForBusinessDays, normalizeHourlySpendToDailyTotals, type CampaignSpendRow } from "@/lib/tracking-meta-spend";
+import { bufferedMetaRange, campaignHourlySpendForBusinessDays, campaignSpendForBusinessDays, metaPurchasesMatchBusinessWindow, normalizeHourlySpendToDailyTotals, type CampaignSpendRow } from "@/lib/tracking-meta-spend";
 
 const META_BASE = "https://graph.facebook.com/v21.0";
 const PURCHASE_ACTIONS = ["website_purchase", "onsite_web_purchase", "offsite_conversion.fb_pixel_purchase", "omni_purchase", "purchase"];
@@ -167,6 +167,7 @@ export async function fetchMetaTrackingAccount(
     if (!Number.isFinite(offset)) throw new Error(`Meta did not return the timezone offset for ${accountName}.`);
     const accountWindow = getMetaAccountWindowForRequest(credential, dates.start, dates.end, "business_1130_ist");
     if (!accountWindow) throw new Error(`No active reporting window for ${accountName}.`);
+    const metaPurchaseWindowAligned = metaPurchasesMatchBusinessWindow(metadata.timezone_name, accountWindow, dates);
     const normalizedHourly = normalizeHourlySpendToDailyTotals(hourlySpend.rows, dailySpend.rows);
     const spendByCampaign = campaignSpendForBusinessDays({
       hourly: normalizedHourly, daily: dailySpend.rows, start: dates.start, end: dates.end,
@@ -203,7 +204,7 @@ export async function fetchMetaTrackingAccount(
         metaCalendarSpend: 0,
         impressions: 0, reach: 0, clicks: 0, linkClicks: 0, businessLinkClicks: 0,
         landingPageViews: 0, addToCarts: 0, checkouts: 0, metaPurchases: 0,
-        metaPurchaseValue: 0, leads: 0, orders: 0, grossRevenue: 0,
+        metaPurchaseValue: 0, metaPurchaseWindowAligned, leads: 0, orders: 0, grossRevenue: 0,
         refunds: 0, refundAmount: 0, revenue: 0,
         utmSources: [], utmMediums: [], utmTerms: [], utmContents: [],
         attribution: "none", adBreakdown: [],

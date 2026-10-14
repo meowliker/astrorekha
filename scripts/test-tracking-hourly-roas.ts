@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
 import type { TrackingCampaign } from "../src/lib/tracking-dashboard";
 import { buildTrackingHourlyTable } from "../src/lib/tracking-hourly-table";
-import { campaignHourlySpendForBusinessDays, normalizeHourlySpendToDailyTotals } from "../src/lib/tracking-meta-spend";
+import { campaignHourlySpendForBusinessDays, metaPurchasesMatchBusinessWindow, normalizeHourlySpendToDailyTotals } from "../src/lib/tracking-meta-spend";
 import { normalizeTrackingView } from "../src/lib/tracking-views";
 import { parseTrackedUtmVisit } from "../src/lib/tracking-utm-visits";
 
 const day = "2026-10-12";
 const start = Date.parse(`${day}T11:30:00+05:30`);
+const fullBusinessWindow = { startMillis: start, endMillis: start + 86_400_000 };
+assert.equal(metaPurchasesMatchBusinessWindow("America/Costa_Rica", fullBusinessWindow, { start: day, end: day }), true);
+assert.equal(metaPurchasesMatchBusinessWindow("Asia/Kolkata", fullBusinessWindow, { start: day, end: day }), false);
+assert.equal(metaPurchasesMatchBusinessWindow("America/Costa_Rica", { startMillis: start + 1, endMillis: start + 86_400_000 }, { start: day, end: day }), false);
+assert.equal(metaPurchasesMatchBusinessWindow("America/Costa_Rica", fullBusinessWindow, { start: day, end: "2026-10-13" }), false);
 const normalized = normalizeHourlySpendToDailyTotals([
   { campaign_id: "123", date_start: day, spend: "60" },
   { campaign_id: "123", date_start: day, spend: "50" },

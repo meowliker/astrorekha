@@ -55,6 +55,8 @@ export type TrackingCampaign = {
   checkouts: number;
   metaPurchases: number;
   metaPurchaseValue: number;
+  /** True only when Meta's complete account reporting days equal the selected 11:30 AM IST business days. */
+  metaPurchaseWindowAligned?: boolean;
   leads: number;
   orders: number;
   grossRevenue: number;

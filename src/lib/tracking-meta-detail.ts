@@ -1,5 +1,5 @@
 import { getMetaAccountWindowForRequest, type MetaAccountCredential } from "@/lib/meta-ad-accounts";
-import { bufferedMetaRange, campaignSpendForBusinessDays, normalizeHourlySpendToDailyTotals, type CampaignSpendRow } from "@/lib/tracking-meta-spend";
+import { bufferedMetaRange, campaignSpendForBusinessDays, metaPurchasesMatchBusinessWindow, normalizeHourlySpendToDailyTotals, type CampaignSpendRow } from "@/lib/tracking-meta-spend";
 import { businessDayStartUtc, type TrackingActivity, type TrackingChild } from "@/lib/tracking-dashboard";
 
 const BASE = "https://graph.facebook.com/v21.0";
@@ -92,7 +92,7 @@ function url(path: string, token: string, params: Record<string, string>) {
   return `${BASE}/${path}?${new URLSearchParams({ access_token: token, ...params })}`;
 }
 
-function emptyChild(object: MetaObject, level: "adset" | "ad", account: { id: string; name: string; currency: string }, campaignId: string): TrackingChild {
+function emptyChild(object: MetaObject, level: "adset" | "ad", account: { id: string; name: string; currency: string }, campaignId: string, metaPurchaseWindowAligned: boolean): TrackingChild {
   const id = object.id;
   return {
     level, id, parentId: level === "adset" ? campaignId : object.adset_id || "",
@@ -102,7 +102,7 @@ function emptyChild(object: MetaObject, level: "adset" | "ad", account: { id: st
     lifetimeBudget: object.lifetime_budget ? numeric(object.lifetime_budget) / 100 : null,
     spend: 0, spendInr: account.currency === "INR" || account.currency === "USD" ? 0 : null,
     metaCalendarSpend: 0, impressions: 0, reach: 0, clicks: 0, linkClicks: 0,
-    landingPageViews: 0, addToCarts: 0, checkouts: 0, metaPurchases: 0, metaPurchaseValue: 0, leads: 0,
+    landingPageViews: 0, addToCarts: 0, checkouts: 0, metaPurchases: 0, metaPurchaseValue: 0, metaPurchaseWindowAligned, leads: 0,
     orders: 0, grossRevenue: 0, refunds: 0, refundAmount: 0, revenue: 0,
     utmSources: [], utmMediums: [], utmTerms: [], utmContents: [], attribution: "none", adBreakdown: [],
   };
@@ -112,8 +112,8 @@ export async function fetchMetaTrackingChildren(credential: MetaAccountCredentia
   const accountId = credential.accountId;
   const accountBase = `act_${accountId}`;
   const token = credential.accessToken;
-  const meta = await fetch(url(accountBase, token, { fields: "name,currency,timezone_offset_hours_utc" }), { cache: "no-store", signal: AbortSignal.timeout(20_000) });
-  const metaData = await meta.json() as { name?: string; currency?: string; timezone_offset_hours_utc?: number; error?: { message?: string } };
+  const meta = await fetch(url(accountBase, token, { fields: "name,currency,timezone_name,timezone_offset_hours_utc" }), { cache: "no-store", signal: AbortSignal.timeout(20_000) });
+  const metaData = await meta.json() as { name?: string; currency?: string; timezone_name?: string; timezone_offset_hours_utc?: number; error?: { message?: string } };
   if (!meta.ok || metaData.error) throw new Error(metaData.error?.message || "Unable to read Meta account");
   const currency = String(metaData.currency || "INR").toUpperCase();
   const offset = Number(metaData.timezone_offset_hours_utc);
@@ -121,6 +121,7 @@ export async function fetchMetaTrackingChildren(credential: MetaAccountCredentia
   const account = { id: accountId, name: metaData.name || credential.label || accountId, currency };
   const accountWindow = getMetaAccountWindowForRequest(credential, dates.start, dates.end, "business_1130_ist");
   if (!accountWindow) return { adsets: [] as TrackingChild[], ads: [] as TrackingChild[] };
+  const metaPurchaseWindowAligned = metaPurchasesMatchBusinessWindow(metaData.timezone_name, accountWindow, dates);
   const window = accountWindow;
   const buffered = bufferedMetaRange(dates.start, dates.end);
 
@@ -137,11 +138,11 @@ export async function fetchMetaTrackingChildren(credential: MetaAccountCredentia
       pages<CampaignSpendRow & Record<string, string>>(insight(`${idField},date_start,spend`, buffered, true)),
       pages<CampaignSpendRow & Record<string, string>>(insight(`${idField},date_start,spend`, buffered, false)),
     ]);
-    const rows = new Map(objects.map((object) => [object.id, emptyChild(object, level, account, campaignId)]));
+    const rows = new Map(objects.map((object) => [object.id, emptyChild(object, level, account, campaignId, metaPurchaseWindowAligned)]));
     for (const metric of metrics) {
       const id = metric[idField];
       if (!id) continue;
-      const row = rows.get(id) || emptyChild({ id }, level, account, campaignId);
+      const row = rows.get(id) || emptyChild({ id }, level, account, campaignId, metaPurchaseWindowAligned);
       row.metaCalendarSpend = (row.metaCalendarSpend || 0) + numeric(metric.spend);
       row.impressions += numeric(metric.impressions); row.reach += numeric(metric.reach);
       row.clicks += numeric(metric.clicks); row.linkClicks += numeric(metric.inline_link_clicks);
@@ -157,7 +158,7 @@ export async function fetchMetaTrackingChildren(credential: MetaAccountCredentia
     const spend = campaignSpendForBusinessDays({ hourly: normalizeHourlySpendToDailyTotals(keyed(hourly), keyed(daily)), daily: keyed(daily), start: dates.start, end: dates.end,
       timezoneOffsetHoursUtc: offset, accountWindow: window, nowMillis: Date.now() });
     for (const [id, value] of spend) {
-      const row = rows.get(id) || emptyChild({ id }, level, account, campaignId);
+      const row = rows.get(id) || emptyChild({ id }, level, account, campaignId, metaPurchaseWindowAligned);
       row.spend = value;
       row.spendInr = currency === "INR" ? value : currency === "USD" ? value * rate : null;
       rows.set(id, row);
