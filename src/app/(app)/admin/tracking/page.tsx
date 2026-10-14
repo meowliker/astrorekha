@@ -166,8 +166,9 @@ export default function TrackingPage() {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<{ id: string; before: boolean } | null>(null);
   const [sort, setSort] = useState({ id: "spendInr", desc: true });
-  const [hourDate, setHourDate] = useState(dates.end);
+  const hourDate = dates.end;
   const [hourMetric, setHourMetric] = useState<TrackingHourlyMetric>("orders");
+  const [liveDayMode, setLiveDayMode] = useState<TrackingDayMode>("business_1130_ist");
   const [newSaleIds, setNewSaleIds] = useState<string[]>([]);
   const [toastSales, setToastSales] = useState<TrackingSale[]>([]);
   const seenSales = useRef<Set<string> | null>(null);
@@ -175,6 +176,7 @@ export default function TrackingPage() {
   const summaryRequest = useRef<Record<TrackingDayMode, number>>({ business_1130_ist: 0, calendar_ist: 0 });
   const refreshCount = useRef(0);
   const liveLoading = useRef(false);
+  const liveRequest = useRef(0);
   const reconciliationLoading = useRef(false);
   const metaAutoLoading = useRef(false);
   const knownAccounts = accountCatalog.length ? accountCatalog : summaries.business_1130_ist?.accounts || summaries.calendar_ist?.accounts || [];
@@ -249,13 +251,16 @@ export default function TrackingPage() {
     return () => controller.abort();
   }, []);
 
-  const fetchLive = useCallback(async (session: string) => {
+  const fetchLive = useCallback(async (session: string, dayMode: TrackingDayMode) => {
     if (liveLoading.current) return;
+    const request = liveRequest.current;
     liveLoading.current = true;
     try {
-      const response = await fetch("/api/admin/tracking?mode=live", { headers: { "x-admin-session": session }, cache: "no-store" });
+      const params = new URLSearchParams({ mode: "live", dayMode });
+      const response = await fetch(`/api/admin/tracking?${params}`, { headers: { "x-admin-session": session }, cache: "no-store" });
       if (!response.ok) return;
       const data = await response.json() as LiveData;
+      if (request !== liveRequest.current) return;
       const ids = new Set(data.sales.map((sale) => sale.id));
       if (seenSales.current) {
         const fresh = data.sales.filter((sale) => !seenSales.current?.has(sale.id));
@@ -274,8 +279,20 @@ export default function TrackingPage() {
       seenSales.current = new Set([...(seenSales.current || []), ...ids]);
       setLive(data);
     } catch { /* Preserve the last successful live feed. */ }
-    finally { liveLoading.current = false; }
+    finally { if (request === liveRequest.current) liveLoading.current = false; }
   }, []);
+
+  const changeLiveTiming = (dayMode: TrackingDayMode) => {
+    liveRequest.current++;
+    liveLoading.current = false;
+    seenSales.current = null;
+    setLive(null);
+    setNewSaleIds([]);
+    setToastSales([]);
+    for (const timer of toastTimers.current.values()) window.clearTimeout(timer);
+    toastTimers.current.clear();
+    setLiveDayMode(dayMode);
+  };
 
   useEffect(() => {
     if (!token || dates.end > businessToday()) return;
@@ -321,10 +338,10 @@ export default function TrackingPage() {
   useEffect(() => { if (token) void fetchViews(token); }, [token, fetchViews]);
   useEffect(() => {
     if (!token) return;
-    void fetchLive(token);
-    const timer = window.setInterval(() => void fetchLive(token), 5_000);
+    void fetchLive(token, liveDayMode);
+    const timer = window.setInterval(() => void fetchLive(token, liveDayMode), 5_000);
     return () => window.clearInterval(timer);
-  }, [token, fetchLive]);
+  }, [token, liveDayMode, fetchLive]);
   useEffect(() => {
     if (!token) return;
     const timer = window.setInterval(async () => {
@@ -450,10 +467,6 @@ export default function TrackingPage() {
   };
   const primaryHourly = hourlyFor(primaryMode, summary, filtered);
   const secondaryHourly = showBoth ? hourlyFor(secondaryMode, secondarySummary, secondaryFiltered) : null;
-  const hourDates = useMemo(() => Array.from(
-    { length: Math.floor((Date.parse(dates.end) - Date.parse(dates.start)) / 86_400_000) + 1 },
-    (_, index) => new Date(Date.parse(`${dates.start}T00:00:00Z`) + index * 86_400_000).toISOString().slice(0, 10)
-  ), [dates]);
   const modalSummary = hourSelection ? summaries[hourSelection.dayMode] || null : null;
   const modalExact = hourSelection ? exactHourlySpend[hourSelection.dayMode] : null;
   const hourCampaign = modalSummary?.campaigns.find((row) => row.key === hourSelection?.key) || null;
@@ -466,7 +479,6 @@ export default function TrackingPage() {
     setSummaries({});
     setExactHourlySpend({});
     setDates(range);
-    setHourDate(range.end);
     setError("");
   }
 
@@ -533,7 +545,7 @@ export default function TrackingPage() {
                   })}
                 </div>
               </div>
-              {accountId === "all" && <div className="mt-3 flex flex-wrap items-center gap-3"><label htmlFor="all-account-timing" className="text-sm text-slate-300">All accounts timing</label><select id="all-account-timing" value={allTiming} onChange={(event) => setAllTiming(event.target.value as typeof allTiming)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="us">US · 11:30 AM IST</option><option value="india">Indian · 12:00 AM IST</option><option value="both">Both · four tables</option></select><span className="text-xs text-slate-500">Each table uses its own reporting window.</span></div>}
+              {accountId === "all" && <div className="mt-3 flex flex-wrap items-center gap-3"><label htmlFor="all-account-timing" className="text-sm text-slate-300">All accounts timing</label><select id="all-account-timing" value={allTiming} onChange={(event) => setAllTiming(event.target.value as typeof allTiming)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="us">US · 11:30 AM IST</option><option value="india">Indian · 12:00 AM IST</option><option value="both">Both</option></select><span className="text-xs text-slate-500">Each table uses its own reporting window.</span></div>}
             </section>
 
             <section>
@@ -596,7 +608,7 @@ export default function TrackingPage() {
             </section>
 
             <section>
-              <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Hourly sales by campaign</h2><p className="text-xs text-slate-500">AR orders and tagged site arrivals use recorded times. CVR is orders ÷ AR UTM visits in each window. Meta spend is reported by clock hour.</p></div><div className="flex items-center gap-2"><select aria-label="Hourly breakdown day" value={hourDate} onChange={(event) => setHourDate(event.target.value)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm">{hourDates.map((day) => <option key={day} value={day}>{new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`))}</option>)}</select><select aria-label="Hourly breakdown metric" value={hourMetric} onChange={(event) => setHourMetric(event.target.value as TrackingHourlyMetric)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="orders">Orders</option><option value="revenue">Net sales</option><option value="roas">ROAS</option><option value="cvr">AR CVR</option></select></div></div>
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Hourly sales by campaign</h2><p className="text-xs text-slate-500">AR orders and tagged site arrivals use recorded times. CVR is orders ÷ AR UTM visits in each window. Meta spend is reported by clock hour.{dates.start !== dates.end ? " Hours shown are for the final day of the selected range." : ""}</p></div><select aria-label="Hourly breakdown metric" value={hourMetric} onChange={(event) => setHourMetric(event.target.value as TrackingHourlyMetric)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="orders">Orders</option><option value="revenue">Net sales</option><option value="roas">ROAS</option><option value="cvr">AR CVR</option></select></div>
               {(showBoth ? [{ dayMode: primaryMode, data: summary, table: primaryHourly }, { dayMode: secondaryMode, data: secondarySummary, table: secondaryHourly }] : [{ dayMode: primaryMode, data: summary, table: primaryHourly }]).map(({ dayMode, data, table }) => <div key={dayMode} className="mb-6">
                 <h3 className="mb-2 text-sm font-semibold text-cyan-200">{trackingWindowLabel(dayMode)}</h3>
                 {exactHourlyError[dayMode] && <p className="mb-2 text-xs text-amber-300">{exactHourlyError[dayMode]}</p>}
@@ -610,9 +622,11 @@ export default function TrackingPage() {
             <div className="sticky top-5 overflow-hidden rounded-xl border border-white/10 bg-[#141b2b]">
               <div className="border-b border-white/10 px-4 py-4">
                 <div className="flex items-center justify-between"><h2 className="flex items-center gap-2 text-lg font-semibold"><Activity size={18} className="text-[#e51b50]" /> Live sales</h2><span className="flex items-center gap-1 text-xs text-emerald-300"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" /> {newSaleIds.length ? `${newSaleIds.length} new` : "5s refresh"}</span></div>
-                <div className="mt-4 flex items-end justify-between"><div><div className="text-xs text-slate-500">Business day · 11:30 AM IST</div><div className="text-3xl font-semibold tabular-nums">{live?.todayCount ?? "—"}</div></div><div className="text-right"><div className="text-xs text-slate-500">Gross sales</div><div className="text-lg font-medium tabular-nums">{live ? inr(live.todayRevenue) : "—"}</div></div></div>
+                <label htmlFor="live-sales-timing" className="mt-4 block text-xs text-slate-400">Sales timing</label>
+                <select id="live-sales-timing" value={liveDayMode} onChange={(event) => changeLiveTiming(event.target.value as TrackingDayMode)} className="mt-1 w-full rounded-lg border border-white/10 bg-[#1b2437] px-3 py-2 text-sm text-white"><option value="business_1130_ist">US · from 11:30 AM IST</option><option value="calendar_ist">Indian · from 12:00 AM IST</option></select>
+                <div className="mt-4 flex items-end justify-between"><div><div className="text-xs text-slate-500">{liveDayMode === "calendar_ist" ? "Today · 12:00 AM IST" : "Business day · 11:30 AM IST"}</div><div className="text-3xl font-semibold tabular-nums">{live?.todayCount ?? "—"}</div></div><div className="text-right"><div className="text-xs text-slate-500">Gross sales</div><div className="text-lg font-medium tabular-nums">{live ? inr(live.todayRevenue) : "—"}</div></div></div>
               </div>
-              <div className="max-h-[70vh] overflow-y-auto">{live?.sales.map((sale) => <div key={sale.id} className={`border-b border-white/5 px-4 py-3 transition-colors duration-700 ${newSaleIds.includes(sale.id) ? "bg-[#e51b50]/20" : ""}`}><div className="flex gap-3"><div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-300"><ShoppingBag size={15} /></div><div className="min-w-0 flex-1"><p className="break-all text-sm font-medium">{sale.email}</p><p className="mt-1 text-xs text-slate-300">bought <span className="font-medium text-white">{sale.productName}</span></p><div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500"><span>{sale.productType}</span><span className="shrink-0">{displayIst(sale.at)}</span></div>{sale.campaign && <p className="mt-1 whitespace-normal break-words text-[11px] text-slate-400">Campaign: {sale.campaign}</p>}</div></div><div className="mt-1 text-right text-xs font-semibold text-emerald-300">{inr(sale.amount)}</div></div>)}{!live?.sales.length && <div className="px-4 py-8 text-center text-sm text-slate-500">No paid sales in this business day yet.</div>}</div>
+              <div className="max-h-[70vh] overflow-y-auto">{live?.sales.map((sale) => <div key={sale.id} className={`border-b border-white/5 px-4 py-3 transition-colors duration-700 ${newSaleIds.includes(sale.id) ? "bg-[#e51b50]/20" : ""}`}><div className="flex gap-3"><div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-300"><ShoppingBag size={15} /></div><div className="min-w-0 flex-1"><p className="break-all text-sm font-medium">{sale.email}</p><p className="mt-1 text-xs text-slate-300">bought <span className="font-medium text-white">{sale.productName}</span></p><div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500"><span>{sale.productType}</span><span className="shrink-0">{displayIst(sale.at)}</span></div>{sale.campaign && <p className="mt-1 whitespace-normal break-words text-[11px] text-slate-400">Campaign: {sale.campaign}</p>}</div></div><div className="mt-1 text-right text-xs font-semibold text-emerald-300">{inr(sale.amount)}</div></div>)}{!live?.sales.length && <div className="px-4 py-8 text-center text-sm text-slate-500">No paid sales in this {liveDayMode === "calendar_ist" ? "Indian day" : "business day"} yet.</div>}</div>
             </div>
           </aside>
         </div>

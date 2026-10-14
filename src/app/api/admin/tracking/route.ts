@@ -6,7 +6,7 @@ import { fetchMetaTrackingAccount, fetchMetaTrackingExactHourlySpend } from "@/l
 import { calculateProfitSheetGst, indianAdGstApplies } from "@/lib/profit-sheet-gst";
 import { readTrackedUtmVisits, visitHour, type TrackingUtmVisit } from "@/lib/tracking-utm-visits";
 import {
-  businessDate, businessDayStartUtc, campaignNameKey, isMetaSource,
+  campaignNameKey, isMetaSource,
   trackingDate, trackingDayStartUtc, nextTrackingDayStartUtc, trackingHourBucket, paidAt, productLabel,
   type TrackingCampaign, type TrackingDayMode, type TrackingHour, type TrackingPayment, type TrackingSale, type TrackingSummary,
 } from "@/lib/tracking-dashboard";
@@ -281,9 +281,9 @@ async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { s
   };
 }
 
-async function live(supabase: ReturnType<typeof getSupabaseAdmin>): Promise<{ sales: TrackingSale[]; todayCount: number; todayRevenue: number; fetchedAt: string }> {
-  const today = businessDate(new Date());
-  const start = businessDayStartUtc(today);
+async function live(supabase: ReturnType<typeof getSupabaseAdmin>, dayMode: TrackingDayMode): Promise<{ sales: TrackingSale[]; todayCount: number; todayRevenue: number; fetchedAt: string }> {
+  const today = trackingDate(new Date(), dayMode);
+  const start = trackingDayStartUtc(today, dayMode);
   const end = new Date().toISOString();
   const [payments, settings] = await Promise.all([
     paidPayments(supabase, start, end),
@@ -311,10 +311,10 @@ export async function GET(request: NextRequest) {
       .select("id,expires_at").eq("id", token).maybeSingle();
     if (error || !session || new Date(session.expires_at) <= new Date()) return json({ error: "Session expired" }, 401);
     const params = new URL(request.url).searchParams;
-    if (params.get("mode") === "live") return json(await live(supabase));
     const dayModeParam = params.get("dayMode");
     if (dayModeParam && dayModeParam !== "business_1130_ist" && dayModeParam !== "calendar_ist") return json({ error: "Choose a valid reporting window." }, 400);
     const dayMode: TrackingDayMode = dayModeParam === "calendar_ist" ? "calendar_ist" : "business_1130_ist";
+    if (params.get("mode") === "live") return json(await live(supabase, dayMode));
     if (params.get("mode") === "hourly-spend") {
       const day = params.get("day");
       if (!validDate(day) || day > trackingDate(new Date(), dayMode)) return json({ error: "Choose a valid IST day." }, 400);
