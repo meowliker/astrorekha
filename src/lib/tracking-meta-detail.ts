@@ -1,6 +1,6 @@
 import { getMetaAccountWindowForRequest, type MetaAccountCredential } from "@/lib/meta-ad-accounts";
-import { bufferedMetaRange, campaignSpendForBusinessDays, metaPurchasesMatchBusinessWindow, normalizeHourlySpendToDailyTotals, type CampaignSpendRow } from "@/lib/tracking-meta-spend";
-import { businessDayStartUtc, type TrackingActivity, type TrackingChild } from "@/lib/tracking-dashboard";
+import { bufferedMetaRange, campaignSpendForBusinessDays, metaPurchasesMatchWindow, normalizeHourlySpendToDailyTotals, type CampaignSpendRow } from "@/lib/tracking-meta-spend";
+import { trackingDayStartUtc, nextTrackingDayStartUtc, type TrackingActivity, type TrackingChild, type TrackingDayMode } from "@/lib/tracking-dashboard";
 
 const BASE = "https://graph.facebook.com/v21.0";
 type Page<T> = { data?: T[]; paging?: { next?: string }; error?: { message?: string } };
@@ -108,7 +108,7 @@ function emptyChild(object: MetaObject, level: "adset" | "ad", account: { id: st
   };
 }
 
-export async function fetchMetaTrackingChildren(credential: MetaAccountCredential, campaignId: string, dates: { start: string; end: string }, rate: number) {
+export async function fetchMetaTrackingChildren(credential: MetaAccountCredential, campaignId: string, dates: { start: string; end: string }, rate: number, dayMode: TrackingDayMode = "business_1130_ist") {
   const accountId = credential.accountId;
   const accountBase = `act_${accountId}`;
   const token = credential.accessToken;
@@ -119,9 +119,9 @@ export async function fetchMetaTrackingChildren(credential: MetaAccountCredentia
   const offset = Number(metaData.timezone_offset_hours_utc);
   if (!Number.isFinite(offset)) throw new Error("Meta account timezone is unavailable");
   const account = { id: accountId, name: metaData.name || credential.label || accountId, currency };
-  const accountWindow = getMetaAccountWindowForRequest(credential, dates.start, dates.end, "business_1130_ist");
+  const accountWindow = getMetaAccountWindowForRequest(credential, dates.start, dates.end, dayMode);
   if (!accountWindow) return { adsets: [] as TrackingChild[], ads: [] as TrackingChild[] };
-  const metaPurchaseWindowAligned = metaPurchasesMatchBusinessWindow(metaData.timezone_name, accountWindow, dates);
+  const metaPurchaseWindowAligned = metaPurchasesMatchWindow(metaData.timezone_name, accountWindow, dates, dayMode);
   const window = accountWindow;
   const buffered = bufferedMetaRange(dates.start, dates.end);
 
@@ -156,7 +156,7 @@ export async function fetchMetaTrackingChildren(credential: MetaAccountCredentia
     }
     const keyed = (items: Array<CampaignSpendRow & Record<string, string>>) => items.map((item) => ({ ...item, campaign_id: item[idField] }));
     const spend = campaignSpendForBusinessDays({ hourly: normalizeHourlySpendToDailyTotals(keyed(hourly), keyed(daily)), daily: keyed(daily), start: dates.start, end: dates.end,
-      timezoneOffsetHoursUtc: offset, accountWindow: window, nowMillis: Date.now() });
+      timezoneOffsetHoursUtc: offset, accountWindow: window, nowMillis: Date.now(), dayMode });
     for (const [id, value] of spend) {
       const row = rows.get(id) || emptyChild({ id }, level, account, campaignId, metaPurchaseWindowAligned);
       row.spend = value;
@@ -169,9 +169,9 @@ export async function fetchMetaTrackingChildren(credential: MetaAccountCredentia
   return { adsets, ads };
 }
 
-export async function fetchMetaTrackingActivities(credential: MetaAccountCredential, dates: { start: string; end: string }): Promise<TrackingActivity[]> {
-  const since = new Date(`${dates.start}T11:30:00+05:30`).toISOString();
-  const until = new Date(Date.parse(`${dates.end}T11:30:00+05:30`) + 86_400_000).toISOString();
+export async function fetchMetaTrackingActivities(credential: MetaAccountCredential, dates: { start: string; end: string }, dayMode: TrackingDayMode = "business_1130_ist"): Promise<TrackingActivity[]> {
+  const since = trackingDayStartUtc(dates.start, dayMode);
+  const until = nextTrackingDayStartUtc(dates.end, dayMode);
   const [raw, currency] = await Promise.all([pages<RawActivity>(url(`act_${credential.accountId}/activities`, credential.accessToken, {
     fields: "event_time,event_type,translated_event_type,object_id,object_name,object_type,actor_name,extra_data",
     since, until, limit: "100",
@@ -191,21 +191,21 @@ export async function fetchMetaTrackingActivities(credential: MetaAccountCredent
   });
 }
 
-export async function fetchMetaTrackingHourlySpend(credential: MetaAccountCredential, campaignId: string, day: string, rate: number) {
+export async function fetchMetaTrackingHourlySpend(credential: MetaAccountCredential, campaignId: string, day: string, rate: number, dayMode: TrackingDayMode = "business_1130_ist") {
   const token = credential.accessToken;
   const accountResponse = await fetch(url(`act_${credential.accountId}`, token, { fields: "currency,timezone_offset_hours_utc" }), { cache: "no-store", signal: AbortSignal.timeout(20_000) });
   const account = await accountResponse.json() as { currency?: string; timezone_offset_hours_utc?: number; error?: { message?: string } };
   if (!accountResponse.ok || account.error) throw new Error(account.error?.message || "Meta account unavailable");
   const offset = Number(account.timezone_offset_hours_utc);
   if (!Number.isFinite(offset)) throw new Error("Meta account timezone is unavailable");
-  const accountWindow = getMetaAccountWindowForRequest(credential, day, day, "business_1130_ist");
+  const accountWindow = getMetaAccountWindowForRequest(credential, day, day, dayMode);
   if (!accountWindow) return { spendInr: Array(24).fill(0) as number[] };
   const buffered = bufferedMetaRange(day, day);
   const rows = await pages<CampaignSpendRow>(url(`${campaignId}/insights`, token, {
     fields: "campaign_id,date_start,spend", level: "campaign", time_increment: "1",
     breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone", time_range: JSON.stringify(buffered), limit: "5000",
   }));
-  const start = Date.parse(businessDayStartUtc(day));
+  const start = Date.parse(trackingDayStartUtc(day, dayMode));
   const end = start + 86_400_000;
   const now = Date.now();
   const hourly = Array.from({ length: 24 }, () => 0);

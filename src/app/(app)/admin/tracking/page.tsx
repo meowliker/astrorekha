@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { Activity, ArrowDown, ArrowLeft, ArrowUp, ChevronDown, Columns3, GripVertical, RefreshCw, Search, ShoppingBag, X } from "lucide-react";
-import type { TrackingActivity, TrackingCampaign, TrackingSale, TrackingSummary } from "@/lib/tracking-dashboard";
+import { accountTrackingDayMode, trackingWindowLabel, type TrackingActivity, type TrackingCampaign, type TrackingDayMode, type TrackingSale, type TrackingSummary } from "@/lib/tracking-dashboard";
 import type { TrackingSavedView, TrackingViewConfig } from "@/lib/tracking-views";
 import TrackingDateRangePicker, { type TrackingRange } from "./TrackingDateRangePicker";
 import TrackingCampaignRows from "./TrackingCampaignRows";
@@ -78,8 +78,55 @@ const PRESETS: Record<string, string[]> = {
 };
 const DEFAULT_COLUMNS = PRESETS.Performance;
 
+function selectCampaigns(summary: TrackingSummary | null, accountId: string, search: string, sort: { id: string; desc: boolean }, activeOnly: boolean) {
+  const needle = search.trim().toLowerCase();
+  const rows = (summary?.campaigns || []).filter((row) =>
+    (accountId === "all" || row.accountId === accountId) &&
+    (!activeOnly || row.status === "ACTIVE") &&
+    (!needle || [row.campaignName, row.campaignId, row.accountName, ...row.utmTerms, ...row.utmContents].join(" ").toLowerCase().includes(needle))
+  );
+  const column = COLUMNS.find((item) => item.id === sort.id);
+  return rows.sort((a, b) => {
+    const av = column?.sort(a) ?? 0;
+    const bv = column?.sort(b) ?? 0;
+    const comparison = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
+    return sort.desc ? -comparison : comparison;
+  });
+}
+
+function totalsFor(summary: TrackingSummary | null, accountId: string) {
+  const rows = accountId === "all" ? summary?.campaigns || [] : (summary?.campaigns || []).filter((row) => row.accountId === accountId);
+  return {
+    spend: rows.reduce((sum, row) => sum + (row.spendInr || 0), 0),
+    orders: rows.reduce((sum, row) => sum + row.orders, 0),
+    matched: rows.reduce((sum, row) => sum + (row.accountId ? row.orders : 0), 0),
+    revenue: rows.reduce((sum, row) => sum + row.revenue, 0),
+  };
+}
+
+function profitFor(summary: TrackingSummary | null, accountId: string, dates: TrackingRange, totals: ReturnType<typeof totalsFor>) {
+  if (!summary) return null;
+  if (accountId === "all") return summary.totals.profit;
+  if (summary.accounts.find((account) => account.id === accountId)?.error) return null;
+  const accountRows = summary.campaigns.filter((row) => row.accountId === accountId);
+  if (accountRows.some((row) => row.spendInr == null && row.spend > 0)) return null;
+  const keys = new Set(accountRows.map((row) => row.key));
+  let gst = 0;
+  for (let day = dates.start; day <= dates.end; day = new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)) {
+    const revenue = summary.hourly.filter((item) => item.date === day && keys.has(item.campaignKey)).reduce((sum, item) => sum + item.revenue, 0);
+    const indianSpend = summary.accountDailySpendInr[accountId]?.[day]?.indian || 0;
+    gst += indianAdGstApplies(day) ? calculateProfitSheetGst(revenue, 0.18, indianSpend).gst : revenue * 0.05;
+  }
+  return totals.revenue - totals.spend - gst;
+}
+
 function businessToday() {
   const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(Date.now() - (11 * 60 + 30) * 60_000));
+  const value = (kind: string) => parts.find((part) => part.type === kind)?.value || "00";
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+function calendarToday() {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
   const value = (kind: string) => parts.find((part) => part.type === kind)?.value || "00";
   return `${value("year")}-${value("month")}-${value("day")}`;
 }
@@ -91,21 +138,23 @@ export default function TrackingPage() {
   const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
   const [dates, setDates] = useState({ start: businessToday(), end: businessToday() });
-  const [summary, setSummary] = useState<TrackingSummary | null>(null);
+  const [datesCustomized, setDatesCustomized] = useState(false);
+  const [summaries, setSummaries] = useState<Partial<Record<TrackingDayMode, TrackingSummary>>>({});
+  const [accountCatalog, setAccountCatalog] = useState<TrackingSummary["accounts"]>([]);
   const [live, setLive] = useState<LiveData | null>(null);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [accountId, setAccountId] = useState("all");
+  const [allTiming, setAllTiming] = useState<"us" | "india" | "both">("us");
   const [search, setSearch] = useState("");
   const [activeOnly, setActiveOnly] = useState(false);
   const [activeScope, setActiveScope] = useState<"campaign" | "adset" | "ad" | "all">("all");
   const [activities, setActivities] = useState<TrackingActivity[]>([]);
   const [activityWarnings, setActivityWarnings] = useState<string[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
-  const [hourCampaignKey, setHourCampaignKey] = useState<string | null>(null);
-  const [exactHourlySpend, setExactHourlySpend] = useState<{ day: string; hourlySpendInr: Record<string, number[]>; failedAccountIds: string[] } | null>(null);
-  const [exactHourlyError, setExactHourlyError] = useState("");
+  const [hourSelection, setHourSelection] = useState<{ key: string; dayMode: TrackingDayMode } | null>(null);
+  const [exactHourlySpend, setExactHourlySpend] = useState<Partial<Record<TrackingDayMode, { day: string; hourlySpendInr: Record<string, number[]>; failedAccountIds: string[] }>>>({});
+  const [exactHourlyError, setExactHourlyError] = useState<Partial<Record<TrackingDayMode, string>>>({});
   const [columnIds, setColumnIds] = useState<string[]>(DEFAULT_COLUMNS);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [viewsOpen, setViewsOpen] = useState(false);
@@ -123,11 +172,30 @@ export default function TrackingPage() {
   const [toastSales, setToastSales] = useState<TrackingSale[]>([]);
   const seenSales = useRef<Set<string> | null>(null);
   const toastTimers = useRef<Map<string, number>>(new Map());
-  const summaryRequest = useRef(0);
+  const summaryRequest = useRef<Record<TrackingDayMode, number>>({ business_1130_ist: 0, calendar_ist: 0 });
+  const refreshCount = useRef(0);
   const liveLoading = useRef(false);
   const reconciliationLoading = useRef(false);
   const metaAutoLoading = useRef(false);
-  const summaryFetchedAt = summary?.fetchedAt;
+  const knownAccounts = accountCatalog.length ? accountCatalog : summaries.business_1130_ist?.accounts || summaries.calendar_ist?.accounts || [];
+  const primaryMode: TrackingDayMode = accountId === "all"
+    ? allTiming === "india" ? "calendar_ist" : "business_1130_ist"
+    : accountTrackingDayMode(knownAccounts.find((account) => account.id === accountId)?.timezone);
+  const showBoth = accountId === "all" && allTiming === "both";
+  const maxDate = primaryMode === "calendar_ist" && !showBoth ? calendarToday() : businessToday();
+  const secondaryMode: TrackingDayMode = "calendar_ist";
+  const businessSummary = summaries.business_1130_ist;
+  const indianSummary = summaries.calendar_ist;
+  const summary = summaries[primaryMode] || null;
+  const secondarySummary = showBoth ? summaries[secondaryMode] || null : null;
+
+  useEffect(() => {
+    if (!datesCustomized && dates.start === dates.end && dates.end !== maxDate) {
+      applyDates({ start: maxDate, end: maxDate });
+    } else if (dates.end > maxDate) {
+      applyDates({ start: maxDate, end: maxDate });
+    }
+  }, [datesCustomized, dates.start, dates.end, maxDate]);
 
   useEffect(() => {
     const session = localStorage.getItem("admin_session_token");
@@ -152,17 +220,33 @@ export default function TrackingPage() {
     } catch { /* Use the default view. */ }
   }, [router]);
 
-  const fetchSummary = useCallback(async (session: string, range: typeof dates, quiet = false) => {
-    const request = ++summaryRequest.current;
-    if (quiet) setRefreshing(true); else setLoading(true);
+  const fetchSummary = useCallback(async (session: string, range: typeof dates, dayMode: TrackingDayMode, quiet = false) => {
+    const request = ++summaryRequest.current[dayMode];
+    if (quiet) { refreshCount.current++; setRefreshing(true); }
     try {
-      const params = new URLSearchParams({ start: range.start, end: range.end });
+      const params = new URLSearchParams({ start: range.start, end: range.end, dayMode });
       const response = await fetch(`/api/admin/tracking?${params}`, { headers: { "x-admin-session": session }, cache: "no-store" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Tracking data unavailable");
-      if (request === summaryRequest.current) { setSummary(data as TrackingSummary); setError(""); }
-    } catch (cause) { if (request === summaryRequest.current) setError(cause instanceof Error ? cause.message : "Tracking data unavailable"); }
-    finally { if (request === summaryRequest.current) { setLoading(false); setRefreshing(false); } }
+      if (request === summaryRequest.current[dayMode]) { setSummaries((current) => ({ ...current, [dayMode]: data as TrackingSummary })); setAccountCatalog((data as TrackingSummary).accounts); setError(""); }
+    } catch (cause) { if (request === summaryRequest.current[dayMode]) setError(cause instanceof Error ? cause.message : "Tracking data unavailable"); }
+    finally { if (quiet) { refreshCount.current = Math.max(0, refreshCount.current - 1); setRefreshing(refreshCount.current > 0); } }
+  }, []);
+
+  const fetchExactHourly = useCallback((session: string, day: string, dayMode: TrackingDayMode) => {
+    const controller = new AbortController();
+    setExactHourlySpend((current) => { const next = { ...current }; delete next[dayMode]; return next; });
+    setExactHourlyError((current) => ({ ...current, [dayMode]: "" }));
+    const params = new URLSearchParams({ mode: "hourly-spend", day, dayMode });
+    fetch(`/api/admin/tracking?${params}`, { headers: { "x-admin-session": session }, cache: "no-store", signal: controller.signal })
+      .then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error || "Hourly spend unavailable"); return data; })
+      .then((data: { hourlySpendInr: Record<string, number[]>; failedAccountIds?: string[]; warnings?: string[] }) => {
+        if (controller.signal.aborted) return;
+        setExactHourlySpend((current) => ({ ...current, [dayMode]: { day, hourlySpendInr: data.hourlySpendInr, failedAccountIds: data.failedAccountIds || [] } }));
+        setExactHourlyError((current) => ({ ...current, [dayMode]: (data.warnings || []).join(" · ") }));
+      })
+      .catch((cause) => { if (!controller.signal.aborted) setExactHourlyError((current) => ({ ...current, [dayMode]: cause instanceof Error ? cause.message : "Hourly spend unavailable" })); });
+    return () => controller.abort();
   }, []);
 
   const fetchLive = useCallback(async (session: string) => {
@@ -194,9 +278,13 @@ export default function TrackingPage() {
   }, []);
 
   useEffect(() => {
-    if (!token) return;
-    void fetchSummary(token, dates);
+    if (!token || dates.end > businessToday()) return;
+    void fetchSummary(token, dates, "business_1130_ist");
   }, [token, dates, fetchSummary]);
+  useEffect(() => {
+    if (!token || (primaryMode !== "calendar_ist" && !showBoth) || summaries.calendar_ist) return;
+    void fetchSummary(token, dates, "calendar_ist");
+  }, [token, dates, primaryMode, showBoth, summaries.calendar_ist, fetchSummary]);
   useEffect(() => {
     if (!token) return;
     let active = true;
@@ -204,7 +292,7 @@ export default function TrackingPage() {
       if (document.visibilityState !== "visible") return;
       setActivityLoading(true);
       try {
-        const params = new URLSearchParams({ mode: "activities", ...dates, accountId });
+        const params = new URLSearchParams({ mode: "activities", ...dates, accountId, dayMode: primaryMode });
         const response = await fetch(`/api/admin/tracking/details?${params}`, { headers: { "x-admin-session": token }, cache: "no-store" });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Meta action log unavailable");
@@ -215,22 +303,15 @@ export default function TrackingPage() {
     void load();
     const timer = window.setInterval(() => void load(), 300_000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [token, dates, accountId]);
+  }, [token, dates, accountId, primaryMode]);
   useEffect(() => {
-    if (!token || !summaryFetchedAt || hourDate < dates.start || hourDate > dates.end) return;
-    const controller = new AbortController();
-    setExactHourlySpend(null); setExactHourlyError("");
-    const params = new URLSearchParams({ mode: "hourly-spend", day: hourDate });
-    fetch(`/api/admin/tracking?${params}`, { headers: { "x-admin-session": token }, cache: "no-store", signal: controller.signal })
-      .then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error || "Hourly spend unavailable"); return data; })
-      .then((data: { hourlySpendInr: Record<string, number[]>; failedAccountIds?: string[]; warnings?: string[] }) => {
-        if (controller.signal.aborted) return;
-        setExactHourlySpend({ day: hourDate, hourlySpendInr: data.hourlySpendInr, failedAccountIds: data.failedAccountIds || [] });
-        setExactHourlyError((data.warnings || []).join(" · "));
-      })
-      .catch((cause) => { if (!controller.signal.aborted) setExactHourlyError(cause instanceof Error ? cause.message : "Hourly spend unavailable"); });
-    return () => controller.abort();
-  }, [token, summaryFetchedAt, hourDate, dates.start, dates.end]);
+    if (!token || !businessSummary || (primaryMode !== "business_1130_ist" && !showBoth) || hourDate < dates.start || hourDate > dates.end) return;
+    return fetchExactHourly(token, hourDate, "business_1130_ist");
+  }, [token, businessSummary, primaryMode, showBoth, hourDate, dates.start, dates.end, fetchExactHourly]);
+  useEffect(() => {
+    if (!token || !indianSummary || (primaryMode !== "calendar_ist" && !showBoth) || hourDate < dates.start || hourDate > dates.end) return;
+    return fetchExactHourly(token, hourDate, "calendar_ist");
+  }, [token, indianSummary, primaryMode, showBoth, hourDate, dates.start, dates.end, fetchExactHourly]);
   const fetchViews = useCallback(async (session: string) => {
     await fetch("/api/admin/tracking/views", { headers: { "x-admin-session": session }, cache: "no-store" })
       .then(async (response) => { if (!response.ok) throw new Error("Unable to load saved views"); return response.json(); })
@@ -249,11 +330,11 @@ export default function TrackingPage() {
     const timer = window.setInterval(async () => {
       if (document.visibilityState !== "visible" || metaAutoLoading.current) return;
       metaAutoLoading.current = true;
-      try { await fetchSummary(token, dates, true); }
+      try { await Promise.all((showBoth ? ["business_1130_ist", "calendar_ist"] as TrackingDayMode[] : [primaryMode]).map((mode) => fetchSummary(token, dates, mode, true))); }
       finally { metaAutoLoading.current = false; }
     }, 300_000);
     return () => window.clearInterval(timer);
-  }, [token, dates, fetchSummary]);
+  }, [token, dates, fetchSummary, primaryMode, showBoth]);
   useEffect(() => {
     if (!token) return;
     const reconcile = async () => {
@@ -304,11 +385,12 @@ export default function TrackingPage() {
   };
   const activeColumns = columnIds.map((id) => COLUMNS.find((column) => column.id === id)).filter((column): column is Column => !!column);
   const selectedView = savedViews.find((view) => view.id === selectedViewId);
-  const currentViewConfig = (): TrackingViewConfig => ({ columnIds, sort, accountId, search, hourMetric, activeOnly, activeScope });
+  const currentViewConfig = (): TrackingViewConfig => ({ columnIds, sort, accountId, search, hourMetric, activeOnly, activeScope, allTiming });
   const applyView = (view: TrackingSavedView) => {
     setColumns(view.columnIds);
     setSort(view.sort);
     setAccountId(view.accountId);
+    setAllTiming(view.allTiming || "us");
     setSearch(view.search);
     setActiveOnly(view.activeOnly === true);
     setActiveScope(view.activeScope || "all");
@@ -350,75 +432,64 @@ export default function TrackingPage() {
     finally { setViewBusy(false); }
   };
 
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    const rows = (summary?.campaigns || []).filter((row) =>
-      (accountId === "all" || row.accountId === accountId) &&
-      (!activeOnly || row.status === "ACTIVE") &&
-      (!needle || [row.campaignName, row.campaignId, row.accountName, ...row.utmTerms, ...row.utmContents].join(" ").toLowerCase().includes(needle))
-    );
-    const column = COLUMNS.find((item) => item.id === sort.id);
-    return rows.sort((a, b) => {
-      const av = column?.sort(a) ?? 0;
-      const bv = column?.sort(b) ?? 0;
-      const comparison = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
-      return sort.desc ? -comparison : comparison;
-    });
-  }, [summary, accountId, search, sort, activeOnly]);
-  const hasUnalignedMetaPurchases = filtered.some((row) => row.accountId && !row.metaPurchaseWindowAligned);
-  const visibleSpendEstimated = (summary?.campaigns || []).some((row) => row.accountId && (accountId === "all" || row.accountId === accountId) && !row.metaPurchaseWindowAligned && (row.spendInr || 0) > 0);
+  const filtered = useMemo(() => selectCampaigns(summary, accountId, search, sort, activeOnly), [summary, accountId, search, sort, activeOnly]);
+  const secondaryFiltered = useMemo(() => selectCampaigns(secondarySummary, accountId, search, sort, activeOnly), [secondarySummary, accountId, search, sort, activeOnly]);
+  const visibleTotals = useMemo(() => totalsFor(summary, accountId), [summary, accountId]);
+  const visibleProfit = useMemo(() => profitFor(summary, accountId, dates, visibleTotals), [summary, accountId, dates, visibleTotals]);
+  const secondaryTotals = useMemo(() => totalsFor(secondarySummary, accountId), [secondarySummary, accountId]);
+  const secondaryProfit = useMemo(() => profitFor(secondarySummary, accountId, dates, secondaryTotals), [secondarySummary, accountId, dates, secondaryTotals]);
 
-  const visibleTotals = useMemo(() => {
-    const rows = accountId === "all" ? summary?.campaigns || [] : (summary?.campaigns || []).filter((row) => row.accountId === accountId);
-    return {
-      spend: rows.reduce((sum, row) => sum + (row.spendInr || 0), 0),
-      orders: rows.reduce((sum, row) => sum + row.orders, 0),
-      matched: rows.reduce((sum, row) => sum + (row.accountId ? row.orders : 0), 0),
-      revenue: rows.reduce((sum, row) => sum + row.revenue, 0),
-      refunds: rows.reduce((sum, row) => sum + row.refundAmount, 0),
-    };
-  }, [summary, accountId]);
-  const visibleProfit = useMemo(() => {
-    if (!summary) return null;
-    if (accountId === "all") return summary.totals.profit;
-    if (summary.accounts.find((account) => account.id === accountId)?.error) return null;
-    const accountRows = summary.campaigns.filter((row) => row.accountId === accountId);
-    if (accountRows.some((row) => row.spendInr == null && row.spend > 0)) return null;
-    const keys = new Set(accountRows.map((row) => row.key));
-    let gst = 0;
-    for (let day = dates.start; day <= dates.end; day = new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)) {
-      const revenue = summary.hourly.filter((item) => item.date === day && keys.has(item.campaignKey)).reduce((sum, item) => sum + item.revenue, 0);
-      const indianSpend = summary.accountDailySpendInr[accountId]?.[day]?.indian || 0;
-      gst += indianAdGstApplies(day) ? calculateProfitSheetGst(revenue, 0.18, indianSpend).gst : revenue * 0.05;
-    }
-    return visibleTotals.revenue - visibleTotals.spend - gst;
-  }, [summary, accountId, dates, visibleTotals.revenue, visibleTotals.spend]);
-
-  const exactSpend = exactHourlySpend?.day === hourDate ? exactHourlySpend.hourlySpendInr : null;
-  const failedHourlyAccounts = useMemo(() => new Set(exactHourlySpend?.day === hourDate ? exactHourlySpend.failedAccountIds : []), [exactHourlySpend, hourDate]);
-  const hourly = useMemo(() => buildTrackingHourlyTable(summary ? { hourly: summary.hourly,
-    hourlyUtmVisits: summary.hourlyUtmVisits, utmVisitsAvailable: summary.utmVisitsAvailable,
-    hourlySpendInr: exactSpend ? Object.fromEntries(Object.entries(exactSpend).map(([key, values]) => [key, { [hourDate]: values }])) : {} } : null,
-    filtered, hourDate, hourMetric, exactSpend !== null, failedHourlyAccounts), [summary, exactSpend, failedHourlyAccounts, filtered, hourDate, hourMetric]);
+  const hourlyFor = (dayMode: TrackingDayMode, data: TrackingSummary | null, rows: TrackingCampaign[]) => {
+    const exact = exactHourlySpend[dayMode]?.day === hourDate ? exactHourlySpend[dayMode] : null;
+    const failed = new Set(exact?.failedAccountIds || []);
+    const hourly = buildTrackingHourlyTable(data ? { hourly: data.hourly,
+      hourlyUtmVisits: data.hourlyUtmVisits, utmVisitsAvailable: data.utmVisitsAvailable,
+      hourlySpendInr: exact ? Object.fromEntries(Object.entries(exact.hourlySpendInr).map(([key, values]) => [key, { [hourDate]: values }])) : {} } : null,
+      rows, hourDate, hourMetric, exact !== null, failed);
+    return { hourly, exact, failed };
+  };
+  const primaryHourly = hourlyFor(primaryMode, summary, filtered);
+  const secondaryHourly = showBoth ? hourlyFor(secondaryMode, secondarySummary, secondaryFiltered) : null;
   const hourDates = useMemo(() => Array.from(
     { length: Math.floor((Date.parse(dates.end) - Date.parse(dates.start)) / 86_400_000) + 1 },
     (_, index) => new Date(Date.parse(`${dates.start}T00:00:00Z`) + index * 86_400_000).toISOString().slice(0, 10)
   ), [dates]);
-  const hourCampaign = summary?.campaigns.find((row) => row.key === hourCampaignKey) || null;
-  const hourSpend = hourCampaign?.accountId && exactSpend && !failedHourlyAccounts.has(hourCampaign.accountId) ? exactSpend[hourCampaign.key] || Array(24).fill(0) : null;
-  const hourVisits = summary?.utmVisitsAvailable ? summary.hourlyUtmVisits[hourCampaign?.key || ""]?.[hourDate] || Array(24).fill(0) : null;
+  const modalSummary = hourSelection ? summaries[hourSelection.dayMode] || null : null;
+  const modalExact = hourSelection ? exactHourlySpend[hourSelection.dayMode] : null;
+  const hourCampaign = modalSummary?.campaigns.find((row) => row.key === hourSelection?.key) || null;
+  const hourSpend = hourCampaign?.accountId && modalExact?.day === hourDate && !modalExact.failedAccountIds.includes(hourCampaign.accountId) ? modalExact.hourlySpendInr[hourCampaign.key] || Array(24).fill(0) : null;
+  const hourVisits = modalSummary?.utmVisitsAvailable ? modalSummary.hourlyUtmVisits[hourCampaign?.key || ""]?.[hourDate] || Array(24).fill(0) : null;
 
   function applyDates(range: TrackingRange) {
-    setSummary(null);
-    setExactHourlySpend(null);
+    summaryRequest.current.business_1130_ist++;
+    summaryRequest.current.calendar_ist++;
+    setSummaries({});
+    setExactHourlySpend({});
     setDates(range);
     setHourDate(range.end);
     setError("");
   }
 
+  const summaryCards = (dayMode: TrackingDayMode, data: TrackingSummary | null, totals: ReturnType<typeof totalsFor>, profit: number | null) => {
+    const estimated = (data?.campaigns || []).some((row) => row.accountId && (accountId === "all" || row.accountId === accountId) && !row.metaPurchaseWindowAligned && (row.spendInr || 0) > 0);
+    return <div key={dayMode} className="mb-6">
+      {showBoth && <h2 className="mb-2 text-sm font-semibold text-cyan-200">{trackingWindowLabel(dayMode)}</h2>}
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/10 bg-white/10 md:grid-cols-3 xl:grid-cols-6">
+        {[
+          ["Meta spend · INR", data ? inr(totals.spend) : "…"],
+          ["Paid orders", data ? count(totals.orders) : "…"],
+          ["Net sales", data ? inr(totals.revenue) : "…"],
+          ["Profit after GST & ads", data ? profit == null ? "—" : inr(profit) : "…"],
+          ["Blended ROAS", data ? `${estimated ? "≈" : ""}${ratio(totals.revenue, totals.spend)}` : "…"],
+          ["Matched to Meta", data ? `${totals.matched} / ${totals.orders}` : "…"],
+        ].map(([label, value]) => <div key={label} className="bg-[#141b2b] px-4 py-4"><div className="text-xs uppercase tracking-wider text-slate-500">{label}</div><div className="mt-2 text-xl font-semibold tabular-nums">{value}</div></div>)}
+      </div>
+    </div>;
+  };
+
   return (
     <div className="min-h-screen bg-[#0A0E1A] text-slate-100">
-      {hourCampaign && <TrackingHourlyModal campaign={hourCampaign} day={hourDate} hours={summary?.hourly || []} spend={hourSpend} visits={hourVisits} error={!hourCampaign.accountId ? "No matched Meta campaign for this row" : failedHourlyAccounts.has(hourCampaign.accountId) ? exactHourlyError : !exactSpend ? exactHourlyError : ""} onClose={() => setHourCampaignKey(null)} />}
+      {hourCampaign && hourSelection && <TrackingHourlyModal campaign={hourCampaign} day={hourDate} dayMode={hourSelection.dayMode} hours={modalSummary?.hourly || []} spend={hourSpend} visits={hourVisits} error={!hourCampaign.accountId ? "No matched Meta campaign for this row" : exactHourlyError[hourSelection.dayMode] || ""} onClose={() => setHourSelection(null)} />}
       <div aria-live="polite" className="pointer-events-none fixed right-4 top-4 z-50 flex w-[min(380px,calc(100vw-2rem))] flex-col gap-2">
         <AnimatePresence initial={false}>{toastSales.map((sale) => <motion.div key={sale.id} role="status" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 40 }} transition={{ duration: 0.2 }} className="pointer-events-auto rounded-xl border border-emerald-400/35 bg-[#1b2437] p-4 shadow-2xl shadow-black/50">
           <div className="flex items-start gap-3"><div className="rounded-full bg-emerald-400/15 p-2 text-emerald-300"><ShoppingBag size={17} /></div><div className="min-w-0 flex-1"><div className="text-xs font-semibold uppercase tracking-wide text-emerald-300">New sale · {sale.productType}</div><p className="mt-1 break-all text-sm font-medium">{sale.email}</p><p className="mt-1 text-xs text-slate-300">bought {sale.productName}</p>{sale.campaign && <p className="mt-2 whitespace-normal break-words text-xs text-slate-400">Campaign: {sale.campaign}</p>}<div className="mt-2 flex items-center justify-between gap-2 text-xs"><span className="text-slate-500">{displayIst(sale.at)} IST</span><span className="font-semibold text-emerald-300">{inr(sale.amount)}</span></div></div><button aria-label="Dismiss sale notification" onClick={() => { const timer = toastTimers.current.get(sale.id); if (timer) window.clearTimeout(timer); toastTimers.current.delete(sale.id); setToastSales((current) => current.filter((item) => item.id !== sale.id)); }} className="text-slate-500 hover:text-white"><X size={16} /></button></div>
@@ -432,44 +503,37 @@ export default function TrackingPage() {
             <p className="mt-1 text-sm text-slate-400">Meta campaign performance and AstroRekha paid orders, joined by saved UTMs.</p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
-            <TrackingDateRangePicker value={dates} maxDate={businessToday()} onChange={applyDates} />
-            <button onClick={() => token && void fetchSummary(token, dates, true)} title="Refresh Meta and orders" className="rounded-lg border border-white/10 p-2 hover:bg-white/5"><RefreshCw size={18} className={refreshing ? "animate-spin" : ""} /></button>
+            <TrackingDateRangePicker value={dates} maxDate={maxDate} onChange={(range) => { setDatesCustomized(true); applyDates(range); }} />
+            <button onClick={() => token && void Promise.all((showBoth ? ["business_1130_ist", "calendar_ist"] as TrackingDayMode[] : [primaryMode]).map((mode) => fetchSummary(token, dates, mode, true)))} title="Refresh Meta and orders" className="rounded-lg border border-white/10 p-2 hover:bg-white/5"><RefreshCw size={18} className={refreshing ? "animate-spin" : ""} /></button>
           </div>
         </header>
 
         {error && <div role="alert" className="mb-5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div>}
-        {summary?.warnings?.length ? <div className="mb-5 border-l-2 border-amber-400/70 pl-3 text-xs text-amber-100/75">{summary.warnings.join(" · ")}</div> : null}
+        {[summary, secondarySummary].filter((item): item is TrackingSummary => !!item).flatMap((item) => item.warnings).length ? <div className="mb-5 border-l-2 border-amber-400/70 pl-3 text-xs text-amber-100/75">{Array.from(new Set([summary, secondarySummary].filter((item): item is TrackingSummary => !!item).flatMap((item) => item.warnings))).join(" · ")}</div> : null}
 
-        <div className="mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/10 bg-white/10 md:grid-cols-3 xl:grid-cols-6">
-          {[
-            ["Meta spend · INR", inr(visibleTotals.spend)],
-            ["Paid orders", count(visibleTotals.orders)],
-            ["Net sales", inr(visibleTotals.revenue)],
-            ["Profit after GST & ads", visibleProfit == null ? "—" : inr(visibleProfit)],
-            ["Blended ROAS", `${visibleSpendEstimated ? "≈" : ""}${ratio(visibleTotals.revenue, visibleTotals.spend)}`],
-            ["Matched to Meta", `${visibleTotals.matched} / ${visibleTotals.orders}`],
-          ].map(([label, value]) => <div key={label} className="bg-[#141b2b] px-4 py-4"><div className="text-xs uppercase tracking-wider text-slate-500">{label}</div><div className="mt-2 text-xl font-semibold tabular-nums">{value}</div></div>)}
-        </div>
-        <p className="-mt-4 mb-6 text-xs text-slate-500">Profit follows the Profit Sheet: confirmed net sales minus live Meta spend and net GST, including Indian ad GST credit. Matched to Meta counts paid orders whose campaign ID or unique UTM name matches a Meta campaign; unmatched orders still count in AR sales.</p>
+        {summaryCards(primaryMode, summary, visibleTotals, visibleProfit)}
+        {showBoth && summaryCards(secondaryMode, secondarySummary, secondaryTotals, secondaryProfit)}
+        <p className="-mt-4 mb-6 text-xs text-slate-500">Profit applies the Profit Sheet GST formula to the selected time window. Matched to Meta counts paid orders whose campaign ID or unique UTM name matches a Meta campaign; unmatched orders still count in AR sales.</p>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_330px]">
           <main className="min-w-0 space-y-7">
             <section>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                <div><h2 className="text-lg font-semibold">Ad accounts</h2><p className="text-xs text-slate-500">Select an account to focus the campaign table and hourly sales.</p></div>
+                <div><h2 className="text-lg font-semibold">Ad accounts</h2><p className="text-xs text-slate-500">Indian time-zone accounts use midnight IST; US time-zone accounts use 11:30 AM IST.</p></div>
                 <span className="text-xs text-slate-500">{summary ? `Direct Meta API · refreshes every 5m or manually · fetched ${displayIst(summary.fetchedAt)} IST` : "Loading Meta"}</span>
               </div>
               <div className="overflow-x-auto border-y border-white/10">
                 <div className="flex min-w-max gap-0">
-                  <button onClick={() => setAccountId("all")} className={`min-w-48 border-r border-white/10 px-4 py-3 text-left ${accountId === "all" ? "bg-white/10" : "hover:bg-white/5"}`}><div className="text-sm font-medium">All accounts</div><div className="mt-1 text-xs text-slate-400">{summary?.accounts.length || 0} connected</div></button>
-                  {(summary?.accounts || []).map((account) => {
+                  <button onClick={() => setAccountId("all")} className={`min-w-48 border-r border-white/10 px-4 py-3 text-left ${accountId === "all" ? "bg-white/10" : "hover:bg-white/5"}`}><div className="text-sm font-medium">All accounts</div><div className="mt-1 text-xs text-slate-400">{knownAccounts.length} connected</div></button>
+                  {knownAccounts.map((account) => {
                     const rows = summary?.campaigns.filter((row) => row.accountId === account.id) || [];
                     const spend = rows.reduce((sum, row) => sum + (row.spendInr || 0), 0);
                     const orders = rows.reduce((sum, row) => sum + row.orders, 0);
-                    return <button key={account.id} onClick={() => setAccountId(account.id)} className={`min-w-56 border-r border-white/10 px-4 py-3 text-left ${accountId === account.id ? "bg-white/10" : "hover:bg-white/5"}`}><div className="truncate text-sm font-medium">{account.name}</div><div className="mt-1 text-xs tabular-nums text-slate-400">{inr(spend)} · {orders} orders · {account.currency}</div>{account.error && <div className="mt-1 text-xs text-rose-300">Meta unavailable</div>}</button>;
+                    return <button key={account.id} onClick={() => setAccountId(account.id)} className={`min-w-56 border-r border-white/10 px-4 py-3 text-left ${accountId === account.id ? "bg-white/10" : "hover:bg-white/5"}`}><div className="truncate text-sm font-medium">{account.name}</div><div className="mt-1 text-xs text-cyan-300">{accountTrackingDayMode(account.timezone) === "calendar_ist" ? "Indian timing" : "US timing"}</div><div className="mt-1 text-xs tabular-nums text-slate-400">{summary ? `${inr(spend)} · ${orders} orders · ${account.currency}` : "Loading selected timing…"}</div>{account.error && <div className="mt-1 text-xs text-rose-300">Meta unavailable</div>}</button>;
                   })}
                 </div>
               </div>
+              {accountId === "all" && <div className="mt-3 flex flex-wrap items-center gap-3"><label htmlFor="all-account-timing" className="text-sm text-slate-300">All accounts timing</label><select id="all-account-timing" value={allTiming} onChange={(event) => setAllTiming(event.target.value as typeof allTiming)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="us">US · 11:30 AM IST</option><option value="india">Indian · 12:00 AM IST</option><option value="both">Both · four tables</option></select><span className="text-xs text-slate-500">Each table uses its own reporting window.</span></div>}
             </section>
 
             <section>
@@ -486,7 +550,7 @@ export default function TrackingPage() {
                       <div className="max-h-44 space-y-1 overflow-y-auto">{savedViews.length ? savedViews.map((view) => <button key={view.id} onClick={() => applyView(view)} className={`block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-white/10 ${selectedViewId === view.id ? "bg-cyan-400/10 text-cyan-200" : "text-slate-200"}`}>{view.name}</button>) : <p className="px-2 py-2 text-xs text-slate-500">No shared views yet.</p>}</div>
                       <div className="mt-3 border-t border-white/10 pt-3"><label className="text-xs text-slate-400">View name<input value={viewName} onChange={(event) => setViewName(event.target.value)} maxLength={60} placeholder="My campaign view" className="mt-1 w-full rounded border border-white/10 bg-[#141b2b] px-2 py-2 text-sm text-white outline-none focus:border-cyan-400/50" /></label>
                         <div className="mt-2 flex flex-wrap gap-2"><button disabled={viewBusy} onClick={() => void saveView(false)} className="rounded bg-cyan-500 px-2.5 py-1.5 text-xs font-semibold text-[#0A0E1A] disabled:opacity-50">Save new</button>{selectedView && <><button disabled={viewBusy} onClick={() => void saveView(true)} className="rounded border border-white/15 px-2.5 py-1.5 text-xs disabled:opacity-50">Update</button><button disabled={viewBusy} onClick={() => void deleteView()} className="rounded border border-rose-400/30 px-2.5 py-1.5 text-xs text-rose-300 disabled:opacity-50">Delete</button></>}</div>
-                        <p className="mt-2 text-[11px] text-slate-500">Columns, account, active filter, search, sort, and hourly metric are shared with admins. Dates stay separate.</p>{viewError && <p role="alert" className="mt-2 text-xs text-rose-300">{viewError}</p>}
+                        <p className="mt-2 text-[11px] text-slate-500">Columns, account, timing, active filter, search, sort, and hourly metric are shared with admins. Dates stay separate.</p>{viewError && <p role="alert" className="mt-2 text-xs text-rose-300">{viewError}</p>}
                       </div>
                     </div>}
                   </div>
@@ -499,13 +563,15 @@ export default function TrackingPage() {
                   </div>
                 </div>
               </div>
-              {hasUnalignedMetaPurchases && <p className="mb-3 rounded-lg border border-cyan-400/20 bg-cyan-400/5 px-3 py-2 text-xs text-cyan-100">Meta purchase figures show “—” where an ad account&apos;s reporting day does not exactly match 11:30 AM IST to 11:30 AM IST. Meta supplies whole-hour totals, so the 11:00 AM–12:00 PM hour cannot be split accurately. AR sales use exact payment times; “≈” marks ROAS based on Meta spend allocated across that boundary.</p>}
+              {(showBoth ? [{ dayMode: primaryMode, data: summary, rows: filtered }, { dayMode: secondaryMode, data: secondarySummary, rows: secondaryFiltered }] : [{ dayMode: primaryMode, data: summary, rows: filtered }]).map(({ dayMode, data, rows }) => <div key={dayMode} className="mb-6">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold text-cyan-200">{trackingWindowLabel(dayMode)}</h3><span className="text-xs text-slate-500">{rows.length} campaigns</span></div>
+              {rows.some((row) => row.accountId && !row.metaPurchaseWindowAligned) && <p className="mb-3 rounded-lg border border-cyan-400/20 bg-cyan-400/5 px-3 py-2 text-xs text-cyan-100">Meta purchase figures show “—” for accounts whose Meta reporting day does not match this window. AR sales use exact payment times; “≈” marks ROAS with spend allocated across a Meta clock-hour boundary.</p>}
               <div className="overflow-x-auto rounded-xl border border-white/10 bg-[#141b2b]">
                 <table className="w-full min-w-max border-collapse text-sm">
                   <thead className="sticky top-0 bg-[#1b2437] text-xs text-slate-400">
                     <tr><th className="w-8 px-2 py-3" />{activeColumns.map((column) =>
                       <th key={column.id}
-                        title={["metaPurchases", "metaCostPerPurchase", "metaPurchaseValue", "metaRoas"].includes(column.id) ? "Shown only when the Meta ad account day exactly matches the 11:30 AM IST business day." : undefined}
+                        title={["metaPurchases", "metaCostPerPurchase", "metaPurchaseValue", "metaRoas"].includes(column.id) ? "Shown only when the Meta ad account day exactly matches this table's reporting window." : undefined}
                         draggable
                         onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", column.id); setDraggingId(column.id); }}
                         onDragEnd={() => { setDraggingId(null); setDragOver(null); }}
@@ -520,17 +586,23 @@ export default function TrackingPage() {
                         </div>
                       </th>)}</tr>
                   </thead>
-                  <TrackingCampaignRows key={`${dates.start}:${dates.end}`} rows={filtered} columns={activeColumns} token={token} dates={dates} refreshKey={summary?.fetchedAt || ""} activeOnly={activeOnly} activeScope={activeScope} onBudgetSaved={() => { if (token) void fetchSummary(token, dates, true); }} />
+                  {data && <TrackingCampaignRows key={`${dayMode}:${dates.start}:${dates.end}`} rows={rows} columns={activeColumns} token={token} dates={dates} dayMode={dayMode} refreshKey={data.fetchedAt} activeOnly={activeOnly} activeScope={activeScope} onBudgetSaved={() => { if (token) void Promise.all((showBoth ? ["business_1130_ist", "calendar_ist"] as TrackingDayMode[] : [dayMode]).map((mode) => fetchSummary(token, dates, mode, true))); }} />}
                 </table>
-                {!loading && filtered.length === 0 && <div className="p-10 text-center text-sm text-slate-500">No campaigns or UTM orders for these filters.</div>}
-                {loading && <div className="p-10 text-center text-sm text-slate-500">Loading campaigns and orders…</div>}
+                {data && rows.length === 0 && <div className="p-10 text-center text-sm text-slate-500">No campaigns or UTM orders for these filters.</div>}
+                {!data && <div className="p-10 text-center text-sm text-slate-500">Loading campaigns and orders…</div>}
               </div>
-              <p className="mt-2 text-xs text-slate-500">Drag column headers to reorder them. Meta spend, AR sales and AR UTM visits use the Profit Sheet 11:30 AM IST business day. Meta purchases and Meta ROAS use that day only when the ad account reporting day matches it exactly; “—” means unavailable, not zero. For other account timezones, Meta spend is allocated from whole-hour totals and “≈” marks ROAS using that spend. AR CVR is paid orders divided by tagged site arrivals; visits without campaign tags or blocked analytics are excluded. Other Meta insight metrics use each account&apos;s calendar reporting window. Meta data refreshes every 5 minutes or when you press Refresh; its reporting can still lag. Live sales refresh every 5 seconds. USD spend is converted with {summary?.fxRateSource || "the saved Profit Sheet rate"}; other currencies show no INR ROAS.</p>
+              </div>)}
+              <p className="mt-2 text-xs text-slate-500">Drag column headers to reorder them. Meta spend, AR sales and UTM visits follow the time window named above. Meta purchases and Meta ROAS appear only when the account reporting day matches that window exactly; “—” means unavailable. For other account timezones, Meta spend is allocated from whole-hour totals and “≈” marks ROAS using that spend. AR CVR is paid orders divided by tagged site arrivals; visits without campaign tags or blocked analytics are excluded. Other Meta insight metrics use each account&apos;s calendar reporting window. Meta refreshes every 5 minutes or manually; live sales refresh every 5 seconds. USD spend uses {summary?.fxRateSource || "the saved Profit Sheet rate"}.</p>
             </section>
 
             <section>
-              <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Hourly sales by campaign</h2><p className="text-xs text-slate-500">AR orders and tagged site arrivals use recorded times. CVR is orders ÷ AR UTM visits in each window. Meta spend is allocated from clock hours, so hourly ROAS remains an estimate.</p>{exactHourlyError && <p className="mt-1 text-xs text-amber-300">{exactHourlyError}</p>}{!exactSpend && !exactHourlyError && <p className="mt-1 text-xs text-cyan-300">Loading selected-day Meta metrics…</p>}</div><div className="flex items-center gap-2"><select aria-label="Hourly breakdown day" value={hourDate} onChange={(event) => setHourDate(event.target.value)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm">{hourDates.map((day) => <option key={day} value={day}>{new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`))}</option>)}</select><select aria-label="Hourly breakdown metric" value={hourMetric} onChange={(event) => setHourMetric(event.target.value as TrackingHourlyMetric)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="orders">Orders</option><option value="revenue">Net sales</option><option value="roas">ROAS</option><option value="cvr">AR CVR</option></select></div></div>
-              <TrackingHourlyTable rows={hourly.campaigns} totals={hourly.totals} totalDetails={hourly.totalDetails} metric={hourMetric} onOpen={setHourCampaignKey} />
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Hourly sales by campaign</h2><p className="text-xs text-slate-500">AR orders and tagged site arrivals use recorded times. CVR is orders ÷ AR UTM visits in each window. Meta spend is reported by clock hour.</p></div><div className="flex items-center gap-2"><select aria-label="Hourly breakdown day" value={hourDate} onChange={(event) => setHourDate(event.target.value)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm">{hourDates.map((day) => <option key={day} value={day}>{new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`))}</option>)}</select><select aria-label="Hourly breakdown metric" value={hourMetric} onChange={(event) => setHourMetric(event.target.value as TrackingHourlyMetric)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="orders">Orders</option><option value="revenue">Net sales</option><option value="roas">ROAS</option><option value="cvr">AR CVR</option></select></div></div>
+              {(showBoth ? [{ dayMode: primaryMode, data: summary, table: primaryHourly }, { dayMode: secondaryMode, data: secondarySummary, table: secondaryHourly }] : [{ dayMode: primaryMode, data: summary, table: primaryHourly }]).map(({ dayMode, data, table }) => <div key={dayMode} className="mb-6">
+                <h3 className="mb-2 text-sm font-semibold text-cyan-200">{trackingWindowLabel(dayMode)}</h3>
+                {exactHourlyError[dayMode] && <p className="mb-2 text-xs text-amber-300">{exactHourlyError[dayMode]}</p>}
+                {data && !table?.exact && !exactHourlyError[dayMode] && <p className="mb-2 text-xs text-cyan-300">Loading selected-day Meta spend…</p>}
+                {data && table ? <TrackingHourlyTable rows={table.hourly.campaigns} totals={table.hourly.totals} totalDetails={table.hourly.totalDetails} metric={hourMetric} dayMode={dayMode} onOpen={(key) => setHourSelection({ key, dayMode })} /> : <div className="rounded-xl border border-white/10 bg-[#141b2b] p-8 text-center text-sm text-slate-500">Loading hourly results…</div>}
+              </div>)}
             </section>
           </main>
 

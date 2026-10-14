@@ -3,18 +3,19 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { TrackingHourlyCell, TrackingHourlyMetric } from "@/lib/tracking-hourly-table";
+import type { TrackingDayMode } from "@/lib/tracking-dashboard";
 
 type HourRow = { key: string; name: string; hours: Array<number | null>; details: TrackingHourlyCell[] };
 type Props = { rows: HourRow[]; totals: Array<number | null>; totalDetails: TrackingHourlyCell[];
-  metric: TrackingHourlyMetric; onOpen: (key: string) => void };
+  metric: TrackingHourlyMetric; dayMode: TrackingDayMode; onOpen: (key: string) => void };
 
-function hourLabel(bucket: number) {
-  const minutes = (11 * 60 + 30 + bucket * 60) % (24 * 60);
+function hourLabel(bucket: number, dayMode: TrackingDayMode) {
+  const minutes = ((dayMode === "calendar_ist" ? 0 : 11 * 60 + 30) + bucket * 60) % (24 * 60);
   return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }
 const money = (value: number) => `₹${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export default function TrackingHourlyTable({ rows, totals, totalDetails, metric, onOpen }: Props) {
+export default function TrackingHourlyTable({ rows, totals, totalDetails, metric, dayMode, onOpen }: Props) {
   const [hover, setHover] = useState<{ name: string; hour: number; cell: TrackingHourlyCell; left: number; top: number } | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hide = () => { if (hoverTimer.current) clearTimeout(hoverTimer.current); hoverTimer.current = null; setHover(null); };
@@ -33,7 +34,7 @@ export default function TrackingHourlyTable({ rows, totals, totalDetails, metric
   const maximum = Math.max(1, ...totals.filter((value): value is number => value != null), ...rows.flatMap((row) => row.hours).filter((value): value is number => value != null));
   const valueText = (value: number | null) => metric === "roas" ? value == null ? "—" : `${value.toFixed(2)}×` : metric === "cvr" ? value == null ? "—" : `${value.toFixed(2)}%` : value ? value.toLocaleString("en-IN", { maximumFractionDigits: metric === "orders" ? 0 : 2 }) : "·";
   const valueTitle = (value: number | null) => metric === "roas" ? value == null ? "No hourly Meta spend for ROAS" : `${value.toFixed(2)}× ROAS` : metric === "cvr" ? value == null ? "No tagged site arrivals for AR CVR" : `${value.toFixed(2)}% AR CVR` : metric === "orders" ? `${value || 0} orders` : money(value || 0);
-  const label = (hour: number) => `${hourLabel(hour)}–${hourLabel(hour + 1)}`;
+  const label = (hour: number) => `${hourLabel(hour, dayMode)}–${hourLabel(hour + 1, dayMode)}`;
   const cellProps = (name: string, hour: number, cell: TrackingHourlyCell) => ({
     tabIndex: 0,
     "aria-label": `${name}, ${label(hour)}: ${valueTitle(cell[metric])}`,
@@ -56,7 +57,7 @@ export default function TrackingHourlyTable({ rows, totals, totalDetails, metric
       <colgroup><col style={{ width: 310 }} /><col span={totals.length} style={{ width: 76 }} /></colgroup>
       <thead className="bg-[#1b2437] text-slate-400"><tr>
         <th className="sticky left-0 z-20 border-r border-white/10 bg-[#1b2437] px-4 py-3 text-left">Campaign</th>
-        {totals.map((_, hour) => <th key={hour} title={`${label(hour)} IST`} className="px-1 py-2 text-center font-medium leading-4"><span className="block">{hourLabel(hour)}</span><span className="block text-slate-500">–{hourLabel(hour + 1)}</span></th>)}
+        {totals.map((_, hour) => <th key={hour} title={`${label(hour)} IST`} className="px-1 py-2 text-center font-medium leading-4"><span className="block">{hourLabel(hour, dayMode)}</span><span className="block text-slate-500">–{hourLabel(hour + 1, dayMode)}</span></th>)}
       </tr></thead>
       <tbody>
         <tr className="border-b border-white/10 font-semibold"><td className="sticky left-0 z-10 border-r border-white/10 bg-[#141b2b] px-4 py-3">All shown campaigns</td>{totals.map((value, hour) => <td key={hour} {...cellProps("All shown campaigns", hour, totalDetails[hour])} className="cursor-help px-1 py-3 text-center tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">{valueText(value)}</td>)}</tr>

@@ -1,4 +1,4 @@
-import { businessHourBucket, isMetaSource } from "./tracking-dashboard";
+import { trackingHourBucket, isMetaSource, type TrackingDayMode } from "./tracking-dashboard";
 import type { getSupabaseAdmin } from "./supabase-admin";
 
 type LandingRow = { created_at: string; url: string | null };
@@ -61,6 +61,6 @@ export async function readTrackedUtmVisits(
   return visits;
 }
 
-export function visitHour(visit: TrackingUtmVisit) {
-  return businessHourBucket(new Date(visit.at));
+export function visitHour(visit: TrackingUtmVisit, dayMode: TrackingDayMode = "business_1130_ist") {
+  return trackingHourBucket(new Date(visit.at), dayMode);
 }

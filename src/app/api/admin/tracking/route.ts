@@ -6,9 +6,9 @@ import { fetchMetaTrackingAccount, fetchMetaTrackingExactHourlySpend } from "@/l
 import { calculateProfitSheetGst, indianAdGstApplies } from "@/lib/profit-sheet-gst";
 import { readTrackedUtmVisits, visitHour, type TrackingUtmVisit } from "@/lib/tracking-utm-visits";
 import {
-  businessDate, businessDayStartUtc, businessHourBucket, campaignNameKey, isMetaSource,
-  nextBusinessDayStartUtc, paidAt, productLabel,
-  type TrackingCampaign, type TrackingHour, type TrackingPayment, type TrackingSale, type TrackingSummary,
+  businessDate, businessDayStartUtc, campaignNameKey, isMetaSource,
+  trackingDate, trackingDayStartUtc, nextTrackingDayStartUtc, trackingHourBucket, paidAt, productLabel,
+  type TrackingCampaign, type TrackingDayMode, type TrackingHour, type TrackingPayment, type TrackingSale, type TrackingSummary,
 } from "@/lib/tracking-dashboard";
 
 export const dynamic = "force-dynamic";
@@ -28,8 +28,8 @@ function validDate(value: string | null): value is string {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
-function defaultDates(): { start: string; end: string } {
-  const end = businessDate(new Date());
+function defaultDates(dayMode: TrackingDayMode): { start: string; end: string } {
+  const end = trackingDate(new Date(), dayMode);
   return { start: end, end };
 }
 
@@ -87,7 +87,7 @@ function emptyUtmCampaign(key: string, id: string | null, name: string, source: 
   };
 }
 
-function attachOrders(campaigns: TrackingCampaign[], sales: TrackingPayment[], refunds: TrackingPayment[], parents: Map<string, TrackingPayment>) {
+function attachOrders(campaigns: TrackingCampaign[], sales: TrackingPayment[], refunds: TrackingPayment[], parents: Map<string, TrackingPayment>, dayMode: TrackingDayMode) {
   const byId = new Map(campaigns.filter((row) => row.campaignId).map((row) => [row.campaignId!, row]));
   const byName = new Map<string, TrackingCampaign[]>();
   for (const row of campaigns) {
@@ -133,7 +133,7 @@ function attachOrders(campaigns: TrackingCampaign[], sales: TrackingPayment[], r
 
   function addHour(payment: TrackingPayment, row: TrackingCampaign, amount: number, isRefund: boolean) {
     const at = new Date(isRefund ? payment.created_at : paidAt(payment));
-    const { date, hour } = businessHourBucket(at);
+    const { date, hour } = trackingHourBucket(at, dayMode);
     const key = `${date}:${hour}:${row.key}`;
     const bucket = hourMap.get(key) || { date, hour, campaignKey: row.key, orders: 0, revenue: 0 };
     bucket.orders += isRefund ? 0 : 1;
@@ -181,7 +181,7 @@ function attachOrders(campaigns: TrackingCampaign[], sales: TrackingPayment[], r
   return { campaigns: campaigns.concat(Array.from(extra.values())), hourly: Array.from(hourMap.values()), attributedOrders };
 }
 
-function attachUtmVisits(campaigns: TrackingCampaign[], visits: TrackingUtmVisit[]) {
+function attachUtmVisits(campaigns: TrackingCampaign[], visits: TrackingUtmVisit[], dayMode: TrackingDayMode) {
   const byId = new Map(campaigns.filter((row) => row.campaignId).map((row) => [row.campaignId!, row]));
   const byName = new Map<string, TrackingCampaign[]>();
   for (const row of campaigns.filter((item) => item.accountId)) {
@@ -218,16 +218,16 @@ function attachUtmVisits(campaigns: TrackingCampaign[], visits: TrackingUtmVisit
     const detail = row.utmVisitBreakdown!.find((item) => item.adsetId === visit.adsetId && item.adId === visit.adId && item.term === term && item.content === content);
     if (detail) detail.visits++;
     else row.utmVisitBreakdown!.push({ adsetId: visit.adsetId, adId: visit.adId, term, content, visits: 1 });
-    const { date, hour } = visitHour(visit);
+    const { date, hour } = visitHour(visit, dayMode);
     const buckets = (hourly[row.key] ||= {});
     (buckets[date] ||= Array(24).fill(0))[hour]++;
   }
   return hourly;
 }
 
-async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { start: string; end: string }): Promise<TrackingSummary> {
-  const start = businessDayStartUtc(dates.start);
-  const end = nextBusinessDayStartUtc(dates.end);
+async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { start: string; end: string }, dayMode: TrackingDayMode): Promise<TrackingSummary> {
+  const start = trackingDayStartUtc(dates.start, dayMode);
+  const end = nextTrackingDayStartUtc(dates.end, dayMode);
   const [rate, sales, refunds, visitResult] = await Promise.all([
     fxRate(supabase), paidPayments(supabase, start, end), refundPayments(supabase, start, end),
     readTrackedUtmVisits(supabase, start, end).then((visits) => ({ visits, error: null as string | null }))
@@ -240,22 +240,23 @@ async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { s
     if (error) throw new Error(`Unable to read refunded orders: ${error.message}`);
     for (const row of (data || []) as TrackingPayment[]) parents.set(row.id, row);
   }
-  const configured = await getMetaAccountCredentialsForRange(supabase, { startDate: dates.start, endDate: dates.end });
-  const credentials = configured.length ? configured : getMetaAccountCredentialsFromEnv({ startDate: dates.start, endDate: dates.end });
+  const accountRange = { startMillis: Date.parse(start), endMillis: Date.parse(end) };
+  const configured = await getMetaAccountCredentialsForRange(supabase, accountRange);
+  const credentials = configured.length ? configured : getMetaAccountCredentialsFromEnv(accountRange);
   const distinct = Array.from(new Map(credentials.map((credential) => [credential.accountId, credential])).values());
   const meta = await Promise.all(distinct.map(async (credential) => {
-    return fetchMetaTrackingAccount(credential, dates, rate.rate);
+    return fetchMetaTrackingAccount(credential, dates, rate.rate, dayMode);
   }));
   const campaigns = meta.flatMap((result) => result.campaigns);
-  const joined = attachOrders(campaigns, sales, refunds, parents);
-  const hourlyUtmVisits = visitResult.error ? {} : attachUtmVisits(joined.campaigns, visitResult.visits);
+  const joined = attachOrders(campaigns, sales, refunds, parents, dayMode);
+  const hourlyUtmVisits = visitResult.error ? {} : attachUtmVisits(joined.campaigns, visitResult.visits, dayMode);
   const grossRevenue = sales.reduce((sum, row) => sum + Number(row.amount || 0) / 100, 0);
   const refundAmount = refunds.reduce((sum, row) => sum + Math.abs(Number(row.amount || 0)) / 100, 0);
   const warnings = meta.flatMap((result) => result.warnings);
   if (visitResult.error) warnings.push(`${visitResult.error}. AR CVR is unavailable.`);
   if (!credentials.length) warnings.push("No Meta ad accounts are configured for this range. UTM orders are still shown.");
   if (joined.attributedOrders < sales.length) warnings.push(`${sales.length - joined.attributedOrders} paid orders could not be matched to a unique Meta campaign.`);
-  // Match the Profit Sheet's net GST calculation and 11:30 AM IST business day.
+  // Apply the Profit Sheet's GST formula to each selected reporting day.
   const spendInr = campaigns.reduce((sum, row) => sum + (row.spendInr || 0), 0);
   const indianSpendInr = campaigns.reduce((sum, row) => sum + (row.currency === "INR" ? row.spendInr || 0 : 0), 0);
   const revenue = grossRevenue - refundAmount;
@@ -276,7 +277,7 @@ async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { s
       orders: sales.length, attributedOrders: joined.attributedOrders, grossRevenue,
       refundAmount, revenue,
     },
-    dates, fxRate: rate.rate, fxRateSource: rate.source, warnings, fetchedAt: new Date().toISOString(),
+    dates, dayMode, fxRate: rate.rate, fxRateSource: rate.source, warnings, fetchedAt: new Date().toISOString(),
   };
 }
 
@@ -311,28 +312,32 @@ export async function GET(request: NextRequest) {
     if (error || !session || new Date(session.expires_at) <= new Date()) return json({ error: "Session expired" }, 401);
     const params = new URL(request.url).searchParams;
     if (params.get("mode") === "live") return json(await live(supabase));
+    const dayModeParam = params.get("dayMode");
+    if (dayModeParam && dayModeParam !== "business_1130_ist" && dayModeParam !== "calendar_ist") return json({ error: "Choose a valid reporting window." }, 400);
+    const dayMode: TrackingDayMode = dayModeParam === "calendar_ist" ? "calendar_ist" : "business_1130_ist";
     if (params.get("mode") === "hourly-spend") {
       const day = params.get("day");
-      if (!validDate(day) || day > businessDate(new Date())) return json({ error: "Choose a valid IST day." }, 400);
-      const configured = await getMetaAccountCredentialsForRange(supabase, { startDate: day, endDate: day });
-      const credentials = configured.length ? configured : getMetaAccountCredentialsFromEnv({ startDate: day, endDate: day });
+      if (!validDate(day) || day > trackingDate(new Date(), dayMode)) return json({ error: "Choose a valid IST day." }, 400);
+      const accountRange = { startMillis: Date.parse(trackingDayStartUtc(day, dayMode)), endMillis: Date.parse(nextTrackingDayStartUtc(day, dayMode)) };
+      const configured = await getMetaAccountCredentialsForRange(supabase, accountRange);
+      const credentials = configured.length ? configured : getMetaAccountCredentialsFromEnv(accountRange);
       const rate = await fxRate(supabase);
       const results = await Promise.all(Array.from(new Map(credentials.map((credential) => [credential.accountId, credential])).values()).map(async (credential) => {
-        try { return { accountId: credential.accountId, spend: await fetchMetaTrackingExactHourlySpend(credential, day, rate.rate), warning: null }; }
+        try { return { accountId: credential.accountId, spend: await fetchMetaTrackingExactHourlySpend(credential, day, rate.rate, dayMode), warning: null }; }
         catch (error) { return { accountId: credential.accountId, spend: { hourlySpendInr: {} }, warning: `${credential.label || credential.accountId}: ${error instanceof Error ? error.message : "Meta hourly spend unavailable"}` }; }
       }));
       return json({ hourlySpendInr: Object.assign({}, ...results.map((result) => result.spend.hourlySpendInr)),
         failedAccountIds: results.filter((result) => result.warning).map((result) => result.accountId),
         warnings: results.map((result) => result.warning).filter(Boolean), fetchedAt: new Date().toISOString() });
     }
-    const defaults = defaultDates();
+    const defaults = defaultDates(dayMode);
     const start = params.get("start") || defaults.start;
     const end = params.get("end") || defaults.end;
-    if (!validDate(start) || !validDate(end) || start > end || end > businessDate(new Date()) ||
+    if (!validDate(start) || !validDate(end) || start > end || end > trackingDate(new Date(), dayMode) ||
         (Date.parse(end) - Date.parse(start)) / 86_400_000 > 30) {
       return json({ error: "Choose a valid IST date range of up to 31 days." }, 400);
     }
-    return json(await summary(supabase, { start, end }));
+    return json(await summary(supabase, { start, end }, dayMode));
   } catch (error) {
     console.error("[admin/tracking]", error instanceof Error ? error.message : error);
     return json({ error: error instanceof Error ? error.message : "Tracking data unavailable" }, 500);

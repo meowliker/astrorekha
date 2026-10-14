@@ -45,9 +45,9 @@ export type TrackingCampaign = {
   reach: number;
   clicks: number;
   linkClicks: number;
-  /** Meta link clicks allocated into the 11:30 AM IST business-day range. */
+  /** Meta link clicks allocated into the selected IST reporting range. */
   businessLinkClicks?: number;
-  /** Tagged arrivals recorded on AstroRekha during the selected 11:30 AM IST business days. */
+  /** Tagged arrivals recorded on AstroRekha during the selected IST reporting days. */
   utmVisits?: number;
   utmVisitBreakdown?: Array<{ adsetId: string | null; adId: string | null; term: string; content: string; visits: number }>;
   landingPageViews: number;
@@ -55,7 +55,7 @@ export type TrackingCampaign = {
   checkouts: number;
   metaPurchases: number;
   metaPurchaseValue: number;
-  /** True only when Meta's complete account reporting days equal the selected 11:30 AM IST business days. */
+  /** True only when Meta's complete account reporting days equal the selected IST reporting days. */
   metaPurchaseWindowAligned?: boolean;
   leads: number;
   orders: number;
@@ -86,6 +86,13 @@ export type TrackingSale = {
 };
 
 export type TrackingHour = { date: string; hour: number; campaignKey: string; orders: number; revenue: number };
+export type TrackingDayMode = "business_1130_ist" | "calendar_ist";
+
+export const trackingWindowLabel = (mode: TrackingDayMode) => mode === "calendar_ist" ? "Indian timing · 12:00 AM–11:59 PM IST" : "US timing · 11:30 AM–11:29 AM IST";
+
+export function accountTrackingDayMode(timezone: string | null | undefined): TrackingDayMode {
+  return timezone === "Asia/Kolkata" || timezone === "Asia/Calcutta" ? "calendar_ist" : "business_1130_ist";
+}
 
 export type TrackingSummary = {
   accounts: Array<{ id: string; name: string; currency: string; timezone: string | null; error?: string }>;
@@ -97,6 +104,7 @@ export type TrackingSummary = {
   totals: { spendInr: number; indianSpendInr: number; gst: number; profit: number | null; orders: number; attributedOrders: number; grossRevenue: number; refundAmount: number; revenue: number };
   accountDailySpendInr: Record<string, Record<string, { total: number; indian: number }>>;
   dates: { start: string; end: string };
+  dayMode: TrackingDayMode;
   fxRate: number;
   fxRateSource: string;
   warnings: string[];
@@ -122,10 +130,28 @@ export function nextBusinessDayStartUtc(date: string): string {
   return next.toISOString();
 }
 
-export function businessHourBucket(date: Date): { date: string; hour: number } {
-  const day = businessDate(date);
-  const hour = Math.floor((date.getTime() - new Date(businessDayStartUtc(day)).getTime()) / 3_600_000);
+export function trackingDate(date: Date, mode: TrackingDayMode): string {
+  return mode === "calendar_ist" ? istDate(date) : businessDate(date);
+}
+
+export function trackingDayStartUtc(date: string, mode: TrackingDayMode): string {
+  return mode === "calendar_ist" ? new Date(`${date}T00:00:00+05:30`).toISOString() : businessDayStartUtc(date);
+}
+
+export function nextTrackingDayStartUtc(date: string, mode: TrackingDayMode): string {
+  const next = new Date(trackingDayStartUtc(date, mode));
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString();
+}
+
+export function trackingHourBucket(date: Date, mode: TrackingDayMode): { date: string; hour: number } {
+  const day = trackingDate(date, mode);
+  const hour = Math.floor((date.getTime() - Date.parse(trackingDayStartUtc(day, mode))) / 3_600_000);
   return { date: day, hour };
+}
+
+export function businessHourBucket(date: Date): { date: string; hour: number } {
+  return trackingHourBucket(date, "business_1130_ist");
 }
 
 export function paidAt(payment: TrackingPayment): string {

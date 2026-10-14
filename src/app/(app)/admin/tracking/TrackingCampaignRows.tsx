@@ -2,18 +2,18 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Pencil } from "lucide-react";
-import { campaignNameKey, type TrackingCampaign, type TrackingChild } from "@/lib/tracking-dashboard";
+import { campaignNameKey, type TrackingCampaign, type TrackingChild, type TrackingDayMode } from "@/lib/tracking-dashboard";
 import type { MetaBudget } from "@/lib/tracking-meta-budget";
 import TrackingBudgetDialog, { type BudgetTarget } from "./TrackingBudgetDialog";
 
 type Column = { id: string; label: string; value: (row: TrackingCampaign) => string; align?: "right" };
-type Props = { rows: TrackingCampaign[]; columns: Column[]; token: string | null; dates: { start: string; end: string }; refreshKey: string; activeOnly: boolean; activeScope: "campaign" | "adset" | "ad" | "all"; onBudgetSaved: () => void };
+type Props = { rows: TrackingCampaign[]; columns: Column[]; token: string | null; dates: { start: string; end: string }; dayMode: TrackingDayMode; refreshKey: string; activeOnly: boolean; activeScope: "campaign" | "adset" | "ad" | "all"; onBudgetSaved: () => void };
 type ChildData = { adsets: TrackingChild[]; ads: TrackingChild[] };
 type CachedChildren = { data: ChildData; fetchedAt: number };
 const money = (value: number) => `₹${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const CACHE_TTL = 60_000;
 const META_PURCHASE_COLUMNS = new Set(["metaPurchases", "metaCostPerPurchase", "metaPurchaseValue", "metaRoas"]);
-const META_WINDOW_UNAVAILABLE = "Meta cannot report an exact 11:30 AM IST purchase window for this ad account. The dash means unavailable, not zero.";
+const META_WINDOW_UNAVAILABLE = "Meta purchase attribution is unavailable for this selected window because the ad account's reporting day does not match it exactly.";
 
 function readCachedChildren(key: string): CachedChildren | null {
   try {
@@ -39,8 +39,8 @@ function addOrder(target: TrackingChild, item: TrackingCampaign["adBreakdown"][n
   target.attribution = byId ? "meta_id" : "unique_name";
 }
 
-function CampaignRow({ row, columns, token, dates, refreshKey, activeOnly, activeScope, onBudgetSaved }: { row: TrackingCampaign; columns: Column[]; token: string | null; dates: Props["dates"]; refreshKey: string; activeOnly: boolean; activeScope: Props["activeScope"]; onBudgetSaved: () => void }) {
-  const cacheKey = `ar_tracking_children_v1:${dates.start}:${dates.end}:${row.accountId}:${row.campaignId}`;
+function CampaignRow({ row, columns, token, dates, dayMode, refreshKey, activeOnly, activeScope, onBudgetSaved }: { row: TrackingCampaign; columns: Column[]; token: string | null; dates: Props["dates"]; dayMode: TrackingDayMode; refreshKey: string; activeOnly: boolean; activeScope: Props["activeScope"]; onBudgetSaved: () => void }) {
+  const cacheKey = `ar_tracking_children_v2:${dayMode}:${dates.start}:${dates.end}:${row.accountId}:${row.campaignId}`;
   const [open, setOpen] = useState(false);
   const [cached, setCached] = useState<CachedChildren | null>(() => readCachedChildren(cacheKey));
   const [error, setError] = useState("");
@@ -66,7 +66,7 @@ function CampaignRow({ row, columns, token, dates, refreshKey, activeOnly, activ
     if (cached && Date.now() - cached.fetchedAt < CACHE_TTL && loadedRetry === retry) return;
     const controller = new AbortController();
     if (!cached) setLoading(true);
-    const params = new URLSearchParams({ mode: "children", accountId: row.accountId, campaignId: row.campaignId, ...dates });
+    const params = new URLSearchParams({ mode: "children", accountId: row.accountId, campaignId: row.campaignId, dayMode, ...dates });
     fetch(`/api/admin/tracking/details?${params}`, { headers: { "x-admin-session": token }, cache: "no-store", signal: controller.signal })
       .then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error || "Meta details unavailable"); return data; })
       .then((data: ChildData) => {
@@ -76,7 +76,7 @@ function CampaignRow({ row, columns, token, dates, refreshKey, activeOnly, activ
       })
       .catch((cause) => { if (!controller.signal.aborted) { setError(cause instanceof Error ? cause.message : "Meta details unavailable"); setLoading(false); } });
     return () => controller.abort();
-  }, [open, cached, refreshKey, token, row.accountId, row.campaignId, dates, retry, loadedRetry, cacheKey]);
+  }, [open, cached, refreshKey, token, row.accountId, row.campaignId, dates, dayMode, retry, loadedRetry, cacheKey]);
 
   const hierarchy = useMemo(() => {
     const children = cached?.data;
@@ -103,7 +103,7 @@ function CampaignRow({ row, columns, token, dates, refreshKey, activeOnly, activ
     adsets.sort((a, b) => (b.spendInr || 0) - (a.spendInr || 0));
     ads.sort((a, b) => (b.spendInr || 0) - (a.spendInr || 0));
     return { adsets, ads };
-  }, [cached, row.adBreakdown, row.utmVisitBreakdown, row.utmVisits]);
+  }, [cached, row.adBreakdown, row.utmVisitBreakdown, row.utmVisits, row.metaPurchaseWindowAligned]);
   const shownAds = hierarchy?.ads.filter((item) => !activeOnly || !["ad", "all"].includes(activeScope) || item.status === "ACTIVE") || [];
   const shownAdsets = hierarchy?.adsets.filter((item) =>
     !activeOnly || activeScope === "campaign" ||
@@ -141,7 +141,7 @@ function CampaignRow({ row, columns, token, dates, refreshKey, activeOnly, activ
   </Fragment>;
 }
 
-export default function TrackingCampaignRows({ rows, columns, token, dates, refreshKey, activeOnly, activeScope, onBudgetSaved }: Props) {
+export default function TrackingCampaignRows({ rows, columns, token, dates, dayMode, refreshKey, activeOnly, activeScope, onBudgetSaved }: Props) {
   const currencies = Array.from(new Set(rows.filter((row) => row.accountId).map((row) => row.currency)));
   const mixedCurrencies = currencies.length > 1;
   const metaPurchaseWindowAligned = rows.some((row) => row.accountId) && rows.filter((row) => row.accountId).every((row) => row.metaPurchaseWindowAligned === true);
@@ -164,7 +164,7 @@ export default function TrackingCampaignRows({ rows, columns, token, dates, refr
   const conversionRate = total.utmVisits ? `${(attributedOrders / total.utmVisits * 100).toLocaleString("en-IN", { maximumFractionDigits: 2 })}%` : "—";
 
   return <>
-    <tbody>{rows.map((row) => <CampaignRow key={row.key} row={row} columns={columns} token={token} dates={dates} refreshKey={refreshKey} activeOnly={activeOnly} activeScope={activeScope} onBudgetSaved={onBudgetSaved} />)}</tbody>
+    <tbody>{rows.map((row) => <CampaignRow key={row.key} row={row} columns={columns} token={token} dates={dates} dayMode={dayMode} refreshKey={refreshKey} activeOnly={activeOnly} activeScope={activeScope} onBudgetSaved={onBudgetSaved} />)}</tbody>
     <tfoot><tr className="border-t-2 border-cyan-400/40 bg-[#202d40] text-sm font-semibold"><td className="px-2 py-3" />{columns.map((column) => <td key={column.id} className={`max-w-[240px] px-3 py-3 tabular-nums ${column.align === "right" ? "text-right" : "text-left"}`} title={column.id === "budget" ? "Campaign and ad set budgets cannot be combined reliably in this total." : META_PURCHASE_COLUMNS.has(column.id) && !metaPurchaseWindowAligned ? META_WINDOW_UNAVAILABLE : mixedCurrencies && ["spend", "cpc", "cpm", "metaCostPerPurchase", "metaPurchaseValue", "metaRoas", "dailyBudget", "lifetimeBudget"].includes(column.id) ? "Mixed account currencies; use Spend INR and AR metrics." : undefined}>{column.id === "budget" ? "—" : column.id === "conversionRate" ? conversionRate : mixedCurrencies && ["spend", "cpc", "cpm", "metaCostPerPurchase", "metaPurchaseValue", "metaRoas", "dailyBudget", "lifetimeBudget"].includes(column.id) ? "—" : column.id === "spend" ? new Intl.NumberFormat("en-IN", { style: "currency", currency: total.currency, maximumFractionDigits: 2 }).format(total.spend) : column.id === "campaign" ? "Overall result" : column.id === "account" ? "All shown" : column.id === "refundAmount" ? money(total.refundAmount) : column.value(total)}</td>)}</tr></tfoot>
   </>;
 }

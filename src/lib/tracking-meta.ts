@@ -1,6 +1,6 @@
 import { getMetaAccountWindowForRequest, type MetaAccountCredential } from "@/lib/meta-ad-accounts";
-import { businessDayStartUtc, type TrackingCampaign } from "@/lib/tracking-dashboard";
-import { bufferedMetaRange, campaignHourlySpendForBusinessDays, campaignSpendForBusinessDays, metaPurchasesMatchBusinessWindow, normalizeHourlySpendToDailyTotals, type CampaignSpendRow } from "@/lib/tracking-meta-spend";
+import { trackingDayStartUtc, type TrackingCampaign, type TrackingDayMode } from "@/lib/tracking-dashboard";
+import { bufferedMetaRange, campaignHourlySpendForBusinessDays, campaignSpendForBusinessDays, metaPurchasesMatchWindow, normalizeHourlySpendToDailyTotals, type CampaignSpendRow } from "@/lib/tracking-meta-spend";
 
 const META_BASE = "https://graph.facebook.com/v21.0";
 const PURCHASE_ACTIONS = ["website_purchase", "onsite_web_purchase", "offsite_conversion.fb_pixel_purchase", "omni_purchase", "purchase"];
@@ -54,6 +54,7 @@ export async function fetchMetaTrackingExactHourlySpend(
   credential: MetaAccountCredential,
   day: string,
   usdInrRate: number,
+  dayMode: TrackingDayMode = "business_1130_ist",
 ): Promise<{ hourlySpendInr: Record<string, number[]> }> {
   const empty = { hourlySpendInr: {} };
   const accountId = credential.accountId;
@@ -66,9 +67,9 @@ export async function fetchMetaTrackingExactHourlySpend(
   const currency = String(metadata.currency || "INR").toUpperCase();
   const multiplier = currency === "INR" ? 1 : currency === "USD" ? usdInrRate : null;
   if (multiplier == null) return empty;
-  const window = getMetaAccountWindowForRequest(credential, day, day, "business_1130_ist");
+  const window = getMetaAccountWindowForRequest(credential, day, day, dayMode);
   if (!window) return empty;
-  const businessStart = Date.parse(businessDayStartUtc(day));
+  const businessStart = Date.parse(trackingDayStartUtc(day, dayMode));
   const start = Math.max(businessStart, window.startMillis);
   const end = Math.min(businessStart + 86_400_000, window.endMillis, Date.now());
   if (end <= start) return empty;
@@ -87,7 +88,7 @@ export async function fetchMetaTrackingExactHourlySpend(
     return response.rows;
   }));
   const base = { hourly: results.flat(), daily: [], start: day, end: day,
-    timezoneOffsetHoursUtc: offset, accountWindow: window, nowMillis: Date.now() };
+    timezoneOffsetHoursUtc: offset, accountWindow: window, nowMillis: Date.now(), dayMode };
   const metricRows = () => {
     const rows = campaignHourlySpendForBusinessDays({ ...base, metric: "spend" });
     return Object.fromEntries(Array.from(rows, ([campaignId, days]) => [
@@ -100,7 +101,8 @@ export async function fetchMetaTrackingExactHourlySpend(
 export async function fetchMetaTrackingAccount(
   credential: MetaAccountCredential,
   dates: { start: string; end: string },
-  usdInrRate: number
+  usdInrRate: number,
+  dayMode: TrackingDayMode = "business_1130_ist",
 ): Promise<{
   account: { id: string; name: string; currency: string; timezone: string | null; error?: string };
   campaigns: TrackingCampaign[];
@@ -165,21 +167,21 @@ export async function fetchMetaTrackingAccount(
     }
     const offset = Number(metadata.timezone_offset_hours_utc);
     if (!Number.isFinite(offset)) throw new Error(`Meta did not return the timezone offset for ${accountName}.`);
-    const accountWindow = getMetaAccountWindowForRequest(credential, dates.start, dates.end, "business_1130_ist");
+    const accountWindow = getMetaAccountWindowForRequest(credential, dates.start, dates.end, dayMode);
     if (!accountWindow) throw new Error(`No active reporting window for ${accountName}.`);
-    const metaPurchaseWindowAligned = metaPurchasesMatchBusinessWindow(metadata.timezone_name, accountWindow, dates);
+    const metaPurchaseWindowAligned = metaPurchasesMatchWindow(metadata.timezone_name, accountWindow, dates, dayMode);
     const normalizedHourly = normalizeHourlySpendToDailyTotals(hourlySpend.rows, dailySpend.rows);
     const spendByCampaign = campaignSpendForBusinessDays({
       hourly: normalizedHourly, daily: dailySpend.rows, start: dates.start, end: dates.end,
-      timezoneOffsetHoursUtc: offset, accountWindow, nowMillis: Date.now(),
+      timezoneOffsetHoursUtc: offset, accountWindow, nowMillis: Date.now(), dayMode,
     });
     const hourlyByCampaign = campaignHourlySpendForBusinessDays({
       hourly: normalizedHourly, daily: dailySpend.rows, start: dates.start, end: dates.end,
-      timezoneOffsetHoursUtc: offset, accountWindow, nowMillis: Date.now(),
+      timezoneOffsetHoursUtc: offset, accountWindow, nowMillis: Date.now(), dayMode,
     });
     const clicksByCampaign = campaignHourlySpendForBusinessDays({
       hourly: normalizedHourly, daily: [], start: dates.start, end: dates.end,
-      timezoneOffsetHoursUtc: offset, accountWindow, nowMillis: Date.now(), metric: "inline_link_clicks",
+      timezoneOffsetHoursUtc: offset, accountWindow, nowMillis: Date.now(), metric: "inline_link_clicks", dayMode,
     });
     const multiplier = currency === "INR" ? 1 : currency === "USD" ? usdInrRate : null;
     const hourlySpendInr: Record<string, Record<string, number[]>> = {};
@@ -189,7 +191,7 @@ export async function fetchMetaTrackingAccount(
     const dailySpendInr: Record<string, { total: number; indian: number }> = {};
     for (let day = dates.start; day <= dates.end; day = new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)) {
       const daily = campaignSpendForBusinessDays({ hourly: normalizedHourly, daily: dailySpend.rows,
-        start: day, end: day, timezoneOffsetHoursUtc: offset, accountWindow, nowMillis: Date.now() });
+        start: day, end: day, timezoneOffsetHoursUtc: offset, accountWindow, nowMillis: Date.now(), dayMode });
       const total = Array.from(daily.values()).reduce((sum, spend) => sum + spend, 0) * (currency === "USD" ? usdInrRate : 1);
       dailySpendInr[day] = { total: currency === "INR" || currency === "USD" ? total : 0, indian: currency === "INR" ? total : 0 };
     }
