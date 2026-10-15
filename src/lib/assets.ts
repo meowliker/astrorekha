@@ -18,3 +18,16 @@ export const ASTROREKHA_ASSETS = {
   male: assetUrl("/male.webp"),
   female: assetUrl("/female.webp"),
 };
+
+// The uploaded folder is named "soulmate lander" in the existing R2 bucket.
+// Keep this scoped: other app assets retain their existing base URL and paths.
+const soulmateAssetBaseUrl = (
+  process.env.NEXT_PUBLIC_SOULMATE_ASSET_BASE_URL ||
+  "https://pub-4f25ef2777b741de8ca7d6f9d52414dc.r2.dev/soulmate%20lander"
+).replace(/\/+$/, "");
+
+export function soulmateAssetUrl(path: string) {
+  if (!path.startsWith("/soulmate/")) throw new Error("Expected a public soulmate image path");
+  const key = path.slice("/soulmate/".length).split("/").map(encodeURIComponent).join("/");
+  return `${soulmateAssetBaseUrl}/${key}`;
+}

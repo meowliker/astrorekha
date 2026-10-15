@@ -20,6 +20,9 @@ function loadTS(file, requireModule, globals = {}) {
 
 const helpers = loadTS('src/lib/meta-ad-accounts.ts', require);
 const financeEvents = loadTS('src/lib/finance-events.ts', require);
+const profitGst = loadTS('src/lib/profit-sheet-gst.ts', require);
+const purchaseMetadata = loadTS('src/lib/payu-purchase-metadata.ts', require);
+const soulmateOrders = loadTS('src/lib/soulmate-orders.ts', require);
 const defaultAccounts = [
   { accountId: 'usd', label: 'USD account', accessToken: 'secret-usd', startDate: '2026-09-07', startTime: '13:00', active: true },
   { accountId: 'inr', label: 'INR account', accessToken: 'secret-inr', startDate: '2026-09-01', startTime: '11:30', active: true },
@@ -37,7 +40,7 @@ function fixture(options = {}) {
   const db = {
     from(table) {
       const query = {
-        select() { return query; }, eq() { return query; },
+        select() { return query; }, eq() { return query; }, in() { return query; },
         gte() { return query; }, lte() { return query; }, order() { return query; },
         upsert(rows) {
           if (table === 'profit_sheet_calendar' || table === 'profit_sheet') storedRows.push(...rows);
@@ -74,6 +77,9 @@ function fixture(options = {}) {
     if (name === '@supabase/supabase-js') return { createClient: () => db };
     if (name === '@/lib/meta-ad-accounts') return helpers;
     if (name === '@/lib/finance-events') return financeEvents;
+    if (name === '@/lib/soulmate-orders') return soulmateOrders;
+    if (name === '@/lib/profit-sheet-gst') return profitGst;
+    if (name === '@/lib/payu-purchase-metadata') return purchaseMetadata;
     if (name === '@/lib/payu-api') return { getPayUTransactions: async () => options.payuTransactions || [] };
     return require(name);
   }, { Date: FixedDate, fetch, console: { ...console, error() {} } });
@@ -212,4 +218,21 @@ test('Meta read permission failure identifies the blocked account', async () => 
   const { status, body } = await fixture({ permissionDenied: true }).get();
   assert.equal(status, 500);
   assert.match(body.error, /Meta denied ads_read access to INR account/);
+});
+
+test('standalone soulmate sales and refunds never enter either Profit Sheet ledger', async () => {
+  for (const dayMode of ['calendar_ist', 'business_1130_ist']) {
+    const f = fixture({ dayMode, now: '2026-09-08T09:00:00Z', accounts: [], payuTransactions: [
+      { txnid: 'pay_existing', status: 'success', amount: '100', addedon: '2026-09-07 13:00:00', udf2: 'bundle' },
+      { txnid: 'sm_sale', status: 'success', amount: '1180', addedon: '2026-09-07 14:00:00', udf2: 'soulmate_standalone' },
+      { txnid: 'sm_sale', status: 'refund_success', amount: '1180', addedon: '2026-09-07 15:00:00', udf2: 'soulmate_standalone' },
+      { txnid: 'sm_lost_udf', status: 'success', amount: '1768.82', addedon: '2026-09-07 16:00:00' },
+    ] });
+    const { status, body } = await f.get(`token=test&startDate=2026-09-07&endDate=2026-09-07&dayMode=${dayMode}&sync=range&exchangeRate=100`);
+    assert.equal(status, 200);
+    assert.equal(body.rows[0].revenue, 100);
+    assert.equal(body.rows[0].transactionCount, 1);
+    assert.equal(body.rows[0].refundAmount, 0);
+    assert.equal(f.storedRows[0].revenue, 100);
+  }
 });

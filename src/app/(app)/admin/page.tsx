@@ -16,6 +16,7 @@ import {
   MessageCircle,
   Radar,
   Activity,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 
@@ -208,6 +209,19 @@ export default function AdminDashboardPage() {
             </motion.div>
           ))}
         </div>
+
+        <section aria-labelledby="soulmate-workspace-title" className="mt-8">
+          <h2 id="soulmate-workspace-title" className="mb-3 text-sm font-medium text-white/50">Soulmate workspace</h2>
+          <button
+            type="button"
+            onClick={() => router.push("/admin/soulmate")}
+            className="group flex w-full items-center gap-4 rounded-2xl border border-rose-300/20 bg-[#1A2235] p-6 text-left transition-colors hover:border-rose-300/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-rose-300"
+          >
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-rose-500/15"><Sparkles className="h-6 w-6 text-rose-300" aria-hidden="true" /></span>
+            <span className="flex-1"><span className="block text-lg font-semibold text-white">Soulmate Dashboard</span><span className="mt-1 block text-sm text-white/50">Orders, sketch generation, email delivery, analytics, and profit for the soulmate page.</span><span className="mt-2 block text-xs text-rose-200/70">Orders & analytics connected</span></span>
+            <ChevronRight className="h-5 w-5 shrink-0 text-white/30 transition-transform group-hover:translate-x-1" aria-hidden="true" />
+          </button>
+        </section>
 
         {/* Quick Stats Preview */}
         <motion.div

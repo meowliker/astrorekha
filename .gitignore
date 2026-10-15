@@ -56,3 +56,9 @@ DEPLOYMENT_CHECKLIST.md
 /public/palmoutline.png
 /public/male.png
 /public/female.png
+
+# Private local artifacts and R2 source backups
+/public/soulmate/
+/tmp/
+/output/
+/outputs/

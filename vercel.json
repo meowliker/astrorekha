@@ -22,6 +22,14 @@
     {
       "path": "/api/cron/retry-meta-purchases",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-soulmate-payments",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/fulfill-soulmate-orders",
+      "schedule": "* * * * *"
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { isSoulmateTransaction } from "@/lib/soulmate-orders";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
@@ -408,7 +409,7 @@ export async function GET(request: NextRequest) {
 
     let transactions: PayUTransaction[] = [];
     try {
-      transactions = (await getPayUTransactions(payuStartDate, payuEndDate)) as unknown as PayUTransaction[];
+      transactions = (await getPayUTransactions(payuStartDate, payuEndDate)).filter((txn) => !isSoulmateTransaction(txn)) as unknown as PayUTransaction[];
     } catch (payuError: any) {
       console.error("PayU fetch error:", payuError);
       return NextResponse.json(

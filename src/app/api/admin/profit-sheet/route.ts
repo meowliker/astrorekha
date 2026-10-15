@@ -1,3 +1,4 @@
+import { isSoulmateTransaction } from "@/lib/soulmate-orders";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -677,7 +678,7 @@ async function buildProfitSheetRows(
   };
 
   const payuFetchEnd = addDaysToIsoDate(endDate, 1);
-  const payuTransactions = await getPayUTransactions(startDate, payuFetchEnd);
+  const payuTransactions = (await getPayUTransactions(startDate, payuFetchEnd)).filter((txn) => !isSoulmateTransaction(txn));
   const savedPurchases = await loadSavedPurchases(supabase, payuTransactions);
   const paymentRows = buildSyncedPaymentRows(payuTransactions, savedPurchases);
   const financialRows: FinancialRow[] = payuTransactions

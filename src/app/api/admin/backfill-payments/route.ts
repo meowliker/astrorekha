@@ -1,3 +1,4 @@
+import { isSoulmateTransaction } from "@/lib/soulmate-orders";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { APP_LAUNCH_DATE, getPayUTransactions } from "@/lib/payu-api";
@@ -126,7 +127,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: usersError.message }, { status: 500 });
     }
 
-    const users = (usersWithPayu || []) as BackfillUserRow[];
+    const users = ((usersWithPayu || []) as BackfillUserRow[]).filter((user) => !isSoulmateTransaction(user));
     if (!users.length) {
       return NextResponse.json({
         success: true,
