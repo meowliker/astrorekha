@@ -45,8 +45,9 @@ function budgetAmount(value: unknown, currency: string, minorUnits = false): str
   if (typeof value === "object" && !Array.isArray(value)) {
     const fields = value as Record<string, unknown>;
     const ownCurrency = typeof fields.currency === "string" && /^[A-Z]{3}$/.test(fields.currency) ? fields.currency : currency;
+    const amountIsMinorUnits = minorUnits || fields.type === "payment_amount";
     for (const key of ["old_value", "new_value", "value", "amount", "daily_budget", "lifetime_budget", "budget"]) {
-      if (fields[key] != null) return budgetAmount(fields[key], ownCurrency, /budget$/.test(key));
+      if (fields[key] != null) return budgetAmount(fields[key], ownCurrency, amountIsMinorUnits || /budget$/.test(key));
     }
     return null;
   }
@@ -58,7 +59,7 @@ function budgetAmount(value: unknown, currency: string, minorUnits = false): str
   if (!Number.isFinite(raw)) return null;
   const amount = minorUnits && !/[₹$€£]/.test(text) ? raw / 100 : raw;
   const code = currency || (text.includes("₹") ? "INR" : text.includes("$") ? "USD" : text.includes("€") ? "EUR" : text.includes("£") ? "GBP" : "");
-  return code ? new Intl.NumberFormat("en-IN", { style: "currency", currency: code, useGrouping: false, minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(amount) : amount.toLocaleString("en-IN", { useGrouping: false, maximumFractionDigits: 2 });
+  return code ? new Intl.NumberFormat("en-IN", { style: "currency", currency: code, useGrouping: false, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount) : amount.toLocaleString("en-IN", { useGrouping: false, minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function activityDetail(extra: Record<string, unknown>, item: RawActivity, currency: string): string {
@@ -67,8 +68,8 @@ function activityDetail(extra: Record<string, unknown>, item: RawActivity, curre
   const newValue = extra.new_value ?? extra.new_budget;
   if (oldValue == null && newValue == null) return "";
   if (budget) {
-    const before = budgetAmount(oldValue, currency, extra.old_value == null);
-    const after = budgetAmount(newValue, currency, extra.new_value == null);
+    const before = budgetAmount(oldValue, currency, extra.old_value == null || extra.type === "payment_amount");
+    const after = budgetAmount(newValue, currency, extra.new_value == null || extra.type === "payment_amount");
     if (before || after) return `${before || "—"} → ${after || "—"}`;
   }
   return `${activityValue(oldValue, currency, budget)} → ${activityValue(newValue, currency, budget)}`;
