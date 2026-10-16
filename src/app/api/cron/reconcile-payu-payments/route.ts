@@ -46,6 +46,7 @@ function parseBooleanFlag(value: unknown): boolean {
 }
 
 function parseBoundedInteger(value: unknown, defaultValue: number, min: number, max: number): number {
+  if (value === null || value === undefined || value === "") return defaultValue;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return defaultValue;
   return Math.max(min, Math.min(max, Math.floor(parsed)));
@@ -59,9 +60,10 @@ async function runReconciliation(lookbackDays: number, maxRows: number, includeF
     const since = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
     const { data: pendingRows, error: pendingError } = await supabase
       .from("payments")
-      .select("id, payu_txn_id, user_id, type, bundle_id, feature, coins, customer_email, payment_status, created_at")
-      .in("payment_status", statuses)
+      .select("id, payu_txn_id, user_id, type, bundle_id, feature, coins, customer_email, payment_status, fulfilled_at, amount, created_at")
+      .or(`payment_status.in.(${statuses.join(",")}),and(payment_status.eq.paid,fulfilled_at.is.null)`)
       .not("payu_txn_id", "is", null)
+      .not("id", "like", "pay_refund_%")
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(maxRows);
@@ -124,6 +126,10 @@ async function runReconciliation(lookbackDays: number, maxRows: number, includeF
       }
 
       try {
+        const gatewayAmount = Number(payuTxn.amount);
+        if (!Number.isFinite(gatewayAmount) || Math.round(gatewayAmount * 100) !== row.amount) {
+          throw new Error("PayU amount does not match the saved order");
+        }
         const result = await fulfillPayUPayment({
           txnid: payuTxn.txnid,
           mihpayid: payuTxn.mihpayid || payuTxn.id,

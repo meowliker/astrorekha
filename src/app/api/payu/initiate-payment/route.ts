@@ -1,3 +1,4 @@
+import { ensurePaymentUser } from "@/lib/payu-checkout-user";
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { readOrderAttribution } from "@/lib/order-attribution";
@@ -55,77 +56,6 @@ function toPaise(value: number): number {
 
 function coinsToQuestionCount(coins: number): number {
   return Math.floor(Math.max(0, coins) / 3);
-}
-
-async function ensurePaymentUser(params: {
-  supabase: ReturnType<typeof getSupabaseAdmin>;
-  userId?: string;
-  email?: string;
-  whatsappNumber?: string;
-}): Promise<string | null> {
-  const normalizedUserId = String(params.userId || "").trim();
-  if (!normalizedUserId) return null;
-
-  const { supabase } = params;
-  const normalizedEmail = String(params.email || "").trim().toLowerCase();
-  const normalizedWhatsapp = normalizeIndianWhatsappNumber(params.whatsappNumber);
-  const { data: existingUser, error: lookupError } = await supabase
-    .from("users")
-    .select("id")
-    .eq("id", normalizedUserId)
-    .maybeSingle();
-
-  if (lookupError && lookupError.code !== "PGRST116") {
-    console.error("[payu/initiate-payment] Failed to check user before payment", {
-      userId: normalizedUserId,
-      error: lookupError,
-    });
-  }
-
-  if (existingUser?.id) {
-    if (normalizedWhatsapp || normalizedEmail) {
-      const updatePayload: Record<string, unknown> = {
-        updated_at: new Date().toISOString(),
-      };
-      if (normalizedEmail) updatePayload.email = normalizedEmail;
-      if (normalizedWhatsapp) {
-        updatePayload.whatsapp_number = normalizedWhatsapp;
-        updatePayload.whatsapp_opt_in = true;
-        updatePayload.whatsapp_opt_in_at = new Date().toISOString();
-        updatePayload.whatsapp_opt_in_source = "payu_initiate";
-      }
-      await supabase.from("users").update(updatePayload).eq("id", normalizedUserId);
-    }
-    return existingUser.id;
-  }
-
-  const nowIso = new Date().toISOString();
-  const baseUserRow = {
-    id: normalizedUserId,
-    ...(normalizedEmail ? { email: normalizedEmail } : {}),
-    ...(normalizedWhatsapp
-      ? {
-          whatsapp_number: normalizedWhatsapp,
-          whatsapp_opt_in: true,
-          whatsapp_opt_in_at: nowIso,
-          whatsapp_opt_in_source: "payu_initiate",
-        }
-      : {}),
-    payment_status: "pending",
-    created_at: nowIso,
-    updated_at: nowIso,
-  };
-
-  const { error: insertError } = await supabase.from("users").insert(baseUserRow);
-  if (insertError) {
-    console.error("[payu/initiate-payment] Failed to create user before payment", {
-      userId: normalizedUserId,
-      error: insertError,
-    });
-    return null;
-  }
-
-  return normalizedUserId;
 }
 
 async function getExistingWhatsappNumber(
@@ -384,7 +314,7 @@ export async function POST(request: NextRequest) {
     });
     const nowIso = new Date().toISOString();
 
-    if (resolvedPaymentUserId && birthDetailsSnapshot) {
+    if (resolvedPaymentUserId === userId && resolvedPaymentUserId && birthDetailsSnapshot) {
       const birthFields = birthSnapshotToDbFields(birthDetailsSnapshot);
       const userBirthFields = birthSnapshotToUserDbFields(birthDetailsSnapshot);
 
@@ -411,7 +341,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (checkoutWhatsappNumber) {
+    if (checkoutWhatsappNumber && resolvedPaymentUserId === userId) {
       upsertWhatsappSubscriber({
         supabase,
         userId: resolvedPaymentUserId || userId || null,

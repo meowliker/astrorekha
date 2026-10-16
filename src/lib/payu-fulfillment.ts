@@ -140,7 +140,7 @@ function isBlank(value: unknown): boolean {
   return value === null || value === undefined || String(value).trim() === "" || String(value).trim() === "--";
 }
 
-function pickMissingBirthFields(snapshotFields: Record<string, unknown>, existing: Record<string, any> | null | undefined) {
+function pickMissingBirthFields(snapshotFields: Record<string, unknown>, existing: Record<string, unknown> | null | undefined) {
   const picked: Record<string, unknown> = {};
   const existingHasDefaultBirthDate = isDefaultBirthDate({
     birthMonth: existing?.birth_month,
@@ -164,7 +164,7 @@ function pickMissingBirthFields(snapshotFields: Record<string, unknown>, existin
   return picked;
 }
 
-function attributionFromPayment(payment: any): PaymentAttributionPayload {
+function attributionFromPayment(payment: Record<string, string | null> | null): PaymentAttributionPayload {
   if (!payment) return {};
 
   return {
@@ -194,13 +194,14 @@ async function resolveUserIdFromEmail(email?: string): Promise<string | null> {
   if (!normalizedEmail) return null;
 
   const supabase = getSupabaseAdmin();
-  const { data: user } = await supabase
+  const { data: user, error } = await supabase
     .from("users")
     .select("id")
     .eq("email", normalizedEmail)
     .limit(1)
     .maybeSingle();
 
+  if (error) throw error;
   return user?.id || null;
 }
 
@@ -219,10 +220,7 @@ async function ensureFulfillmentUser(params: {
     .maybeSingle();
 
   if (lookupError && lookupError.code !== "PGRST116") {
-    console.error("[payu-fulfillment] Failed to check user before fulfillment", {
-      userId: normalizedUserId,
-      error: lookupError,
-    });
+    throw lookupError;
   }
 
   if (existingUser?.id) return existingUser.id;
@@ -237,11 +235,12 @@ async function ensureFulfillmentUser(params: {
 
   const { error: insertError } = await supabase.from("users").insert(baseUserRow);
   if (insertError) {
-    console.error("[payu-fulfillment] Failed to create user before fulfillment", {
-      userId: normalizedUserId,
-      error: insertError,
-    });
-    return null;
+    if (insertError.code === "23505") {
+      const { data: raced, error } = await supabase.from("users").select("id").eq("id", normalizedUserId).maybeSingle();
+      if (error) throw error;
+      if (raced?.id) return raced.id;
+    }
+    throw insertError;
   }
 
   return normalizedUserId;
@@ -286,9 +285,13 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
 
   const alreadyPaid = SUCCESS_STATUSES.has(normalizeStatus(existingPayment?.payment_status || ""));
 
+  if (alreadyPaid && existingPayment.fulfilled_at) {
+    // Gateway/browser retries must not regrant access or refill spent coins.
+    return { success: true, alreadyPaid: true, userId: existingPayment.user_id || null };
+  }
   if (!SUCCESS_STATUSES.has(status)) {
     if (alreadyPaid) {
-      return { success: true, alreadyPaid: true, userId: existingPayment.user_id || null };
+      throw new Error("Payment was received; access confirmation is still pending.");
     }
     await supabase
       .from("payments")
@@ -339,7 +342,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
   const coins = String(existingPayment.coins || (legacyUdfs ? payload.udf5 : null) || "").trim();
 
   if (existingPayment) {
-    const updatePayload: Record<string, any> = {
+    const updatePayload: Record<string, unknown> = {
       payu_payment_id: mihpayid || null,
       user_id: resolvedUserId || null,
       type,
@@ -348,8 +351,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
       coins: coins ? parseInt(coins, 10) : null,
       customer_email: normalizedEmail,
       payment_status: "paid",
-      fulfilled_at: alreadyPaid ? existingPayment.fulfilled_at || nowIso : nowIso,
-      meta_purchase_queued_at: alreadyPaid ? existingPayment.meta_purchase_queued_at || null : nowIso,
+      meta_purchase_queued_at: existingPayment.meta_purchase_queued_at || nowIso,
     };
 
     if (amountInPaise > 0) {
@@ -371,7 +373,14 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
     if (updateError) throw updateError;
   }
 
-  // Analytics follows fulfilment so a slow GA4 request cannot delay user access.
+  const markFulfilled = async () => {
+    const { error } = await supabase.from("payments")
+      .update({ fulfilled_at: existingPayment.fulfilled_at || nowIso }).eq("id", existingPayment.id);
+    if (error) throw error;
+  };
+
+  // Core access is saved before optional analytics/notifications. Status polling
+  // can then release the browser while those integrations finish independently.
   const recordGaPurchaseSafely = async () => {
     try {
       await sendGa4Purchase({
@@ -404,7 +413,108 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
     }
   };
 
-  if (!alreadyPaid) {
+  if (!resolvedUserId) {
+    throw new Error("Payment received, but customer access could not be saved. Confirmation will retry.");
+  }
+
+  const { data: user, error: userLookupError } = await supabase
+    .from("users")
+    .select(
+      "email, unlocked_features, coins, purchase_type, whatsapp_number, gender, relationship_status, sun_sign, moon_sign, ascendant_sign, birth_day, birth_month, birth_year, birth_hour, birth_minute, birth_period, birth_place, timezone"
+    )
+    .eq("id", resolvedUserId)
+    .maybeSingle();
+
+  if (userLookupError) throw userLookupError;
+
+  const { data: userProfile, error: profileLookupError } = await supabase
+    .from("user_profiles")
+    .select("gender, relationship_status, birth_month, birth_day, birth_year, birth_hour, birth_minute, birth_period, birth_place, knows_birth_time, timezone, sun_sign, moon_sign, ascendant_sign")
+    .eq("id", resolvedUserId)
+    .maybeSingle();
+
+  if (profileLookupError) throw profileLookupError;
+
+  const currentFeatures = user?.unlocked_features || {
+    palmReading: false,
+    prediction2026: false,
+    birthChart: false,
+    compatibilityTest: false,
+    soulmateSketch: false,
+    futurePartnerReport: false,
+    vastuShastraGuide: false,
+    auraColorReport: false,
+    astrocartographyReport: false,
+    pastLifeReport: false,
+    numerologyReport: false,
+    spiritAnimalReport: false,
+  };
+  const updatedFeatures = { ...currentFeatures } as Record<string, boolean>;
+  let updatedCoins = typeof user?.coins === "number" ? user.coins : 0;
+
+  const featuresToUnlock = parseFeaturesFromMetadata(type, bundleId, feature);
+  for (const f of featuresToUnlock) {
+    updatedFeatures[f] = true;
+  }
+
+  const coinBonus = parseCoins(type, coins, bundleId);
+  updatedCoins = alreadyPaid ? Math.max(updatedCoins, coinBonus) : updatedCoins + coinBonus;
+
+  const birthDetailsSnapshot = normalizeBirthDetailsSnapshot(
+    existingPayment.birth_details_snapshot,
+    "payu_fulfillment"
+  );
+  const snapshotDbFields = birthSnapshotToDbFields(birthDetailsSnapshot);
+  const profileBirthFields = pickMissingBirthFields(snapshotDbFields, userProfile);
+  const snapshotUserFields = birthSnapshotToUserDbFields(birthDetailsSnapshot);
+  const userBirthFields = pickMissingBirthFields(snapshotUserFields, user);
+
+  const userUpdate: Record<string, unknown> = {
+    id: resolvedUserId,
+    unlocked_features: updatedFeatures,
+    coins: updatedCoins,
+    payment_status: "paid",
+    purchase_type:
+      type === CHAT_UNLIMITED_PASS_TYPE
+        ? user?.purchase_type || "one-time"
+        : type === "bundle"
+          ? "one-time"
+          : type,
+    updated_at: nowIso,
+    payu_payment_id: mihpayid || null,
+    payu_txn_id: txnid,
+    ...userBirthFields,
+  };
+
+  if (type === "bundle" || type === "bundle_payment") {
+    userUpdate.bundle_purchased = bundleId || null;
+  }
+
+  if (normalizedWhatsappNumber) {
+    userUpdate.whatsapp_number = normalizedWhatsappNumber;
+    userUpdate.whatsapp_opt_in = true;
+    userUpdate.whatsapp_opt_in_at = nowIso;
+    userUpdate.whatsapp_opt_in_source = "payu_fulfillment";
+  }
+
+  const { error: userSaveError } = await supabase.from("users").upsert(userUpdate, { onConflict: "id" });
+  if (userSaveError) throw userSaveError;
+
+  if (Object.keys(profileBirthFields).length > 0) {
+    const { error: profileSaveError } = await supabase.from("user_profiles").upsert(
+      {
+        id: resolvedUserId,
+        email: normalizedEmail || user?.email || existingPayment?.customer_email || null,
+        ...profileBirthFields,
+        updated_at: nowIso,
+      },
+      { onConflict: "id" }
+    );
+    if (profileSaveError) throw profileSaveError;
+  }
+  await markFulfilled();
+
+  if (!existingPayment.fulfilled_at) {
     await recordMarketingEvent({
       eventName: "purchase_success",
       userId: resolvedUserId || null,
@@ -447,100 +557,6 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
     }
   }
 
-  if (!resolvedUserId) {
-    await Promise.all([recordGaPurchaseSafely(), recordMetaPurchaseSafely()]);
-    return { success: true, alreadyPaid, userId: resolvedUserId || null };
-  }
-
-  const { data: user } = await supabase
-    .from("users")
-    .select(
-      "email, unlocked_features, coins, purchase_type, whatsapp_number, gender, relationship_status, sun_sign, moon_sign, ascendant_sign, birth_day, birth_month, birth_year, birth_hour, birth_minute, birth_period, birth_place, timezone"
-    )
-    .eq("id", resolvedUserId)
-    .maybeSingle();
-
-  const { data: userProfile } = await supabase
-    .from("user_profiles")
-    .select("gender, relationship_status, birth_month, birth_day, birth_year, birth_hour, birth_minute, birth_period, birth_place, knows_birth_time, timezone, sun_sign, moon_sign, ascendant_sign")
-    .eq("id", resolvedUserId)
-    .maybeSingle();
-
-  const currentFeatures = user?.unlocked_features || {
-    palmReading: false,
-    prediction2026: false,
-    birthChart: false,
-    compatibilityTest: false,
-    soulmateSketch: false,
-    futurePartnerReport: false,
-    vastuShastraGuide: false,
-    auraColorReport: false,
-    astrocartographyReport: false,
-    pastLifeReport: false,
-    numerologyReport: false,
-    spiritAnimalReport: false,
-  };
-  let updatedFeatures = { ...currentFeatures } as Record<string, boolean>;
-  let updatedCoins = typeof user?.coins === "number" ? user.coins : 0;
-
-  const featuresToUnlock = parseFeaturesFromMetadata(type, bundleId, feature);
-  for (const f of featuresToUnlock) {
-    updatedFeatures[f] = true;
-  }
-
-  const coinBonus = parseCoins(type, coins, bundleId);
-  updatedCoins = alreadyPaid ? Math.max(updatedCoins, coinBonus) : updatedCoins + coinBonus;
-
-  const birthDetailsSnapshot = normalizeBirthDetailsSnapshot(
-    (existingPayment as any)?.birth_details_snapshot,
-    "payu_fulfillment"
-  );
-  const snapshotDbFields = birthSnapshotToDbFields(birthDetailsSnapshot);
-  const profileBirthFields = pickMissingBirthFields(snapshotDbFields, userProfile);
-  const snapshotUserFields = birthSnapshotToUserDbFields(birthDetailsSnapshot);
-  const userBirthFields = pickMissingBirthFields(snapshotUserFields, user);
-
-  const userUpdate: Record<string, any> = {
-    id: resolvedUserId,
-    unlocked_features: updatedFeatures,
-    coins: updatedCoins,
-    payment_status: "paid",
-    purchase_type:
-      type === CHAT_UNLIMITED_PASS_TYPE
-        ? user?.purchase_type || "one-time"
-        : type === "bundle"
-          ? "one-time"
-          : type,
-    updated_at: nowIso,
-    payu_payment_id: mihpayid || null,
-    payu_txn_id: txnid,
-    ...userBirthFields,
-  };
-
-  if (type === "bundle" || type === "bundle_payment") {
-    userUpdate.bundle_purchased = bundleId || null;
-  }
-
-  if (normalizedWhatsappNumber) {
-    userUpdate.whatsapp_number = normalizedWhatsappNumber;
-    userUpdate.whatsapp_opt_in = true;
-    userUpdate.whatsapp_opt_in_at = nowIso;
-    userUpdate.whatsapp_opt_in_source = "payu_fulfillment";
-  }
-
-  await supabase.from("users").upsert(userUpdate, { onConflict: "id" });
-
-  if (Object.keys(profileBirthFields).length > 0) {
-    await supabase.from("user_profiles").upsert(
-      {
-        id: resolvedUserId,
-        email: normalizedEmail || user?.email || existingPayment?.customer_email || null,
-        ...profileBirthFields,
-        updated_at: nowIso,
-      },
-      { onConflict: "id" }
-    );
-  }
 
   const subscriberWhatsappNumber =
     normalizedWhatsappNumber || normalizeIndianWhatsappNumber(user?.whatsapp_number);

@@ -2,7 +2,10 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CheckCircle, Loader2, XCircle } from "lucide-react";
+import { Clock3, Loader2, XCircle } from "lucide-react";
+import { watchPayUPayment, type PayUStatus } from "@/lib/payu-checkout-recovery";
+import { useUserStore } from "@/lib/user-store";
+import { pixelEvents } from "@/lib/pixel-events";
 import { Button } from "@/components/ui/button";
 
 type PendingPayment = {
@@ -13,17 +16,9 @@ type PendingPayment = {
   createdAt?: string;
 };
 
-type PaymentStatusResponse = {
-  success?: boolean;
-  status?: string;
-  type?: string | null;
-  bundleId?: string | null;
-  userId?: string | null;
-};
+type PaymentStatusResponse = PayUStatus;
 
 const PENDING_PAYMENT_KEY = "astrorekha_pending_payu_payment";
-const SUCCESS_STATUSES = new Set(["paid", "success", "captured"]);
-const FAILED_STATUSES = new Set(["failed", "failure", "bounced", "cancelled", "usercancelled", "dropped"]);
 
 function normalizeStatus(value: unknown): string {
   return String(value || "").trim().toLowerCase();
@@ -62,7 +57,8 @@ function resolveReturnTo(status: PaymentStatusResponse, pending: PendingPayment 
   if (type === "chat_pass") {
     return "/chat";
   }
-  return pending?.returnTo || "/reports";
+  const allowed = ["/reports", "/onboarding/bundle-upsell", "/onboarding/step-19", "/chat"];
+  return pending?.returnTo && allowed.includes(pending.returnTo) ? pending.returnTo : "/reports";
 }
 
 function appendUpsellTxnId(txnid: string) {
@@ -81,10 +77,10 @@ function PaymentProcessingContent() {
   const searchParams = useSearchParams();
   const storedPending = useMemo(() => getStoredPendingPayment(), []);
   const txnid = searchParams.get("txnid") || storedPending?.txnid || "";
-  const source = searchParams.get("source") || "";
   const [statusText, setStatusText] = useState("Confirming your payment...");
   const [isFailed, setIsFailed] = useState(false);
   const [canRetry, setCanRetry] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     if (!txnid) {
@@ -94,91 +90,73 @@ function PaymentProcessingContent() {
       return;
     }
 
-    if (source === "payu_failure") {
-      clearPendingPayment(txnid);
-      setStatusText("Payment was cancelled or not completed. Please try again.");
-      setIsFailed(true);
-      setCanRetry(true);
-      return;
-    }
-
-    let cancelled = false;
-    let attempt = 0;
-
-    const checkStatus = async () => {
-      attempt += 1;
-      try {
-        const response = await fetch(`/api/payu/status?txnid=${encodeURIComponent(txnid)}`, {
-          cache: "no-store",
-        });
-        const data = (await response.json().catch(() => ({}))) as PaymentStatusResponse;
-        const normalized = normalizeStatus(data.status);
-
-        if (cancelled) return;
-
-        if (response.ok && SUCCESS_STATUSES.has(normalized)) {
+    setCanRetry(false);
+    setIsFailed(false);
+    setStatusText("Confirming your payment...");
+    let navigationFallback: ReturnType<typeof setTimeout> | undefined;
+    const monitor = watchPayUPayment({
+      txnid,
+      onPaid: (data) => {
+        try {
           const pending = getStoredPendingPayment() || storedPending;
           const paymentType = normalizeStatus(data.type || pending?.type || "");
           const bundleId = data.bundleId || pending?.bundleId || "";
           if (bundleId && (paymentType === "bundle" || paymentType === "bundle_payment")) {
-            window.localStorage.setItem("astrorekha_bundle_id", bundleId);
-            window.localStorage.setItem("astrorekha_selected_plan", bundleId);
+            localStorage.setItem("astrorekha_bundle_id", bundleId);
+            localStorage.setItem("astrorekha_selected_plan", bundleId);
           }
           if (paymentType === "bundle" || paymentType === "bundle_payment") {
-            window.localStorage.setItem("astrorekha_main_txn_id", txnid);
+            localStorage.setItem("astrorekha_main_txn_id", txnid);
           }
-          if (paymentType === "upsell") {
-            appendUpsellTxnId(txnid);
-          }
+          if (paymentType === "upsell") appendUpsellTxnId(txnid);
+          // Replace the stale anonymous identity only after verified payment.
           if (data.userId) {
-            window.localStorage.setItem("astrorekha_user_id", data.userId);
+            localStorage.setItem("astrorekha_user_id", data.userId);
+            localStorage.setItem("astrorekha_anon_id", data.userId);
+            useUserStore.getState().setUserId(data.userId);
           }
-          window.localStorage.setItem("astrorekha_payment_completed", "true");
-          if (paymentType !== "chat_pass") {
-            window.localStorage.setItem("astrorekha_purchase_type", "one-time");
-          }
+          localStorage.setItem("astrorekha_payment_completed", "true");
+          if (paymentType !== "chat_pass") localStorage.setItem("astrorekha_purchase_type", "one-time");
           clearPendingPayment(txnid);
+          // Analytics must not prevent the customer from reaching their purchase.
+          try {
+            if (typeof data.amount === "number" && data.amount > 0) {
+              pixelEvents.purchase(data.amount, bundleId || paymentType, bundleId || paymentType, txnid);
+            }
+          } catch { /* Server purchase tracking has its own durable retry. */ }
           setStatusText("Payment confirmed. Opening your next step...");
-          router.replace(resolveReturnTo(data, pending));
-          return;
-        }
-
-        if (FAILED_STATUSES.has(normalized)) {
-          clearPendingPayment(txnid);
-          setStatusText("Payment was not completed. Please try again.");
-          setIsFailed(true);
+          const destination = resolveReturnTo(data, pending);
+          router.replace(destination);
+          navigationFallback = setTimeout(() => window.location.replace(destination), 5000);
+        } catch {
+          setStatusText("Your payment is confirmed, but this browser could not finish saving your session. Enable site storage, then check again. Do not pay again.");
           setCanRetry(true);
-          return;
         }
-
-        setStatusText(
-          attempt < 4
-            ? "Confirming your payment..."
-            : "Still waiting for PayU confirmation. UPI payments can take a little longer."
-        );
-
-        if (attempt >= 30) {
-          setCanRetry(true);
-          return;
-        }
-
-        window.setTimeout(checkStatus, attempt < 5 ? 2500 : 5000);
-      } catch {
-        if (cancelled) return;
-        if (attempt >= 8) {
-          setStatusText("We are still confirming this payment. Please refresh in a few moments.");
-          setCanRetry(true);
-          return;
-        }
-        window.setTimeout(checkStatus, 4000);
-      }
-    };
-
-    checkStatus();
+      },
+      onFailed: () => {
+        clearPendingPayment(txnid);
+        setStatusText("Payment was not completed. You can return to checkout.");
+        setIsFailed(true);
+        setCanRetry(true);
+      },
+      onWaiting: () => setStatusText("Waiting for payment confirmation. If you have been charged, do not pay again; we will check this transaction automatically."),
+      onExpired: () => {
+        setStatusText("We could not confirm this payment yet. Check again to continue with the same transaction. If you have been charged, do not make another payment.");
+        setCanRetry(true);
+      },
+    });
+    const resume = () => { if (document.visibilityState === "visible") void monitor.checkNow(); };
+    window.addEventListener("focus", resume);
+    window.addEventListener("online", resume);
+    document.addEventListener("visibilitychange", resume);
     return () => {
-      cancelled = true;
+      monitor.stop();
+      clearTimeout(navigationFallback);
+      window.removeEventListener("focus", resume);
+      window.removeEventListener("online", resume);
+      document.removeEventListener("visibilitychange", resume);
     };
-  }, [router, source, storedPending, txnid]);
+  }, [router, storedPending, txnid, retryKey]);
 
   return (
     <main className="min-h-screen bg-background flex items-center justify-center px-6">
@@ -187,7 +165,7 @@ function PaymentProcessingContent() {
           {isFailed ? (
             <XCircle className="h-7 w-7 text-red-400" />
           ) : canRetry ? (
-            <CheckCircle className="h-7 w-7 text-amber-400" />
+            <Clock3 className="h-7 w-7 text-amber-400" />
           ) : (
             <Loader2 className="h-7 w-7 animate-spin text-primary" />
           )}
@@ -197,12 +175,12 @@ function PaymentProcessingContent() {
         {txnid && <p className="mt-3 text-xs text-muted-foreground/70">Transaction: {txnid}</p>}
         {canRetry && (
           <div className="mt-5 flex flex-col gap-2">
-            <Button onClick={() => window.location.reload()} className="w-full">
+            <Button onClick={() => setRetryKey((value) => value + 1)} className="w-full">
               Check Again
             </Button>
-            <Button variant="outline" onClick={() => router.replace("/onboarding/bundle-pricing")} className="w-full">
+            {isFailed && <Button variant="outline" onClick={() => router.replace("/onboarding/bundle-pricing")} className="w-full">
               Back to Checkout
-            </Button>
+            </Button>}
           </div>
         )}
       </div>

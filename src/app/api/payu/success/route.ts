@@ -40,25 +40,29 @@ async function parsePayUPayload(request: NextRequest): Promise<PayUCallbackPaylo
 }
 
 export async function POST(request: NextRequest) {
+  let payload: PayUCallbackPayload | undefined;
   try {
-    const payload = await parsePayUPayload(request);
+    payload = await parsePayUPayload(request);
     const result = await fulfillPayUPayment({
       ...payload,
       status: payload.status || "success",
     });
-    if (!result.success) {
-      return NextResponse.json({ success: false, error: result.reason }, { status: 400 });
-    }
+    if (!result.success) console.warn("PayU browser return needs server verification", { txnid: payload.txnid });
 
     const txnid = payload.txnid || "";
     const redirectUrl = new URL("/payment/processing", request.url);
     if (txnid) redirectUrl.searchParams.set("txnid", txnid);
     redirectUrl.searchParams.set("source", "payu_success");
     return NextResponse.redirect(redirectUrl, { status: 303 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("PayU success callback error:", error);
+    if (payload?.txnid) {
+      const recovery = new URL("/payment/processing", request.url);
+      recovery.searchParams.set("txnid", payload.txnid);
+      return NextResponse.redirect(recovery, { status: 303 });
+    }
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to process PayU success callback" },
+      { success: false, error: error instanceof Error ? error.message : "Failed to process PayU success callback" },
       { status: 500 }
     );
   }

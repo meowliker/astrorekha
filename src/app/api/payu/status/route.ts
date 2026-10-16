@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const supabase = getSupabaseAdmin();
     const { data: payment, error: lookupError } = await supabase
       .from("payments")
-      .select("id, payu_txn_id, payu_payment_id, user_id, type, bundle_id, feature, coins, customer_email, payment_status, amount")
+      .select("id, payu_txn_id, payu_payment_id, fulfilled_at, user_id, type, bundle_id, feature, coins, customer_email, payment_status, amount")
       .eq("payu_txn_id", txnid)
       .not("id", "like", "pay_refund_%")
       .maybeSingle();
@@ -32,10 +32,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Payment not found" }, { status: 404 });
     }
 
-    if (SUCCESS_STATUSES.has(normalizeStatus(payment?.payment_status))) {
+    if (SUCCESS_STATUSES.has(normalizeStatus(payment?.payment_status)) && payment.fulfilled_at) {
       return NextResponse.json({
         success: true,
         status: "paid",
+        amount: payment.amount / 100,
         userId: payment?.user_id || null,
         type: payment?.type || null,
         bundleId: payment?.bundle_id || null,
@@ -96,6 +97,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       status: result.success ? "paid" : payuStatus,
+      amount: payment.amount / 100,
       userId: result.userId || payment?.user_id || null,
       type: payment.type || null,
       bundleId: payment.bundle_id || null,
