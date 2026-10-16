@@ -4,7 +4,7 @@ import { sendEmail } from "@/lib/brevo";
 import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
 import { verifyPayUTransaction } from "@/lib/payu-api";
 import { buildMonitoringAlert } from "@/lib/monitoring-alerts";
-import { confirmBrevoFailure } from "@/lib/monitoring-brevo-policy";
+import { confirmProviderFailure, requiresConsecutiveFailures } from "@/lib/monitoring-failure-policy";
 
 export type MonitorStatus = "ok" | "warning" | "down" | "unconfigured" | "warming";
 export type MonitorCheck = {
@@ -227,6 +227,18 @@ async function reachability(key: string, name: string, configured: boolean, url:
   });
 }
 
+async function aisensyCheck(): Promise<MonitorCheck> {
+  const enabled = String(process.env.AISENSY_ENABLED).toLowerCase() === "true";
+  const url = process.env.AISENSY_API_URL || "https://backend.aisensy.com/";
+  const first = await reachability("aisensy", "AiSensy WhatsApp", enabled, url);
+  if (!issue(first.status) || first.message.includes("rate limiting")) return first;
+  const second = await reachability("aisensy", "AiSensy WhatsApp", enabled, url);
+  return {
+    ...second, latencyMs: first.latencyMs + second.latencyMs,
+    message: second.status === "ok" ? "Service reachable after retry" : `${second.message} on both attempts`,
+  };
+}
+
 export async function collectMonitoringChecks(db: SupabaseClient, now = Date.now()): Promise<MonitorCheck[]> {
   const appUrl = process.env.MONITOR_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || "https://astrorekha.com";
   const checks = await Promise.all([
@@ -280,7 +292,7 @@ export async function collectMonitoringChecks(db: SupabaseClient, now = Date.now
       "https://api.openai.com/v1/models?limit=1", { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY || ""}` } }),
     reachability("free_astrology", "Free Astrology API", true, "https://json.freeastrologyapi.com/"),
     reachability("astrology_api", "AstrologyAPI", !!process.env.ASTROLOGY_API, "https://json.astrologyapi.com/"),
-    reachability("aisensy", "AiSensy WhatsApp", String(process.env.AISENSY_ENABLED).toLowerCase() === "true", process.env.AISENSY_API_URL || "https://backend.aisensy.com/"),
+    aisensyCheck(),
     process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY
       ? probe("google_sheets", "Google Sheets", async () => {
           const { google } = await import("googleapis");
@@ -393,7 +405,7 @@ export async function runMonitoring(db: SupabaseClient, trigger: "cron" | "manua
       .select("started_at,checks").eq("trigger", "cron").neq("id", run.id)
       .not("finished_at", "is", null).order("started_at", { ascending: false }).limit(1).maybeSingle();
     if (priorError) throw new Error("Unable to read previous monitoring run");
-    const checks = rawChecks.map((check) => confirmBrevoFailure(check, priorRun, trigger, now));
+    const checks = rawChecks.map((check) => confirmProviderFailure(check, priorRun, trigger, now));
     const { data: existing, error: incidentError } = await db.from("monitoring_incidents")
       .select("check_key,active,status,opened_at,last_seen_at,last_notified_at");
     if (incidentError) throw new Error("Unable to read monitoring incidents");
@@ -403,7 +415,7 @@ export async function runMonitoring(db: SupabaseClient, trigger: "cron" | "manua
       const previous = byKey.get(check.key);
       if (issue(check.status)) {
         const isNew = !previous?.active;
-        if (isNew || !previous?.last_notified_at || (previous.status !== check.status && check.key !== "brevo")) changed.push({ check, event: "issue" });
+        if (isNew || !previous?.last_notified_at || (previous.status !== check.status && !requiresConsecutiveFailures(check.key))) changed.push({ check, event: "issue" });
         const { error } = await db.from("monitoring_incidents").upsert({
           check_key: check.key, active: true, status: check.status, message: check.message,
           opened_at: isNew ? new Date(now).toISOString() : previous.opened_at,
