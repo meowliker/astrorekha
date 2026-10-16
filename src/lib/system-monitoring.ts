@@ -1,7 +1,8 @@
 import { randomUUID } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendEmail } from "@/lib/brevo";
-import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
+import { META_AD_ACCOUNTS_SETTINGS_KEY, getMetaAccountCredentialsFromEnv, normalizeMetaAdAccountsSettings } from "@/lib/meta-ad-accounts";
+import { selectMonitoredMetaAccounts } from "@/lib/monitoring-meta-accounts";
 import { verifyPayUTransaction } from "@/lib/payu-api";
 import { buildMonitoringAlert } from "@/lib/monitoring-alerts";
 import { confirmProviderFailure, requiresConsecutiveFailures } from "@/lib/monitoring-failure-policy";
@@ -109,15 +110,29 @@ async function salesCheck(db: SupabaseClient, now: number): Promise<MonitorCheck
 async function metaChecks(db: SupabaseClient, now: number): Promise<MonitorCheck[]> {
   const started = Date.now();
   let credentials;
+  let inactive: Map<string, string>;
   try {
-    const configured = await getMetaAccountCredentialsForRange(db, { startMillis: now - 60 * 60_000, endMillis: now });
-    credentials = configured.length ? configured : getMetaAccountCredentialsFromEnv({ startMillis: now - 60 * 60_000, endMillis: now });
+    const { data, error } = await db.from("settings").select("value").eq("key", META_AD_ACCOUNTS_SETTINGS_KEY).maybeSingle();
+    if (error) throw error;
+    const range = { startMillis: now - 60 * 60_000, endMillis: now };
+    ({ credentials, inactive } = selectMonitoredMetaAccounts(
+      normalizeMetaAdAccountsSettings(data?.value), getMetaAccountCredentialsFromEnv(range), range,
+    ));
   } catch {
     return [result("meta", "Meta Ads", "down", "Unable to read configured ad accounts", started)];
   }
+  const inactiveKeys = Array.from(inactive.keys(), (accountId) => `meta:${accountId}`);
+  const { data: retiredIncidents, error: incidentError } = inactiveKeys.length
+    ? await db.from("monitoring_incidents").select("check_key").eq("active", true).in("check_key", inactiveKeys)
+    : { data: [], error: null };
+  if (incidentError) return [result("meta", "Meta Ads", "down", "Unable to read retired ad account issues", started)];
+  const retiredChecks = (retiredIncidents || []).map(({ check_key }) => {
+    const accountId = check_key.slice("meta:".length);
+    return result(check_key, inactive.get(accountId) || `Ad account ${accountId}`, "unconfigured", "Ad account is inactive in monitoring settings", started);
+  });
   const unique = Array.from(new Map(credentials.map((item) => [item.accountId, item])).values());
-  if (!unique.length) return [result("meta", "Meta Ads", "unconfigured", "No active ad account is configured", started)];
-  return Promise.all(unique.map((credential) => probe(`meta:${credential.accountId}`, credential.label || `Ad account ${credential.accountId}`, async () => {
+  if (!unique.length) return [result("meta", "Meta Ads", "unconfigured", "No active ad account is configured", started), ...retiredChecks];
+  const currentChecks = await Promise.all(unique.map((credential) => probe(`meta:${credential.accountId}`, credential.label || `Ad account ${credential.accountId}`, async () => {
     const params = new URLSearchParams({ fields: "id,name,currency,account_status,timezone_offset_hours_utc" });
     // The token stays in the server-only Authorization header and never reaches logs or alerts.
     const response = await fetch(`https://graph.facebook.com/v21.0/act_${credential.accountId}?${params}`, {
@@ -175,6 +190,7 @@ async function metaChecks(db: SupabaseClient, now: number): Promise<MonitorCheck
       ? { status: "ok", message: "Meta Insights reported spend increased since the prior check" }
       : { status: "warning", message: `No new Meta Insights spend was reported for ${Math.floor(elapsedMinutes)} minutes` };
   })));
+  return [...currentChecks, ...retiredChecks];
 }
 
 async function payuCheck(db: SupabaseClient, now: number): Promise<MonitorCheck> {
