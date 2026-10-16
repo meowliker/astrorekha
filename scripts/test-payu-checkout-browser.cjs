@@ -27,6 +27,7 @@ const passed=[];
     if(url.pathname==='/api/payu/initiate-payment'){
      initiated++;json={txnId:'qa-txn',amount:'659.62',productInfo:'Palm Reading',email:'fixture@example.com',firstName:'Fixture',phone:'9999999999',key:'fixture',hash:'fixture'};
     } else if(url.pathname==='/api/payu/status'){
+     if(url.searchParams.has('checkoutEmail')) return route.fulfill({json:{success:true,matchesCheckout:true}});
      const status=responses[Math.min(statusCalls++,responses.length-1)];
      if(status==='network')return route.abort('failed');
      if(status==='malformed')return route.fulfill({contentType:'text/html',body:'Temporary gateway error',status:502});

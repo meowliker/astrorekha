@@ -18,7 +18,7 @@ import { usePricing } from "@/hooks/usePricing";
 import { getPaymentAttributionPayload } from "@/lib/attribution-client";
 import { trackCheckout } from "@/lib/analytics";
 import { normalizeIndianWhatsappNumber, toPayUPhoneNumber } from "@/lib/whatsapp";
-import { readPendingPayU, watchPayUPayment } from "@/lib/payu-checkout-recovery";
+import { preparePayUCheckoutEmail, readPendingPayU, watchPayUPayment } from "@/lib/payu-checkout-recovery";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { ASTROREKHA_ASSETS } from "@/lib/assets";
 type LayoutVariant = "A" | "B";
@@ -58,6 +58,7 @@ function savePendingPayUPayment(payment: {
   type: string;
   bundleId?: string;
   returnTo: string;
+  email: string;
 }) {
   localStorage.setItem(
     PENDING_PAYMENT_KEY,
@@ -139,6 +140,7 @@ export default function BundlePricingPage() {
   const [agreedToTerms, setAgreedToTerms] = useState(true);
   const [paymentError, setPaymentError] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isCheckingCheckout, setIsCheckingCheckout] = useState(true);
   const [pendingTxnId, setPendingTxnId] = useState<string | null>(null);
   const checkoutStartingRef = useRef(false);
   const [showCouponInput, setShowCouponInput] = useState(false);
@@ -178,36 +180,37 @@ export default function BundlePricingPage() {
   const isPlanSelectionReady = Boolean(selectedPlanData);
 
   useEffect(() => {
-    const handlePageShow = () => {
-      const pending = readPendingPayU();
-      if (pending?.type === "bundle") {
-        router.replace(`/payment/processing?txnid=${encodeURIComponent(pending.txnid)}`);
-        return;
+    let cancelled = false;
+    let checking = false;
+    const handlePageShow = async () => {
+      if (checking) return;
+      checking = true;
+      setIsCheckingCheckout(true);
+      try {
+        if (await preparePayUCheckoutEmail(localStorage.getItem("astrorekha_email") || "")) {
+          useUserStore.getState().resetUserState();
+          useUserStore.getState().setUserId(generateUserId());
+        }
+        if (cancelled) return;
+        const pending = readPendingPayU();
+        if (pending?.type === "bundle") {
+          router.replace(`/payment/processing?txnid=${encodeURIComponent(pending.txnid)}`);
+          return;
+        }
+        setIsProcessing(false);
+        localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
+        if (localStorage.getItem("astrorekha_registration_completed") === "true") router.replace("/dashboard");
+        else if (localStorage.getItem("astrorekha_payment_completed") === "true") router.replace("/onboarding/bundle-upsell");
+      } catch (error) {
+        if (!cancelled) setPaymentError(error instanceof Error ? error.message : "Please try checking your checkout again.");
+      } finally {
+        checking = false;
+        if (!cancelled) setIsCheckingCheckout(false);
       }
-      setIsProcessing(false);
     };
     window.addEventListener("pageshow", handlePageShow);
-    // React may mount after pageshow has already fired (including a full refresh).
-    if (readPendingPayU()?.type === "bundle") handlePageShow();
-
-    localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
-    
-    // Route protection: Check if user has already completed payment
-    const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
-    const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
-    
-    if (readPendingPayU()?.type === "bundle") {
-      return () => window.removeEventListener("pageshow", handlePageShow);
-    }
-    if (hasCompletedRegistration) {
-      router.replace("/dashboard");
-      return () => window.removeEventListener("pageshow", handlePageShow);
-    } else if (hasCompletedPayment) {
-      router.replace("/onboarding/bundle-upsell");
-      return () => window.removeEventListener("pageshow", handlePageShow);
-    }
-    
-    return () => window.removeEventListener("pageshow", handlePageShow);
+    void handlePageShow();
+    return () => { cancelled = true; window.removeEventListener("pageshow", handlePageShow); };
   }, [router]);
 
   useEffect(() => {
@@ -410,13 +413,23 @@ export default function BundlePricingPage() {
   }, [pendingTxnId, router]);
 
   const handlePurchase = async () => {
+    if (checkoutStartingRef.current || isCheckingCheckout) return;
+    checkoutStartingRef.current = true;
+    try {
+      if (await preparePayUCheckoutEmail(localStorage.getItem("astrorekha_email") || "")) {
+        useUserStore.getState().resetUserState();
+        useUserStore.getState().setUserId(generateUserId());
+      }
+    } catch (error) {
+      setPaymentError(error instanceof Error ? error.message : "Unable to start checkout. Please try again.");
+      checkoutStartingRef.current = false;
+      return;
+    }
     const pending = readPendingPayU();
     if (pending?.type === "bundle") {
       router.replace(`/payment/processing?txnid=${encodeURIComponent(pending.txnid)}`);
       return;
     }
-    if (checkoutStartingRef.current) return;
-    checkoutStartingRef.current = true;
     setPaymentError("");
     setIsProcessing(true);
     
@@ -467,7 +480,7 @@ export default function BundlePricingPage() {
         body: JSON.stringify({
           type: "bundle",
           bundleId: selectedPlan,
-          userId: userId || generateUserId(),
+          userId: useUserStore.getState().userId || generateUserId(),
           email: localStorage.getItem("astrorekha_email") || "",
           firstName: localStorage.getItem("astrorekha_name") || "Customer",
           whatsappNumber: checkoutWhatsappNumber,
@@ -484,6 +497,7 @@ export default function BundlePricingPage() {
         savePendingPayUPayment({
           txnid: data.txnId,
           type: "bundle",
+          email: checkoutEmail,
           bundleId: selectedPlan,
           returnTo: "/onboarding/bundle-upsell",
         });
@@ -828,7 +842,7 @@ export default function BundlePricingPage() {
         >
           <Button
             onClick={handlePurchase}
-            disabled={!isPlanSelectionReady || !agreedToTerms || isProcessing || isRedeemingCoupon}
+            disabled={!isPlanSelectionReady || !agreedToTerms || isCheckingCheckout || isProcessing || isRedeemingCoupon}
             className="w-full h-14 text-lg font-semibold"
             size="lg"
           >
@@ -1403,7 +1417,7 @@ export default function BundlePricingPage() {
           <div className="max-w-sm mx-auto">
             <Button
               onClick={handlePurchase}
-              disabled={!isPlanSelectionReady || !agreedToTerms || isProcessing || isRedeemingCoupon}
+              disabled={!isPlanSelectionReady || !agreedToTerms || isCheckingCheckout || isProcessing || isRedeemingCoupon}
               className="w-full h-14 text-lg font-semibold"
               size="lg"
             >

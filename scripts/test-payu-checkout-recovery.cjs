@@ -66,3 +66,38 @@ test('database lookup errors stop checkout instead of creating orphaned payments
 test('a different email cannot overwrite the existing browser account',async()=>{
   const db=mockDb([{id:'existing',email:'original@example.com'}]);await assert.rejects(ensurePaymentUser({supabase:db,userId:'existing',email:'another@example.com'}),/another email/);assert.equal(db.rows[0].email,'original@example.com');
 });
+
+test('checkout email switch archives the old payment, clears stale identity, and restores only its owner',async()=>{
+ const {preparePayUCheckoutEmail,readPendingPayU,PENDING_PAYU_KEY}=require('../src/lib/payu-checkout-recovery');
+ const savedStorage=global.localStorage;const rows=new Map();
+ global.localStorage={getItem:k=>rows.get(k)??null,setItem:(k,v)=>rows.set(k,v),removeItem:k=>rows.delete(k)};
+ try {
+  localStorage.setItem('astrorekha_checkout_email','old@example.com');
+  localStorage.setItem('astrorekha_user_id','old-customer');localStorage.setItem('astrorekha_anon_id','old-customer');
+  localStorage.setItem('astrorekha_payment_completed','true');
+  localStorage.setItem(PENDING_PAYU_KEY,JSON.stringify({txnid:'old-txn',type:'bundle',email:'old@example.com'}));
+  assert.equal(await preparePayUCheckoutEmail(' NEW@example.com '),true);
+  assert.equal(readPendingPayU(),null);assert.equal(localStorage.getItem('astrorekha_user_id'),null);assert.equal(localStorage.getItem('astrorekha_anon_id'),null);assert.equal(localStorage.getItem('astrorekha_payment_completed'),null);
+  assert.match(localStorage.getItem('astrorekha_pending_payu_history'),/old-txn/);
+  assert.equal(await preparePayUCheckoutEmail('new@example.com'),false);
+  assert.equal(await preparePayUCheckoutEmail('old@example.com'),true);assert.equal(readPendingPayU().txnid,'old-txn');
+  assert.equal(await preparePayUCheckoutEmail(' OLD@example.com '),false);assert.equal(readPendingPayU().txnid,'old-txn');
+ }finally{global.localStorage=savedStorage}
+});
+test('legacy pending owner is checked even when the previous email was already overwritten',async()=>{
+ const {preparePayUCheckoutEmail,readPendingPayU,PENDING_PAYU_KEY}=require('../src/lib/payu-checkout-recovery');
+ const savedStorage=global.localStorage,savedFetch=global.fetch;const rows=new Map();
+ global.localStorage={getItem:k=>rows.get(k)??null,setItem:(k,v)=>rows.set(k,v),removeItem:k=>rows.delete(k)};
+ try{
+  localStorage.setItem('astrorekha_checkout_email','new@example.com');localStorage.setItem(PENDING_PAYU_KEY,JSON.stringify({txnid:'legacy',type:'bundle'}));
+  global.fetch=async url=>{assert.match(url,/checkoutEmail=new%40example.com/);return {ok:true,json:async()=>({matchesCheckout:false})}};
+  assert.equal(await preparePayUCheckoutEmail('new@example.com'),true);assert.equal(readPendingPayU(),null);
+  localStorage.setItem(PENDING_PAYU_KEY,JSON.stringify({txnid:'legacy-owner',type:'bundle'}));
+  global.fetch=async()=>({ok:true,json:async()=>({matchesCheckout:true})});
+  assert.equal(await preparePayUCheckoutEmail('new@example.com'),false);assert.equal(readPendingPayU().email,'new@example.com');
+  localStorage.setItem(PENDING_PAYU_KEY,JSON.stringify({txnid:'legacy-offline',type:'bundle'}));
+  global.fetch=async()=>{throw Error('offline')};
+  await assert.rejects(preparePayUCheckoutEmail('third@example.com'));assert.equal(readPendingPayU().txnid,'legacy-offline');
+  assert.equal(localStorage.getItem('astrorekha_checkout_email'),'new@example.com');
+ }finally{global.localStorage=savedStorage;global.fetch=savedFetch}
+});

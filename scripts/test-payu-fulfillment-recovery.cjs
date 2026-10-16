@@ -58,3 +58,12 @@ test('real profile schema accepts full birth snapshot while timezone remains on 
  assert.equal(Object.hasOwn(profile,'timezone'),false);assert.equal(profile.birth_place,'Delhi');assert.equal(profile.knows_birth_time,true);
  assert.equal(user.unlocked_features.palmReading,true);
 });
+
+test('legacy checkout email matching is read-only and never fulfils another email payment',async()=>{
+ payment.customer_email='owner@example.com';
+ for(const [email,matches] of [['other@example.com',false],[' OWNER@example.com ',true]]){
+  const response=await GET(new NextRequest(`http://localhost/api/payu/status?txnid=fixture&checkoutEmail=${encodeURIComponent(email)}`));
+  assert.deepEqual(await response.json(),{success:true,matchesCheckout:matches});
+ }
+ assert.equal(verifyCount,0);assert.equal(payment.payment_status,'created');assert.equal(payment.fulfilled_at,null);
+});

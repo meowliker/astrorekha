@@ -9,7 +9,7 @@ export type PayUStatus = {
 };
 
 export const PENDING_PAYU_KEY = "astrorekha_pending_payu_payment";
-export type PendingPayU = { txnid: string; type?: string; bundleId?: string; returnTo?: string };
+export type PendingPayU = { txnid: string; type?: string; bundleId?: string; returnTo?: string; email?: string; createdAt?: string };
 
 export function readPendingPayU(): PendingPayU | null {
   try {
@@ -18,6 +18,69 @@ export function readPendingPayU(): PendingPayU | null {
   } catch {
     return null;
   }
+}
+
+const PENDING_PAYU_HISTORY_KEY = "astrorekha_pending_payu_history";
+const normalizeEmail = (value: string | null | undefined) => (value || "").trim().toLowerCase();
+
+/** Legacy pending records had no owner. Ask only whether this email owns it;
+ * do not verify, fulfil, or reveal the other customer's transaction details. */
+async function pendingBelongsToEmail(txnid: string, email: string): Promise<boolean> {
+  const response = await fetch(`/api/payu/status?${new URLSearchParams({ txnid, checkoutEmail: email })}`, {
+    cache: "no-store", signal: AbortSignal.timeout(15000),
+  });
+  const data = await response.json();
+  if (!response.ok || typeof data.matchesCheckout !== "boolean") {
+    throw new Error("We could not check your earlier checkout. Please try again.");
+  }
+  return data.matchesCheckout;
+}
+
+/** Switch the local checkout, never cancel or delete the original payment.
+ * Returns true when the caller must reset its in-memory customer state. */
+export async function preparePayUCheckoutEmail(emailInput: string): Promise<boolean> {
+  const email = normalizeEmail(emailInput);
+  if (!email) return false;
+  const previousEmail = normalizeEmail(localStorage.getItem("astrorekha_checkout_email") || localStorage.getItem("astrorekha_email"));
+  const pending = readPendingPayU();
+  let history: PendingPayU[] = [];
+  try {
+    const saved = JSON.parse(localStorage.getItem(PENDING_PAYU_HISTORY_KEY) || "[]");
+    if (Array.isArray(saved)) history = saved.filter(p => typeof p?.txnid === "string");
+  } catch { /* An invalid history must not prevent a new checkout. */ }
+  let differentOwner = false;
+  if (pending) {
+    const matches = pending.email
+      ? normalizeEmail(pending.email) === email
+      : await pendingBelongsToEmail(pending.txnid, email);
+    if (matches) {
+      localStorage.setItem(PENDING_PAYU_KEY, JSON.stringify({ ...pending, email }));
+    } else {
+      differentOwner = true;
+      history = [...history.filter(p => p.txnid !== pending.txnid), pending];
+      localStorage.setItem(PENDING_PAYU_HISTORY_KEY, JSON.stringify(history));
+      localStorage.removeItem(PENDING_PAYU_KEY);
+    }
+  }
+  if (!readPendingPayU()) {
+    const previous = [...history].reverse().find(p => normalizeEmail(p.email) === email);
+    if (previous) {
+      localStorage.setItem(PENDING_PAYU_KEY, JSON.stringify(previous));
+      localStorage.setItem(PENDING_PAYU_HISTORY_KEY, JSON.stringify(history.filter(p => p.txnid !== previous.txnid)));
+    }
+  }
+  const changed = (!!previousEmail && previousEmail !== email) || differentOwner;
+  if (changed) {
+    // A new email must not inherit either purchases or the previous anonymous ID.
+    for (const key of ["astrorekha_user_id", "astrorekha_anon_id", "astrorekha_payment_completed",
+      "astrorekha_registration_completed", "astrorekha_purchase_type", "astrorekha_bundle_id",
+      "astrorekha_selected_plan", "astrorekha_main_txn_id", "astrorekha_upsell_txn_ids"]) {
+      localStorage.removeItem(key);
+    }
+  }
+  localStorage.setItem("astrorekha_email", email);
+  localStorage.setItem("astrorekha_checkout_email", email);
+  return changed;
 }
 
 // Bound both fetch and body decoding: an interrupted request must not strand the UI.

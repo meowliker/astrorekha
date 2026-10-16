@@ -28,6 +28,15 @@ export async function GET(request: NextRequest) {
       .not("id", "like", "pay_refund_%")
       .maybeSingle();
     if (lookupError) throw lookupError;
+    // Checkout ownership check is read-only, including for legacy browser records.
+    // Do not expose the other email or trigger fulfilment while changing emails.
+    const checkoutEmail = request.nextUrl.searchParams.get("checkoutEmail")?.trim().toLowerCase();
+    if (checkoutEmail) {
+      return NextResponse.json({
+        success: true,
+        matchesCheckout: !!payment && String(payment.customer_email || "").trim().toLowerCase() === checkoutEmail,
+      });
+    }
     if (!payment) {
       return NextResponse.json({ success: false, error: "Payment not found" }, { status: 404 });
     }
