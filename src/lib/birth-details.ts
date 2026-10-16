@@ -201,13 +201,14 @@ export function normalizeBirthDetailsSnapshot(
   return hasAnyData ? snapshot : null;
 }
 
+// Fields stored in user_profiles. Timezone belongs to users and the payment
+// snapshot; user_profiles intentionally has no timezone column.
 export function birthSnapshotToDbFields(snapshot: BirthDetailsSnapshot | null): Record<string, unknown> {
   if (!snapshot) return {};
 
   const fields: Record<string, unknown> = {
     gender: snapshot.gender,
     relationship_status: snapshot.relationshipStatus,
-    timezone: snapshot.timezone,
     sun_sign: snapshot.sunSign,
     moon_sign: snapshot.moonSign,
     ascendant_sign: snapshot.ascendantSign,
@@ -234,7 +235,9 @@ export function birthSnapshotToDbFields(snapshot: BirthDetailsSnapshot | null): 
 }
 
 export function birthSnapshotToUserDbFields(snapshot: BirthDetailsSnapshot | null): Record<string, unknown> {
-  const { knows_birth_time: _knowsBirthTime, ...fields } = birthSnapshotToDbFields(snapshot);
+  const fields = birthSnapshotToDbFields(snapshot);
+  delete fields.knows_birth_time;
+  if (snapshot?.timezone) fields.timezone = snapshot.timezone;
 
   for (const key of ["sun_sign", "moon_sign", "ascendant_sign"]) {
     const value = fields[key];

@@ -429,7 +429,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
 
   const { data: userProfile, error: profileLookupError } = await supabase
     .from("user_profiles")
-    .select("gender, relationship_status, birth_month, birth_day, birth_year, birth_hour, birth_minute, birth_period, birth_place, knows_birth_time, timezone, sun_sign, moon_sign, ascendant_sign")
+    .select("gender, relationship_status, birth_month, birth_day, birth_year, birth_hour, birth_minute, birth_period, birth_place, knows_birth_time, sun_sign, moon_sign, ascendant_sign")
     .eq("id", resolvedUserId)
     .maybeSingle();
 

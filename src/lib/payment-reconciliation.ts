@@ -1,4 +1,6 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  type BirthDetailsInput,
   birthSnapshotToDbFields,
   birthSnapshotToUserDbFields,
   isDefaultBirthDate,
@@ -147,7 +149,7 @@ function isBlank(value: unknown): boolean {
   return value === null || value === undefined || String(value).trim() === "" || String(value).trim() === "--";
 }
 
-function pickMissingBirthFields(snapshotFields: Record<string, unknown>, existing: Record<string, any> | null | undefined) {
+function pickMissingBirthFields(snapshotFields: Record<string, unknown>, existing: Record<string, unknown> | null | undefined) {
   const picked: Record<string, unknown> = {};
   const existingHasDefaultBirthDate = isDefaultBirthDate({
     birthMonth: existing?.birth_month,
@@ -172,7 +174,7 @@ export async function reconcilePaidPaymentsForEmail({
   userId,
   email,
 }: {
-  supabase: any;
+  supabase: SupabaseClient;
   userId: string;
   email: string;
 }): Promise<{ hasPaidPayment: boolean; relinkedCount: number; latestBundleId: string | null }> {
@@ -215,7 +217,7 @@ export async function reconcilePaidPaymentsForEmail({
 
   const { data: profileData } = await supabase
     .from("user_profiles")
-    .select("gender, relationship_status, birth_month, birth_day, birth_year, birth_hour, birth_minute, birth_period, birth_place, knows_birth_time, timezone, sun_sign, moon_sign, ascendant_sign")
+    .select("gender, relationship_status, birth_month, birth_day, birth_year, birth_hour, birth_minute, birth_period, birth_place, knows_birth_time, sun_sign, moon_sign, ascendant_sign")
     .eq("id", userId)
     .maybeSingle();
 
@@ -257,7 +259,7 @@ export async function reconcilePaidPaymentsForEmail({
   const existingCoins = typeof userData?.coins === "number" ? userData.coins : 0;
   const mergedCoins = Math.max(existingCoins, computedCoinsFromPayments);
 
-  const updatePayload: Record<string, any> = {
+  const updatePayload: Record<string, unknown> = {
     unlocked_features: mergedFeatures,
     payment_status: "paid",
     coins: mergedCoins,
@@ -272,7 +274,7 @@ export async function reconcilePaidPaymentsForEmail({
     .reverse()
     .find((row) => !!row.birth_details_snapshot);
   const birthSnapshot = normalizeBirthDetailsSnapshot(
-    latestSnapshotRow?.birth_details_snapshot as any,
+    latestSnapshotRow?.birth_details_snapshot as BirthDetailsInput | null | undefined,
     "payment_reconciliation"
   );
   const snapshotFields = birthSnapshotToDbFields(birthSnapshot);
