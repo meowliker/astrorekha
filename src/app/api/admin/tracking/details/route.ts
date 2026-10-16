@@ -28,13 +28,14 @@ export async function GET(request: NextRequest) {
     if (!dateValid(start) || !dateValid(end) || start > end || end > today || (Date.parse(end) - Date.parse(start)) / 86_400_000 > 30) {
       return json({ error: "Choose a valid IST date range of up to 31 days." }, 400);
     }
-    const accountRange = { startMillis: Date.parse(trackingDayStartUtc(start, dayMode)), endMillis: Date.parse(nextTrackingDayStartUtc(end, dayMode)) };
+    const includeBoth = params.get("mode") === "activities" && params.get("includeBoth") === "1";
+    const accountRange = { startMillis: Date.parse(trackingDayStartUtc(start, includeBoth ? "calendar_ist" : dayMode)), endMillis: Date.parse(nextTrackingDayStartUtc(end, includeBoth ? "business_1130_ist" : dayMode)) };
     const configured = await getMetaAccountCredentialsForRange(supabase, accountRange);
     const credentials = configured.length ? configured : getMetaAccountCredentialsFromEnv(accountRange);
     if (params.get("mode") === "activities") {
       const selected = params.get("accountId");
       const results = await Promise.all(credentials.filter((account) => !selected || selected === "all" || account.accountId === selected).map(async (account) => {
-        try { return { rows: await fetchMetaTrackingActivities(account, { start, end }, dayMode), error: null }; }
+        try { return { rows: await fetchMetaTrackingActivities(account, { start, end }, dayMode, includeBoth), error: null }; }
         catch (error) { return { rows: [], error: `${account.label || account.accountId}: ${error instanceof Error ? error.message : "Meta activities unavailable"}` }; }
       }));
       return json({ activities: results.flatMap((result) => result.rows).sort((a, b) => b.at.localeCompare(a.at)),

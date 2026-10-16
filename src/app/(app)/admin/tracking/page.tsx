@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { Activity, ArrowDown, ArrowLeft, ArrowUp, ChevronDown, Columns3, GripVertical, RefreshCw, Search, ShoppingBag, X } from "lucide-react";
-import { accountTrackingDayMode, trackingWindowLabel, type TrackingActivity, type TrackingCampaign, type TrackingDayMode, type TrackingSale, type TrackingSummary } from "@/lib/tracking-dashboard";
+import { accountTrackingDayMode, trackingDate, trackingWindowLabel, type TrackingActivity, type TrackingCampaign, type TrackingDayMode, type TrackingSale, type TrackingSummary } from "@/lib/tracking-dashboard";
 import type { TrackingSavedView, TrackingViewConfig } from "@/lib/tracking-views";
 import TrackingDateRangePicker, { type TrackingRange } from "./TrackingDateRangePicker";
 import TrackingCampaignRows from "./TrackingCampaignRows";
@@ -12,11 +12,13 @@ import TrackingHourlyModal from "./TrackingHourlyModal";
 import TrackingHourlyTable from "./TrackingHourlyTable";
 import { calculateProfitSheetGst, indianAdGstApplies } from "@/lib/profit-sheet-gst";
 import { buildTrackingHourlyTable, type TrackingHourlyMetric } from "@/lib/tracking-hourly-table";
+import { hourlyBudgetMarkers } from "@/lib/tracking-budget-markers";
 
 type LiveData = { sales: TrackingSale[]; todayCount: number; todayRevenue: number; fetchedAt: string };
 type Column = { id: string; label: string; group: "Identity" | "Meta" | "AstroRekha"; value: (row: TrackingCampaign) => string; sort: (row: TrackingCampaign) => string | number; align?: "right" };
 type AccountTiming = "us" | "india";
 const ACCOUNT_TIMING_STORAGE_KEY = "ar_tracking_account_timing_v1";
+const BID_COLUMN_MIGRATION_KEY = "ar_tracking_bid_column_migrated_v1";
 
 const inr = (value: number) => `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
 const amount = (value: number, currency: string) => new Intl.NumberFormat("en-IN", { style: "currency", currency, maximumFractionDigits: 2 }).format(value);
@@ -36,6 +38,7 @@ const COLUMNS: Column[] = [
   { id: "campaignId", label: "Campaign ID", group: "Identity", value: (r) => r.campaignId || "—", sort: (r) => r.campaignId || "" },
   { id: "status", label: "Status", group: "Identity", value: (r) => r.status || "—", sort: (r) => r.status || "" },
   { id: "budget", label: "Budget", group: "Meta", value: (r) => r.dailyBudget != null ? `${amount(r.dailyBudget, r.currency)} / day` : r.lifetimeBudget != null ? `${amount(r.lifetimeBudget, r.currency)} lifetime` : "—", sort: (r) => r.dailyBudget ?? r.lifetimeBudget ?? 0, align: "right" },
+  { id: "bid", label: "Bid", group: "Meta", value: (r) => r.bidAmount == null ? "—" : amount(r.bidAmount, r.currency), sort: (r) => r.bidAmount ?? 0, align: "right" },
   { id: "objective", label: "Objective", group: "Identity", value: (r) => r.objective?.replace(/_/g, " ") || "—", sort: (r) => r.objective || "" },
   { id: "spend", label: "Meta spend", group: "Meta", value: (r) => r.accountId ? amount(r.spend, r.currency) : "—", sort: (r) => r.spend, align: "right" },
   { id: "spendInr", label: "Spend INR", group: "Meta", value: (r) => r.spendInr == null ? "—" : inr(r.spendInr), sort: (r) => r.spendInr || 0, align: "right" },
@@ -74,7 +77,7 @@ const COLUMNS: Column[] = [
   { id: "utmContent", label: "UTM content / ad", group: "AstroRekha", value: (r) => labels(r.utmContents), sort: (r) => r.utmContents.join(",") },
 ];
 const PRESETS: Record<string, string[]> = {
-  Performance: ["campaign", "account", "status", "budget", "spendInr", "impressions", "clicks", "ctr", "cpc", "metaPurchases", "metaCostPerPurchase", "metaRoas", "utmVisits", "orders", "conversionRate", "revenue", "utmRoas", "cpa"],
+  Performance: ["campaign", "account", "status", "budget", "bid", "spendInr", "impressions", "clicks", "ctr", "cpc", "metaPurchases", "metaCostPerPurchase", "metaRoas", "utmVisits", "orders", "conversionRate", "revenue", "utmRoas", "cpa"],
   Attribution: ["campaign", "account", "campaignId", "utmSource", "utmMedium", "utmTerm", "utmContent", "orders", "grossRevenue", "refundAmount", "revenue", "utmRoas"],
   All: COLUMNS.map((column) => column.id),
 };
@@ -153,8 +156,10 @@ export default function TrackingPage() {
   const [activeOnly, setActiveOnly] = useState(false);
   const [activeScope, setActiveScope] = useState<"campaign" | "adset" | "ad" | "all">("all");
   const [activities, setActivities] = useState<TrackingActivity[]>([]);
+  const [localActivities, setLocalActivities] = useState<TrackingActivity[]>([]);
   const [activityWarnings, setActivityWarnings] = useState<string[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
+  const [activityRefresh, setActivityRefresh] = useState(0);
   const [hourSelection, setHourSelection] = useState<{ key: string; dayMode: TrackingDayMode } | null>(null);
   const [exactHourlySpend, setExactHourlySpend] = useState<Partial<Record<TrackingDayMode, { day: string; hourlySpendInr: Record<string, number[]>; failedAccountIds: string[] }>>>({});
   const [exactHourlyError, setExactHourlyError] = useState<Partial<Record<TrackingDayMode, string>>>({});
@@ -220,12 +225,14 @@ export default function TrackingPage() {
           if (unique[0] === "account" && unique[1] === "campaign") unique.splice(0, 2, "campaign", "account");
           // Expose the new Budget column in existing local layouts.
           if (!unique.includes("budget") && unique.includes("status") && unique.includes("spendInr")) unique.splice(unique.indexOf("status") + 1, 0, "budget");
+          if (localStorage.getItem(BID_COLUMN_MIGRATION_KEY) !== "1" && !unique.includes("bid") && unique.includes("budget")) unique.splice(unique.indexOf("budget") + 1, 0, "bid");
           if (!unique.includes("utmVisits") && unique.includes("conversionRate")) unique.splice(unique.indexOf("conversionRate"), 0, "utmVisits");
           setColumnIds(unique);
           localStorage.setItem("ar_tracking_columns_v1", JSON.stringify(unique));
         }
       }
     } catch { /* Use the default view. */ }
+    localStorage.setItem(BID_COLUMN_MIGRATION_KEY, "1");
     try {
       const stored = JSON.parse(localStorage.getItem(ACCOUNT_TIMING_STORAGE_KEY) || "null");
       if (stored && typeof stored === "object" && !Array.isArray(stored)) {
@@ -321,7 +328,7 @@ export default function TrackingPage() {
       if (document.visibilityState !== "visible") return;
       setActivityLoading(true);
       try {
-        const params = new URLSearchParams({ mode: "activities", ...dates, accountId, dayMode: primaryMode });
+        const params = new URLSearchParams({ mode: "activities", ...dates, accountId, dayMode: primaryMode, ...(showBoth ? { includeBoth: "1" } : {}) });
         const response = await fetch(`/api/admin/tracking/details?${params}`, { headers: { "x-admin-session": token }, cache: "no-store" });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Meta action log unavailable");
@@ -332,7 +339,7 @@ export default function TrackingPage() {
     void load();
     const timer = window.setInterval(() => void load(), 300_000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [token, dates, accountId, primaryMode]);
+  }, [token, dates, accountId, primaryMode, showBoth, activityRefresh]);
   useEffect(() => {
     if (!token || !businessSummary || (primaryMode !== "business_1130_ist" && !showBoth) || hourDate < dates.start || hourDate > dates.end) return;
     return fetchExactHourly(token, hourDate, "business_1130_ist");
@@ -489,6 +496,18 @@ export default function TrackingPage() {
   };
   const primaryHourly = hourlyFor(primaryMode, summary, filtered);
   const secondaryHourly = showBoth ? hourlyFor(secondaryMode, secondarySummary, secondaryFiltered) : null;
+  const visibleActivities = useMemo(() => {
+    const pending = localActivities.filter((item) => {
+      if (accountId !== "all" && item.accountId !== accountId) return false;
+      const at = new Date(item.at);
+      if (Number.isNaN(at.getTime())) return false;
+      const days = showBoth ? [trackingDate(at, "business_1130_ist"), trackingDate(at, "calendar_ist")] : [trackingDate(at, primaryMode)];
+      return days.some((day) => day >= dates.start && day <= dates.end) && !activities.some((fromMeta) =>
+        fromMeta.accountId === item.accountId && fromMeta.objectId === item.objectId && fromMeta.action === item.action &&
+        fromMeta.detail === item.detail && Math.abs(Date.parse(fromMeta.at) - at.getTime()) < 10 * 60_000);
+    });
+    return [...activities, ...pending].sort((a, b) => b.at.localeCompare(a.at));
+  }, [activities, localActivities, accountId, dates.start, dates.end, primaryMode, showBoth]);
   const modalSummary = hourSelection ? summaries[hourSelection.dayMode] || null : null;
   const modalExact = hourSelection ? exactHourlySpend[hourSelection.dayMode] : null;
   const hourCampaign = modalSummary?.campaigns.find((row) => row.key === hourSelection?.key) || null;
@@ -620,7 +639,7 @@ export default function TrackingPage() {
                         </div>
                       </th>)}</tr>
                   </thead>
-                  {data && <TrackingCampaignRows key={`${dayMode}:${dates.start}:${dates.end}`} rows={rows} columns={activeColumns} token={token} dates={dates} dayMode={dayMode} refreshKey={data.fetchedAt} activeOnly={activeOnly} activeScope={activeScope} onBudgetSaved={() => { if (token) void Promise.all((showBoth ? ["business_1130_ist", "calendar_ist"] as TrackingDayMode[] : [dayMode]).map((mode) => fetchSummary(token, dates, mode, true))); }} />}
+                  {data && <TrackingCampaignRows key={`${dayMode}:${dates.start}:${dates.end}`} rows={rows} columns={activeColumns} token={token} dates={dates} dayMode={dayMode} refreshKey={data.fetchedAt} activeOnly={activeOnly} activeScope={activeScope} onMetaEditSaved={(activity) => { setLocalActivities((current) => [activity, ...current]); setActivityRefresh((value) => value + 1); if (token) void Promise.all((showBoth ? ["business_1130_ist", "calendar_ist"] as TrackingDayMode[] : [dayMode]).map((mode) => fetchSummary(token, dates, mode, true))); }} />}
                 </table>
                 {data && rows.length === 0 && <div className="p-10 text-center text-sm text-slate-500">No campaigns or UTM orders for these filters.</div>}
                 {!data && <div className="p-10 text-center text-sm text-slate-500">Loading campaigns and orders…</div>}
@@ -630,12 +649,12 @@ export default function TrackingPage() {
             </section>
 
             <section>
-              <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Hourly sales by campaign</h2><p className="text-xs text-slate-500">AR orders and tagged site arrivals use recorded times. CVR is orders ÷ AR UTM visits in each window. Meta spend is reported by clock hour.{dates.start !== dates.end ? " Hours shown are for the final day of the selected range." : ""}</p></div><select aria-label="Hourly breakdown metric" value={hourMetric} onChange={(event) => setHourMetric(event.target.value as TrackingHourlyMetric)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="orders">Orders</option><option value="revenue">Net sales</option><option value="roas">ROAS</option><option value="cvr">AR CVR</option></select></div>
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Hourly sales by campaign</h2><p className="text-xs text-slate-500">AR orders and tagged site arrivals use recorded times. CVR is orders ÷ AR UTM visits in each window. Meta spend is reported by clock hour.{dates.start !== dates.end ? " Hours shown are for the final day of the selected range." : ""}</p><p className="mt-1 text-xs text-slate-500"><span className="text-emerald-300">↑</span> Budget increased · <span className="text-rose-300">↓</span> Budget decreased. Hover over a marked cell for the amount.</p></div><select aria-label="Hourly breakdown metric" value={hourMetric} onChange={(event) => setHourMetric(event.target.value as TrackingHourlyMetric)} className="rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm"><option value="orders">Orders</option><option value="revenue">Net sales</option><option value="roas">ROAS</option><option value="cvr">AR CVR</option></select></div>
               {(showBoth ? [{ dayMode: primaryMode, data: summary, table: primaryHourly }, { dayMode: secondaryMode, data: secondarySummary, table: secondaryHourly }] : [{ dayMode: primaryMode, data: summary, table: primaryHourly }]).map(({ dayMode, data, table }) => <div key={dayMode} className="mb-6">
                 <h3 className="mb-2 text-sm font-semibold text-cyan-200">{trackingWindowLabel(dayMode)}</h3>
                 {exactHourlyError[dayMode] && <p className="mb-2 text-xs text-amber-300">{exactHourlyError[dayMode]}</p>}
                 {data && !table?.exact && !exactHourlyError[dayMode] && <p className="mb-2 text-xs text-cyan-300">Loading selected-day Meta spend…</p>}
-                {data && table ? <TrackingHourlyTable rows={table.hourly.campaigns} totals={table.hourly.totals} totalDetails={table.hourly.totalDetails} metric={hourMetric} dayMode={dayMode} onOpen={(key) => setHourSelection({ key, dayMode })} /> : <div className="rounded-xl border border-white/10 bg-[#141b2b] p-8 text-center text-sm text-slate-500">Loading hourly results…</div>}
+                {data && table ? <TrackingHourlyTable rows={table.hourly.campaigns} totals={table.hourly.totals} totalDetails={table.hourly.totalDetails} metric={hourMetric} dayMode={dayMode} budgetMarkers={hourlyBudgetMarkers(visibleActivities, dayMode === primaryMode ? filtered : secondaryFiltered, hourDate, dayMode)} onOpen={(key) => setHourSelection({ key, dayMode })} /> : <div className="rounded-xl border border-white/10 bg-[#141b2b] p-8 text-center text-sm text-slate-500">Loading hourly results…</div>}
               </div>)}
             </section>
           </main>
@@ -653,9 +672,9 @@ export default function TrackingPage() {
           </aside>
         </div>
         <section className="mt-8 border-t border-white/10 pt-6">
-          <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Meta action log</h2><p className="text-xs text-slate-500">Campaign, ad set and ad edits recorded by Meta for the selected date range and account.</p></div><span className="text-xs text-slate-500">{activityLoading ? "Refreshing…" : `${activities.length} changes shown`}</span></div>
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Meta action log</h2><p className="text-xs text-slate-500">Campaign, ad set and ad edits for the selected date range and account.</p></div><span className="text-xs text-slate-500">{activityLoading ? "Refreshing…" : `${visibleActivities.length} changes shown`}</span></div>
           {activityWarnings.length > 0 && <div role="alert" className="mb-3 border-l-2 border-amber-400/70 pl-3 text-xs text-amber-200">{activityWarnings.join(" · ")}</div>}
-          <div className="max-h-[520px] overflow-auto rounded-xl border border-white/10 bg-[#141b2b]"><table className="w-full min-w-[740px] text-sm"><thead className="sticky top-0 bg-[#1b2437] text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3 text-left">Time · IST</th><th className="px-4 py-3 text-left">Account</th><th className="px-4 py-3 text-left">Changed by</th><th className="px-4 py-3 text-left">Action</th><th className="px-4 py-3 text-left">Campaign / ad set / ad</th><th className="px-4 py-3 text-left">Change</th></tr></thead><tbody>{activities.map((item) => <tr key={item.id} className="border-t border-white/5"><td className="whitespace-nowrap px-4 py-3 text-slate-400">{item.at ? displayIst(item.at) : "—"}</td><td className="px-4 py-3 text-slate-400">{item.accountName}</td><td className="px-4 py-3 text-slate-300">{item.actor}</td><td className="px-4 py-3 text-white">{item.action}</td><td className="px-4 py-3 text-slate-300">{item.objectType && <span className="mr-2 rounded border border-cyan-400/25 px-1.5 py-0.5 text-[10px] uppercase text-cyan-300">{item.objectType}</span>}{item.object}</td><td className="px-4 py-3 text-cyan-200">{item.detail || "—"}</td></tr>)}</tbody></table>{!activities.length && !activityLoading && <div className="px-5 py-8 text-center text-sm text-slate-500">No Meta edits were returned for this range.</div>}</div>
+          <div className="max-h-[520px] overflow-auto rounded-xl border border-white/10 bg-[#141b2b]"><table className="w-full min-w-[740px] text-sm"><thead className="sticky top-0 bg-[#1b2437] text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3 text-left">Time · IST</th><th className="px-4 py-3 text-left">Account</th><th className="px-4 py-3 text-left">Changed by</th><th className="px-4 py-3 text-left">Action</th><th className="px-4 py-3 text-left">Campaign / ad set / ad</th><th className="px-4 py-3 text-left">Change</th></tr></thead><tbody>{visibleActivities.map((item) => <tr key={item.id} className="border-t border-white/5"><td className="whitespace-nowrap px-4 py-3 text-slate-400">{item.at ? displayIst(item.at) : "—"}</td><td className="px-4 py-3 text-slate-400">{item.accountName}</td><td className="px-4 py-3 text-slate-300">{item.actor}</td><td className="px-4 py-3 text-white">{item.action}</td><td className="px-4 py-3 text-slate-300">{item.objectType && <span className="mr-2 rounded border border-cyan-400/25 px-1.5 py-0.5 text-[10px] uppercase text-cyan-300">{item.objectType}</span>}{item.object}</td><td className="px-4 py-3 text-cyan-200">{item.detail || "—"}</td></tr>)}</tbody></table>{!visibleActivities.length && !activityLoading && <div className="px-5 py-8 text-center text-sm text-slate-500">No Meta edits were returned for this range.</div>}</div>
           <p className="mt-2 text-xs text-slate-500">Read directly from Meta account activities. Meta may omit or delay some history, and older changes outside the selected range are excluded.</p>
         </section>
       </div>

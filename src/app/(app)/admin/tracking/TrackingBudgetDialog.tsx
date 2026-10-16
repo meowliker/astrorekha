@@ -7,7 +7,7 @@ import { budgetAmountInput, parseBudgetAmount } from "@/lib/tracking-budget-amou
 import type { BudgetLevel, MetaBudget } from "@/lib/tracking-meta-budget";
 
 export type BudgetTarget = { accountId: string; id: string; level: BudgetLevel; name: string };
-type Props = { target: BudgetTarget; token: string; onClose: () => void; onSaved: (budget: MetaBudget) => void };
+type Props = { target: BudgetTarget; token: string; onClose: () => void; onSaved: (budget: MetaBudget, previousAmountMinor: number) => void };
 
 function money(value: number, currency: string, digits: number) {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value / 10 ** digits);
@@ -50,7 +50,7 @@ export default function TrackingBudgetDialog({ target, token, onClose, onSaved }
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Meta did not confirm this budget change.");
-      onSaved((data as { budget: MetaBudget }).budget);
+      onSaved((data as { budget: MetaBudget }).budget, budget.amountMinor);
       onClose();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not update the Meta budget."); setReview(false); }
     finally { setSaving(false); }

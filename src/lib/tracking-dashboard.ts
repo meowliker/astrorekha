@@ -37,6 +37,8 @@ export type TrackingCampaign = {
   status: string | null;
   dailyBudget: number | null;
   lifetimeBudget: number | null;
+  bidAmount: number | null;
+  bidStrategy: string | null;
   spend: number;
   /** Meta's account-calendar spend, paired with its calendar insight metrics. */
   metaCalendarSpend?: number;
@@ -72,7 +74,7 @@ export type TrackingCampaign = {
 };
 
 export type TrackingChild = TrackingCampaign & { level: "adset" | "ad"; id: string; parentId: string };
-export type TrackingActivity = { id: string; accountId: string; accountName: string; at: string; actor: string; action: string; object: string; objectType: string; detail: string };
+export type TrackingActivity = { id: string; accountId: string; accountName: string; at: string; actor: string; action: string; object: string; objectType: string; objectId?: string; campaignId?: string | null; detail: string; budgetChange?: { before: number; after: number; currency: string } };
 
 export type TrackingSale = {
   id: string;
