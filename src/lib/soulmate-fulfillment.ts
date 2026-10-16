@@ -3,6 +3,7 @@ import crypto from "crypto";
 import dns from "node:dns/promises";
 import { isIP } from "node:net";
 import { getSupabaseAdmin } from "./supabase-admin";
+import { submitBrevoEmail } from "./brevo-send-monitoring";
 import { choices, getZodiac, sanitizeAnswers, steps, type Answers } from "@/app/soulmate/chat-data";
 
 export const SKETCH_BUCKET = "soulmate-sketches-private";
@@ -188,10 +189,8 @@ export async function processSoulmateJob(db: DB, job: GenerationJob) {
           attachment: attachments,
         };
         await patchEmail(db, email, { status: "submitting", submitted_at: new Date().toISOString() });
-        const response = await fetch("https://api.brevo.com/v3/smtp/email", { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
-        const payload = await response.json();
-        if (!response.ok || !payload.messageId) throw new Error("Brevo submission did not return a message id");
-        await patchEmail(db, email, { status: "sent", provider_message_id: payload.messageId, last_error: null });
+        const messageId = await submitBrevoEmail(body, headers);
+        await patchEmail(db, email, { status: "sent", provider_message_id: messageId, last_error: null });
       }
       await patchJob(db, job, { lease_id: null, lease_until: null, next_attempt_at: later(5) });
       return { orderId: job.order_id, ok: true };
@@ -247,10 +246,8 @@ export async function processSoulmateJob(db: DB, job: GenerationJob) {
         if (crypto.createHash("sha256").update(buffer).digest("hex") !== job.image_sha256) throw new Error("Sketch integrity check failed");
         const body = emailBody(order, email, buffer, `AstroRekha-${order.id}.${job.storage_path.split(".").pop()}`);
         await patchEmail(db, email, { status: "submitting", submitted_at: new Date().toISOString() });
-        const res = await fetch("https://api.brevo.com/v3/smtp/email", { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
-        const payload = await res.json();
-        if (!res.ok || !payload.messageId) throw new Error("Brevo submission did not return a message id");
-        await patchEmail(db, email, { status: body.scheduledAt ? "scheduled" : "sent", provider_message_id: payload.messageId, last_error: null });
+        const messageId = await submitBrevoEmail(body, headers);
+        await patchEmail(db, email, { status: body.scheduledAt ? "scheduled" : "sent", provider_message_id: messageId, last_error: null });
         next = new Date(Math.max(Date.now() + 5 * 60000, new Date(email.scheduled_at).getTime() + 5 * 60000)).toISOString();
       }
     }

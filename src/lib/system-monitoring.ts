@@ -4,6 +4,7 @@ import { sendEmail } from "@/lib/brevo";
 import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
 import { verifyPayUTransaction } from "@/lib/payu-api";
 import { buildMonitoringAlert } from "@/lib/monitoring-alerts";
+import { confirmBrevoFailure } from "@/lib/monitoring-brevo-policy";
 
 export type MonitorStatus = "ok" | "warning" | "down" | "unconfigured" | "warming";
 export type MonitorCheck = {
@@ -13,9 +14,10 @@ export type MonitorCheck = {
   message: string;
   checkedAt: string;
   latencyMs: number;
+  observedStatus?: "warning" | "down";
 };
 type Destination = { id?: string; kind: "email" | "slack" | "slack_chat"; label: string; address: string; enabled: boolean };
-type Incident = { check_key: string; active: boolean; status: string; opened_at: string; last_notified_at: string | null };
+type Incident = { check_key: string; active: boolean; status: string; opened_at: string; last_seen_at: string; last_notified_at: string | null };
 
 const PAID = ["paid", "success", "captured"];
 const TIMEOUT_MS = 8_000;
@@ -49,6 +51,43 @@ async function provider(key: string, name: string, configured: boolean, url: str
     if (!response.ok) return { status: "down", message: `API returned HTTP ${response.status}` };
     const problem = validate ? await validate(response) : null;
     return problem ? { status: "warning", message: problem } : { status: "ok", message: "Authenticated API responded" };
+  });
+}
+
+async function brevoCheck(): Promise<MonitorCheck> {
+  const started = Date.now();
+  if (!process.env.BREVO_API_KEY) return result("brevo", "Brevo email", "unconfigured", "Credentials are not configured", started);
+  const checkOnce = async () => {
+    try {
+      const response = await fetch("https://api.brevo.com/v3/smtp/statistics/aggregatedReport?days=1", {
+        headers: { "api-key": process.env.BREVO_API_KEY || "" }, cache: "no-store", signal: AbortSignal.timeout(12_000),
+      });
+      if (response.status === 429) return { status: "warning" as const, message: "Transactional email API is rate limiting requests" };
+      if (!response.ok) return { status: "down" as const, message: `Transactional email API returned HTTP ${response.status}` };
+      const body = await response.json().catch(() => null) as { requests?: number } | null;
+      return typeof body?.requests === "number"
+        ? { status: "ok" as const, message: "Transactional email API responded" }
+        : { status: "warning" as const, message: "Transactional email API returned an unexpected response" };
+    } catch (error) {
+      return { status: "down" as const, message: error instanceof Error && error.name === "TimeoutError" ? "Transactional email API timed out" : "Transactional email API request failed" };
+    }
+  };
+  const first = await checkOnce();
+  if (first.status === "ok") return result("brevo", "Brevo email", "ok", first.message, started);
+  // Do not repeat a rate-limited request immediately; the next scheduled run will confirm it.
+  if (first.message.includes("rate limiting")) return result("brevo", "Brevo email", first.status, first.message, started);
+  const second = await checkOnce();
+  return result("brevo", "Brevo email", second.status,
+    second.status === "ok" ? "Transactional email API responded after retry" : `${second.message} on both attempts`, started);
+}
+
+async function brevoSendCheck(db: SupabaseClient, now: number): Promise<MonitorCheck> {
+  return probe("brevo_send", "Brevo email sends", async () => {
+    const { data, error } = await db.from("monitoring_incidents").select("active,message,last_seen_at").eq("check_key", "brevo_send").maybeSingle();
+    if (error) return { status: "down", message: "Unable to read transactional email send failures" };
+    return data?.active && now - Date.parse(data.last_seen_at) < 60 * 60_000
+      ? { status: "warning", message: data.message }
+      : { status: "ok", message: "No recent transactional email send failures" };
   });
 }
 
@@ -227,8 +266,8 @@ export async function collectMonitoringChecks(db: SupabaseClient, now = Date.now
     provider("prokerala", "Prokerala", !!process.env.PROKERALA_CLIENT_ID && !!process.env.PROKERALA_CLIENT_SECRET,
       "https://api.prokerala.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ grant_type: "client_credentials", client_id: process.env.PROKERALA_CLIENT_ID || "", client_secret: process.env.PROKERALA_CLIENT_SECRET || "" }) }),
-    provider("brevo", "Brevo email", !!process.env.BREVO_API_KEY,
-      "https://api.brevo.com/v3/account", { headers: { "api-key": process.env.BREVO_API_KEY || "" } }),
+    brevoCheck(),
+    brevoSendCheck(db, now),
     process.env.SLACK_BOT_TOKEN
       ? provider("slack", "Slack bot", true, "https://slack.com/api/auth.test", {
           method: "POST", headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` },
@@ -349,9 +388,14 @@ export async function runMonitoring(db: SupabaseClient, trigger: "cron" | "manua
     throw new Error("Unable to start monitoring run in Supabase");
   }
   try {
-    const checks = await collectMonitoringChecks(db, now);
+    const rawChecks = await collectMonitoringChecks(db, now);
+    const { data: priorRun, error: priorError } = await db.from("monitoring_runs")
+      .select("started_at,checks").eq("trigger", "cron").neq("id", run.id)
+      .not("finished_at", "is", null).order("started_at", { ascending: false }).limit(1).maybeSingle();
+    if (priorError) throw new Error("Unable to read previous monitoring run");
+    const checks = rawChecks.map((check) => confirmBrevoFailure(check, priorRun, trigger, now));
     const { data: existing, error: incidentError } = await db.from("monitoring_incidents")
-      .select("check_key,active,status,opened_at,last_notified_at");
+      .select("check_key,active,status,opened_at,last_seen_at,last_notified_at");
     if (incidentError) throw new Error("Unable to read monitoring incidents");
     const byKey = new Map(((existing || []) as Incident[]).map((item) => [item.check_key, item]));
     const changed: Array<{ check: MonitorCheck; event: "issue" | "recovery" }> = [];
@@ -359,11 +403,11 @@ export async function runMonitoring(db: SupabaseClient, trigger: "cron" | "manua
       const previous = byKey.get(check.key);
       if (issue(check.status)) {
         const isNew = !previous?.active;
-        if (isNew || !previous?.last_notified_at || previous.status !== check.status) changed.push({ check, event: "issue" });
+        if (isNew || !previous?.last_notified_at || (previous.status !== check.status && check.key !== "brevo")) changed.push({ check, event: "issue" });
         const { error } = await db.from("monitoring_incidents").upsert({
           check_key: check.key, active: true, status: check.status, message: check.message,
           opened_at: isNew ? new Date(now).toISOString() : previous.opened_at,
-          last_seen_at: new Date(now).toISOString(), resolved_at: null,
+          last_seen_at: check.key === "brevo_send" && previous ? previous.last_seen_at : new Date(now).toISOString(), resolved_at: null,
           last_notified_at: isNew ? null : previous.last_notified_at,
         }, { onConflict: "check_key" });
         if (error) throw new Error("Unable to save monitoring incident");
