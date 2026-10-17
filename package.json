@@ -12,6 +12,7 @@
     "lint": "eslint",
     "test:spirit-animal": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/test-spirit-animal-scoring.ts",
     "test:tracking-budget": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/test-tracking-budget.ts",
+    "test:tracking-bid-markers": "node scripts/test-tracking-bid-markers.cjs",
     "test:tracking-hourly-roas": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/test-tracking-hourly-roas.ts"
   },
   "dependencies": {

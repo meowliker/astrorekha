@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { getSupabaseAdmin } from "./supabase-admin";
+import { submitBrevoEmail } from "./brevo-send-monitoring";
 import { generateSoulmateInvoicePdf, soulmateConfirmationEmail, type SoulmateInvoiceDocument } from "./soulmate-invoice-template";
 const TABLE = "soulmate_order_invoices";
 const BUCKET = "soulmate-sketches-private";
@@ -60,16 +61,14 @@ export async function sendSoulmateConfirmation(id: string) {
   if (claim.error) throw new Error("Unable to claim confirmation");
   if (!claim.data) return invoice;
   try {
-    const response=await fetch("https://api.brevo.com/v3/smtp/email",{method:"POST",headers:{"api-key":key,"Content-Type":"application/json"},signal:AbortSignal.timeout(15000),body:JSON.stringify({
+    const messageId=await submitBrevoEmail({
       sender:{email:process.env.BREVO_SENDER_EMAIL||"team@astrorekha.com",name:"Astro Rekha"},
       to:[{email:invoice.snapshot.customerEmail,name:invoice.snapshot.customerName}],
       subject:email.subject,htmlContent:email.html,textContent:email.text,
       attachment:[{name:`${invoice.invoice_number}.pdf`,content:pdf.toString("base64")}],
       headers:{idempotencyKey:invoice.id},tags:["soulmate_confirmation",invoice.id],
-    })});
-    const payload=await response.json();
-    if (!response.ok || !payload.messageId) throw new Error("Confirmation submission was not acknowledged");
-    const saved=await db.from(TABLE).update({status:"sent",sent_at:new Date().toISOString(),provider_message_id:payload.messageId}).eq("id",id).eq("status","submitting");
+    },{"api-key":key,"Content-Type":"application/json"});
+    const saved=await db.from(TABLE).update({status:"sent",sent_at:new Date().toISOString(),provider_message_id:messageId}).eq("id",id).eq("status","submitting");
     if(saved.error)throw new Error("Unable to save confirmation acknowledgement");
     return await readSoulmateInvoice(id);
   } catch(cause) {

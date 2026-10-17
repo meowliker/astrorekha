@@ -78,7 +78,7 @@ async function fxRate(supabase: ReturnType<typeof getSupabaseAdmin>): Promise<{ 
 function emptyUtmCampaign(key: string, id: string | null, name: string, source: TrackingCampaign["attribution"]): TrackingCampaign {
   return {
     key, accountId: null, accountName: "UTM only / unmatched", currency: "INR", campaignId: id,
-    campaignName: name, objective: null, status: null, dailyBudget: null, lifetimeBudget: null,
+    campaignName: name, objective: null, status: null, dailyBudget: null, lifetimeBudget: null, bidAmount: null, bidStrategy: null,
     spend: 0, spendInr: null, impressions: 0, reach: 0, clicks: 0, linkClicks: 0,
     landingPageViews: 0, addToCarts: 0, checkouts: 0, metaPurchases: 0,
     metaPurchaseValue: 0, leads: 0, orders: 0, grossRevenue: 0, refunds: 0,

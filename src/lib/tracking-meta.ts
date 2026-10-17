@@ -201,7 +201,7 @@ export async function fetchMetaTrackingAccount(
       return {
         key: `meta:${accountId}:${id}`, accountId, accountName, currency,
         campaignId: id, campaignName: name, objective: null, status: null,
-        dailyBudget: null, lifetimeBudget: null,
+        dailyBudget: null, lifetimeBudget: null, bidAmount: null, bidStrategy: null,
         spend: 0, spendInr: currency === "INR" || currency === "USD" ? 0 : null,
         metaCalendarSpend: 0,
         impressions: 0, reach: 0, clicks: 0, linkClicks: 0, businessLinkClicks: 0,

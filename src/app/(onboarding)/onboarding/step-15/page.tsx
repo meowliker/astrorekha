@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { fadeUp } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
@@ -13,6 +13,9 @@ import { useOnboardingStore } from "@/lib/onboarding-store";
 import { calculateZodiacSign, generateUserId } from "@/lib/user-profile";
 import { normalizeIndianWhatsappNumber } from "@/lib/whatsapp";
 
+import { preparePayUCheckoutEmail } from "@/lib/payu-checkout-recovery";
+import { useUserStore } from "@/lib/user-store";
+
 // Fixed stats to avoid hydration mismatch (server vs client random values)
 const READING_STATS = [
   { label: "Love", color: "#EF6B6B", value: 85 },
@@ -23,6 +26,8 @@ const READING_STATS = [
 
 export default function Step15Page() {
   const router = useRouter();
+  const submittingRef = useRef(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState<string | null>(null);
   const [whatsappNumber, setWhatsappNumber] = useState("");
@@ -67,9 +72,8 @@ export default function Step15Page() {
     latestBundleId: string | null;
   }> => {
     try {
-      const userId = generateUserId();
       const response = await fetch(
-        `/api/user/payment-state?email=${encodeURIComponent(emailToCheck)}&userId=${encodeURIComponent(userId)}`,
+        `/api/user/payment-state?email=${encodeURIComponent(emailToCheck)}`,
         {
         cache: "no-store",
         }
@@ -101,7 +105,7 @@ export default function Step15Page() {
 
   const handleContinue = async () => {
     triggerLight();
-    const trimmed = email.trim();
+    const trimmed = email.trim().toLowerCase();
     const trimmedWhatsapp = whatsappNumber.trim();
     const normalizedWhatsapp = trimmedWhatsapp ? normalizeIndianWhatsappNumber(trimmedWhatsapp) : "";
 
@@ -125,13 +129,23 @@ export default function Step15Page() {
     setEmailError(null);
     setWhatsappError(null);
 
-    // Store email first so restore/login paths can use it.
-    localStorage.setItem("astrorekha_email", trimmed);
-    localStorage.setItem("astrorekha_checkout_email", trimmed);
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setIsSubmitting(true);
+    try {
+      if (await preparePayUCheckoutEmail(trimmed)) useUserStore.getState().resetUserState();
+      useUserStore.getState().setUserId(generateUserId());
+    } catch (error) {
+      setEmailError(error instanceof Error ? error.message : "Unable to start checkout. Please try again.");
+      submittingRef.current = false;
+      setIsSubmitting(false);
+      return;
+    }
+
     localStorage.setItem("astrorekha_whatsapp_number", normalizedWhatsapp);
     localStorage.setItem("astrorekha_whatsapp_opt_in", "true");
     localStorage.setItem("astrorekha_whatsapp_opt_in_at", new Date().toISOString());
-    pixelEvents.addToWishlist("Personalized Palm Reading Report");
+    try { pixelEvents.addToWishlist("Personalized Palm Reading Report"); } catch { /* Optional analytics. */ }
 
     // Recovery path: if user already paid earlier, skip repurchase flow.
     const paymentState = await checkPaymentStateByEmail(trimmed);
@@ -152,7 +166,7 @@ export default function Step15Page() {
     // Navigate to paywall immediately (skip legacy redirect spinner step).
     localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
     localStorage.setItem("astrorekha_layout_variant", "A");
-    track("quiz_complete", { quiz_id: "onboarding" });
+    try { track("quiz_complete", { quiz_id: "onboarding" }); } catch { /* Optional analytics. */ }
     router.push("/onboarding/bundle-pricing");
     
     // Save lead data in background (non-blocking)
@@ -328,6 +342,7 @@ export default function Step15Page() {
       <div className="shrink-0 bg-background px-5 pt-2 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
         <Button
           onClick={handleContinue}
+          disabled={isSubmitting}
           className="w-full h-14 text-lg font-semibold"
           size="lg"
         >

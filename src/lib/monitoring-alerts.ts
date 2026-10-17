@@ -24,7 +24,9 @@ function issueExplanation(check: MonitorCheck): string {
     ? "Some payments succeeded in PayU but still show as pending in AstroRekha. Customers may be missing access. Check payment reconciliation."
     : "We couldn't check whether all successful payments were completed in AstroRekha. Check PayU and payment reconciliation.";
   if (key === "payu") return "We couldn't confirm a recent payment with PayU. Check PayU and the payment status page.";
-  if (key === "brevo") return "We couldn't confirm the email service is working. Customer and alert emails may be delayed. Check Brevo.";
+  if (key === "brevo") return "The Brevo email API failed two checks in a row. Check Brevo and recent email deliveries.";
+  if (key === "brevo_send") return "Brevo did not accept a transactional email request. Check recent customer emails and the Brevo dashboard.";
+  if (key === "aisensy") return "The AiSensy endpoint did not respond on two scheduled checks. Check AiSensy and recent WhatsApp deliveries.";
   if (key === "claude") return "We couldn't confirm Claude is working. AI responses may be delayed. Check the Anthropic service status.";
   if (key === "kie") return message.includes("credits are exhausted")
     ? "Kie.ai has run out of credits. Image generation may stop until credits are added."
@@ -39,6 +41,8 @@ function issueExplanation(check: MonitorCheck): string {
 }
 
 function recoveryExplanation(check: MonitorCheck): string {
+  if (check.key === "brevo_send") return "No new Brevo email submission failures were recorded in the last hour. Check Brevo for final delivery status.";
+  if (check.key === "aisensy") return "The AiSensy endpoint is responding again. This check does not confirm WhatsApp message delivery.";
   if (check.key === "sales") return "Paid sales have been recorded again.";
   if (check.key.startsWith("meta:")) return "This ad account is reporting spend again.";
   return "Its health check is passing again.";

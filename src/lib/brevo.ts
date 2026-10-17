@@ -1,4 +1,5 @@
 import * as SibApiV3Sdk from "@getbrevo/brevo";
+import { recordBrevoSendFailure } from "@/lib/brevo-send-monitoring";
 
 // ── Brevo (Sendinblue) integration ──────────────────────────────────
 // Used for:
@@ -160,6 +161,7 @@ export async function sendTemplateEmail(
 ) {
   if (!BREVO_API_KEY) {
     console.warn("[Brevo] API key not configured, skipping sendTemplateEmail");
+    await recordBrevoSendFailure();
     return;
   }
 
@@ -174,6 +176,7 @@ export async function sendTemplateEmail(
     await api.sendTransacEmail(email);
   } catch (err: any) {
     console.error("[Brevo] sendTemplateEmail error:", err?.body || err?.message || err);
+    await recordBrevoSendFailure();
   }
 }
 
@@ -187,6 +190,7 @@ export async function sendEmail(
 ): Promise<boolean> {
   if (!BREVO_API_KEY) {
     console.warn("[Brevo] API key not configured, skipping sendEmail");
+    await recordBrevoSendFailure();
     return false;
   }
 
@@ -203,6 +207,7 @@ export async function sendEmail(
     return true;
   } catch (err: any) {
     console.error("[Brevo] sendEmail error:", err?.body || err?.message || err);
+    await recordBrevoSendFailure();
     return false;
   }
 }
@@ -215,6 +220,7 @@ export async function sendEmailWithAttachments(
 ) {
   if (!BREVO_API_KEY) {
     console.warn("[Brevo] API key not configured, skipping sendEmailWithAttachments");
+    await recordBrevoSendFailure();
     return;
   }
 
@@ -231,5 +237,6 @@ export async function sendEmailWithAttachments(
     await api.sendTransacEmail(email);
   } catch (err: any) {
     console.error("[Brevo] sendEmailWithAttachments error:", err?.body || err?.message || err);
+    await recordBrevoSendFailure();
   }
 }
