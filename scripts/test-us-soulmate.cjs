@@ -16,7 +16,7 @@ process.env.US_SOULMATE_RECEIPT_SECRET='a'.repeat(40);
 process.env.US_SOULMATE_STRIPE_WEBHOOK_SECRET='whsec_fixture';
 const orders=new Map(); let calls=[], failInsert=false, failSave=false, session=null, confirmations=0, conversions=0;
 function stub(file,exports) { require.cache[require.resolve(file)]={id:require.resolve(file),filename:require.resolve(file),loaded:true,exports}; }
-const db={async rpc(name) { assert.equal(name,'save_us_soulmate_session'); return {data:true,error:null}; },from(table) {
+const db={async rpc(name,args) { if(name==='finalize_us_soulmate_promotion') { const o=orders.get(args.p_order); assert.ok(o); Object.assign(o,{stripe_session_id:args.p_session,discount_amount:args.p_discount,gst_amount:args.p_tax,amount:args.p_total,promotion_code:args.p_code,promotion_snapshot:args.p_snapshot}); return {error:null}; } assert.equal(name,'save_us_soulmate_session'); return {data:true,error:null}; },from(table) {
   assert.equal(table,'us_soulmate_orders','Must never access either older ledger');
   let op='read',value,filters=[];
   const q={select(){return q},insert(v){op='insert';value=v;return q},update(v){op='update';value=v;return q},eq(k,v){filters.push(r=>r[k]===v);return q},neq(k,v){filters.push(r=>r[k]!==v);return q},is(k,v){filters.push(r=>(r[k]??null)===v);return q},single(){return run()},maybeSingle(){return run()},then(ok,bad){return run().then(ok,bad)}};
@@ -117,3 +117,52 @@ test('confirmation breakdown uses Tax with no GST or percentage wording',()=>{
   const b=body();const {order}=await create(b);session={...paid(order),status:'open',ui_mode:'elements',client_secret:'cs_other_secret',amount_total:1};
   const response=await checkout.POST(req(b));assert.equal(response.status,503);assert.equal((await response.json()).clientSecret,undefined);
  });
+
+function promoFixtures() {
+ const originalFetch=global.fetch;
+ global.fetch=async(url,init)=>{
+   if(String(url).includes('/promotion_codes?')) return {ok:true,json:async()=>({data:[{id:'promo_fixture',code:'SAVE10',active:true}]})};
+   if(String(url).includes('/line_items?')) return {ok:true,json:async()=>({has_more:false,data:[
+     {description:cart.buildSoulmateCart('standard').lineItems[0].name,currency:'usd',quantity:1,amount_subtotal:3700,amount_discount:370,amount_tax:0,amount_total:3330},
+     {description:'Tax',currency:'usd',quantity:1,amount_subtotal:666,amount_discount:67,amount_tax:0,amount_total:599},
+   ]})};
+   const result=await originalFetch(url,init); const value=await result.json();
+   if(init.method==='POST') {assert.equal(init.body.get('discounts[0][promotion_code]'),'promo_fixture');Object.assign(value,{amount_subtotal:4366,amount_total:3929,total_details:{amount_discount:437}});}
+   return {...result,json:async()=>value};
+ };
+}
+test('invalid or customer-restricted promo creates no order and never submits a payment',async()=>{
+ global.fetch=async()=>({ok:true,json:async()=>({data:[{id:'promo_other',code:'PRIVATE',active:true,customer:'cus_other'}]})});
+ for(const promotionCode of ['MISSING','PRIVATE',42,'x'.repeat(201)]) {
+   assert.equal((await checkout.POST(req(body({promotionCode})))).status,400);
+ }
+ assert.equal(orders.size,0);
+});
+test('Stripe promotion amounts are frozen before returning a client secret and paid reconciliation uses the discount',async()=>{
+ promoFixtures();const b=body({promotionCode:'save10',amount:1,discount:9999});
+ const {data,order}=await create(b);
+ assert.deepEqual(data.quote,{subtotal:3700,discount:370,tax:599,total:3929,code:'SAVE10'});
+ assert.equal(order.base_amount,3700);assert.equal(order.line_items[0].amount_paise,3700);assert.equal(order.amount,3929);
+ assert.equal(order.stripe_session_id,'cs_test_fixture');assert.equal(order.promotion_snapshot.discountTotal,437);
+ await create(b);assert.equal(orders.size,1);assert.equal(calls.filter(c=>c.init.method==='POST').length,1);
+ assert.equal((await checkout.POST(req({...b,promotionCode:''}))).status,409);
+ assert.equal(stripe.verifiedStripeUpdate(order,paid(order)).payment_status,'paid');
+ assert.throws(()=>stripe.verifiedStripeUpdate(order,paid(order,{amount_total:4366})));
+});
+test('promotion quote rejects changed basket, tax, currency, identity, totals and free orders',()=>{
+ const c=cart.buildSoulmateCart('standard');const o={id:'us_sm_'+'a'.repeat(20),line_items:c.lineItems,base_amount:3700,gst_amount:666,payment_mode:'test'};
+ const s={mode:'payment',ui_mode:'elements',client_reference_id:o.id,metadata:{order_id:o.id,funnel:'us_soulmate_standalone'},currency:'usd',livemode:false,amount_subtotal:4366,amount_total:3929,total_details:{amount_discount:437}};
+ const l={has_more:false,data:[{description:c.lineItems[0].name,currency:'usd',quantity:1,amount_subtotal:3700,amount_discount:370,amount_tax:0,amount_total:3330},{description:'Tax',currency:'usd',quantity:1,amount_subtotal:666,amount_discount:67,amount_tax:0,amount_total:599}]};
+ assert.equal(stripe.verifiedPromotionQuote(o,s,l).total,3929);
+ for(const patch of [{amount_total:1},{currency:'inr'},{livemode:true},{amount_subtotal:1},{metadata:{funnel:'soulmate_standalone'}},{total_details:{amount_discount:1}}]) assert.throws(()=>stripe.verifiedPromotionQuote(o,{...s,...patch},l));
+ for(const patch of [{amount_tax:1},{description:'Another item'},{quantity:2},{amount_subtotal:3699},{amount_discount:-1},{amount_total:1}]) assert.throws(()=>stripe.verifiedPromotionQuote(o,s,{...l,data:[{...l.data[0],...patch},l.data[1]]}));
+ assert.throws(()=>stripe.verifiedPromotionQuote(o,s,{...l,has_more:true}));
+ const free={...l,data:l.data.map(x=>({...x,amount_discount:x.amount_subtotal,amount_total:0}))};
+ assert.throws(()=>stripe.verifiedPromotionQuote(o,{...s,amount_total:0,total_details:{amount_discount:4366}},free),/at least/);
+});
+test('discounted confirmation email and invoice contain the same accounting totals',()=>{
+ const {soulmateConfirmationEmail,generateSoulmateInvoicePdf}=require('../src/lib/us-soulmate-invoice-template');const c=cart.buildSoulmateCart('standard');
+ const invoice={invoice_number:'ARUS-26-PROMO',issued_at:'2026-10-17T00:00:00Z',snapshot:{customerName:'Fixture',customerEmail:'fixture@example.com',orderId:null,items:c.lineItems,entitlements:c.entitlements,subtotal:3700,discount:370,gst:599,total:3929,paidAt:'2026-10-17T00:00:00Z',deliveryDueAt:null}};
+ const email=soulmateConfirmationEmail(invoice);assert.match(email.text,/Subtotal: USD 37.00\nDiscount: -USD 3.70\nTax: USD 5.99\nTotal paid: USD 39.29/);
+ assert.match(email.html,/Discount/);assert.match(generateSoulmateInvoicePdf(invoice).subarray(0,4).toString(),/%PDF/);
+});

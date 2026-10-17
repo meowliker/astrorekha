@@ -8,6 +8,30 @@ import styles from "./soulmate-checkout.module.css";
 
 type PaymentAttempt = { key: string; signature: string; savedAt: number };
 let memoryAttempt: PaymentAttempt | null = null;
+export type PromotionQuote = { subtotal: number; discount: number; tax: number; total: number; code: string | null };
+/** Both applying a code and paying reuse the exact same idempotent server checkout. */
+export async function prepareCheckout(signature: string, email: string, signal?: AbortSignal) {
+  const details = JSON.parse(signature);
+  const attemptSignature = JSON.stringify({ ...details, email });
+  let attempt = memoryAttempt;
+  try { attempt = JSON.parse(sessionStorage.getItem(CHECKOUT_ATTEMPT_KEY) || "null") || memoryAttempt; } catch { /* Storage is optional. */ }
+  if (!attempt || attempt.signature !== attemptSignature || attempt.savedAt < Date.now() - 24 * 3600000) {
+    attempt = { key: crypto.randomUUID(), signature: attemptSignature, savedAt: Date.now() };
+  }
+  memoryAttempt = attempt;
+  try { sessionStorage.setItem(CHECKOUT_ATTEMPT_KEY, JSON.stringify(attempt)); } catch { /* Keep retries idempotent in memory. */ }
+  const response = await fetch("/api/us/soulmate/checkout", {
+    method: "POST", headers: { "Content-Type": "application/json" }, signal,
+    body: JSON.stringify({ ...details, email, plan: details.planId, tracking: soulmateTrackingContext(), session: checkoutSession(), checkoutKey: attempt.key }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Unable to prepare your payment. Please try again.");
+  const receiptUrl = checkedReceiptPath(data.receiptUrl);
+  const orderId = new URL(receiptUrl, window.location.origin).searchParams.get("order")!;
+  try { sessionStorage.setItem(CHECKOUT_RECOVERY_KEY, JSON.stringify({ answers: details.answers, planId: details.planId, receiptUrl, savedAt: Date.now() })); } catch { /* Receipt also uses its secure cookie. */ }
+  return { data, receiptUrl, orderId, details };
+}
+
 export type InlinePayment = { signature: string; canPay: boolean; confirm: (email: string) => Promise<string> };
 export function StripePaymentFields({ signature, amount, enabled, onPayment }: {
   signature: string; amount: number; enabled: boolean; onPayment: (payment: InlinePayment | null) => void;
@@ -47,25 +71,8 @@ export function StripePaymentFields({ signature, amount, enabled, onPayment }: {
             try {
               const paymentMethod = await collectDeferredPayment(stripe, elements, email);
               if (!active) throw new Error("Checkout changed. Please try again.");
-              const details = JSON.parse(signature);
-              const attemptSignature = JSON.stringify({ ...details, email });
-              let attempt = memoryAttempt;
-              try { attempt = JSON.parse(sessionStorage.getItem(CHECKOUT_ATTEMPT_KEY) || "null") || memoryAttempt; } catch { /* Storage is optional. */ }
-              if (!attempt || attempt.signature !== attemptSignature || attempt.savedAt < Date.now() - 24 * 3600000) {
-                attempt = { key: crypto.randomUUID(), signature: attemptSignature, savedAt: Date.now() };
-              }
-              memoryAttempt = attempt;
-              try { sessionStorage.setItem(CHECKOUT_ATTEMPT_KEY, JSON.stringify(attempt)); } catch { /* Keep retries idempotent in memory. */ }
-              const response = await fetch("/api/us/soulmate/checkout", {
-                method: "POST", headers: { "Content-Type": "application/json" }, signal: abort.signal,
-                body: JSON.stringify({ ...details, email, plan: details.planId, tracking: soulmateTrackingContext(), session: checkoutSession(), checkoutKey: attempt.key }),
-              });
-              const data = await response.json();
+              const { data, receiptUrl, orderId, details } = await prepareCheckout(signature, email, abort.signal);
               if (!active) throw new Error("Checkout changed. Please try again.");
-              if (!response.ok) throw new Error(data.error || "Unable to prepare your payment. Please try again.");
-              const receiptUrl = checkedReceiptPath(data.receiptUrl);
-              const orderId = new URL(receiptUrl, window.location.origin).searchParams.get("order")!;
-              try { sessionStorage.setItem(CHECKOUT_RECOVERY_KEY, JSON.stringify({ answers: details.answers, planId: details.planId, receiptUrl, savedAt: Date.now() })); } catch { /* Receipt also uses its secure cookie. */ }
               if (data.checkStatus) return receiptUrl;
               if (data.amount !== amount || typeof data.clientSecret !== "string" || !data.clientSecret) throw new Error("Your payment total changed. Please reload checkout before paying.");
               if (prepared?.orderId !== orderId) {

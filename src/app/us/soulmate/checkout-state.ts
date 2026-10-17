@@ -4,7 +4,7 @@ import { sanitizeAddOnIds, type AddOnId } from "./checkout-addons";
 
 const KEY = "astrorekha-us-soulmate-checkout-details-v1";
 export const CHECKOUT_RECOVERY_KEY = "astrorekha-us-soulmate-checkout-v1";
-export const CHECKOUT_ATTEMPT_KEY = "astrorekha-us-soulmate-payment-attempt-v2";
+export const CHECKOUT_ATTEMPT_KEY = "astrorekha-us-soulmate-payment-attempt-v3";
 export type CheckoutDetails = { answers: Answers; planId: DeliveryId; email: string; addOns?: AddOnId[]; savedAt: number };
 let memory: CheckoutDetails | null = null;
 

@@ -8,7 +8,7 @@ import { deliveryPlans, sanitizeAnswers, steps } from "@/app/us/soulmate/chat-da
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { usPricesReady } from "@/lib/us-soulmate-prices";
 import { US_SOULMATE_FUNNEL, US_SOULMATE_ORDERS_TABLE, US_SOULMATE_ORDER_PREFIX } from "@/lib/us-soulmate-orders";
-import { createStripeCheckout, stripeCheckoutConfig, receiptPath, receiptCookie, type SoulmateOrder } from "@/lib/us-soulmate-stripe";
+import { createStripeCheckout, resolvePromotionCode, PromotionCodeError, stripeCheckoutConfig, receiptPath, receiptCookie, type SoulmateOrder } from "@/lib/us-soulmate-stripe";
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,7 +37,8 @@ export async function POST(request: NextRequest) {
     if (session) await saveSoulmateSession(session, answers);
     let cart;
     try { cart = buildSoulmateCart(plan.id, body.addOns ?? []); } catch { return NextResponse.json({ error: "Invalid add-ons for this package." }, { status: 400 }); }
-    const fingerprint = crypto.createHash("sha256").update(JSON.stringify({ answers, plan: plan.id, email, mode, cart, uiMode: "elements" })).digest("hex");
+    const promotion = await resolvePromotionCode(body.promotionCode);
+    const fingerprint = crypto.createHash("sha256").update(JSON.stringify({ answers, plan: plan.id, email, mode, cart, promotion: promotion?.id || null, uiMode: "elements" })).digest("hex");
     const db = getSupabaseAdmin();
     const gaId = process.env.US_SOULMATE_GA4_MEASUREMENT_ID || process.env.NEXT_PUBLIC_US_SOULMATE_GA_ID;
     const gaCookie = gaSessionCookieName(gaId);
@@ -73,10 +74,11 @@ export async function POST(request: NextRequest) {
     const cookie = receiptCookie(order.id);
     const response = NextResponse.json(order.payment_status === "paid" || order.payment_status === "failed"
       ? { receiptUrl, checkStatus: true }
-      : await createStripeCheckout(order, origin), { headers: { "Cache-Control": "no-store" } });
+      : await createStripeCheckout(order, origin, promotion), { headers: { "Cache-Control": "no-store" } });
     response.cookies.set(cookie);
     return response;
   } catch (error) {
+    if (error instanceof PromotionCodeError) return NextResponse.json({ error: error.message }, { status: 400 });
     console.error("[soulmate/checkout]", error instanceof SyntaxError ? "Invalid JSON" : "Checkout unavailable");
     return NextResponse.json({ error: "Unable to start payment. Please try again." }, { status: error instanceof SyntaxError ? 400 : 503 });
   }
