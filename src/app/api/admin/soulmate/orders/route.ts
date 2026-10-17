@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { soulmateAdmin } from "@/lib/soulmate-admin";
+import { refreshSoulmateDeliveryStatuses } from "@/lib/soulmate-fulfillment";
 export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   const db = await soulmateAdmin(request);
@@ -13,6 +14,7 @@ export async function GET(request: NextRequest) {
     if (search) query = query.or(`id.ilike.%${search}%,customer_email.ilike.%${search}%,customer_name.ilike.%${search}%,customer_phone.ilike.%${search}%`);
     const result = await query.order("created_at", { ascending: false }).order("id").range(Math.floor(page) * 25, Math.floor(page) * 25 + 24);
     if (result.error) throw new Error("Unable to load orders");
+    const syncFailures = await refreshSoulmateDeliveryStatuses(db, result.data);
     const ids = result.data.map((row) => row.id);
     const [jobs, emails, assets] = ids.length ? await Promise.all([
       db.from("soulmate_generation_jobs").select("order_id,status,generation_attempts,last_error,storage_path").in("order_id", ids),
@@ -20,6 +22,6 @@ export async function GET(request: NextRequest) {
       db.from("soulmate_order_assets").select("order_id,kind,filename,uploaded_at,size_bytes").in("order_id", ids),
     ]) : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
     if (jobs.error || emails.error || assets.error) throw new Error("Unable to load delivery details");
-    return NextResponse.json({ orders: result.data.map(({ attribution, ...row }) => ({ ...row, checkout_environment: ["local", "preview", "production"].includes(attribution?.trackingEnvironment) ? attribution.trackingEnvironment : "unknown", generation: jobs.data?.find((j) => j.order_id === row.id) || null, email: emails.data?.find((e) => e.order_id === row.id) || null, assets: assets.data?.filter((a) => a.order_id === row.id) || [] })), total: result.count, page: Math.floor(page) }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ deliverySyncWarning: syncFailures ? "Email status could not be refreshed from Brevo. Showing saved status; try Refresh again." : null, orders: result.data.map(({ attribution, ...row }) => ({ ...row, checkout_environment: ["local", "preview", "production"].includes(attribution?.trackingEnvironment) ? attribution.trackingEnvironment : "unknown", generation: jobs.data?.find((j) => j.order_id === row.id) || null, email: emails.data?.find((e) => e.order_id === row.id) || null, assets: assets.data?.filter((a) => a.order_id === row.id) || [] })), total: result.count, page: Math.floor(page) }, { headers: { "Cache-Control": "no-store" } });
   } catch { return NextResponse.json({ error: "Unable to load soulmate orders. Check the database migration and try again." }, { status: 503 }); }
 }

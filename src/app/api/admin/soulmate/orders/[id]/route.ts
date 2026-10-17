@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { soulmateAdmin, validSoulmateId } from "@/lib/soulmate-admin";
 import { sanitizeAnswers, steps } from "@/app/soulmate/chat-data";
-import { SKETCH_BUCKET } from "@/lib/soulmate-fulfillment";
+import { SKETCH_BUCKET, refreshSoulmateDeliveryStatuses } from "@/lib/soulmate-fulfillment";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +17,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     if (order.error) throw new Error("Unable to load order");
     if (!order.data) return NextResponse.json({ error: "Order not found" }, { status: 404 });
 
+    const syncFailures = await refreshSoulmateDeliveryStatuses(db, [order.data]);
     const [jobs, emails, assets] = await Promise.all([
       db.from("soulmate_generation_jobs").select("order_id,status,generation_attempts,last_error,storage_path").eq("order_id", params.id).maybeSingle(),
       db.from("soulmate_email_deliveries").select("order_id,status,scheduled_at,submitted_at,sent_at,delivered_at,last_error").eq("order_id", params.id).maybeSingle(),
@@ -29,8 +30,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       ? attribution.trackingEnvironment
       : "unknown";
     return NextResponse.json({
+      deliverySyncWarning: syncFailures ? "Email status could not be refreshed from Brevo. Showing saved status; try Refresh again." : null,
       order: {
         ...row,
+        fulfillment_status: emails.data?.status === "delivered" ? "delivered" : row.fulfillment_status,
+        delivered_at: row.delivered_at || emails.data?.delivered_at || null,
         checkout_environment: checkoutEnvironment,
         generation: jobs.data || null,
         email: emails.data || null,

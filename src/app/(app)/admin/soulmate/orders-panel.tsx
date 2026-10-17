@@ -25,9 +25,11 @@ export function SoulmateOrdersPanel() {
 
   useEffect(()=>{
     const abort=new AbortController();setLoading(true);setError("");
-    fetch(`/api/admin/soulmate/orders?${new URLSearchParams({ mode,search:query,page:String(page) })}`,{headers:auth(),cache:"no-store",signal:abort.signal}).then(async(response)=>{const result=await response.json();if(!response.ok)throw new Error(result.error);if(!abort.signal.aborted){setOrders(result.orders);setTotal(result.total);}}).catch((cause)=>{if(!abort.signal.aborted)setError(cause.message||"Unable to load orders");}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});
+    fetch(`/api/admin/soulmate/orders?${new URLSearchParams({ mode,search:query,page:String(page) })}`,{headers:auth(),cache:"no-store",signal:abort.signal}).then(async(response)=>{const result=await response.json();if(!response.ok)throw new Error(result.error);if(!abort.signal.aborted){setOrders(result.orders);setTotal(result.total);setError(result.deliverySyncWarning || "");}}).catch((cause)=>{if(!abort.signal.aborted)setError(cause.message||"Unable to load orders");}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});
     return()=>abort.abort();
   },[mode,query,page,revision]);
+
+  useEffect(() => { const timer = setInterval(() => { if (document.visibilityState === "visible") setRevision((value) => value + 1); }, 60000); return () => clearInterval(timer); }, []);
 
   const rangeStart = total === 0 ? 0 : page * 25 + 1;
   const rangeEnd = Math.min((page + 1) * 25, total);

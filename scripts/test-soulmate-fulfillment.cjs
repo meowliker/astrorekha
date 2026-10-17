@@ -7,7 +7,7 @@ require('ts-node').register({ transpileOnly: true, compilerOptions: { module: 'C
 const resolve = Module._resolveFilename;
 Module._resolveFilename = function(name, parent, ...rest) { return resolve.call(this, name.startsWith('@/') ? path.join(__dirname, '../src', name.slice(2)) : name, parent, ...rest); };
 require('node:dns/promises').lookup = async () => [{ address: '8.8.8.8', family: 4 }];
-const { buildStandalonePrompt, emailBody, processSoulmateJob, privateAddress } = require('../src/lib/soulmate-fulfillment');
+const { buildStandalonePrompt, emailBody, processSoulmateJob, privateAddress, refreshSoulmateDeliveryStatuses } = require('../src/lib/soulmate-fulfillment');
 const answers = { name: 'Maya', heart: 'I feel like I’ve been waiting forever', preferenceSelection: 'I like men', preference: 'I like women', feeling: 'Safe — someone who stays', birthDate: '1995-01-01', ethnicity: 'South Indian' };
 let order, job, email, image, calls, rows, uploadCount, assets, files;
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
@@ -133,4 +133,29 @@ test('an answer revision during attachment download prevents stale delivery',asy
   db.storage.from=(bucket)=>{const store=original(bucket);return {...store,download:async(key)=>{const result=await store.download(key);order.answer_revision=2;job.answer_revision=2;job.lease_id=null;return result;}};};
   try { assert.equal((await run()).ok,true);assert.equal(email.status,'pending');assert.equal(calls.length,0); }
   finally { db.storage.from=original; }
+});
+
+const statusDb = { ...db, from(table) { const q = db.from(table); q.in = () => Promise.resolve({data: [{...email}], error: null}); return q; } };
+test('dashboard reconciles delivery before the original promise time using GET only and fresh events', async()=>{
+  order.catalog_version=2;order.review_status='approved';
+  email.status='scheduled';email.provider_message_id='approved-message';email.scheduled_at=new Date(Date.now()-60000).toISOString();
+  const sent=new Date(Date.now()-59000).toISOString(), delivered=new Date(Date.now()-58000).toISOString();
+  global.fetch=async(url,init)=>{assert.ok(String(url).includes('/statistics/events'));assert.equal(init.method,undefined);assert.equal(init.cache,'no-store');return json({events:[{messageId:email.provider_message_id,email:order.customer_email,event:'requests',date:sent},{messageId:email.provider_message_id,email:order.customer_email,event:'delivered',date:delivered}]});};
+  assert.equal(await refreshSoulmateDeliveryStatuses(statusDb,[order]),0);
+  assert.equal(email.status,'delivered');assert.equal(email.sent_at,sent);assert.equal(email.delivered_at,delivered);assert.equal(order.fulfillment_status,'delivered');
+  global.fetch=async()=>assert.fail('Delivered email must not be queried or resent');
+  assert.equal(await refreshSoulmateDeliveryStatuses(statusDb,[order]),0);
+});
+test('dashboard provider failure retains saved status and returns a visible-warning signal',async()=>{
+  email.status='scheduled';email.provider_message_id='message';email.scheduled_at=new Date(Date.now()-60000).toISOString();
+  global.fetch=async()=>json({error:'unavailable'},503);
+  assert.equal(await refreshSoulmateDeliveryStatuses(statusDb,[order]),1);assert.equal(email.status,'scheduled');assert.equal(order.fulfillment_status,undefined);
+});
+test('dashboard never starts pending orders or queries unpaid/future emails',async()=>{
+  global.fetch=async()=>assert.fail('Must not make a provider request');
+  assert.equal(await refreshSoulmateDeliveryStatuses(statusDb,[order]),0);
+  email.status='scheduled';email.provider_message_id='message';
+  assert.equal(await refreshSoulmateDeliveryStatuses(statusDb,[order]),0);
+  email.scheduled_at=new Date(Date.now()-60000).toISOString();order.payment_status='failed';
+  assert.equal(await refreshSoulmateDeliveryStatuses(statusDb,[order]),0);
 });

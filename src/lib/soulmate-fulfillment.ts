@@ -103,11 +103,11 @@ export function emailBody(order: Order, email: Email, attachment: Buffer, filena
   };
 }
 
-async function reconcileEmail(db: DB, order: Order, email: Email) {
+export async function reconcileEmail(db: DB, order: Pick<Order, "id" | "customer_email">, email: Email) {
   const headers = brevoHeaders();
   if (!email.provider_message_id) {
     // Recover a timed-out submission using the durable batch id. Never blindly POST again.
-    const res = await fetch(`https://api.brevo.com/v3/smtp/emailStatus/${encodeURIComponent(email.id)}`, { headers, signal: AbortSignal.timeout(15000) });
+    const res = await fetch(`https://api.brevo.com/v3/smtp/emailStatus/${encodeURIComponent(email.id)}`, { headers, cache: "no-store", signal: AbortSignal.timeout(5000) });
     if (res.status !== 404 && !res.ok) throw new Error("Email schedule lookup unavailable");
     const payload = res.ok ? await res.json() : {};
     const batches = payload.batches || [];
@@ -115,7 +115,7 @@ async function reconcileEmail(db: DB, order: Order, email: Email) {
     // Recover that ID from events tagged with this unique order when sending begins.
     const eventsUrl = new URL("https://api.brevo.com/v3/smtp/statistics/events");
     eventsUrl.search = new URLSearchParams({ tags: JSON.stringify([order.id]), email: order.customer_email, limit: "100", days: "30" }).toString();
-    const eventsRes = await fetch(eventsUrl, { headers, signal: AbortSignal.timeout(15000) });
+    const eventsRes = await fetch(eventsUrl, { headers, cache: "no-store", signal: AbortSignal.timeout(5000) });
     if (!eventsRes.ok) throw new Error("Email recovery lookup unavailable");
     const activity = await eventsRes.json();
     const event = (activity.events || []).find((e: { email: string; tag?: string; tags?: string[]; messageId?: string }) =>
@@ -131,10 +131,10 @@ async function reconcileEmail(db: DB, order: Order, email: Email) {
   }
   const url = new URL("https://api.brevo.com/v3/smtp/statistics/events");
   url.search = new URLSearchParams({ messageId: email.provider_message_id, limit: "100", days: "30" }).toString();
-  const res = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+  const res = await fetch(url, { headers, cache: "no-store", signal: AbortSignal.timeout(5000) });
   if (!res.ok) throw new Error("Email delivery lookup unavailable");
   const payload = await res.json();
-  const events = (payload.events || []).filter((e: { messageId: string; email: string }) => e.messageId === email.provider_message_id && e.email.toLowerCase() === order.customer_email.toLowerCase());
+  const events = (payload.events || []).filter((e: { messageId: string; email: string }) => e.messageId === email.provider_message_id && e.email?.toLowerCase() === order.customer_email.toLowerCase());
   const sentEvent = events.find((e: { event: string }) => e.event === "requests" || e.event === "request");
   if (sentEvent?.date && Number.isFinite(Date.parse(sentEvent.date))) await patchEmail(db, email, { sent_at: new Date(sentEvent.date).toISOString() });
   const delivered = events.find((e: { event: string }) => e.event === "delivered");
@@ -151,6 +151,23 @@ async function reconcileEmail(db: DB, order: Order, email: Email) {
   } else if (events.some((e: { event: string }) => e.event === "requests" || e.event === "request")) {
     await patchEmail(db, email, { status: "sent" });
   }
+}
+
+/** Read provider events only: this path never generates assets or submits email. */
+export async function refreshSoulmateDeliveryStatuses(db: DB, orders: Pick<Order, "id" | "customer_email" | "payment_status">[]) {
+  const paid = orders.filter((order) => order.payment_status === "paid");
+  if (!paid.length) return 0;
+  const result = await db.from("soulmate_email_deliveries").select("*").in("order_id", paid.map((order) => order.id));
+  if (result.error) return 1;
+  const due = (result.data || []).filter((email: Email) => email.provider_message_id &&
+    ["scheduled", "sent", "submitting", "needs_review"].includes(email.status) && Date.parse(email.scheduled_at) <= Date.now());
+  let failures = 0;
+  for (let offset = 0; offset < due.length; offset += 5) {
+    const checks = await Promise.allSettled(due.slice(offset, offset + 5).map((email: Email) =>
+      reconcileEmail(db, paid.find((order) => order.id === email.order_id)!, email)));
+    failures += checks.filter((check) => check.status === "rejected").length;
+  }
+  return failures;
 }
 
 export async function reviewedAttachments(db: DB, order: Pick<Order, "id" | "entitlements">) {
@@ -275,11 +292,24 @@ export async function processSoulmateJob(db: DB, job: GenerationJob) {
 export async function runSoulmateFulfillment() {
   const mode = process.env.PAYU_MODE;
   if (mode !== "live" && mode !== "test") throw new Error("Missing payment mode");
-  const db = getSupabaseAdmin();
+  const db = getSupabaseAdmin({ fresh: true });
+  // Track already-submitted emails independently of generation/review/delivery gates.
+  const pending = await db.from("soulmate_email_deliveries").select("order_id")
+    .in("status", ["scheduled", "sent", "submitting"]).not("provider_message_id", "is", null)
+    .lte("scheduled_at", new Date().toISOString()).order("updated_at").limit(25);
+  if (pending.error) throw new Error("Unable to read delivery status queue");
+  let syncFailures = 0;
+  if (pending.data.length) {
+    const orders = await db.from("soulmate_orders").select("id,customer_email,payment_status")
+      .eq("funnel", "soulmate_standalone").eq("payment_mode", mode).eq("payment_status", "paid")
+      .in("id", pending.data.map((email) => email.order_id));
+    if (orders.error) throw new Error("Unable to read submitted delivery orders");
+    syncFailures = await refreshSoulmateDeliveryStatuses(db, orders.data);
+  }
   const { data, error } = await db.rpc("claim_soulmate_deliveries", { p_mode: mode, p_limit: 3, p_catalog_version: 2 });
   if (error) throw new Error("Unable to claim fulfillment jobs");
   const results = await Promise.allSettled((data as GenerationJob[] || []).map((job) => processSoulmateJob(db, job)));
-  const failures = results.filter((r) => r.status === "rejected" || !r.value.ok).length;
+  const failures = syncFailures + results.filter((r) => r.status === "rejected" || !r.value.ok).length;
   const review = await db.from("soulmate_generation_jobs").select("order_id", { count: "exact", head: true }).eq("status", "needs_review");
   const emailReview = await db.from("soulmate_email_deliveries").select("order_id", { count: "exact", head: true }).eq("status", "needs_review");
   if (review.error || emailReview.error) throw new Error("Unable to check fulfillment alerts");

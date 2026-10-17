@@ -33,11 +33,11 @@ export default function SoulmateOrderPage({ params }: { params: { id: string } }
       const result=await response.json();
       if(response.status===401){router.replace("/admin/login");return;}
       if(!response.ok)throw new Error(result.error||"Unable to load order");
-      setOrder(result.order);
+      setOrder(result.order);setError(result.deliverySyncWarning || "");
     } catch(cause){setError(cause instanceof Error?cause.message:"Unable to load order");} finally {setLoading(false);}
   },[params.id,router]);
 
-  useEffect(()=>{void load();},[load]);
+  useEffect(()=>{void load();const timer=setInterval(()=>{if(document.visibilityState==="visible")void load();},60000);return()=>clearInterval(timer);},[load]);
   const stage=order?soulmateOrderStage(order):null;
 
   return <main className="min-h-screen bg-[#0A0E1A] text-white [color-scheme:dark]">

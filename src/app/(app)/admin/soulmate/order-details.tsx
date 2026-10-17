@@ -17,7 +17,7 @@ export function SoulmateOrderDetails({ order, refresh }: { order: SoulmateOrderV
   const [links, setLinks] = useState<{ kind: string; filename: string; url: string | null }[]>([]);
   const [editing, setEditing] = useState(false);
   const [answers, setAnswers] = useState<Record<string,string>>({ ...order.answers });
-  useEffect(() => setAnswers({ ...order.answers }), [order.answers]);
+  useEffect(() => { if (!editing) setAnswers({ ...order.answers }); }, [order.answers, editing]);
   const required = order.entitlements?.required_assets || [];
   const complete = required.length > 0 && required.every((kind) => order.assets.some((asset) => asset.kind === kind));
   const sentAt = order.email?.sent_at;
