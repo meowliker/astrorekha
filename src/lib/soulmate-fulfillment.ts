@@ -66,7 +66,7 @@ export function privateAddress(ip: string): boolean {
   // Only globally routable IPv6 unicast; reject mapped IPv4, loopback and link-local.
   return !/^[23][0-9a-f]{3}:/i.test(ip);
 }
-async function downloadImage(source: string): Promise<{ buffer: Buffer; contentType: string; extension: string }> {
+export async function downloadImage(source: string): Promise<{ buffer: Buffer; contentType: string; extension: string }> {
   const url = new URL(source);
   if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) throw new Error("Invalid image URL");
   const addresses = await dns.lookup(url.hostname, { all: true });

@@ -58,7 +58,7 @@ export function soulmateOrderStage(order: SoulmateOrderView): SoulmateOrderStage
   return {
     id: "ordered",
     label: "Ordered",
-    detail: order.payment_status === "paid" ? "Payment confirmed" : `Payment ${order.payment_status}`,
+    detail: ["generating", "submitting"].includes(order.generation?.status || "") ? "Preparing purchased reports" : order.payment_status === "paid" ? "Payment confirmed" : `Payment ${order.payment_status}`,
     timestamp: order.paid_at || order.created_at,
   };
 }
