@@ -6,8 +6,8 @@ The screen mirrors the normal tracker: date presets, US/Indian/both reporting wi
 
 ## Connect reporting
 
-- Use **Ad accounts** on the tracking page to configure the dedicated Soulmate accounts and their access tokens and reporting windows.
-- Set the conversion rate in **Exchange rate / profit**. These are the existing Soulmate Profit Sheet settings, not the normal flow's settings.
+- Configure **Ad accounts** and the exchange rate in **Soulmate Profit Sheet**. Tracking automatically reads those same Soulmate settings; it has no separate configuration controls.
+- Tracking opens on today for the selected reporting window. Custom date ranges remain available in the date picker.
 - Accounts connected to the normal flow are rejected by the Soulmate tracker. It never falls back to normal-flow credentials or environment accounts.
 - Meta purchase metrics are Meta's attributed conversions for the connected accounts. Keep these accounts exclusive to Soulmate advertising. Internal Soulmate sales are separate, verified payments joined by campaign/ad-set/ad IDs, with unique campaign-name fallback.
 - Missing accounts or failed Meta requests do not imply zero advertising cost. Profit is unavailable until spend can be obtained.
