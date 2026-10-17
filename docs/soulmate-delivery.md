@@ -14,8 +14,11 @@ uploaded, approved, submitted and delivered orders are excluded. Main-app report
 Ten-minute leases prevent concurrent generation. Every checkpoint and final registration checks
 payment, answer revision, pending email and the lease under an order lock. Answer edits discard
 old unfinished state on the next claim. Prepared PDFs register together and are approved atomically
-only after local checks pass. The existing delivery cron sends them at the saved 12/48-hour deadline;
-an overdue order sends after preparation succeeds. Paid schedules are never changed.
+only after local checks pass. The existing delivery cron sends them at the saved backend schedule;
+an overdue order sends after preparation succeeds. From migration `20261017110000`, newly confirmed
+catalog-v2 payments schedule delivery eight hours after `paid_at`, independently of the unchanged
+12/48-hour customer promise. Existing paid schedules remain immutable to application writes.
+On 17 October, the owner separately requested the six current unsent paid orders for 17:30 IST.
 
 The owner selected **local checks only**, with no additional AI quality-review request. Generation
 prompts require the writer to check image continuity, hypothetical claims, no zodiac assignment,
@@ -139,9 +142,9 @@ All valid purchases are enabled in local, preview and production code, including
 
 - Soulmate Sketch: ₹999, B&W, within 48 hours. Optional description ₹399, colour ₹299, priority ₹249.
 - Complete Soulmate Vision: ₹1,499, colour sketch + written description + priority delivery within 12 hours. Optional connection timeline ₹399.
-- Priority on the standard package changes its delivery to within 12 hours. No new order has an eight-hour schedule.
+- Priority on the standard package retains its customer promise of delivery within 12 hours.
 
-Checkout stores the customer's confirmed answers and contacts, server-priced line items, selected extras, final entitlements, GST and payment mode before opening PayU. This snapshot cannot change after checkout. Only verified captured payment marks it paid and creates one generation record and email record. Its scheduled send time is payment time plus 12 hours (express/priority) or 48 hours (normal).
+Checkout stores the customer's confirmed answers and contacts, server-priced line items, selected extras, final entitlements, GST and payment mode before opening PayU. This snapshot cannot change after checkout. Only verified captured payment marks it paid and creates one generation record and email record. New catalog-v2 orders schedule sending eight hours after payment. `delivery_hours`, `delivery_due_at` and the historical entitlement snapshot retain the purchased 12/48-hour promise; `scheduled_send_at` and the email record's `scheduled_at` are the operational send target shown in admin. The database payment trigger owns that target, so callbacks, reconciliation and local test payments use the same rule.
 
 Report generation is automatic when the production switch is enabled. Manual upload remains available for exceptions: in the Soulmate orders section, open a buyer's order, upload every purchased file, review and approve. Limits: 3 MiB per file, 7 MiB combined. Files are private, and review URLs expire after five minutes. Approval freezes the registered files.
 

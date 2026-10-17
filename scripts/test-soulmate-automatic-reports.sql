@@ -29,7 +29,7 @@ begin
     'assets',jsonb_build_array(jsonb_build_object('kind','sketch','storagePath',oid||'/auto-r2/'||repeat('b',64)||'.pdf','filename','sketch.pdf','size',100,'sha256',repeat('b',64))));
   perform checkpoint_soulmate_reports(oid,2,fresh.lease_id,payload);
   perform finish_soulmate_reports(oid,2,fresh.lease_id);
-  assert (select review_status='approved' and scheduled_send_at=paid_at+interval '48 hours' from soulmate_orders where id=oid);
+  assert (select review_status='approved' and scheduled_send_at=paid_at+interval '8 hours' from soulmate_orders where id=oid);
   assert (select count(*)=1 from soulmate_order_assets where order_id=oid);
   assert not exists(select 1 from claim_soulmate_report_jobs('test',2) where order_id=oid), 'Approved order re-prepared';
   begin
