@@ -2,9 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Cormorant_Garamond } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
-import { MetaPixel } from "@/components/MetaPixel";
-import { Clarity } from "@/components/Clarity";
-import { GoogleAnalytics } from "@/components/GoogleAnalytics";
+import { MarketingBoundary } from "@/components/MarketingBoundary";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
@@ -34,9 +32,7 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${cormorant.variable} font-sans antialiased min-h-screen`}
       >
-        <MetaPixel />
-        <GoogleAnalytics />
-        <Clarity />
+        <MarketingBoundary />
         {children}
         <Analytics />
         <SpeedInsights />

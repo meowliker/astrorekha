@@ -1,0 +1,25 @@
+"use client";
+import { soulmateItemName } from "@/lib/us-soulmate-product-names";
+import type { ReactNode } from "react";
+import { useEffect,useState } from "react";
+import type { InvoiceSnapshot } from "@/lib/us-soulmate-invoice-template";
+type Invoice={id:string;invoice_number:string;issued_at:string;order_id:string|null;source:string;status:string;pdfReady:boolean;last_error:string|null;snapshot:InvoiceSnapshot};
+const auth=()=>({Authorization:`Bearer ${localStorage.getItem("admin_session_token")||""}`});
+export function SoulmateInvoicesPanel({orderId,summary}:{orderId?:string;summary?:ReactNode}){
+ const [invoices,setInvoices]=useState<Invoice[]>([]),[total,setTotal]=useState(0),[page,setPage]=useState(0),[revision,setRevision]=useState(0),[error,setError]=useState(""),[loading,setLoading]=useState(true),[busy,setBusy]=useState<string|null>(null);
+ useEffect(()=>{const abort=new AbortController();setLoading(true);setError("");fetch(`/api/admin/us-soulmate/invoices?${new URLSearchParams({page:String(page),...(orderId?{order:orderId}:{})})}`,{headers:auth(),cache:"no-store",signal:abort.signal}).then(async(res)=>{const data=await res.json();if(!res.ok)throw new Error(data.error);if(!abort.signal.aborted){setInvoices(data.invoices);setTotal(data.total);}}).catch((cause)=>{if(!abort.signal.aborted)setError(cause.message);}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});return()=>abort.abort();},[orderId,page,revision]);
+ async function openInvoice(invoice:Invoice,download:boolean){
+   setBusy(invoice.id);setError("");
+   const tab=download?null:window.open("about:blank","_blank");
+   if(tab)tab.opener=null;
+   try{const response=await fetch(`/api/admin/us-soulmate/invoices/${invoice.id}${download?"?download=1":""}`,{headers:auth(),cache:"no-store"});if(!response.ok)throw new Error("Unable to open invoice PDF");const url=URL.createObjectURL(await response.blob());if(download){const link=document.createElement("a");link.href=url;link.download=`${invoice.invoice_number}.pdf`;document.body.appendChild(link);link.click();link.remove();}else if(tab){tab.location.href=url;}else{URL.revokeObjectURL(url);throw new Error("Allow pop-ups to view the invoice, or use Download PDF.");}setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(cause){tab?.close();setError(cause instanceof Error?cause.message:"Unable to open invoice");}finally{setBusy(null);}
+ }
+ return <section className="py-6" aria-label="Confirmation emails and invoices"><div className="flex items-center justify-between gap-3"><h2 className="text-lg font-medium">Confirmation emails & invoices</h2><button className="rounded-lg border border-white/10 px-3 py-2 text-xs" onClick={()=>setRevision((v)=>v+1)}>Refresh</button></div>
+ <p className="mt-2 text-sm text-white/50">Saved PDFs attached to order confirmations. Preview records are kept outside paid sales.</p>
+ {error&&<p role="alert" className="mt-4 text-primary">{error}</p>}{loading&&<p className="mt-4 text-sm text-white/50">Loading invoices…</p>}
+ {invoices.map((invoice)=><article key={invoice.id} className="mt-4 rounded-xl border border-white/10 bg-[#1A2235] p-5"><div className="flex flex-wrap justify-between gap-4"><div><h3 className="font-medium">{invoice.invoice_number}</h3><p className="mt-2 text-sm text-white/60">{invoice.snapshot.customerName} · {invoice.snapshot.customerEmail}</p><p className="mt-1 text-xs text-white/60">{new Date(invoice.issued_at).toLocaleString("en-US",{timeZone:"Asia/Kolkata"})} IST · {invoice.order_id||"Owner-requested preview"}</p></div><div className="text-sm"><p>${(invoice.snapshot.total/100).toLocaleString("en-US",{minimumFractionDigits:2})}</p>{invoice.status==="sent"?<p className="mt-2 inline-flex rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 text-xs font-medium text-emerald-300">Order confirmation email sent</p>:<p className="mt-2 text-xs capitalize text-white/50">Confirmation: {invoice.status}</p>}</div></div>{summary||<ul className="mt-4 space-y-1 text-xs text-white/50">{invoice.snapshot.items.map((item)=><li key={item.id}>{soulmateItemName(item)}</li>)}</ul>}{invoice.last_error&&<p className="mt-3 text-sm text-amber-300">{invoice.last_error}</p>}<div className="mt-4 flex gap-3">{[false,true].map((download)=><button key={String(download)} disabled={!invoice.pdfReady||busy===invoice.id} onClick={()=>void openInvoice(invoice,download)} className="rounded border border-primary/40 px-3 py-2 text-sm text-primary disabled:opacity-40">{download?"Download PDF":"View invoice"}</button>)}</div></article>)}
+ {!loading&&!error&&!invoices.length&&<p className="mt-5 text-sm text-white/60">Invoices appear after verified payment.</p>}
+ {!invoices.length&&summary&&<article className="mt-4 rounded-xl border border-white/10 bg-[#1A2235] p-5"><h3 className="font-medium">Order summary</h3>{summary}</article>}
+ {total>20&&<div className="mt-4 flex gap-4 text-sm"><button disabled={page===0||loading} onClick={()=>setPage(v=>v-1)}>Previous</button><span>Page {page+1}</span><button disabled={(page+1)*20>=total||loading} onClick={()=>setPage(v=>v+1)}>Next</button></div>}
+ </section>;
+}

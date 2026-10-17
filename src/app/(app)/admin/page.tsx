@@ -135,6 +135,12 @@ const soulmateOptions: AdminOption[] = [
   },
 ];
 
+const usSoulmateOptions: AdminOption[] = soulmateOptions.map((option) => ({
+  ...option, id: `us-${option.id}`, title: `US ${option.title}`,
+  description: option.description.replaceAll("Soulmate", "US Soulmate"),
+  href: option.href.replace("/admin/soulmate", "/admin/us-soulmate"),
+}));
+
 export default function AdminDashboardPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -253,6 +259,25 @@ export default function AdminDashboardPage() {
           <h2 id="soulmate-workspace-title" className="mb-3 text-sm font-medium text-white/50">Soulmate workspace</h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {soulmateOptions.map((option, index) => <motion.button
+              key={option.id}
+              type="button"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.08 * index }}
+              onClick={() => router.push(option.href)}
+              className="group flex items-start gap-4 rounded-2xl border border-white/10 bg-[#1A2235] p-6 text-left transition-colors hover:border-primary/45 hover:bg-[#1A2235]/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+            >
+              <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${option.bgColor}`}><option.icon className={`h-6 w-6 ${option.color}`} aria-hidden="true" /></span>
+              <span className="min-w-0 flex-1"><span className="block text-lg font-semibold text-white">{option.title}</span><span className="mt-1 block text-sm leading-relaxed text-white/50">{option.description}</span></span>
+              <ChevronRight className="mt-1 h-5 w-5 shrink-0 text-white/30 transition-transform group-hover:translate-x-1 group-hover:text-primary" aria-hidden="true" />
+            </motion.button>)}
+          </div>
+        </section>
+
+        <section aria-labelledby="us-soulmate-workspace-title" className="mt-8">
+          <h2 id="us-soulmate-workspace-title" className="mb-3 text-sm font-medium text-white/50">US Soulmate workspace</h2>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {usSoulmateOptions.map((option, index) => <motion.button
               key={option.id}
               type="button"
               initial={{ opacity: 0, y: 16 }}

@@ -7,6 +7,7 @@ const ATTRIBUTION_KEYS = [
 const ATTRIBUTION_COOKIE_AGE = 30 * 24 * 60 * 60;
 
 function withAttribution(request: NextRequest, response: NextResponse): NextResponse {
+  if (request.nextUrl.pathname === "/us/soulmate" || request.nextUrl.pathname.startsWith("/us/soulmate/")) return response;
   const params = request.nextUrl.searchParams;
   // A touch is a tagged landing, not every later navigation without campaign parameters.
   if (!ATTRIBUTION_KEYS.some((key) => params.has(key))) return response;
