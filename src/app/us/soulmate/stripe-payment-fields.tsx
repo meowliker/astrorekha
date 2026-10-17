@@ -86,7 +86,12 @@ export function StripePaymentFields({ signature, amount, enabled, onPayment }: {
         element.on("ready", () => { if (active) { elementReady = true; window.clearTimeout(fieldTimeout); setStatus(""); publish(); } });
         element.on("change", (event) => { complete = event.complete; publish(); });
         element.on("loaderror", () => fail(new Error("Secure payment fields could not load. Please try again.")));
-        fieldTimeout = window.setTimeout(() => fail(new Error("Secure payment fields are taking too long to load. Please try again.")), 30000);
+        fieldTimeout = window.setTimeout(() => {
+          if (!active || elementReady) return;
+          // Retry one stalled initial iframe automatically; no card data exists before ready.
+          if (retry === 0) setRetry(1);
+          else fail(new Error("Secure payment fields are taking too long to load. Please try again."));
+        }, retry === 0 ? 10000 : 30000);
         element.mount(mount.current!);
       } catch (cause) { fail(cause); }
     }
