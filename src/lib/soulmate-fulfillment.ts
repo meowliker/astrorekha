@@ -1,4 +1,5 @@
 import type { SoulmateEntitlements } from "./soulmate-cart";
+import { soulmateDeliveryTemplate } from "./soulmate-delivery-template";
 import crypto from "crypto";
 import dns from "node:dns/promises";
 import { isIP } from "node:net";
@@ -7,8 +8,8 @@ import { choices, getZodiac, sanitizeAnswers, steps, type Answers } from "@/app/
 
 export const SKETCH_BUCKET = "soulmate-sketches-private";
 type DB = ReturnType<typeof getSupabaseAdmin>;
-export type GenerationJob = { order_id: string; status: string; lease_id: string; provider_job_id: string | null; prompt: string | null; generation_attempts: number; failures: number; storage_path: string | null; image_sha256: string | null; created_at: string };
-type Order = { catalog_version?: number; review_status?: string; entitlements?: SoulmateEntitlements; id: string; answers: Answers; customer_email: string; customer_name: string; paid_at: string; payment_status: string; scheduled_send_at: string };
+export type GenerationJob = { order_id: string; answer_revision: number; status: string; lease_id: string; provider_job_id: string | null; prompt: string | null; generation_attempts: number; failures: number; storage_path: string | null; image_sha256: string | null; created_at: string };
+type Order = { answer_revision: number; catalog_version?: number; review_status?: string; entitlements?: SoulmateEntitlements; id: string; answers: Answers; customer_email: string; customer_name: string; paid_at: string; payment_status: string; scheduled_send_at: string };
 type Email = { id: string; order_id: string; status: string; scheduled_at: string; provider_message_id: string | null; submitted_at: string | null };
 const later = (minutes: number) => new Date(Date.now() + minutes * 60000).toISOString();
 
@@ -37,6 +38,14 @@ async function patchJob(db: DB, job: GenerationJob, patch: Record<string, unknow
 async function patchEmail(db: DB, email: Email, patch: Record<string, unknown>) {
   const { error } = await db.from("soulmate_email_deliveries").update({ ...patch, updated_at: new Date().toISOString() }).eq("order_id", email.order_id);
   if (error) throw new Error("Unable to checkpoint email");
+}
+class StaleGenerationJob extends Error {}
+async function assertCurrentGeneration(db: DB, job: GenerationJob, order: Order) {
+  const current = await db.rpc("begin_soulmate_delivery", { p_order: job.order_id, p_revision: job.answer_revision, p_lease: job.lease_id });
+  if (current.error) throw new Error("Unable to claim delivery submission");
+  if (!current.data || job.answer_revision !== order.answer_revision) {
+    throw new StaleGenerationJob("Order answers changed during generation");
+  }
 }
 function kieHeaders() {
   if (!process.env.KIE_API_KEY) throw new Error("Missing KIE_API_KEY");
@@ -83,7 +92,7 @@ async function downloadImage(source: string): Promise<{ buffer: Buffer; contentT
 export function emailBody(order: Order, email: Email, attachment: Buffer, filename: string, now = Date.now()) {
   // Plain greeting avoids interpolating user-controlled HTML into the email.
   return {
-    sender: { email: process.env.BREVO_SENDER_EMAIL || "team@astrorekha.com", name: process.env.BREVO_SENDER_NAME || "AstroRekha" },
+    sender: { email: process.env.BREVO_SENDER_EMAIL || "team@astrorekha.com", name: "Astro Rekha" },
     to: [{ email: order.customer_email, name: order.customer_name }],
     subject: "Your personalized soulmate sketch is here",
     htmlContent: `<p>Hello,</p><p>Your personalized soulmate sketch is attached. It was created using the preferences you confirmed when ordering.</p><p>You can download and keep the attached image.</p><p>Order reference: ${order.id}</p><p>With warmth,<br>Astro Rekha</p><p><small>An artistic interpretation for entertainment and self-reflection.</small></p>`,
@@ -182,12 +191,11 @@ export async function processSoulmateJob(db: DB, job: GenerationJob) {
       } else if (email.status === "pending") {
         const headers = brevoHeaders();
         const attachments = await reviewedAttachments(db, order);
+        await assertCurrentGeneration(db, job, order);
         const body = { ...emailBody(order, email, Buffer.from(""), "unused"),
-          subject: "Your soulmate sketch and purchased reports are ready",
-          htmlContent: `<p>Hello,</p><p>Your reviewed soulmate sketch and all written reports included in your order are attached. Download and keep these files.</p><p>Order reference: ${order.id}</p><p>With warmth,<br>AstroRekha</p><p><small>An artistic interpretation for entertainment and self-reflection.</small></p>`,
+          ...soulmateDeliveryTemplate(order),
           attachment: attachments,
         };
-        await patchEmail(db, email, { status: "submitting", submitted_at: new Date().toISOString() });
         const response = await fetch("https://api.brevo.com/v3/smtp/email", { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
         const payload = await response.json();
         if (!response.ok || !payload.messageId) throw new Error("Brevo submission did not return a message id");
@@ -222,7 +230,7 @@ export async function processSoulmateJob(db: DB, job: GenerationJob) {
       } else if (state === "success") {
         const result = JSON.parse(payload.data.resultJson || "{}");
         const image = await downloadImage(result.resultUrls?.[0]);
-        const storagePath = `${order.id}/sketch.${image.extension}`;
+        const storagePath = `${order.id}/revision-${job.answer_revision}/sketch.${image.extension}`;
         const upload = await db.storage.from(SKETCH_BUCKET).upload(storagePath, image.buffer, { contentType: image.contentType, upsert: false });
         if (upload.error) {
           // Crash recovery: verify an existing object rather than overwriting an already saved sketch.
@@ -245,8 +253,8 @@ export async function processSoulmateJob(db: DB, job: GenerationJob) {
         if (stored.error || !stored.data) throw new Error("Saved sketch unavailable");
         const buffer = Buffer.from(await stored.data.arrayBuffer());
         if (crypto.createHash("sha256").update(buffer).digest("hex") !== job.image_sha256) throw new Error("Sketch integrity check failed");
+        await assertCurrentGeneration(db, job, order);
         const body = emailBody(order, email, buffer, `AstroRekha-${order.id}.${job.storage_path.split(".").pop()}`);
-        await patchEmail(db, email, { status: "submitting", submitted_at: new Date().toISOString() });
         const res = await fetch("https://api.brevo.com/v3/smtp/email", { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
         const payload = await res.json();
         if (!res.ok || !payload.messageId) throw new Error("Brevo submission did not return a message id");
@@ -257,6 +265,9 @@ export async function processSoulmateJob(db: DB, job: GenerationJob) {
     await patchJob(db, job, { lease_id: null, lease_until: null, next_attempt_at: next });
     return { orderId: job.order_id, ok: true };
   } catch (cause) {
+    if (cause instanceof StaleGenerationJob) return { orderId: job.order_id, ok: true };
+    const current = await db.from("soulmate_generation_jobs").select("lease_id,answer_revision").eq("order_id", job.order_id).maybeSingle();
+    if (!current.error && current.data && (current.data.lease_id !== job.lease_id || current.data.answer_revision !== job.answer_revision)) return { orderId: job.order_id, ok: true };
     // Never log provider payloads, personal answers, email addresses, or credentials.
     const message = cause instanceof Error ? cause.message.slice(0, 180) : "Fulfillment failed";
     await patchJob(db, job, { failures: job.failures + 1, ...(job.failures >= 11 ? { status: "needs_review" } : {}), last_error: message, lease_id: null, lease_until: null, next_attempt_at: later(Math.min(15, 2 ** Math.min(job.failures, 4))) });

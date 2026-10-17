@@ -4,6 +4,10 @@
   "framework": "nextjs",
   "crons": [
     {
+      "path": "/api/cron/sync-soulmate-profit",
+      "schedule": "15 * * * *"
+    },
+    {
       "path": "/api/admin/sync-sheets",
       "schedule": "0 6 * * *"
     },

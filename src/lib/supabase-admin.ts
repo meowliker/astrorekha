@@ -1,8 +1,8 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 // Server-side Supabase client (uses service role key — never expose to client)
-// Creates a fresh client each time to avoid stale data in serverless functions
-export function getSupabaseAdmin(): SupabaseClient {
+// A fresh client alone does not bypass Next's persistent fetch cache.
+export function getSupabaseAdmin(options: { fresh?: boolean } = {}): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -13,6 +13,9 @@ export function getSupabaseAdmin(): SupabaseClient {
   }
 
   return createClient(url, serviceRoleKey, {
+    ...(options.fresh ? {
+      global: { fetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, { ...init, cache: "no-store" }) },
+    } : {}),
     auth: {
       autoRefreshToken: false,
       persistSession: false,

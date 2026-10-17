@@ -20,14 +20,14 @@ const stageStyle: Record<SoulmateOrderStage, string> = {
 
 export function SoulmateOrdersPanel() {
   const router = useRouter();
-  const [mode,setMode]=useState("all"),[status,setStatus]=useState("all"),[search,setSearch]=useState(""),[query,setQuery]=useState("");
+  const [mode,setMode]=useState("all"),[search,setSearch]=useState(""),[query,setQuery]=useState("");
   const [page,setPage]=useState(0),[revision,setRevision]=useState(0),[orders,setOrders]=useState<SoulmateOrderView[]>([]),[total,setTotal]=useState(0),[error,setError]=useState(""),[loading,setLoading]=useState(true);
 
   useEffect(()=>{
     const abort=new AbortController();setLoading(true);setError("");
-    fetch(`/api/admin/soulmate/orders?${new URLSearchParams({ mode,status,search:query,page:String(page) })}`,{headers:auth(),cache:"no-store",signal:abort.signal}).then(async(response)=>{const result=await response.json();if(!response.ok)throw new Error(result.error);if(!abort.signal.aborted){setOrders(result.orders);setTotal(result.total);}}).catch((cause)=>{if(!abort.signal.aborted)setError(cause.message||"Unable to load orders");}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});
+    fetch(`/api/admin/soulmate/orders?${new URLSearchParams({ mode,search:query,page:String(page) })}`,{headers:auth(),cache:"no-store",signal:abort.signal}).then(async(response)=>{const result=await response.json();if(!response.ok)throw new Error(result.error);if(!abort.signal.aborted){setOrders(result.orders);setTotal(result.total);}}).catch((cause)=>{if(!abort.signal.aborted)setError(cause.message||"Unable to load orders");}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});
     return()=>abort.abort();
-  },[mode,status,query,page,revision]);
+  },[mode,query,page,revision]);
 
   const rangeStart = total === 0 ? 0 : page * 25 + 1;
   const rangeEnd = Math.min((page + 1) * 25, total);
@@ -42,7 +42,6 @@ export function SoulmateOrdersPanel() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <select aria-label="Payment environment" className={controlStyle} value={mode} onChange={(event)=>{setMode(event.target.value);setPage(0);}}><option value="all">All environments</option><option value="live">Live payments</option><option value="test">Test payments</option></select>
-          <select aria-label="Payment status" className={controlStyle} value={status} onChange={(event)=>{setStatus(event.target.value);setPage(0);}}>{["all","paid","pending","created","failed"].map((value)=><option key={value} value={value}>{value === "all" ? "All payment statuses" : value[0].toUpperCase()+value.slice(1)}</option>)}</select>
           <button type="submit" className={`${controlStyle} hover:bg-white/5`}>Search</button>
           <button type="button" aria-label="Refresh orders" className="grid h-9 w-9 place-items-center rounded-lg bg-white/10 text-white/65 transition-colors hover:bg-white/15 hover:text-white disabled:opacity-50" disabled={loading} onClick={()=>setRevision((value)=>value+1)}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /></button>
         </div>
@@ -87,6 +86,6 @@ export function SoulmateOrdersPanel() {
         <div className="flex items-center gap-2"><button type="button" aria-label="Previous page" className="grid h-8 w-8 place-items-center rounded-md border border-white/10 transition-colors hover:bg-white/10 disabled:opacity-30" disabled={page===0||loading} onClick={()=>setPage((value)=>value-1)}><ChevronLeft className="h-4 w-4" /></button><span className="px-2">Page {page+1}</span><button type="button" aria-label="Next page" className="grid h-8 w-8 place-items-center rounded-md border border-white/10 transition-colors hover:bg-white/10 disabled:opacity-30" disabled={(page+1)*25>=total||loading} onClick={()=>setPage((value)=>value+1)}><ChevronRight className="h-4 w-4" /></button></div>
       </div>
     </div>
-    <p className="mt-3 text-xs text-white/35">Ordered, generated, scheduled, delivered and failed states are derived from the isolated Soulmate payment and fulfilment records.</p>
+    <p className="mt-3 text-xs text-white/35">Only paid orders are shown. Status tracks preparation and delivery, including any fulfilment failures.</p>
   </section>;
 }

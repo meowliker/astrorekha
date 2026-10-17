@@ -61,7 +61,7 @@ export async function sendSoulmateConfirmation(id: string) {
   if (!claim.data) return invoice;
   try {
     const response=await fetch("https://api.brevo.com/v3/smtp/email",{method:"POST",headers:{"api-key":key,"Content-Type":"application/json"},signal:AbortSignal.timeout(15000),body:JSON.stringify({
-      sender:{email:process.env.BREVO_SENDER_EMAIL||"team@astrorekha.com",name:"AstroRekha"},
+      sender:{email:process.env.BREVO_SENDER_EMAIL||"team@astrorekha.com",name:"Astro Rekha"},
       to:[{email:invoice.snapshot.customerEmail,name:invoice.snapshot.customerName}],
       subject:email.subject,htmlContent:email.html,textContent:email.text,
       attachment:[{name:`${invoice.invoice_number}.pdf`,content:pdf.toString("base64")}],

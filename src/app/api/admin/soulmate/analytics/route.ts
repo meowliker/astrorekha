@@ -23,7 +23,7 @@ async function bounceRate(startDate: string, endDate: string) {
 }
 
 export async function GET(request: NextRequest) {
-  const db = getSupabaseAdmin();
+  const db = getSupabaseAdmin({ fresh: true });
   const token = request.headers.get("authorization")?.replace(/^Bearer /, "");
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const session = await db.from("admin_sessions").select("expires_at").eq("id", token).maybeSingle();

@@ -5,10 +5,8 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   DollarSign,
-  BarChart3,
   LogOut,
   ChevronRight,
-  TrendingUp,
   FlaskConical,
   Shield,
   Tag,
@@ -17,6 +15,8 @@ import {
   Radar,
   Activity,
   Sparkles,
+  ChartNoAxesCombined,
+  TableProperties,
   type LucideIcon,
 } from "lucide-react";
 
@@ -93,6 +93,36 @@ const adminOptions: AdminOption[] = [
     href: "/admin/ab-tests",
     color: "text-purple-400",
     bgColor: "bg-purple-500/20",
+  },
+];
+
+const soulmateOptions: AdminOption[] = [
+  {
+    id: "soulmate-orders",
+    title: "Soulmate Orders",
+    description: "Review purchases, customer answers, generation and delivery status",
+    icon: Sparkles,
+    href: "/admin/soulmate/orders",
+    color: "text-rose-300",
+    bgColor: "bg-rose-500/15",
+  },
+  {
+    id: "soulmate-analytics",
+    title: "Soulmate Analytics",
+    description: "Track landings, checkout rate, conversion and campaign traffic",
+    icon: ChartNoAxesCombined,
+    href: "/admin/soulmate/analytics",
+    color: "text-violet-300",
+    bgColor: "bg-violet-500/15",
+  },
+  {
+    id: "soulmate-profit",
+    title: "Soulmate Profit Sheet",
+    description: "Review isolated sales, costs, net profit and return on ad spend",
+    icon: TableProperties,
+    href: "/admin/soulmate/profit",
+    color: "text-emerald-300",
+    bgColor: "bg-emerald-500/15",
   },
 ];
 
@@ -212,66 +242,22 @@ export default function AdminDashboardPage() {
 
         <section aria-labelledby="soulmate-workspace-title" className="mt-8">
           <h2 id="soulmate-workspace-title" className="mb-3 text-sm font-medium text-white/50">Soulmate workspace</h2>
-          <button
-            type="button"
-            onClick={() => router.push("/admin/soulmate")}
-            className="group flex w-full items-center gap-4 rounded-2xl border border-rose-300/20 bg-[#1A2235] p-6 text-left transition-colors hover:border-rose-300/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-rose-300"
-          >
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-rose-500/15"><Sparkles className="h-6 w-6 text-rose-300" aria-hidden="true" /></span>
-            <span className="flex-1"><span className="block text-lg font-semibold text-white">Soulmate Dashboard</span><span className="mt-1 block text-sm text-white/50">Orders, sketch generation, email delivery, analytics, and profit for the soulmate page.</span><span className="mt-2 block text-xs text-rose-200/70">Orders & analytics connected</span></span>
-            <ChevronRight className="h-5 w-5 shrink-0 text-white/30 transition-transform group-hover:translate-x-1" aria-hidden="true" />
-          </button>
-        </section>
-
-        {/* Quick Stats Preview */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="mt-8 bg-[#1A2235] border border-white/10 rounded-2xl p-6"
-        >
-          <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-primary" />
-            Quick Actions
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <button
-              onClick={() => router.push("/admin/whatsapp")}
-              className="p-4 bg-white/5 hover:bg-white/10 rounded-xl text-center transition-colors"
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {soulmateOptions.map((option, index) => <motion.button
+              key={option.id}
+              type="button"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.08 * index }}
+              onClick={() => router.push(option.href)}
+              className="group flex items-start gap-4 rounded-2xl border border-white/10 bg-[#1A2235] p-6 text-left transition-colors hover:border-primary/45 hover:bg-[#1A2235]/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
             >
-              <MessageCircle className="w-6 h-6 text-emerald-400 mx-auto mb-2" />
-              <span className="text-white/70 text-sm">WhatsApp</span>
-            </button>
-            <button
-              onClick={() => router.push("/admin/revenue")}
-              className="p-4 bg-white/5 hover:bg-white/10 rounded-xl text-center transition-colors"
-            >
-              <DollarSign className="w-6 h-6 text-green-400 mx-auto mb-2" />
-              <span className="text-white/70 text-sm">View Revenue</span>
-            </button>
-            <button
-              onClick={() => router.push("/admin/ab-tests")}
-              className="p-4 bg-white/5 hover:bg-white/10 rounded-xl text-center transition-colors"
-            >
-              <FlaskConical className="w-6 h-6 text-purple-400 mx-auto mb-2" />
-              <span className="text-white/70 text-sm">Manage Tests</span>
-            </button>
-            <button
-              onClick={() => router.push("/admin/orders")}
-              className="p-4 bg-white/5 hover:bg-white/10 rounded-xl text-center transition-colors"
-            >
-              <ShoppingBag className="w-6 h-6 text-cyan-400 mx-auto mb-2" />
-              <span className="text-white/70 text-sm">Orders</span>
-            </button>
-            <button
-              onClick={() => router.push("/admin/revenue")}
-              className="p-4 bg-white/5 hover:bg-white/10 rounded-xl text-center transition-colors"
-            >
-              <BarChart3 className="w-6 h-6 text-orange-400 mx-auto mb-2" />
-              <span className="text-white/70 text-sm">Analytics</span>
-            </button>
+              <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${option.bgColor}`}><option.icon className={`h-6 w-6 ${option.color}`} aria-hidden="true" /></span>
+              <span className="min-w-0 flex-1"><span className="block text-lg font-semibold text-white">{option.title}</span><span className="mt-1 block text-sm leading-relaxed text-white/50">{option.description}</span></span>
+              <ChevronRight className="mt-1 h-5 w-5 shrink-0 text-white/30 transition-transform group-hover:translate-x-1 group-hover:text-primary" aria-hidden="true" />
+            </motion.button>)}
           </div>
-        </motion.div>
+        </section>
 
         {/* Footer */}
         <motion.p

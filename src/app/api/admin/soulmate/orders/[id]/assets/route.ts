@@ -32,7 +32,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const jpg = buffer[0]===255 && buffer[1]===216 && buffer[2]===255;
     const webp = buffer.toString("ascii",0,4)==="RIFF" && buffer.toString("ascii",8,12)==="WEBP";
     const pdf = buffer.toString("ascii",0,5)==="%PDF-";
-    if (kind === "sketch" ? !png && !jpg && !webp : !pdf) return NextResponse.json({ error: "Use PNG/JPEG/WebP for the sketch and PDF for written reports." }, { status: 400 });
+    if (kind === "sketch" ? !pdf && !png && !jpg && !webp : !pdf) return NextResponse.json({ error: "Use PDF or PNG/JPEG/WebP for the sketch and PDF for written reports." }, { status: 400 });
     const extension = png ? "png" : jpg ? "jpg" : webp ? "webp" : "pdf";
     const contentType = pdf ? "application/pdf" : `image/${extension === "jpg" ? "jpeg" : extension}`;
     const storagePath = `${params.id}/${kind}-${crypto.randomUUID()}.${extension}`;

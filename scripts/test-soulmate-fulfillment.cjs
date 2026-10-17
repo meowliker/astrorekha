@@ -15,14 +15,20 @@ const db = {
   from(table) {
     assert.ok(['soulmate_orders', 'soulmate_generation_jobs', 'soulmate_email_deliveries', 'soulmate_order_assets'].includes(table));
     const filters = []; let values;
-    const q = { select() { return q; }, update(v) { values = v; return q; }, eq(k,v) { filters.push(row => row[k] === v); return q; }, single() { return run(); }, then(ok,fail) { return run().then(ok,fail); } };
+    const q = { select() { return q; }, update(v) { values = v; return q; }, eq(k,v) { filters.push(row => row[k] === v); return q; }, single() { return run(); }, maybeSingle() { return run(); }, then(ok,fail) { return run().then(ok,fail); } };
     async function run() { if(table==='soulmate_order_assets')return {data:assets,error:null}; const row = rows[table]; if (!filters.every(f => f(row))) return { data: null, error: { code: 'not-found' } }; if (values) Object.assign(row, values); return { data: { ...row }, error: null }; }
     return q;
   },
   storage: { from(bucket) { assert.equal(bucket, 'soulmate-sketches-private'); return {
-    async upload(key, buffer, options) { assert.equal(key, `${order.id}/sketch.jpg`); assert.equal(options.upsert, false); image = Buffer.from(buffer); uploadCount++; return { error: null }; },
-    async download(key) { if(files[key])return {data:new Blob([files[key]]),error:null}; assert.equal(key, `${order.id}/sketch.jpg`); return image ? { data: new Blob([image]), error: null } : { data: null, error: {} }; },
+    async upload(key, buffer, options) { assert.equal(key, `${order.id}/revision-${job.answer_revision}/sketch.jpg`); assert.equal(options.upsert, false); image = Buffer.from(buffer); uploadCount++; return { error: null }; },
+    async download(key) { if(files[key])return {data:new Blob([files[key]]),error:null}; assert.ok([`${order.id}/sketch.jpg`,`${order.id}/revision-${job.answer_revision}/sketch.jpg`].includes(key)); return image ? { data: new Blob([image]), error: null } : { data: null, error: {} }; },
   }; } },
+  async rpc(name, params) {
+    assert.equal(name, 'begin_soulmate_delivery');
+    if (params.p_revision!==order.answer_revision || params.p_lease!==job.lease_id || email.status!=='pending') return {data:false,error:null};
+    email.status='submitting'; email.submitted_at=new Date().toISOString();
+    return {data:true,error:null};
+  },
 };
 function run() { job.lease_id = crypto.randomUUID(); return processSoulmateJob(db, { ...job }); }
 beforeEach(() => {
@@ -31,6 +37,7 @@ beforeEach(() => {
   job = { order_id: order.id, status: 'queued', provider_job_id: null, prompt: null, generation_attempts: 0, failures: 0, storage_path: null, image_sha256: null, created_at: new Date().toISOString() };
   email = { order_id: order.id, id: crypto.randomUUID(), status: 'pending', scheduled_at: order.scheduled_send_at, provider_message_id: null, submitted_at: null };
   rows = { soulmate_orders: order, soulmate_generation_jobs: job, soulmate_email_deliveries: email };
+  order.answer_revision=1; job.answer_revision=1;
   image = null; uploadCount = 0; calls = []; assets=[];files={};
   global.fetch = async (url, init = {}) => { calls.push({ url: String(url), init }); throw new Error('Unexpected network request'); };
 });
@@ -118,4 +125,12 @@ test('incomplete or altered bundle cannot be emailed',async()=>{
 });
 test('missing email configuration does not mark bundle submitted',async()=>{
   bundle();delete process.env.BREVO_API_KEY;assert.equal((await run()).ok,false);assert.equal(email.status,'pending');assert.equal(calls.length,0);
+});
+
+test('an answer revision during attachment download prevents stale delivery',async()=>{
+  bundle();
+  const original=db.storage.from;
+  db.storage.from=(bucket)=>{const store=original(bucket);return {...store,download:async(key)=>{const result=await store.download(key);order.answer_revision=2;job.answer_revision=2;job.lease_id=null;return result;}};};
+  try { assert.equal((await run()).ok,true);assert.equal(email.status,'pending');assert.equal(calls.length,0); }
+  finally { db.storage.from=original; }
 });
