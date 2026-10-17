@@ -3,7 +3,7 @@
 The complete standalone Soulmate experience is copied to `/us/soulmate`, with checkout at
 `/us/soulmate/checkout` and payment confirmation at `/us/soulmate/payment`. Visuals, questions,
 package entitlements, report preparation/review and delivery behavior match the existing flow.
-Payments use Stripe Checkout, USD and US +1 phone numbers. Approved base prices are $37 for Soulmate Sketch and $67 for Complete Soulmate Vision. Standard extras are description $67, color $37 and priority delivery $29.95; Vision’s optional connection timeline is $19.
+Payments use inline Stripe Payment Element and USD. US checkout collects email only. Approved base prices are $37 for Soulmate Sketch and $67 for Complete Soulmate Vision. Standard extras are description $67, color $37 and priority delivery $29.95; Vision’s optional connection timeline is $19.
 
 ## Admin workspace
 
@@ -50,11 +50,11 @@ main or India Soulmate provider credentials are used as fallbacks. Public values
 1. The six approved USD prices are built into the US catalog and listed in the dedicated env template. The
    standard basket has three optional extras; express includes description/colour/priority and has
    the optional timeline. Explicit blank or invalid overrides block payment. Without overrides the approved US prices apply.
-2. Configure dedicated Stripe test credentials and a random receipt secret of at least 32 characters.
-   Hosted Checkout needs no publishable key. Set `US_SOULMATE_STRIPE_MODE=test` for test checkout;
-   its secret must start `sk_test_`. Live mode requires `sk_live_`.
+2. Configure dedicated Stripe test credentials (matching `NEXT_PUBLIC_US_SOULMATE_STRIPE_PUBLISHABLE_KEY` and `US_SOULMATE_STRIPE_SECRET_KEY`) and a random receipt secret of at least 32 characters.
+   Both keys are required for inline payment fields. Set `US_SOULMATE_STRIPE_MODE=test` for test checkout;
+   use `pk_test_` with `sk_test_`. Live mode requires `pk_live_` with `sk_live_`.
 3. Configure the Stripe endpoint `https://astrorekha.com/api/us/soulmate/payment/webhook`, using API
-   version `2024-06-20`, for `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
+   version `2026-03-25.dahlia`, for `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
    `checkout.session.async_payment_failed` and `checkout.session.expired`. Store that endpoint's
    signing secret in `US_SOULMATE_STRIPE_WEBHOOK_SECRET`.
 4. Set `US_SOULMATE_CHECKOUT_ENABLED=true` only when Stripe setup is ready. Run a Stripe
@@ -102,3 +102,12 @@ Existing schema names such as `amount_paise`, `spendInr` and `gst_amount` remain
 
 Offline tests mock Stripe/provider calls and do not prove live account activation, payment-method
 eligibility or email deliverability. A real Stripe test-mode integration run awaits credentials.
+
+
+## Inline card checkout
+
+The US checkout loads Stripe.js directly from `js.stripe.com/endive/stripe.js` and creates Checkout Sessions with `ui_mode=elements` using API `2026-03-25.dahlia`. Card fields are Stripe-hosted iframes; card data never enters app state or our API. The existing Pay Now button confirms with `redirect: if_required`, then opens the internal receipt in the same tab. Bank authentication may still be required. Only card payments are enabled for this integration.
+
+The payment form prepares after a valid email and complete preferences. Editing email or the basket invalidates the displayed payment session; Pay Now remains disabled until the new session amount is checked against the displayed total and the payment fields are complete. Client secrets are kept in memory only. Server verification/webhooks remain the authority for payment and fulfillment.
+
+Apply `20261017200000_us_soulmate_optional_phone.sql` before enabling checkout. New US orders save null for the legacy phone column; analytics omit missing phone hashes. Neither older funnel changes. Without the dedicated publishable key, the payment panel shows an unavailable message and does not create orders. Rebuild after setting the public key. Test successful, declined and bank-authenticated cards plus changing extras before launching.

@@ -24,7 +24,7 @@ export function soulmatePurchasePayloads(order: SoulmateOrder) {
       event_time: Math.floor(Date.parse(order.paid_at!) / 1000), action_source: "website",
       event_source_url: "https://astrorekha.com/us/soulmate/payment",
       user_data: {
-        em: [hash(order.customer_email.trim().toLowerCase())], ph: [hash(order.customer_phone.replace(/\D/g, ""))],
+        em: [hash(order.customer_email.trim().toLowerCase())], ...(order.customer_phone ? { ph: [hash(order.customer_phone.replace(/\D/g, ""))] } : {}),
         ...(marketing.fbp ? { fbp: marketing.fbp } : {}), ...(marketing.fbc ? { fbc: marketing.fbc } : {}),
         ...(attribution.userAgent ? { client_user_agent: attribution.userAgent } : {}),
       },

@@ -1,6 +1,6 @@
 import type { SoulmateEntitlements, SoulmateLineItem, SoulmateAssetKind } from "./us-soulmate-cart";
 export type SoulmateOrderView = {
-  id: string; plan: string; product_info: string; checkout_environment: "local" | "preview" | "production" | "unknown"; customer_name: string; customer_email: string; customer_phone: string;
+  id: string; plan: string; product_info: string; checkout_environment: "local" | "preview" | "production" | "unknown"; customer_name: string; customer_email: string; customer_phone: string | null;
   answers: Record<string,string>; answer_revision: number; answers_updated_at: string | null; catalog_version: number; line_items: SoulmateLineItem[]; add_ons: string[];
   entitlements: SoulmateEntitlements; base_amount: number; gst_amount: number; amount: number;
   payment_status: string; payment_mode: string; stripe_payment_id: string | null; paid_at: string | null;

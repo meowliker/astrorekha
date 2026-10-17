@@ -39,7 +39,8 @@ test('both checkout packages render with valid original artwork and approved USD
     assert.match(html, /<dt>Tax<\/dt>/);
     assert.match(html, planId === 'standard' ? /\$6.66/ : /\$12.06/);
     assert.match(html, /Payments are securely processed by Stripe/);
-    assert.doesNotMatch(html, /₹|PayU|NaN|GST|18%/);
+    assert.doesNotMatch(html, /₹|PayU|NaN|GST|18%|sketch-phone|name="phone"|type="tel"|secure window/);
+    assert.match(html, /Secure card payments will be available soon/);
     assert.match(html, /us-soulmate-lander\/stories\/astrorekha-clean-5.png/);
     assert.doesNotMatch(html, /astrorekha-us-soulmate-description.png/);
     if(planId==='standard') assert.match(html, /checkout\/astrorekha-soulmate-description.png/);

@@ -20,7 +20,7 @@ begin
   if exists(select 1 from soulmate_sessions where id=seed) then raise exception 'Session leaked to India'; end if;
   insert into us_soulmate_orders(id,checkout_key,checkout_fingerprint,plan,customer_name,customer_email,customer_phone,answers,
     base_amount,gst_amount,amount,delivery_hours,product_info,payment_mode,catalog_version,line_items,entitlements,session_id)
-  values(order_id,gen_random_uuid(),'fixture','express','Fixture','fixture@example.com','12025550123',
+  values(order_id,gen_random_uuid(),'fixture','express','Fixture','fixture@example.com',null,
     '{"name":"Fixture","heart":"I feel like I’ve been waiting forever","preferenceSelection":"I like men","preference":"I like men","feeling":"Safe — someone who stays","birthDate":"1995-01-01","ethnicity":"White"}',
     2995,539,3534,12,'US fixture','test',2,'[{"id":"us_soulmate_express","name":"Complete Soulmate Vision","amount_paise":2995,"quantity":1}]',
     '{"sketch":"colour","description":true,"timeline":false,"delivery":"express","promised_hours":12,"scheduled_hours":12,"required_assets":["sketch","description"]}',seed);

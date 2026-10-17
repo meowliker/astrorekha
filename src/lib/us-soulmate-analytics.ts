@@ -13,7 +13,7 @@ export function summarizeSoulmateAnalytics(events: SoulmateAnalyticsEvent[], ord
     stages.set(event.event_name, set);
   }
   const cohort = (name: string) => new Set([...(stages.get(name) || [])].filter((id) => landings.has(id)));
-  const chats = cohort("us_soulmate_chat_start"), completed = cohort("us_soulmate_chat_complete"), checkouts = cohort("us_soulmate_checkout_view"), redirects = cohort("us_soulmate_stripe_redirect");
+  const chats = cohort("us_soulmate_chat_start"), completed = cohort("us_soulmate_chat_complete"), checkouts = cohort("us_soulmate_checkout_view"), payments = new Set([...cohort("us_soulmate_stripe_redirect"), ...cohort("us_soulmate_payment_submit")]);
   const buyers = new Set(orders.map((order) => order.attribution?.sessionId).filter((id): id is string => Boolean(id && landings.has(id))));
   const paidCheckouts = [...buyers].filter((id) => checkouts.has(id)).length;
   const campaigns = new Map<string, { source: string; campaign: string; sessions: number; checkoutSessions: number; purchasingSessions: number }>();
@@ -33,7 +33,7 @@ export function summarizeSoulmateAnalytics(events: SoulmateAnalyticsEvent[], ord
     funnel: [
       { label: "Landing viewed", sessions: landings.size }, { label: "Chat started", sessions: chats.size },
       { label: "Answers completed", sessions: completed.size }, { label: "Checkout opened", sessions: checkouts.size },
-      { label: "Sent to Stripe", sessions: redirects.size }, { label: "Verified purchase", sessions: buyers.size },
+      { label: "Payment submitted", sessions: payments.size }, { label: "Verified purchase", sessions: buyers.size },
     ],
     campaigns: [...campaigns.values()].sort((a, b) => b.sessions - a.sessions),
   };

@@ -8,7 +8,7 @@ import { deliveryPlans, sanitizeAnswers, steps } from "@/app/us/soulmate/chat-da
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { usPricesReady } from "@/lib/us-soulmate-prices";
 import { US_SOULMATE_FUNNEL, US_SOULMATE_ORDERS_TABLE, US_SOULMATE_ORDER_PREFIX } from "@/lib/us-soulmate-orders";
-import { createStripeCheckout, stripeConfig, receiptPath, receiptCookie, type SoulmateOrder } from "@/lib/us-soulmate-stripe";
+import { createStripeCheckout, stripeCheckoutConfig, receiptPath, receiptCookie, type SoulmateOrder } from "@/lib/us-soulmate-stripe";
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,20 +25,19 @@ export async function POST(request: NextRequest) {
     const answers = sanitizeAnswers(body.answers);
     const plan = deliveryPlans.find((item) => item.id === body.plan);
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-    const phone = typeof body.phone === "string" && body.phone.length <= 20 ? body.phone.replace(/\D/g, "").replace(/^(?!1\d{10}$)(\d{10})$/, "1$1") : "";
     const checkoutKey = typeof body.checkoutKey === "string" ? body.checkoutKey : "";
     if (!plan || steps.some((step) => !answers[step])) return NextResponse.json({ error: "Please complete your sketch preferences first." }, { status: 400 });
-    if (!/^[^\s@|]+@[^\s@|]+\.[^\s@|]+$/.test(email) || email.length > 254 || !/^1[2-9]\d{9}$/.test(phone) || answers.name!.includes("|")) {
-      return NextResponse.json({ error: "Please enter a valid email and US phone number." }, { status: 400 });
+    if (!/^[^\s@|]+@[^\s@|]+\.[^\s@|]+$/.test(email) || email.length > 254 || answers.name!.includes("|")) {
+      return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
     }
     if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(checkoutKey)) return NextResponse.json({ error: "Please reopen checkout and try again." }, { status: 400 });
     const session = body.session ? sessionCredentials(body.session) : null;
     if (body.session && !session) return NextResponse.json({ error: "Invalid sketch session" }, { status: 400 });
+    const { mode } = stripeCheckoutConfig();
     if (session) await saveSoulmateSession(session, answers);
-    const { mode } = stripeConfig();
     let cart;
     try { cart = buildSoulmateCart(plan.id, body.addOns ?? []); } catch { return NextResponse.json({ error: "Invalid add-ons for this package." }, { status: 400 }); }
-    const fingerprint = crypto.createHash("sha256").update(JSON.stringify({ answers, plan: plan.id, email, phone, mode, cart })).digest("hex");
+    const fingerprint = crypto.createHash("sha256").update(JSON.stringify({ answers, plan: plan.id, email, mode, cart, uiMode: "elements" })).digest("hex");
     const db = getSupabaseAdmin();
     const gaId = process.env.US_SOULMATE_GA4_MEASUREMENT_ID || process.env.NEXT_PUBLIC_US_SOULMATE_GA_ID;
     const gaCookie = gaSessionCookieName(gaId);
@@ -47,7 +46,7 @@ export async function POST(request: NextRequest) {
       id: `${US_SOULMATE_ORDER_PREFIX}${crypto.randomBytes(10).toString("hex")}`,
       session_id: session?.id || null,
       funnel: US_SOULMATE_FUNNEL, checkout_key: checkoutKey, checkout_fingerprint: fingerprint,
-      plan: plan.id, customer_name: answers.name!, customer_email: email, customer_phone: phone, answers,
+      plan: plan.id, customer_name: answers.name!, customer_email: email, customer_phone: null, answers,
       base_amount: cart.baseAmount, gst_amount: cart.gstAmount, amount: cart.amount,
       catalog_version: 2, line_items: cart.lineItems, entitlements: cart.entitlements, add_ons: cart.addOns, review_status: "pending",
       delivery_hours: cart.entitlements.scheduled_hours,

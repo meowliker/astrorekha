@@ -5,7 +5,7 @@ import { sendSoulmatePurchase, type SoulmateAttribution } from "./us-soulmate-pu
 import type { SoulmateLineItem, SoulmateEntitlements } from "./us-soulmate-cart";
 import { US_SOULMATE_FUNNEL, US_SOULMATE_ORDERS_TABLE } from "./us-soulmate-orders";
 export type SoulmateOrder = {
-  id: string; plan: "standard" | "express"; customer_name: string; customer_email: string; customer_phone: string;
+  id: string; plan: "standard" | "express"; customer_name: string; customer_email: string; customer_phone: string | null;
   amount: number; base_amount: number; gst_amount: number; currency: string; product_info: string; delivery_hours: number;
   payment_status: string; payment_mode: "live" | "test"; paid_at: string | null; delivery_due_at: string | null;
   catalog_version?: number; line_items?: SoulmateLineItem[]; entitlements?: SoulmateEntitlements;
@@ -18,13 +18,19 @@ export function stripeConfig() {
   if (!key || !["live", "test"].includes(mode || "") || !key.startsWith(`sk_${mode}_`)) throw new Error("US Stripe configuration unavailable");
   return { key, mode: mode as "live" | "test" };
 }
+export function stripeCheckoutConfig() {
+  const config = stripeConfig();
+  const publicKey = process.env.NEXT_PUBLIC_US_SOULMATE_STRIPE_PUBLISHABLE_KEY?.trim();
+  if (!publicKey?.startsWith(`pk_${config.mode}_`)) throw new Error("US Stripe publishable key unavailable");
+  return config;
+}
 // Explicit Stripe API version and no credential fallback to either earlier funnel.
 export async function stripeRequest(path: string, body?: URLSearchParams, idempotencyKey?: string) {
   const { key } = stripeConfig();
   if (!path.startsWith("/") || path.startsWith("//")) throw new Error("Invalid Stripe path");
   const response = await fetch(`https://api.stripe.com/v1${path}`, {
     method: body ? "POST" : "GET", cache: "no-store", signal: AbortSignal.timeout(20000),
-    headers: { Authorization: `Bearer ${key}`, "Stripe-Version": "2024-06-20", ...(body ? { "Content-Type": "application/x-www-form-urlencoded" } : {}), ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}) },
+    headers: { Authorization: `Bearer ${key}`, "Stripe-Version": "2026-03-25.dahlia", ...(body ? { "Content-Type": "application/x-www-form-urlencoded" } : {}), ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}) },
     ...(body ? { body } : {}),
   });
   const data = await response.json();
@@ -48,15 +54,27 @@ export async function getSoulmateOrder(id: string): Promise<SoulmateOrder | null
   if (result.error) throw new Error("Unable to read US order");
   return result.data;
 }
+function inlineCheckoutResponse(order: SoulmateOrder, session: Record<string, unknown>) {
+  const metadata = session.metadata as Record<string, string> | undefined;
+  if (typeof session.id !== "string" || (order.stripe_session_id && session.id !== order.stripe_session_id) ||
+      session.ui_mode !== "elements" || session.mode !== "payment" || session.currency !== "usd" ||
+      session.amount_total !== order.amount || session.client_reference_id !== order.id ||
+      metadata?.order_id !== order.id || metadata?.funnel !== US_SOULMATE_FUNNEL ||
+      session.livemode !== (order.payment_mode === "live") || typeof session.client_secret !== "string" || !session.client_secret) {
+    throw new Error("Stripe checkout does not match US order");
+  }
+  return { clientSecret: session.client_secret, amount: order.amount, receiptUrl: receiptPath(order.id), orderId: order.id };
+}
 export async function createStripeCheckout(order: SoulmateOrder, origin: string) {
   if (order.payment_mode !== stripeConfig().mode) throw new Error("Payment environment changed");
   if (order.stripe_session_id) {
     const saved = await stripeRequest(`/checkout/sessions/${encodeURIComponent(order.stripe_session_id)}`);
-    if (saved.status !== "open" || !saved.url) return { checkStatus: true, receiptUrl: receiptPath(order.id) };
-    return { url: saved.url, receiptUrl: receiptPath(order.id), orderId: order.id };
+    if (saved.status !== "open") return { checkStatus: true, receiptUrl: receiptPath(order.id) };
+    return inlineCheckoutResponse(order, saved);
   }
   const params = new URLSearchParams({ mode: "payment", customer_email: order.customer_email, client_reference_id: order.id,
-    success_url: `${origin}${receiptPath(order.id)}`, cancel_url: `${origin}/us/soulmate/checkout?plan=${order.plan}`,
+    ui_mode: "elements", return_url: `${origin}${receiptPath(order.id)}`,
+    "payment_method_types[0]": "card", "phone_number_collection[enabled]": "false",
     "metadata[funnel]": US_SOULMATE_FUNNEL, "metadata[order_id]": order.id,
     "payment_intent_data[metadata][funnel]": US_SOULMATE_FUNNEL, "payment_intent_data[metadata][order_id]": order.id,
   });
@@ -73,11 +91,11 @@ export async function createStripeCheckout(order: SoulmateOrder, origin: string)
     params.set(`line_items[${index}][price_data][product_data][name]`, item.name);
     params.set(`line_items[${index}][quantity]`, "1");
   });
-  const session = await stripeRequest("/checkout/sessions", params, `us-soulmate-checkout-${order.id}`);
-  if (!session.id || !session.url) throw new Error("Stripe checkout unavailable");
+  const session = await stripeRequest("/checkout/sessions", params, `us-soulmate-elements-${order.id}`);
+  const result = inlineCheckoutResponse(order, session);
   const saved = await getSupabaseAdmin().from(US_SOULMATE_ORDERS_TABLE).update({ stripe_session_id: session.id }).eq("id", order.id).is("stripe_session_id", null);
   if (saved.error) throw new Error("Unable to save Stripe checkout");
-  return { url: session.url, receiptUrl: receiptPath(order.id), orderId: order.id };
+  return result;
 }
 type StripeCharge = { id: string; created: number; paid: boolean; captured: boolean; currency: string; amount: number };
 type StripeIntent = { id: string; status: string; currency: string; amount_received: number; metadata: Record<string, string>; livemode: boolean; latest_charge: StripeCharge | string | null; last_payment_error?: unknown };
