@@ -74,6 +74,15 @@ test('repair is bounded and invalidates dependent timeline and PDF approval',()=
   assert.throws(()=>repairReportState(next,[{kind:'description',reason:'Repeated text'}]),/after repair/);
   assert.throws(()=>repairReportState(s,[{kind:'sketch',reason:'Invalid image'}]),/manual attention/);
 });
+test('paragraph tolerance permits a fitting 86-word paragraph but rejects excessive prose',()=>{
+  const s={...initialPreparation(order()),description:{report:report(DESCRIPTION_TITLES)},timeline:{report:report(TIMELINE_TITLES)}};
+  const original=s.timeline.report.sections[0].paragraphs[0];
+  const padTo=n=>original+' '+Array.from({length:n-original.split(/\s+/).length},(_,i)=>`detail${String.fromCharCode(97+i%26)}`).join(' ');
+  s.timeline.report.sections[0].paragraphs[0]=padTo(86);
+  assert.deepEqual(deterministicReportIssues(s),[]);
+  s.timeline.report.sections[0].paragraphs[0]=padTo(100);
+  assert(deterministicReportIssues(s).some(i=>i.kind==='timeline'&&/paragraph/.test(i.reason)));
+});
 test('unpaid, delivered and changed-answer snapshots cannot submit provider requests',async()=>{
   for(const patch of [{payment_status:'failed'},{fulfillment_status:'delivered'},{answer_revision:2}]) {
     const h=harness({...order(),...patch});await h.tick();assert.equal(h.calls.length,0);

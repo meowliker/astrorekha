@@ -19,7 +19,9 @@ export function deterministicReportIssues(s: PreparationState): QualityIssue[] {
       const openings = new Set<string>(), sentences = new Set<string>();
       for (const p of paragraphs) {
         const words = p.trim().split(/\s+/);
-        if (words.length < 40 || words.length > 80) issues.push({ kind, reason: "Keep every paragraph and closing between 55 and 70 words, without padding or repetition." });
+        // The prompt targets 55–70 words. Allow modest variation while the separate
+        // rendered-PDF check enforces the actual layout, rather than rejecting a fitting page.
+        if (words.length < 40 || words.length > 90) issues.push({ kind, reason: "Keep every paragraph and closing between 55 and 70 words, without padding or repetition." });
         const opening = words.slice(0, 9).join(" ").toLowerCase();
         if (openings.has(opening)) issues.push({ kind, reason: "Repeated paragraph opening. Give each paragraph a distinct opening and purpose." });
         openings.add(opening);
