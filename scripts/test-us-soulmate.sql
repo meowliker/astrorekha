@@ -22,7 +22,7 @@ begin
     base_amount,gst_amount,amount,delivery_hours,product_info,payment_mode,catalog_version,line_items,entitlements,session_id)
   values(order_id,gen_random_uuid(),'fixture','express','Fixture','fixture@example.com','12025550123',
     '{"name":"Fixture","heart":"I feel like I’ve been waiting forever","preferenceSelection":"I like men","preference":"I like men","feeling":"Safe — someone who stays","birthDate":"1995-01-01","ethnicity":"North Indian"}',
-    2995,0,2995,12,'US fixture','test',2,'[{"id":"us_soulmate_express","name":"Complete Soulmate Vision","amount_paise":2995,"quantity":1}]',
+    2995,539,3534,12,'US fixture','test',2,'[{"id":"us_soulmate_express","name":"Complete Soulmate Vision","amount_paise":2995,"quantity":1}]',
     '{"sketch":"colour","description":true,"timeline":false,"delivery":"express","promised_hours":12,"scheduled_hours":12,"required_assets":["sketch","description"]}',seed);
   if (select currency from us_soulmate_orders where id=order_id)<>'USD' then raise exception 'Wrong currency'; end if;
   update us_soulmate_orders set payment_status='paid',paid_at=now(),stripe_session_id='cs_test_fixture',stripe_payment_id='pi_test_fixture',fulfillment_status='queued' where id=order_id;

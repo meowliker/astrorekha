@@ -1,21 +1,24 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getMetaAccountCredentialsFromSettings, getMetaAdAccountIdsFromEnv, type MetaAdAccountCredentialRange } from "./meta-ad-accounts";
 import { loadSoulmateProfitSettings } from "./us-soulmate-profit-settings";
-import type { TrackingPayment } from "./tracking-dashboard";
+import type { TrackingPayment as BaseTrackingPayment } from "./tracking-dashboard";
 import { parseTrackedUtmVisit, type TrackingUtmVisit } from "./tracking-utm-visits";
 import type { PaymentAttributionPayload } from "./attribution";
 
+type TrackingPayment = BaseTrackingPayment & { taxAmount: number };
+
 export type SoulmateTrackingOrder = {
   id: string; customer_email: string; plan: string; product_info: string;
-  amount: number; payment_status: string; payment_mode: string; funnel: string;
+  amount: number; gst_amount?: number; payment_status: string; payment_mode: string; funnel: string;
   created_at: string; paid_at: string | null;
   attribution: { trackingEnvironment?: string; marketing?: PaymentAttributionPayload } | null;
 };
-const FIELDS = "id,customer_email,plan,product_info,amount,payment_status,payment_mode,funnel,created_at,paid_at,attribution";
+const FIELDS = "id,customer_email,plan,product_info,amount,gst_amount,payment_status,payment_mode,funnel,created_at,paid_at,attribution";
 
 export function trackingPayment(order: SoulmateTrackingOrder): TrackingPayment {
   const tags = order.attribution?.marketing || {};
   return {
+    taxAmount: order.gst_amount || 0,
     id: order.id, payu_txn_id: order.id, customer_email: order.customer_email,
     type: order.plan === "express" ? "Bundle" : "Sketch", bundle_id: null,
     feature: order.product_info, coins: null, amount: order.amount,
@@ -58,7 +61,7 @@ export async function soulmateTrackingParents(db: SupabaseClient, ids: string[])
 export async function soulmateRefundPayments(db: SupabaseClient, start: string, end: string): Promise<TrackingPayment[]> {
   const rows: TrackingPayment[] = [];
   for (let offset = 0; offset < 20000; offset += 500) {
-    const { data, error } = await db.from("us_soulmate_refund_events").select("event_id,order_id,date,amount_paise,occurred_at")
+    const { data, error } = await db.from("us_soulmate_refund_events").select("event_id,order_id,date,amount_paise,gst_paise,occurred_at")
       .gte("date", new Date(Date.parse(start) - 86400000).toISOString().slice(0, 10))
       .lte("date", end.slice(0, 10)).order("date").order("event_id").range(offset, offset + 499);
     if (error) throw new Error("Unable to read Soulmate refunds.");
@@ -69,7 +72,7 @@ export async function soulmateRefundPayments(db: SupabaseClient, start: string, 
       const at = row.occurred_at ? new Date(row.occurred_at).toISOString() : `${row.date}T06:00:00.000Z`;
       const parent = parents.get(row.order_id);
       if (parent && at >= start && at < end) rows.push({ ...parent, id: row.event_id,
-        payu_txn_id: row.order_id, amount: row.amount_paise, payment_status: "refund", created_at: at, fulfilled_at: row.occurred_at || null });
+        taxAmount: row.gst_paise || 0, payu_txn_id: row.order_id, amount: row.amount_paise, payment_status: "refund", created_at: at, fulfilled_at: row.occurred_at || null });
     }
     if (data.length < 500) return rows;
   }

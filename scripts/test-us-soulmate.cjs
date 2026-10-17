@@ -8,7 +8,7 @@ const Module = require('node:module');
 require('ts-node').register({ transpileOnly: true, compilerOptions: { module: 'CommonJS', moduleResolution: 'node' } });
 const resolve = Module._resolveFilename;
 Module._resolveFilename = function(name,parent,...rest) { return resolve.call(this,name.startsWith('@/') ? path.join(__dirname,'../src',name.slice(2)) : name,parent,...rest); };
-for (const [key,value] of Object.entries({STANDARD:'19.95',EXPRESS:'29.95',DESCRIPTION:'9.95',COLOUR:'4.95',PRIORITY:'3.95',TIMELINE:'9.95'})) process.env['NEXT_PUBLIC_US_SOULMATE_PRICE_'+key]=value;
+for (const [key,value] of Object.entries({STANDARD:'37',EXPRESS:'67',DESCRIPTION:'67',COLOUR:'37',PRIORITY:'29.95',TIMELINE:'19'})) process.env['NEXT_PUBLIC_US_SOULMATE_PRICE_'+key]=value;
 process.env.US_SOULMATE_STRIPE_SECRET_KEY='sk_test_fixture';
 process.env.US_SOULMATE_STRIPE_MODE='test';
 process.env.US_SOULMATE_RECEIPT_SECRET='a'.repeat(40);
@@ -44,8 +44,21 @@ function paid(order,extra={}){return{id:order.stripe_session_id,mode:'payment',s
 function signedEvent(payload,secret='whsec_fixture',at=Math.floor(Date.now()/1000)){const raw=JSON.stringify(payload);return new NextRequest('https://example.com/api/us/soulmate/payment/webhook',{method:'POST',headers:{'stripe-signature':`t=${at},v1=${crypto.createHmac('sha256',secret).update(`${at}.${raw}`).digest('hex')}`},body:raw});}
 beforeEach(()=>{orders.clear();calls=[];failInsert=false;failSave=false;session=null;confirmations=0;conversions=0;process.env.US_SOULMATE_CHECKOUT_ENABLED='true';process.env.US_SOULMATE_STRIPE_MODE='test';global.fetch=async(url,init)=>{calls.push({url,init});assert.ok(String(url).startsWith('https://api.stripe.com/v1/'));assert.equal(init.headers.Authorization,'Bearer sk_test_fixture');if(init.method==='POST')return{ok:true,json:async()=>({id:'cs_test_fixture',url:'https://checkout.stripe.com/c/pay/cs_test_fixture'})};return{ok:true,json:async()=>session||{id:'cs_test_fixture',status:'open',url:'https://checkout.stripe.com/c/pay/cs_test_fixture'}};};});
 test('disabled checkout does not write or contact Stripe',async()=>{process.env.US_SOULMATE_CHECKOUT_ENABLED='false';assert.equal((await checkout.POST(req(body()))).status,503);assert.equal(orders.size,0);assert.equal(calls.length,0)});
-test('all ten baskets calculate USD cents without inherited GST',()=>{for(let mask=0;mask<8;mask++){const ids=['description','colour','priority'].filter((_,i)=>mask&(1<<i));const c=cart.buildSoulmateCart('standard',ids);assert.equal(c.gstAmount,0);assert.equal(c.amount,c.lineItems.reduce((s,i)=>s+i.amount_paise,0));assert.equal(c.amount,1995+ids.reduce((s,id)=>s+({description:995,colour:495,priority:395}[id]),0));}for(const ids of [[],['timeline']])assert.equal(cart.buildSoulmateCart('express',ids).amount,2995+ids.length*995);assert.throws(()=>cart.buildSoulmateCart('express',['colour']));});
-test('checkout saves isolated answer snapshot, USD order and receipt before Stripe redirect',async()=>{const{response,data,order}=await create();assert.match(order.id,/^us_sm_/);assert.deepEqual(order.answers,answers);assert.equal(order.amount,1995);assert.equal(order.currency,'USD');assert.equal(order.customer_phone,'12025550123');assert.equal(order.stripe_session_id,'cs_test_fixture');assert.match(response.headers.get('set-cookie'),/Path=\/api\/us\/soulmate\/payment/);assert.match(data.receiptUrl,/^\/us\/soulmate\/payment/);const p=calls[0].init.body;assert.equal(p.get('line_items[0][price_data][currency]'),'usd');assert.equal(p.get('line_items[0][price_data][unit_amount]'),'1995');assert.equal(p.get('metadata[funnel]'),'us_soulmate_standalone');assert.match(calls[0].init.headers['Idempotency-Key'],/^us-soulmate-checkout-/)});
+test('all ten baskets calculate approved USD prices plus tax rounded to cents',()=>{
+  for(let mask=0;mask<8;mask++){
+    const ids=['description','colour','priority'].filter((_,i)=>mask&(1<<i));
+    const c=cart.buildSoulmateCart('standard',ids);
+    const subtotal=3700+ids.reduce((s,id)=>s+({description:6700,colour:3700,priority:2995}[id]),0);
+    assert.equal(c.baseAmount,subtotal);assert.equal(c.gstAmount,Math.round(subtotal*18/100));
+    assert.equal(c.amount,subtotal+c.gstAmount);assert.equal(c.baseAmount,c.lineItems.reduce((s,i)=>s+i.amount_paise,0));
+  }
+  assert.equal(cart.buildSoulmateCart('standard').amount,4366);
+  assert.equal(cart.buildSoulmateCart('express').amount,7906);
+  assert.equal(cart.buildSoulmateCart('express',['timeline']).amount,10148);
+  assert.equal(cart.buildSoulmateCart('standard',['description','colour','priority']).amount,20172);
+  assert.throws(()=>cart.buildSoulmateCart('express',['colour']));
+});
+test('checkout saves isolated answer snapshot, USD order and receipt before Stripe redirect',async()=>{const{response,data,order}=await create();assert.match(order.id,/^us_sm_/);assert.deepEqual(order.answers,answers);assert.equal(order.amount,4366);assert.equal(order.currency,'USD');assert.equal(order.customer_phone,'12025550123');assert.equal(order.stripe_session_id,'cs_test_fixture');assert.match(response.headers.get('set-cookie'),/Path=\/api\/us\/soulmate\/payment/);assert.match(data.receiptUrl,/^\/us\/soulmate\/payment/);const p=calls[0].init.body;assert.equal(p.get('line_items[0][price_data][currency]'),'usd');assert.equal(p.get('line_items[0][price_data][unit_amount]'),'3700');assert.equal(p.get('metadata[funnel]'),'us_soulmate_standalone');assert.match(calls[0].init.headers['Idempotency-Key'],/^us-soulmate-checkout-/)});
 test('duplicate checkout reuses order and Stripe session',async()=>{const b=body();await create(b);await create(b);assert.equal(orders.size,1);assert.equal(calls.filter(c=>c.init.method==='POST').length,1)});
 test('changed basket cannot reuse a checkout key',async()=>{const b=body();await create(b);assert.equal((await checkout.POST(req({...b,addOns:['description']}))).status,409)});
 test('database failure never initiates a Stripe payment',async()=>{failInsert=true;assert.equal((await checkout.POST(req(body()))).status,503);assert.equal(calls.length,0)});
@@ -62,3 +75,21 @@ test('webhook signature and replay window checked before database access',async(
 test('webhook ignores other funnels and verifies matching event using Stripe API',async()=>{assert.equal((await webhook.POST(signedEvent({type:'checkout.session.completed',data:{object:{metadata:{funnel:'soulmate_standalone'}}}}))).status,200);assert.equal(calls.length,0);const{order}=await create();session=paid(order);assert.equal((await webhook.POST(signedEvent({type:'checkout.session.completed',data:{object:session}}))).status,200);assert.equal(orders.get(order.id).payment_status,'paid')});
 test('webhook failure requests retry without marking order paid',async()=>{const{order}=await create();session=paid(order);failSave=true;assert.equal((await webhook.POST(signedEvent({type:'checkout.session.completed',data:{object:session}}))).status,503);assert.equal(order.payment_status,'created')});
 test('new module dependency graph has no old payment, mail or marketing writers',()=>{for(const name of fs.readdirSync(path.join(__dirname,'../src/lib')).filter(n=>n.startsWith('us-soulmate-'))){const s=fs.readFileSync(path.join(__dirname,'../src/lib',name),'utf8');assert.doesNotMatch(s,/from ["'](?:\.\/|@\/lib\/)(?:soulmate-|payu-|brevo-send-monitoring|pixel-events|marketing-events["'])/,name);assert.doesNotMatch(s,/\.from\(["'](?:payments|marketing_events|soulmate_orders|soulmate_sessions|monitoring_incidents)["']\)/,name);}});
+
+test('Stripe checkout displays a Tax amount and charges the exact total for every basket',async()=>{
+ const baskets=[...Array.from({length:8},(_,mask)=>['standard',['description','colour','priority'].filter((_,i)=>mask&(1<<i))]),['express',[]],['express',['timeline']]];
+ for(const [plan,addOns] of baskets){const {order}=await create(body({plan,addOns}));const p=calls.at(-1).init.body;
+   const taxIndex=order.line_items.length;
+   assert.equal(p.get(`line_items[${taxIndex}][price_data][product_data][name]`),'Tax');
+   assert.equal(Number(p.get(`line_items[${taxIndex}][price_data][unit_amount]`)),order.gst_amount);
+   let total=0;for(let i=0;i<=taxIndex;i++)total+=Number(p.get(`line_items[${i}][price_data][unit_amount]`));
+   assert.equal(total,order.amount);assert.doesNotMatch(p.toString(),/GST|18%25|18%/i);
+ }
+});
+test('confirmation breakdown uses Tax with no GST or percentage wording',()=>{
+ const {soulmateConfirmationEmail}=require('../src/lib/us-soulmate-invoice-template');
+ const c=cart.buildSoulmateCart('standard');
+ const email=soulmateConfirmationEmail({invoice_number:'ARUS-26-TEST',issued_at:'2026-10-17T00:00:00Z',snapshot:{customerName:'Fixture',customerEmail:'fixture@example.com',orderId:null,items:c.lineItems,entitlements:c.entitlements,subtotal:c.baseAmount,gst:c.gstAmount,total:c.amount,paidAt:'2026-10-17T00:00:00Z',deliveryDueAt:null}});
+ assert.match(email.text,/Subtotal: USD 37.00\nTax: USD 6.66\nTotal paid: USD 43.66/);
+ assert.doesNotMatch(email.text,/GST|18%/i);assert.doesNotMatch(email.html,/GST|18%/i);
+});

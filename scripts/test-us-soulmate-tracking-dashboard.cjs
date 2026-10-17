@@ -80,7 +80,8 @@ test('live sales show Soulmate product name and only verified production purchas
   const response=await GET(req('?mode=live'));const data=await response.json();
   assert.equal(data.todayCount,1);assert.equal(data.sales[0].productName,base.product_info);assert.equal(data.sales[0].amount,1768.82);
 });
-test('Meta purchases and internal sales stay distinct and join only dedicated campaign IDs',async()=>{
+test('Meta purchases and internal sales stay distinct and profit deducts saved tax',async()=>{
+  tables.us_soulmate_orders[0]={...base,gst_amount:20000};
   tables.us_soulmate_admin_settings[0].accounts=[{accountId:'777777',accessToken:'soulmate-fixture'}];
   metaResult={account:{id:'777777',name:'Soulmate only',currency:'USD',timezone:'Asia/Kolkata'},warnings:[],hourlySpendInr:{},dailySpendInr:{'2026-10-16':{total:100,indian:100}},campaigns:[{
     key:'meta:777777:123456789',accountId:'777777',accountName:'Soulmate only',campaignId:'123456789',campaignName:'Soulmate A',currency:'USD',spend:100,spendInr:100,metaPurchases:7,metaPurchaseValue:12381.74,
@@ -90,7 +91,7 @@ test('Meta purchases and internal sales stay distinct and join only dedicated ca
   assert.equal(response.status,200);const data=await response.json();
   assert.equal(data.campaigns[0].metaPurchases,7);assert.equal(data.campaigns[0].orders,1);
   assert.equal(data.totals.attributedOrders,1);assert.equal(data.campaigns[0].utmVisits,1);
-  assert.ok(Math.abs(data.totals.profit-1668.82)<0.001);
+  assert.ok(Math.abs(data.totals.profit-1468.82)<0.001);
 });
 test('refunds are restricted to production Soulmate parents and keep precise gateway times',async()=>{
   tables.us_soulmate_refund_events=[{event_id:'refund-fixture',order_id:base.id,date:'2026-10-16',amount_paise:10000,occurred_at:'2026-10-17T02:15:00Z'},

@@ -1,5 +1,6 @@
 import { usPrice } from "@/lib/us-soulmate-prices";
-import { GST_RATE, type DeliveryId } from "./chat-data";
+import { usTaxCents } from "@/lib/us-soulmate-tax";
+import { type DeliveryId } from "./chat-data";
 
 export type AddOnId = "description" | "colour" | "priority" | "timeline";
 export type CheckoutAddOn = { id: AddOnId; title: string; price: number | null; plan: DeliveryId };
@@ -24,6 +25,6 @@ export function checkoutTotals(base: number, selected: readonly AddOnId[], catal
   const items = catalog.filter((item) => selected.includes(item.id));
   if (!Number.isFinite(base) || items.some((item) => item.price === null || !Number.isFinite(item.price)) || selected.some((id) => !catalog.some((item) => item.id === id))) return null;
   const subtotalPaise = Math.round(base * 100) + items.reduce((sum, item) => sum + Math.round(item.price! * 100), 0);
-  const gstPaise = Math.round(subtotalPaise * GST_RATE / 100);
-  return { subtotal: subtotalPaise / 100, gst: gstPaise / 100, total: (subtotalPaise + gstPaise) / 100 };
+  const taxCents = usTaxCents(subtotalPaise);
+  return { subtotal: subtotalPaise / 100, tax: taxCents / 100, total: (subtotalPaise + taxCents) / 100 };
 }

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, CreditCard, Download, LockKeyhole, Mail, ShieldCheck, HandCoins, Wallet } from "lucide-react";
 import { checkoutSession } from "./session-save";
-import { Answers, DeliveryId, deliveryPlans, formatRupees, priceWithGst, steps } from "./chat-data";
+import { Answers, DeliveryId, deliveryPlans, formatRupees, priceWithTax, steps } from "./chat-data";
 import { CHECKOUT_ATTEMPT_KEY, CHECKOUT_RECOVERY_KEY, readCheckoutDetails, saveCheckoutDetails } from "./checkout-state";
 import { SoulmateImage } from "./soulmate-image";
 import { CheckoutExtras, CheckoutReviews, CheckoutStory } from "./checkout-extras";
@@ -29,7 +29,7 @@ export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const plan = deliveryPlans.find((item) => item.id === planId)!;
-  const price = priceWithGst(plan.price);
+  const price = priceWithTax(plan.price);
   const catalog = addOnsForPlan(planId);
   const selectedAddOns = sanitizeAddOnIds(addOns, planId);
   const totals = checkoutTotals(plan.price, selectedAddOns, catalog);
@@ -150,6 +150,7 @@ export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
               <div><dt>{plan.name}</dt><dd>{formatRupees(price.base)}</dd></div>
               {catalog.filter((item) => selectedAddOns.includes(item.id)).map((item) => <div key={item.id}><dt>{item.title}</dt><dd>{item.price === null ? "To be confirmed" : formatRupees(item.price)}</dd></div>)}
               <div className={styles.subtotal}><dt>Subtotal</dt><dd>{totals ? formatRupees(totals.subtotal) : "To be confirmed"}</dd></div>
+              <div><dt>Tax</dt><dd>{totals ? formatRupees(totals.tax) : "To be confirmed"}</dd></div>
               <div className={styles.total}><dt>Total</dt><dd>{totals ? formatRupees(totals.total) : "To be confirmed"}</dd></div>
             </dl>
             <CheckoutExtras planId={planId} selected={selectedAddOns} onChange={setAddOns} disabled={loading} />

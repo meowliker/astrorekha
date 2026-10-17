@@ -60,8 +60,14 @@ export async function createStripeCheckout(order: SoulmateOrder, origin: string)
     "metadata[funnel]": US_SOULMATE_FUNNEL, "metadata[order_id]": order.id,
     "payment_intent_data[metadata][funnel]": US_SOULMATE_FUNNEL, "payment_intent_data[metadata][order_id]": order.id,
   });
-  if (!order.line_items?.length || order.line_items.reduce((sum, item) => sum + item.amount_paise, 0) !== order.amount) throw new Error("Invalid US basket");
-  order.line_items.forEach((item, index) => {
+  if (!order.line_items?.length || order.line_items.reduce((sum, item) => sum + item.amount_paise, 0) !== order.base_amount || order.base_amount + order.gst_amount !== order.amount || !Number.isSafeInteger(order.gst_amount) || order.gst_amount < 0) throw new Error("Invalid US basket");
+  // Explicit tax amount preserves the exact local total and displays no percentage.
+  // This is a separate charge line, not Stripe automatic-tax calculation/reporting.
+  const checkoutItems = [...order.line_items, ...(order.gst_amount ? [{ name: "Tax", amount_paise: order.gst_amount }] : [])];
+  params.set("locale", "en");
+  params.set("submit_type", "pay");
+  params.set("metadata[tax_amount_cents]", String(order.gst_amount));
+  checkoutItems.forEach((item, index) => {
     params.set(`line_items[${index}][price_data][currency]`, "usd");
     params.set(`line_items[${index}][price_data][unit_amount]`, String(item.amount_paise));
     params.set(`line_items[${index}][price_data][product_data][name]`, item.name);

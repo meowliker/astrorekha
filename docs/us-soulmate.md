@@ -3,7 +3,7 @@
 The complete standalone Soulmate experience is copied to `/us/soulmate`, with checkout at
 `/us/soulmate/checkout` and payment confirmation at `/us/soulmate/payment`. Visuals, questions,
 package entitlements, report preparation/review and delivery behavior match the existing flow.
-Payments use Stripe Checkout, USD and US +1 phone numbers. Prices remain unconfigured until supplied.
+Payments use Stripe Checkout, USD and US +1 phone numbers. Approved base prices are $37 for Soulmate Sketch and $67 for Complete Soulmate Vision. Standard extras are description $67, color $37 and priority delivery $29.95; Vision’s optional connection timeline is $19.
 
 ## Admin workspace
 
@@ -36,7 +36,7 @@ for authentication. Existing ad settings are read only to reject shared account 
 Browser answers, checkout keys, attribution, analytics sessions and receipt cookies have separate
 US names. Main marketing components are excluded on US routes; US Meta events target only the US
 pixel. Cross-funnel links use document navigation so vendor globals cannot survive the transition.
-Public artwork is reused without changing or copying the original files.
+The new `us-soulmate-lander` R2 folder supplies all 22 US marketing images. The offer gallery reuses its four sketch files and checkout uses its first story image. The artist portrait remains at the original public URL because no US replacement was uploaded. Original storage objects are unchanged.
 
 The existing normal and India Soulmate route implementations, payment gateways, environment values,
 cron jobs and customer records are unchanged. Shared code changes are limited to adding the admin
@@ -47,9 +47,9 @@ workspace, selecting marketing components by route and excluding US landings fro
 Use `docs/us-soulmate.env.example`; add its values alongside existing app variables. No PayU,
 main or India Soulmate provider credentials are used as fallbacks. Public values require a rebuild.
 
-1. Supply all six USD prices: standard, express, description, colour, priority and timeline. The
+1. The six approved USD prices are built into the US catalog and listed in the dedicated env template. The
    standard basket has three optional extras; express includes description/colour/priority and has
-   the optional timeline. Missing or invalid prices block payment; no default dollar prices exist.
+   the optional timeline. Explicit blank or invalid overrides block payment. Without overrides the approved US prices apply.
 2. Configure dedicated Stripe test credentials and a random receipt secret of at least 32 characters.
    Hosted Checkout needs no publishable key. Set `US_SOULMATE_STRIPE_MODE=test` for test checkout;
    its secret must start `sk_test_`. Live mode requires `sk_live_`.
@@ -57,7 +57,7 @@ main or India Soulmate provider credentials are used as fallbacks. Public values
    version `2024-06-20`, for `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
    `checkout.session.async_payment_failed` and `checkout.session.expired`. Store that endpoint's
    signing secret in `US_SOULMATE_STRIPE_WEBHOOK_SECRET`.
-4. Set `US_SOULMATE_CHECKOUT_ENABLED=true` only when prices and Stripe setup are ready. Run a Stripe
+4. Set `US_SOULMATE_CHECKOUT_ENABLED=true` only when Stripe setup is ready. Run a Stripe
    test-mode purchase and verify webhook recovery, admin order, USD invoice and purchased outputs.
    For launch, switch the dedicated key, endpoint secret and mode together to live values.
 5. Configure US Kie, Anthropic and Brevo keys for reports and delivery. Preparation requires
@@ -87,10 +87,11 @@ checks amount, currency, metadata and live/test mode before recording payment. S
 use the same verification. Failed verification never queues delivery; a delayed event cannot
 revert a paid order. Refund reporting reconciles only matching live US orders.
 
-No India GST is applied, and Stripe automatic tax is not enabled. Existing schema names such as
-`amount_paise`, `spendInr` and `gst_amount` remain internal compatibility fields: US monetary minor
-units mean cents, spend is USD at parity, and GST is constrained to zero. Customer-facing and
-admin amounts display USD. Existing India-oriented question choices, artwork and report content
+The requested tax is calculated at 18% on the full selected subtotal and rounded once to USD cents. The UI labels it only **Tax**, with no GST text or percentage. For example, $37 + $6.66 = $43.66; Vision is $67 + $12.06 = $79.06. The checkout, Stripe total, order snapshot, receipt and profit reporting all use the same saved amount. The follow-up migration `20261017184000_us_soulmate_tax.sql` removes the earlier US-only zero-tax constraint.
+
+Stripe receives the purchased products plus a separate line named **Tax**, using the exact saved amount. This implements the requested display without a visible percentage; it is not Stripe automatic tax or a Stripe Tax rate object. Products and prices are generated through Checkout `price_data` when a session is created, so there is no separate catalog to manually synchronize. Live page creation/testing awaits the dedicated Stripe credentials.
+
+Existing schema names such as `amount_paise`, `spendInr` and `gst_amount` remain internal compatibility fields: US monetary minor units mean cents, spend is USD at parity, and `gst_amount` stores the configured tax. Customer-facing and admin amounts display USD. Existing India-oriented question choices, artwork and report content
 are retained as requested; broader US copy/localization and a US reporting timezone are separate
 product decisions.
 

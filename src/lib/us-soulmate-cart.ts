@@ -24,5 +24,5 @@ export function buildSoulmateCart(planId: DeliveryId, input: unknown = []) {
   const lineItems: SoulmateLineItem[] = [{ id: `us_soulmate_${planId}`, name: plan.checkoutTitle, amount_paise: Math.round(plan.price * 100), quantity: 1, includes: planId === "express" ? ["colour_sketch", "description", "priority_delivery"] : ["black_and_white_sketch"] },
     ...catalog.filter((item) => addOns.includes(item.id)).map((item) => ({ id: item.id, name: item.title, amount_paise: Math.round(item.price! * 100), quantity: 1 as const, includes: [item.id] }))];
   const shortNames = { description: "Description", colour: "Color", priority: "Priority", timeline: "Timeline" };
-  return { addOns, lineItems, entitlements, baseAmount: Math.round(total.subtotal * 100), gstAmount: Math.round(total.gst * 100), amount: Math.round(total.total * 100), productInfo: plan.checkoutTitle + (addOns.length ? ` + ${addOns.map((id) => shortNames[id]).join(" + ")}` : "") };
+  return { addOns, lineItems, entitlements, baseAmount: Math.round(total.subtotal * 100), gstAmount: Math.round(total.tax * 100), amount: Math.round(total.total * 100), productInfo: plan.checkoutTitle + (addOns.length ? ` + ${addOns.map((id) => shortNames[id]).join(" + ")}` : "") };
 }

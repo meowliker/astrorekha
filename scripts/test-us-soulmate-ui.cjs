@@ -31,14 +31,16 @@ test('US pages load only dedicated tracking properties', () => {
     assert.match(html, /trackSingle/); assert.match(html, /G-USFIXTURE/); assert.match(html, /cookie_prefix:&#x27;us_soulmate&#x27;/);
   }
 });
-test('both checkout packages render with valid original artwork and pending USD prices', () => {
+test('both checkout packages render with valid original artwork and approved USD prices and tax', () => {
   const { SoulmateCheckout } = require('../src/app/us/soulmate/soulmate-checkout');
   for (const planId of ['standard','express']) {
     const html = render(React.createElement(SoulmateCheckout,{planId}));
-    assert.match(html, /US pricing coming soon/);
+    assert.match(html, planId === 'standard' ? /Pay Now · \$43.66/ : /Pay Now · \$79.06/);
+    assert.match(html, /<dt>Tax<\/dt>/);
+    assert.match(html, planId === 'standard' ? /\$6.66/ : /\$12.06/);
     assert.match(html, /Payments are securely processed by Stripe/);
-    assert.doesNotMatch(html, /₹|PayU|NaN|18%/);
-    assert.match(html, /soulmate%20lander\/checkout\/customer-story-kavita.png/);
+    assert.doesNotMatch(html, /₹|PayU|NaN|GST|18%/);
+    assert.match(html, /us-soulmate-lander\/stories\/astrorekha-clean-5.png/);
     assert.doesNotMatch(html, /astrorekha-us-soulmate-description.png/);
     if(planId==='standard') assert.match(html, /checkout\/astrorekha-soulmate-description.png/);
     assert.match(html, /<button[^>]+disabled=""/);

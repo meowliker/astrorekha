@@ -48,7 +48,7 @@ async function readRefunds(db: SupabaseClient, start: string, end: string): Prom
       if (!found.data) continue;
       if (!Number.isSafeInteger(refund.amount) || refund.amount < 0 || refund.amount > found.data.amount) throw new Error("Invalid Stripe refund amount.");
       const occurred_at = new Date(refund.created * 1000).toISOString();
-      rows.push({ event_id: refund.id, order_id: found.data.id, date: profitDay(occurred_at), occurred_at, amount_paise: refund.amount, gst_paise: 0 });
+      rows.push({ event_id: refund.id, order_id: found.data.id, date: profitDay(occurred_at), occurred_at, amount_paise: refund.amount, gst_paise: Math.round(refund.amount * found.data.gst_amount / found.data.amount) });
     }
     if (!result.has_more) return rows;
     after = result.data.at(-1)?.id;

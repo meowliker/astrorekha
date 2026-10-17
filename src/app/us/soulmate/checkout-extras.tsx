@@ -44,7 +44,7 @@ export function CheckoutExtras({ planId, selected, onChange, disabled }: { planI
 export function CheckoutStory() {
   return <div className={styles.story}>
     <ArrowDown className={styles.storyArrow} size={50} strokeWidth={3.5} aria-hidden="true" />
-    <Image className={styles.customerStoryImage} src={checkoutImageUrl("customer-story-kavita.png")} width={1254} height={1254} alt="Kavita Sharma shares her Astrorekha sketch story beside a photo of a couple holding the sketch." unoptimized />
+    <Image className={styles.customerStoryImage} src={soulmateAssetUrl("/soulmate/stories/astrorekha-clean-5.png")} width={1586} height={992} alt="A soulmate sketch beside a couple’s photo." unoptimized />
     <ArrowDown className={styles.storyArrow} size={50} strokeWidth={3.5} aria-hidden="true" />
   </div>;
 }

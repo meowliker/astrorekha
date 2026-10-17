@@ -206,11 +206,11 @@ async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { s
   if (visitResult.error) warnings.push(`${visitResult.error}. AR CVR is unavailable.`);
   if (!credentials.length) warnings.push("No Meta ad accounts are configured for this range. UTM orders are still shown.");
   if (joined.attributedOrders < sales.length) warnings.push(`${sales.length - joined.attributedOrders} paid orders could not be matched to a unique Meta campaign.`);
-  // Apply the Profit Sheet's GST formula to each selected reporting day.
+  // Match the profit sheet using saved tax snapshots, including refunded tax.
   const spendInr = campaigns.reduce((sum, row) => sum + (row.spendInr || 0), 0);
   const indianSpendInr = campaigns.reduce((sum, row) => sum + (row.currency === "USD" ? row.spendInr || 0 : 0), 0);
   const revenue = grossRevenue - refundAmount;
-  const gst = 0;
+  const gst = (sales.reduce((sum, row) => sum + row.taxAmount, 0) - refunds.reduce((sum, row) => sum + row.taxAmount, 0)) / 100;
   const profitAvailable = meta.length > 0 && meta.every((result) => !result.account.error) && campaigns.every((row) => row.spendInr !== null || row.spend === 0);
   return {
     accounts: meta.map((result) => result.account), campaigns: joined.campaigns, hourly: joined.hourly,

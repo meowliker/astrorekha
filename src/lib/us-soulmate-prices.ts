@@ -1,11 +1,11 @@
-// USD major units; unset values intentionally never fall back to India prices.
+// Approved US prices in USD major units. Dedicated envs may override this catalog.
 const prices = {
-  standard: process.env.NEXT_PUBLIC_US_SOULMATE_PRICE_STANDARD,
-  express: process.env.NEXT_PUBLIC_US_SOULMATE_PRICE_EXPRESS,
-  description: process.env.NEXT_PUBLIC_US_SOULMATE_PRICE_DESCRIPTION,
-  colour: process.env.NEXT_PUBLIC_US_SOULMATE_PRICE_COLOUR,
-  priority: process.env.NEXT_PUBLIC_US_SOULMATE_PRICE_PRIORITY,
-  timeline: process.env.NEXT_PUBLIC_US_SOULMATE_PRICE_TIMELINE,
+  standard: process.env.NEXT_PUBLIC_US_SOULMATE_PRICE_STANDARD ?? "37",
+  express: process.env.NEXT_PUBLIC_US_SOULMATE_PRICE_EXPRESS ?? "67",
+  description: process.env.NEXT_PUBLIC_US_SOULMATE_PRICE_DESCRIPTION ?? "67",
+  colour: process.env.NEXT_PUBLIC_US_SOULMATE_PRICE_COLOUR ?? "37",
+  priority: process.env.NEXT_PUBLIC_US_SOULMATE_PRICE_PRIORITY ?? "29.95",
+  timeline: process.env.NEXT_PUBLIC_US_SOULMATE_PRICE_TIMELINE ?? "19",
 };
 export function usPrice(id: keyof typeof prices) {
   const raw = prices[id];

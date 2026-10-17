@@ -1,3 +1,4 @@
+import { usTaxCents } from "@/lib/us-soulmate-tax";
 import { usPrice } from "@/lib/us-soulmate-prices";
 import { COMPLETE_US_SOULMATE_NAME, COMPLETE_US_SOULMATE_TITLE } from "@/lib/us-soulmate-product-names";
 export const steps = ["name", "heart", "preferenceSelection", "preference", "feeling", "birthDate", "ethnicity"] as const;
@@ -47,11 +48,10 @@ export const deliveryPlans = [
   },
 ] as const;
 export type DeliveryId = typeof deliveryPlans[number]["id"];
-// USD catalog: no inherited India GST. Retain the calculation shape for copied UI.
-export const GST_RATE = 0;
-export function priceWithGst(base: number) {
-  const gst = Math.round(base * GST_RATE) / 100;
-  return { base, gst, total: Math.round((base + gst) * 100) / 100 };
+export function priceWithTax(base: number) {
+  const cents = Math.round(base * 100);
+  const tax = usTaxCents(cents);
+  return { base, tax: tax / 100, total: (cents + tax) / 100 };
 }
 export const formatRupees = (value: number) => !Number.isFinite(value) ? "Price coming soon" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(value);
 
