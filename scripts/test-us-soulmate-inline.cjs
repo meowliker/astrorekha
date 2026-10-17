@@ -45,3 +45,21 @@ test('US analytics counts inline submissions and historical hosted checkouts onc
  const events=['landing_view','checkout_view','stripe_redirect','payment_submit'].map(event=>({event_name:'us_soulmate_'+event,session_id:'fixture',created_at:'2026-10-17T00:00:00Z'}));
  const out=summarizeSoulmateAnalytics(events,[]);assert.equal(out.funnel.find(stage=>stage.label==='Payment submitted').sessions,1);
 });
+
+test('deferred card collection validates email and card details before creating a payment method', async () => {
+ const {collectDeferredPayment}=require('../src/app/us/soulmate/stripe-inline-client');
+ const calls=[];
+ const elements={submit:async()=>{calls.push('submit');return{}}};
+ const stripe={createPaymentMethod:async options=>{calls.push(options);return{paymentMethod:{id:'pm_fixture'}}}};
+ await assert.rejects(collectDeferredPayment(stripe,elements,''),/valid email/);assert.equal(calls.length,0);
+ assert.equal(await collectDeferredPayment(stripe,elements,'buyer@example.com'),'pm_fixture');
+ assert.equal(calls[0],'submit');assert.equal(calls[1].elements,elements);assert.deepEqual(calls[1].params,{billing_details:{email:'buyer@example.com'}});
+ calls.length=0;
+ await assert.rejects(collectDeferredPayment(stripe,{submit:async()=>({error:{message:'Your card number is incomplete.'}})},'buyer@example.com'),/incomplete/);
+ assert.equal(calls.length,0);
+});
+test('deferred payment method is confirmed on the existing Checkout Session without a forced redirect', async () => {
+ let options;
+ await confirmInlinePayment({getSession:()=>session(),confirm:async value=>{options=value;return{type:'success'}}},4366,{paymentMethod:'pm_fixture',email:'buyer@example.com'});
+ assert.deepEqual(options,{redirect:'if_required',paymentMethod:'pm_fixture',email:'buyer@example.com'});
+});

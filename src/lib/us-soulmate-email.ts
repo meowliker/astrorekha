@@ -1,4 +1,4 @@
-/** Dedicated US provider credentials are supplied by the isolated caller.
+/** Shared Brevo credentials are supplied by the isolated US caller.
  * Failures stay on US invoice/delivery records, never the main incident table. */
 export async function submitBrevoEmail(body: unknown, headers: HeadersInit): Promise<string> {
   const response = await fetch("https://api.brevo.com/v3/smtp/email", {

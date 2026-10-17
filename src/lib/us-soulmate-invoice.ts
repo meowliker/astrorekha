@@ -50,7 +50,7 @@ export async function prepareSoulmateInvoice(id: string) {
   }
 }
 export async function sendSoulmateConfirmation(id: string) {
-  const key=process.env.US_SOULMATE_BREVO_API_KEY;
+  const key=process.env.BREVO_API_KEY;
   if (!key) throw new Error("Email provider not configured");
   const db=getSupabaseAdmin();
   const invoice=await prepareSoulmateInvoice(id);
@@ -62,7 +62,7 @@ export async function sendSoulmateConfirmation(id: string) {
   if (!claim.data) return invoice;
   try {
     const messageId=await submitBrevoEmail({
-      sender:{email:process.env.US_SOULMATE_BREVO_SENDER_EMAIL||"team@astrorekha.com",name:"Astro Rekha"},
+      sender:{email:process.env.BREVO_SENDER_EMAIL||"team@astrorekha.com",name:"Astro Rekha"},
       to:[{email:invoice.snapshot.customerEmail,name:invoice.snapshot.customerName}],
       subject:email.subject,htmlContent:email.html,textContent:email.text,
       attachment:[{name:`${invoice.invoice_number}.pdf`,content:pdf.toString("base64")}],

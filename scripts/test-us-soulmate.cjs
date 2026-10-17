@@ -99,7 +99,7 @@ test('confirmation breakdown uses Tax with no GST or percentage wording',()=>{
   const {data}=await create();const params=calls[0].init.body;
   assert.equal(data.clientSecret,'cs_test_fixture_secret');assert.equal(data.amount,4366);assert.equal(data.url,undefined);
   assert.equal(calls[0].init.headers['Stripe-Version'],'2026-03-25.dahlia');
-  assert.equal(params.get('ui_mode'),'elements');assert.equal(params.get('payment_method_types[0]'),'card');
+  assert.equal(params.get('ui_mode'),'elements');assert.equal(params.has('submit_type'),false);assert.equal(params.get('payment_method_types[0]'),'card');
   assert.equal(params.get('phone_number_collection[enabled]'),'false');assert.equal(params.has('success_url'),false);assert.equal(params.has('cancel_url'),false);
   assert.match(params.get('return_url'),/^https:\/\/example.com\/us\/soulmate\/payment/);
  });

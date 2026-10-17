@@ -34,7 +34,11 @@ export async function stripeRequest(path: string, body?: URLSearchParams, idempo
     ...(body ? { body } : {}),
   });
   const data = await response.json();
-  if (!response.ok || data.error) throw new Error("Stripe request could not be completed");
+  if (!response.ok || data.error) {
+    // Keep diagnostics actionable without logging keys, client secrets or customer details.
+    console.error("[us-soulmate/stripe]", { status: response.status, type: data.error?.type, code: data.error?.code, param: data.error?.param, requestId: response.headers.get("request-id") });
+    throw new Error("Stripe request could not be completed");
+  }
   return data;
 }
 function receiptSecret() {
@@ -83,7 +87,6 @@ export async function createStripeCheckout(order: SoulmateOrder, origin: string)
   // This is a separate charge line, not Stripe automatic-tax calculation/reporting.
   const checkoutItems = [...order.line_items, ...(order.gst_amount ? [{ name: "Tax", amount_paise: order.gst_amount }] : [])];
   params.set("locale", "en");
-  params.set("submit_type", "pay");
   params.set("metadata[tax_amount_cents]", String(order.gst_amount));
   checkoutItems.forEach((item, index) => {
     params.set(`line_items[${index}][price_data][currency]`, "usd");
@@ -91,7 +94,7 @@ export async function createStripeCheckout(order: SoulmateOrder, origin: string)
     params.set(`line_items[${index}][price_data][product_data][name]`, item.name);
     params.set(`line_items[${index}][quantity]`, "1");
   });
-  const session = await stripeRequest("/checkout/sessions", params, `us-soulmate-elements-${order.id}`);
+  const session = await stripeRequest("/checkout/sessions", params, `us-soulmate-elements-v2-${order.id}`);
   const result = inlineCheckoutResponse(order, session);
   const saved = await getSupabaseAdmin().from(US_SOULMATE_ORDERS_TABLE).update({ stripe_session_id: session.id }).eq("id", order.id).is("stripe_session_id", null);
   if (saved.error) throw new Error("Unable to save Stripe checkout");

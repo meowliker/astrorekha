@@ -6,21 +6,29 @@ export type StripeSessionView = {
 };
 export type CheckoutActions = {
   getSession(): StripeSessionView;
-  confirm(options: { redirect: "if_required" }): Promise<{ type: "success" } | { type: "error"; error: { message: string } }>;
+  confirm(options: { redirect: "if_required"; paymentMethod?: string; email?: string }): Promise<{ type: "success" } | { type: "error"; error: { message: string } }>;
 };
 export type PaymentElement = {
   mount(target: HTMLElement): void;
   destroy(): void;
   on(event: "ready" | "loaderror", handler: () => void): void;
+  on(event: "change", handler: (event: { complete: boolean }) => void): void;
 };
 export type StripeCheckout = {
   createPaymentElement(options: { layout: "tabs"; fields: { billingDetails: { phone: "never" } } }): PaymentElement;
   loadActions(): Promise<{ type: "success"; actions: CheckoutActions } | { type: "error"; error: { message: string } }>;
   on(event: "change", handler: (session: StripeSessionView) => void): void;
 };
-type StripeFactory = (key: string) => {
+export type DeferredElements = {
+  create(type: "payment", options: { layout: "tabs"; wallets: { link: "never" }; fields: { billingDetails: { email: "never"; phone: "never" } } }): PaymentElement;
+  submit(): Promise<{ error?: { message?: string } }>;
+};
+export type StripeClient = {
+  elements(options: { mode: "payment"; amount: number; currency: "usd"; allowedPaymentMethodTypes: ["card"]; paymentMethodCreation: "manual"; appearance: { theme: "stripe"; variables: Record<string, string> } }): DeferredElements;
+  createPaymentMethod(options: { elements: DeferredElements; params: { billing_details: { email: string } } }): Promise<{ paymentMethod?: { id: string }; error?: { message?: string } }>;
   initCheckoutElementsSdk(options: { clientSecret: string; elementsOptions: { appearance: { theme: "stripe"; variables: Record<string, string> } } }): StripeCheckout;
 };
+type StripeFactory = (key: string) => StripeClient;
 let loader: Promise<StripeFactory> | null = null;
 export function loadUSStripe(): Promise<StripeFactory> {
   if (loader) return loader;
@@ -50,12 +58,22 @@ export function checkedPaymentTotal(session: StripeSessionView, expectedCents: n
   // Read and display Stripe's formatted total as required by Checkout Elements.
   return amount.amount;
 }
-export async function confirmInlinePayment(actions: CheckoutActions, expectedCents: number) {
+export async function confirmInlinePayment(actions: CheckoutActions, expectedCents: number, payment?: { paymentMethod: string; email: string }) {
   checkedPaymentTotal(actions.getSession(), expectedCents);
-  const result = await actions.confirm({ redirect: "if_required" });
+  const result = await actions.confirm({ redirect: "if_required", ...payment });
   if (result.type === "error") throw new Error(result.error.message);
 }
 export function checkedReceiptPath(value: unknown): string {
   if (typeof value !== "string" || !/^\/us\/soulmate\/payment\?order=us_sm_[a-f0-9]{20}$/.test(value)) throw new Error("Invalid payment receipt");
   return value;
+}
+
+/** Collect card data directly through Stripe; no order is created just by opening the page. */
+export async function collectDeferredPayment(stripe: StripeClient, elements: DeferredElements, email: string): Promise<string> {
+  if (!/^[^\s@|]+@[^\s@|]+\.[^\s@|]+$/.test(email) || email.length > 254) throw new Error("Please enter a valid email address.");
+  const submitted = await elements.submit();
+  if (submitted.error) throw new Error(submitted.error.message || "Please complete your card details.");
+  const result = await stripe.createPaymentMethod({ elements, params: { billing_details: { email } } });
+  if (result.error || !result.paymentMethod) throw new Error(result.error?.message || "Please check your card details and try again.");
+  return result.paymentMethod.id;
 }

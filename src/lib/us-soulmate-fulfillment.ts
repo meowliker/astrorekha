@@ -1,3 +1,4 @@
+import { usSoulmateAutomation } from "./us-soulmate-automation";
 import type { SoulmateEntitlements } from "./us-soulmate-cart";
 import { soulmateDeliveryTemplate } from "./us-soulmate-delivery-template";
 import crypto from "crypto";
@@ -53,8 +54,8 @@ function kieHeaders() {
   return { "Content-Type": "application/json", Authorization: `Bearer ${process.env.US_SOULMATE_KIE_API_KEY}` };
 }
 function brevoHeaders() {
-  if (!process.env.US_SOULMATE_BREVO_API_KEY) throw new Error("Missing US_SOULMATE_BREVO_API_KEY");
-  return { "Content-Type": "application/json", "api-key": process.env.US_SOULMATE_BREVO_API_KEY };
+  if (!process.env.BREVO_API_KEY) throw new Error("Missing BREVO_API_KEY");
+  return { "Content-Type": "application/json", "api-key": process.env.BREVO_API_KEY };
 }
 const kieBase = () => (process.env.US_SOULMATE_KIE_API_BASE_URL || "https://api.kie.ai").replace(/\/$/, "");
 
@@ -93,7 +94,7 @@ export async function downloadImage(source: string): Promise<{ buffer: Buffer; c
 export function emailBody(order: Order, email: Email, attachment: Buffer, filename: string, now = Date.now()) {
   // Plain greeting avoids interpolating user-controlled HTML into the email.
   return {
-    sender: { email: process.env.US_SOULMATE_BREVO_SENDER_EMAIL || "team@astrorekha.com", name: "Astro Rekha" },
+    sender: { email: process.env.BREVO_SENDER_EMAIL || "team@astrorekha.com", name: "Astro Rekha" },
     to: [{ email: order.customer_email, name: order.customer_name }],
     subject: "Your personalized soulmate sketch is here",
     htmlContent: `<p>Hello,</p><p>Your personalized soulmate sketch is attached. It was created using the preferences you confirmed when ordering.</p><p>You can download and keep the attached image.</p><p>Order reference: ${order.id}</p><p>With warmth,<br>Astro Rekha</p><p><small>An artistic interpretation for entertainment and self-reflection.</small></p>`,
@@ -290,7 +291,7 @@ export async function processSoulmateJob(db: DB, job: GenerationJob) {
 }
 
 export async function runSoulmateFulfillment() {
-  if (process.env.US_SOULMATE_DELIVERY_ENABLED !== "true") return { enabled: false, processed: 0 };
+  if (!usSoulmateAutomation.deliveryEnabled) return { enabled: false, processed: 0 };
   const mode = process.env.US_SOULMATE_STRIPE_MODE;
   if (mode !== "live" && mode !== "test") throw new Error("Missing payment mode");
   const db = getSupabaseAdmin({ fresh: true });

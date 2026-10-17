@@ -44,8 +44,9 @@ workspace, selecting marketing components by route and excluding US landings fro
 
 ## Configuration and launch
 
-Use `docs/us-soulmate.env.example`; add its values alongside existing app variables. No PayU,
-main or India Soulmate provider credentials are used as fallbacks. Public values require a rebuild.
+Use `docs/us-soulmate.env.example`; add its values alongside existing app variables. Stripe, Kie and Anthropic use dedicated US credentials. Email reuses the existing
+`BREVO_API_KEY` and `BREVO_SENDER_EMAIL`; US workers use the existing `CRON_SECRET`.
+Public values require a rebuild.
 
 1. The six approved USD prices are built into the US catalog and listed in the dedicated env template. The
    standard basket has three optional extras; express includes description/colour/priority and has
@@ -60,16 +61,17 @@ main or India Soulmate provider credentials are used as fallbacks. Public values
 4. Set `US_SOULMATE_CHECKOUT_ENABLED=true` only when Stripe setup is ready. Run a Stripe
    test-mode purchase and verify webhook recovery, admin order, USD invoice and purchased outputs.
    For launch, switch the dedicated key, endpoint secret and mode together to live values.
-5. Configure US Kie, Anthropic and Brevo keys for reports and delivery. Preparation requires
-   `US_SOULMATE_AUTO_REPORTS_ENABLED=true` and `VERCEL_ENV=production`; delivery separately requires
-   `US_SOULMATE_DELIVERY_ENABLED=true`. The copied queue schedules new confirmed purchases for eight
+5. Configure US Kie and Anthropic keys for reports; reuse the existing Brevo configuration.
+   Generation and scheduled delivery are disabled in `src/lib/us-soulmate-automation.ts`.
+   Change those code controls only after the owner requests activation; there are no enable env vars.
+   Preparation also requires `VERCEL_ENV=production`. The copied queue schedules new confirmed purchases for eight
    hours after payment, retaining the existing customer-facing 12/48-hour promises. Manual review,
    upload, approval and rescheduling remain available in US Orders.
 6. Add dedicated US GA4, Meta and Clarity properties if wanted. Leave blank to omit those trackers.
    US GA4 analytics uses its own service-account envs. Purchase tracking only emits for live orders
    attributed to the production domain. Local tests never create advertising conversions.
 7. Schedule the worker endpoints below using a scheduler that can send
-   `Authorization: Bearer <US_SOULMATE_CRON_SECRET>`. Do not replace or reuse the existing cron jobs.
+   `Authorization: Bearer <CRON_SECRET>`. Do not replace or reuse the existing cron jobs.
 
 | Endpoint | Suggested cadence |
 | --- | --- |
@@ -108,6 +110,6 @@ eligibility or email deliverability. A real Stripe test-mode integration run awa
 
 The US checkout loads Stripe.js directly from `js.stripe.com/endive/stripe.js` and creates Checkout Sessions with `ui_mode=elements` using API `2026-03-25.dahlia`. Card fields are Stripe-hosted iframes; card data never enters app state or our API. The existing Pay Now button confirms with `redirect: if_required`, then opens the internal receipt in the same tab. Bank authentication may still be required. Only card payments are enabled for this integration.
 
-The payment form prepares after a valid email and complete preferences. Editing email or the basket invalidates the displayed payment session; Pay Now remains disabled until the new session amount is checked against the displayed total and the payment fields are complete. Client secrets are kept in memory only. Server verification/webhooks remain the authority for payment and fulfillment.
+Card fields mount immediately using deferred Stripe Elements, before email or preferences are complete. Editing email does not remount or clear the card fields. Pay Now requires valid email, complete preferences and card details; it creates the immutable order and Checkout Session only on submission, checks Stripe’s total, then confirms using the collected PaymentMethod. Changing the basket resets the card form for the new amount. `submit_type` is omitted because Stripe rejects it for `ui_mode=elements`. Client secrets are kept in memory only. Server verification/webhooks remain the authority for payment and fulfillment.
 
 Apply `20261017200000_us_soulmate_optional_phone.sql` before enabling checkout. New US orders save null for the legacy phone column; analytics omit missing phone hashes. Neither older funnel changes. Without the dedicated publishable key, the payment panel shows an unavailable message and does not create orders. Rebuild after setting the public key. Test successful, declined and bank-authenticated cards plus changing extras before launching.

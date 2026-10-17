@@ -1,3 +1,4 @@
+import { usSoulmateAutomation } from "./us-soulmate-automation";
 import crypto from "node:crypto";
 import sharp from "sharp";
 import { getSupabaseAdmin } from "./supabase-admin";
@@ -174,7 +175,7 @@ export async function processAutomaticReportJob(job: Job) {
   }
 }
 export async function runAutomaticSoulmateReports() {
-  if (process.env.US_SOULMATE_AUTO_REPORTS_ENABLED !== "true" || process.env.VERCEL_ENV !== "production") return { enabled: false, processed: 0 };
+  if (!usSoulmateAutomation.reportsEnabled || process.env.VERCEL_ENV !== "production") return { enabled: false, processed: 0 };
   const mode = process.env.US_SOULMATE_STRIPE_MODE;
   if (mode !== "live" && mode !== "test") throw new Error("Invalid payment mode");
   assertReportCredentials(true);

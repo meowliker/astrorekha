@@ -28,7 +28,7 @@ export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
   const selectedAddOns = sanitizeAddOnIds(addOns, planId);
   const totals = checkoutTotals(plan.price, selectedAddOns, catalog);
   const hasAnswers = steps.every((step) => answers[step]);
-  const signature = JSON.stringify({ email: email.trim().toLowerCase(), planId, answers, addOns: selectedAddOns });
+  const signature = JSON.stringify({ planId, answers, addOns: selectedAddOns });
   const paymentReady = payment?.signature === signature && payment.canPay;
   const validEmail = /^[^\s@|]+@[^\s@|]+\.[^\s@|]+$/.test(email.trim()) && email.trim().length <= 254;
 
@@ -50,13 +50,12 @@ export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
   }, [ready, hasAnswers, planId, price.total]);
   async function checkout(event: FormEvent) {
     event.preventDefault();
-    if (submitting.current || !hasAnswers || !totals || !paymentReady || !payment) return;
+    if (submitting.current || !hasAnswers || !validEmail || !totals || !paymentReady || !payment) return;
     submitting.current = true;
     setLoading(true);
     setError("");
     try {
-      trackSoulmate("payment_submit", { plan: planId, value: totals.total, once: payment.orderId });
-      const receiptUrl = await payment.confirm();
+      const receiptUrl = await payment.confirm(email.trim().toLowerCase());
       window.location.assign(receiptUrl);
     } catch (cause) {
       trackSoulmate("checkout_error", { plan: planId });
@@ -104,7 +103,7 @@ export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
 
           <section className={styles.panel} aria-labelledby="payment-title">
             <div className={styles.panelHeading}><h2 id="payment-title">Payment Information</h2><p>Payments are securely processed by Stripe.</p></div>
-            <StripePaymentFields key={signature} signature={signature} amount={Math.round((totals?.total || 0) * 100)} enabled={ready && hasAnswers && validEmail && !!totals} onPayment={setPayment} />
+            <StripePaymentFields key={signature} signature={signature} amount={Math.round((totals?.total || 0) * 100)} enabled={ready && !!totals} onPayment={setPayment} />
             <div className={styles.paymentNote}><LockKeyhole size={17} aria-hidden="true" /><p>Enter your card details here, then click Pay Now to complete your order securely.</p></div>
           </section>
         </div>
@@ -126,7 +125,7 @@ export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
             <p className={styles.checkoutTerms}>By clicking Pay Now, you agree to our <a href="/Terms/terms-of-service.html">Terms of Sale</a>.</p>
             {ready && !hasAnswers && <p className={styles.sessionNotice}>Complete your <Link href="/us/soulmate">sketch preferences</Link> before making a payment.</p>}
             {error && <p className={styles.error} role="alert">{error}</p>}
-            <button type="submit" className={styles.payButton} disabled={!ready || !hasAnswers || !totals || !paymentReady || loading}><LockKeyhole size={17} />{loading ? "Processing payment…" : (totals ? `Pay Now · ${formatRupees(totals.total)}` : "US pricing coming soon")}<ArrowRight size={18} /></button>
+            <button type="submit" className={styles.payButton} disabled={!ready || !hasAnswers || !validEmail || !totals || !paymentReady || loading}><LockKeyhole size={17} />{loading ? "Processing payment…" : (totals ? `Pay Now · ${formatRupees(totals.total)}` : "US pricing coming soon")}<ArrowRight size={18} /></button>
             <p className={styles.smallPrint}>One-time payment. No subscription.</p>
             <CheckoutReviews />
           </section>
