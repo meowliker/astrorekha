@@ -36,7 +36,7 @@ for authentication. Existing ad settings are read only to reject shared account 
 Browser answers, checkout keys, attribution, analytics sessions and receipt cookies have separate
 US names. Main marketing components are excluded on US routes; US Meta events target only the US
 pixel. Cross-funnel links use document navigation so vendor globals cannot survive the transition.
-The new `us-soulmate-lander` R2 folder supplies all 22 US marketing images. The offer gallery reuses its four sketch files and checkout uses its first story image. The artist portrait remains at the original public URL because no US replacement was uploaded. Original storage objects are unchanged.
+The new `us-soulmate-lander` R2 folder supplies all 22 US marketing images. The offer gallery reuses its four sketch files and checkout uses its first story image. The artist portrait also uses `us-soulmate-lander/astrorekha-artist.png`, which is now available in the US folder. Original storage objects are unchanged.
 
 The existing normal and India Soulmate route implementations, payment gateways, environment values,
 cron jobs and customer records are unchanged. Shared code changes are limited to adding the admin
