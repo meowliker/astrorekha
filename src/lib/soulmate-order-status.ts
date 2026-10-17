@@ -42,6 +42,20 @@ export function soulmateOrderStage(order: SoulmateOrderView): SoulmateOrderStage
     };
   }
 
+  // Our worker holds approved files until their send time. Brevo's email state
+  // stays pending until then; it is not the source of truth for this admin badge.
+  const scheduledAt = order.email?.scheduled_at || order.scheduled_send_at;
+  if (order.payment_status === "paid" && order.review_status === "approved" &&
+    hasEveryRequiredAsset(order) && order.email?.status === "pending" &&
+    scheduledAt && Number.isFinite(Date.parse(scheduledAt))) {
+    return {
+      id: "scheduled",
+      label: "Scheduled",
+      detail: "Scheduled for automatic delivery",
+      timestamp: scheduledAt,
+    };
+  }
+
   if (order.review_status === "approved" || order.generation?.status === "ready" || hasEveryRequiredAsset(order)) {
     const uploadedAt = order.assets.reduce<string | null>((latest, asset) => {
       if (!latest || Date.parse(asset.uploaded_at) > Date.parse(latest)) return asset.uploaded_at;
