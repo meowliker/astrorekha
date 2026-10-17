@@ -174,7 +174,6 @@ export function SoulmateLanding({ visitorLocation, onStart }: { visitorLocation:
           <div className={styles.sectionHeading}>
             <span className={styles.eyebrow}>Messages from sketch clients</span>
             <h2 id="messages-heading">Their first reactions</h2>
-            <p>Illustrative preview copy — replace with verified customer messages before launch.</p>
           </div>
           <div className={styles.messages}>
             {previewTestimonials.map(({ message, caption }) => (
