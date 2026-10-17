@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { SoulmateCampaignSelectionError } from "@/lib/soulmate-campaigns";
 import { soulmateTrackingCredentials, soulmateTrackingRate as fxRate, soulmatePaidPayments as paidPayments, soulmateRefundPayments as refundPayments, soulmateTrackingParents, readSoulmateUtmVisits as readTrackedUtmVisits } from "@/lib/soulmate-tracking-data";
-import { fetchMetaTrackingAccount, fetchMetaTrackingExactHourlySpend } from "@/lib/tracking-meta";
+import { fetchMetaTrackingAccount, fetchMetaTrackingExactHourlySpend } from "@/lib/soulmate-tracking-meta";
 import { visitHour, type TrackingUtmVisit } from "@/lib/tracking-utm-visits";
 import {
   campaignNameKey, isMetaSource,
@@ -190,7 +191,12 @@ async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { s
   const missingParentIds = Array.from(new Set(refunds.map((row) => row.payu_txn_id).filter((id): id is string => !!id && !parents.has(id))));
   for (const row of await soulmateTrackingParents(supabase, missingParentIds)) parents.set(row.id, row);
   const accountRange = { startMillis: Date.parse(start), endMillis: Date.parse(end) };
-  const credentials = await soulmateTrackingCredentials(supabase, accountRange);
+  let selectionWarning: string | null = null;
+  const credentials = await soulmateTrackingCredentials(supabase, accountRange).catch((error) => {
+    if (!(error instanceof SoulmateCampaignSelectionError)) throw error;
+    selectionWarning = error.message;
+    return [];
+  });
   const distinct = Array.from(new Map(credentials.map((credential) => [credential.accountId, credential])).values());
   const meta = await Promise.all(distinct.map(async (credential) => {
     return fetchMetaTrackingAccount(credential, dates, rate.rate, dayMode);
@@ -201,6 +207,7 @@ async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { s
   const grossRevenue = sales.reduce((sum, row) => sum + Number(row.amount || 0) / 100, 0);
   const refundAmount = refunds.reduce((sum, row) => sum + Math.abs(Number(row.amount || 0)) / 100, 0);
   const warnings = meta.flatMap((result) => result.warnings);
+  if (selectionWarning) warnings.push(selectionWarning);
   if (rate.source === "Not configured") warnings.push("Set the USD to INR rate in Soulmate Profit Sheet before connecting USD ad accounts.");
   if (refunds.some((row) => !row.fulfilled_at)) warnings.push("Some historical refunds have only a reporting date; their hourly placement is approximate. Refresh Soulmate Profit Sheet to reconcile gateway timestamps.");
   if (visitResult.error) warnings.push(`${visitResult.error}. AR CVR is unavailable.`);

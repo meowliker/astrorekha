@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     if (params.get("mode") === "activities") {
       const selected = params.get("accountId");
       const results = await Promise.all(credentials.filter((account) => !selected || selected === "all" || account.accountId === selected).map(async (account) => {
-        try { return { rows: await fetchMetaTrackingActivities(account, { start, end }, dayMode, includeBoth), error: null }; }
+        try { return { rows: (await fetchMetaTrackingActivities(account, { start, end }, dayMode, includeBoth)).filter((row) => row.campaignId && account.campaignIds.includes(row.campaignId)), error: null }; }
         catch (error) { return { rows: [], error: `${account.label || account.accountId}: ${error instanceof Error ? error.message : "Meta activities unavailable"}` }; }
       }));
       return json({ activities: results.flatMap((result) => result.rows).sort((a, b) => b.at.localeCompare(a.at)),
@@ -45,6 +45,7 @@ export async function GET(request: NextRequest) {
     if (!accountId || !/^\d+$/.test(accountId) || !campaignId || !/^\d+$/.test(campaignId)) return json({ error: "Choose a Meta campaign." }, 400);
     const credential = credentials.find((account) => account.accountId === accountId);
     if (!credential) return json({ error: "Meta account unavailable for this range." }, 404);
+    if (!credential.campaignIds.includes(campaignId)) return json({ error: "This campaign is not selected for Soulmate." }, 403);
     // A token can access multiple ad accounts. Do not trust a client-supplied
     // campaign ID just because the selected account itself is allowed.
     const ownership = await fetch(`https://graph.facebook.com/v21.0/${campaignId}?fields=id,account_id`, {

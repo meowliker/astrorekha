@@ -1,3 +1,4 @@
+import { assertSoulmateCampaignObject } from "@/lib/soulmate-campaigns";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { soulmateTrackingCredentials } from "@/lib/soulmate-tracking-data";
@@ -37,6 +38,7 @@ export async function GET(request: NextRequest) {
     const adsetId = params.get("adsetId");
     if (!isId(accountId) || !isId(adsetId)) return json({ error: "Choose a valid Meta ad set." }, 400);
     const credential = await authorize(request, accountId);
+    await assertSoulmateCampaignObject(credential, "adset", adsetId);
     return json({ bid: await readMetaBid(credential, adsetId) });
   } catch (error) { return respondToError(error); }
 }
@@ -49,6 +51,7 @@ export async function POST(request: NextRequest) {
       return json({ error: "Choose a valid bid change." }, 400);
     }
     const credential = await authorize(request, input.accountId);
+    await assertSoulmateCampaignObject(credential, "adset", input.adsetId);
     return json({ bid: await changeMetaBid(credential, input.adsetId, input.expectedAmountMinor, input.newAmountMinor) });
   } catch (error) { return respondToError(error); }
 }

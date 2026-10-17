@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getMetaAccountCredentialsFromSettings, getMetaAdAccountIdsFromEnv, type MetaAdAccountCredentialRange } from "./meta-ad-accounts";
+import { getMetaAccountCredentialsFromSettings, type MetaAdAccountCredentialRange } from "./meta-ad-accounts";
+import { selectedCampaignIds, type SoulmateCredential } from "./soulmate-campaigns";
 import { loadSoulmateProfitSettings } from "./soulmate-profit-settings";
 import type { TrackingPayment } from "./tracking-dashboard";
 import { parseTrackedUtmVisit, type TrackingUtmVisit } from "./tracking-utm-visits";
@@ -81,19 +82,14 @@ export async function soulmateTrackingRate(db: SupabaseClient) {
   return { rate: settings.exchange_rate || 0, source: settings.exchange_rate ? "Soulmate Profit Sheet rate" : "Not configured" };
 }
 
-/** No normal-flow account/token fallback. Reject shared accounts rather than mix metrics or permit shared ad edits. */
-export async function soulmateTrackingCredentials(db: SupabaseClient, range: MetaAdAccountCredentialRange) {
+/** Shared accounts are allowed; every credential carries an explicit campaign allowlist. */
+export async function soulmateTrackingCredentials(db: SupabaseClient, range: MetaAdAccountCredentialRange): Promise<SoulmateCredential[]> {
   const settings = await loadSoulmateProfitSettings(db);
   if (!settings.accounts.length) return [];
-  const { data, error } = await db.from("settings").select("value").eq("key", "meta_ad_accounts").maybeSingle();
-  if (error) throw new Error("Unable to verify ad-account isolation.");
-  const mainIds = new Set(getMetaAdAccountIdsFromEnv());
-  for (const account of data?.value?.accounts || []) mainIds.add(String(account.accountId || "").replace(/^act_/i, ""));
-  if (settings.accounts.some((account) => mainIds.has(account.accountId))) {
-    throw new Error("A Soulmate ad account is also connected to the main flow. Connect separate Soulmate accounts to keep tracking and ad edits isolated.");
-  }
   if (!settings.exchange_rate) throw new Error("Set the USD to INR rate in Soulmate Profit Sheet before loading Meta accounts.");
-  return getMetaAccountCredentialsFromSettings({ accounts: settings.accounts }, range);
+  return getMetaAccountCredentialsFromSettings({ accounts: settings.accounts }, range).map((credential) => ({
+    ...credential, campaignIds: selectedCampaignIds(settings.accounts.find((account) => account.accountId === credential.accountId)!),
+  }));
 }
 
 type SoulmateLanding = {

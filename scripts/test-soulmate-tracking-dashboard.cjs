@@ -35,7 +35,7 @@ const db = { from(table) {
   }; return q;
 } };
 stub('../src/lib/supabase-admin',{getSupabaseAdmin:()=>db});
-stub('../src/lib/tracking-meta',{
+stub('../src/lib/soulmate-tracking-meta',{
   fetchMetaTrackingAccount:async()=>{if(metaResult) return metaResult; throw new Error('Unexpected Meta fetch without dedicated accounts');},
   fetchMetaTrackingExactHourlySpend:async()=>{throw new Error('Unexpected Meta call');},
 });
@@ -80,7 +80,7 @@ test('live sales show Soulmate product name and only verified production purchas
   assert.equal(data.todayCount,1);assert.equal(data.sales[0].productName,base.product_info);assert.equal(data.sales[0].amount,1768.82);
 });
 test('Meta purchases and internal sales stay distinct and join only dedicated campaign IDs',async()=>{
-  tables.soulmate_admin_settings[0].accounts=[{accountId:'777777',accessToken:'soulmate-fixture'}];
+  tables.soulmate_admin_settings[0].accounts=[{accountId:'777777',accessToken:'soulmate-fixture',campaignIds:['123456789']}];
   metaResult={account:{id:'777777',name:'Soulmate only',currency:'INR',timezone:'Asia/Kolkata'},warnings:[],hourlySpendInr:{},dailySpendInr:{'2026-10-16':{total:100,indian:100}},campaigns:[{
     key:'meta:777777:123456789',accountId:'777777',accountName:'Soulmate only',campaignId:'123456789',campaignName:'Soulmate A',currency:'INR',spend:100,spendInr:100,metaPurchases:7,metaPurchaseValue:12381.74,
     orders:0,grossRevenue:0,refunds:0,refundAmount:0,revenue:0,utmSources:[],utmMediums:[],utmTerms:[],utmContents:[],adBreakdown:[],attribution:'none',
@@ -107,13 +107,17 @@ test('no session or an expired session cannot read tracking or views',async()=>{
   assert.equal((await GET(req())).status,401);assert.equal((await views.GET(req('/views'))).status,401);
   assert.ok(reads.every(table=>table==='admin_sessions'));
 });
-test('dedicated credentials never fall back to main credentials and shared accounts are rejected',async()=>{
+test('shared accounts carry only selected campaigns and never use main credentials',async()=>{
   assert.deepEqual(await helpers.soulmateTrackingCredentials(db,{}),[]);
   for(const accountId of ['888888','999999']) {
-    tables.soulmate_admin_settings[0].accounts=[{accountId,accessToken:'soulmate-fixture'}];
-    await assert.rejects(helpers.soulmateTrackingCredentials(db,{}),/also connected/);
+    tables.soulmate_admin_settings[0].accounts=[{accountId,accessToken:'soulmate-fixture',campaignIds:['123456789']}];
+    const selected=await helpers.soulmateTrackingCredentials(db,{});
+    assert.equal(selected[0].accessToken,'soulmate-fixture');
+    assert.deepEqual(selected[0].campaignIds,['123456789']);
+    tables.soulmate_admin_settings[0].accounts[0].campaignIds=[];
+    await assert.rejects(helpers.soulmateTrackingCredentials(db,{}),/Select the Soulmate campaigns/);
   }
-  tables.soulmate_admin_settings[0].accounts=[{accountId:'777777',accessToken:'soulmate-fixture',startDate:'2026-10-15',startTime:'11:30'}];
+  tables.soulmate_admin_settings[0].accounts=[{accountId:'777777',accessToken:'soulmate-fixture',campaignIds:['123456789'],startDate:'2026-10-15',startTime:'11:30'}];
   const accounts=await helpers.soulmateTrackingCredentials(db,{startMillis:Date.parse(range.start),endMillis:Date.parse(range.end)});
   assert.deepEqual(accounts.map(row=>row.accountId),['777777']);
 });

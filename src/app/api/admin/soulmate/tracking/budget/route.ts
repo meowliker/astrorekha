@@ -1,3 +1,4 @@
+import { assertSoulmateCampaignObject } from "@/lib/soulmate-campaigns";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { soulmateTrackingCredentials } from "@/lib/soulmate-tracking-data";
@@ -40,6 +41,7 @@ export async function GET(request: NextRequest) {
     const level = params.get("level");
     if (!isId(accountId) || !isId(id) || !isLevel(level)) return json({ error: "Choose a valid Meta campaign or ad set." }, 400);
     const credential = await authorize(request, accountId);
+    await assertSoulmateCampaignObject(credential, level, id);
     return json({ budget: await readMetaBudget(credential, level, id) });
   } catch (error) { return respondToError(error); }
 }
@@ -53,6 +55,7 @@ export async function POST(request: NextRequest) {
       return json({ error: "Choose a valid budget change." }, 400);
     }
     const credential = await authorize(request, input.accountId);
+    await assertSoulmateCampaignObject(credential, input.level, input.id);
     const budget = await changeMetaBudget(credential, input.level, input.id,
       { type: input.type as BudgetType, amountMinor: input.expectedAmountMinor }, input.newAmountMinor);
     return json({ budget });
