@@ -24,7 +24,9 @@ test('files are limited to purchased kinds and paid, unapproved orders',async()=
 });
 test('file signatures are checked and valid PDF is privately registered with checksum',async()=>{
  assert.equal((await assets.POST(upload('description','not a PDF','application/pdf'),params)).status,400);
- assert.equal((await assets.POST(upload('sketch','%PDF-test','image/png'),params)).status,400);
+ assert.equal((await assets.POST(upload('sketch','not an image or PDF','image/png'),params)).status,400);
  assert.equal((await assets.POST(upload('description','%PDF-test','application/pdf'),params)).status,200);
  assert.equal(uploads,1);assert.equal(saved.name,'save_soulmate_order_asset');assert.match(saved.params.p_path,/^sm_aaaaaaaaaaaaaaaaaaaa\/description-[a-f0-9-]+\.pdf$/);assert.match(saved.params.p_sha,/^[a-f0-9]{64}$/);assert.equal(saved.params.p_order,params.params.id);
 });
+
+test('sketch accepts a PDF and persists its detected content type',async()=>{assert.equal((await assets.POST(upload('sketch','%PDF-test','application/pdf'),params)).status,200);assert.equal(saved.params.p_type,'application/pdf');assert.equal(saved.params.p_kind,'sketch');assert.match(saved.params.p_path,/sketch-.*\.pdf$/);});
