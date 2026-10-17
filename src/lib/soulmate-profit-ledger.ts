@@ -6,7 +6,7 @@ import { loadSoulmateProfitSettings } from "./soulmate-profit-settings";
 import { fetchSoulmateMetaSpend } from "./soulmate-meta-spend";
 import { DAY_MS, SOULMATE_PROFIT_START, profitDay, shiftProfitDate, soulmateProfitRows, type SoulmateProfitRow } from "./soulmate-profit";
 
-type Refund = { event_id: string; order_id: string; date: string; amount_paise: number; gst_paise: number };
+type Refund = { event_id: string; order_id: string; date: string; amount_paise: number; gst_paise: number; occurred_at?: string };
 export async function readSoulmateProfitLedger(db: SupabaseClient, start: string, end: string) {
   const [settings, saved] = await Promise.all([
     loadSoulmateProfitSettings(db),
@@ -60,7 +60,7 @@ async function readRefunds(db: SupabaseClient, start: string, end: string): Prom
     const amount = Math.round(classifyPayUEvent(txn as unknown as Record<string, unknown>).amount * 100);
     if (amount > order.amount) throw new Error("A Soulmate refund exceeds its order amount. Review it before syncing.");
     const event_id = createHash("sha256").update(getPayUEventFingerprint(txn)).digest("hex");
-    refunds.set(event_id, { event_id, order_id: txn.txnid, date, amount_paise: amount, gst_paise: Math.round(amount * order.gst_amount / order.amount) });
+    refunds.set(event_id, { event_id, order_id: txn.txnid, date, occurred_at: new Date(at).toISOString(), amount_paise: amount, gst_paise: Math.round(amount * order.gst_amount / order.amount) });
   }
   return [...refunds.values()];
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { trackPixelEvent, trackCustomEvent } from "./pixel-events";
-import { getPaymentAttributionPayload } from "./attribution-client";
+import { getSoulmateAttributionPayload } from "./soulmate-attribution-client";
 import { SOULMATE_FUNNEL } from "./soulmate-orders";
 import type { PaymentAttributionPayload } from "./attribution";
 import type { DeliveryId } from "@/app/soulmate/chat-data";
@@ -24,7 +24,7 @@ export function soulmateTrackingContext() {
   memory.at = now;
   try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(memory)); } catch { /* Memory fallback. */ }
   let attribution: PaymentAttributionPayload = {};
-  try { attribution = getPaymentAttributionPayload(); } catch { /* Malformed or blocked cookies must not block checkout. */ }
+  try { attribution = getSoulmateAttributionPayload(); } catch { /* Malformed or blocked cookies must not block checkout. */ }
   return { sessionId: memory.id, attribution };
 }
 
@@ -51,6 +51,6 @@ function emitSoulmate(event: FunnelEvent, options: { plan?: DeliveryId; value?: 
   else if (event === "chat_start" || event === "chat_complete") trackCustomEvent(event === "chat_start" ? "SoulmateChatStart" : "SoulmateChatComplete", params);
   void fetch("/api/soulmate/events", {
     method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
-    body: JSON.stringify({ event, sessionId: context.sessionId, plan: options.plan, attribution: context.attribution }),
+    body: JSON.stringify({ event, sessionId: context.sessionId, plan: options.plan, url: window.location.href, attribution: context.attribution }),
   }).catch(() => {});
 }

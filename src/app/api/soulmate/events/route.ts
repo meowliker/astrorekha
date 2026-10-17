@@ -12,10 +12,16 @@ export async function POST(request: NextRequest) {
   try {
     const body = JSON.parse(text);
     if (!events.has(body.event) || !/^[a-f0-9-]{36}$/i.test(body.sessionId || "")) return new NextResponse(null, { status: 400 });
+    let arrival: URL | null = null;
+    try {
+      const candidate = new URL(body.url);
+      if (candidate.protocol === "https:" && ["astrorekha.com", "www.astrorekha.com"].includes(candidate.hostname) && /^\/soulmate(?:\/|$)/.test(candidate.pathname)) arrival = candidate;
+    } catch { /* Older clients did not include the arrival URL. */ }
     const plan = ["standard", "express"].includes(body.plan) ? body.plan : null;
     const success = await recordMarketingEvent({
       eventName: `soulmate_${body.event}`, productType: SOULMATE_FUNNEL,
       sessionId: body.sessionId, productId: plan ? `soulmate_${plan}` : null,
+      url: arrival?.href || null,
       path: body.event === "checkout_view" ? "/soulmate/checkout" : "/soulmate",
       attribution: sanitizePaymentAttribution(body.attribution),
       metadata: { funnel: SOULMATE_FUNNEL, plan },

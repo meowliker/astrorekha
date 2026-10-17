@@ -98,6 +98,15 @@ const adminOptions: AdminOption[] = [
 
 const soulmateOptions: AdminOption[] = [
   {
+    id: "soulmate-tracking",
+    title: "Soulmate Tracking",
+    description: "Track Soulmate campaigns, UTMs, Meta sales, hourly performance and saved views",
+    icon: ChartNoAxesCombined,
+    href: "/admin/soulmate/tracking",
+    color: "text-cyan-300",
+    bgColor: "bg-cyan-500/15",
+  },
+  {
     id: "soulmate-orders",
     title: "Soulmate Orders",
     description: "Review purchases, customer answers, generation and delivery status",

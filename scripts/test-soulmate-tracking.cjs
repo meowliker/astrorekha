@@ -69,7 +69,7 @@ test('empty cohort displays unavailable rates instead of misleading zero percent
 test('browser funnel queues GA before SDK load, dedupes effects, distinguishes plans, and excludes local traffic',()=>{
   const pixel=[];
   stub('../src/lib/pixel-events',{trackPixelEvent:(...args)=>pixel.push(args),trackCustomEvent:(...args)=>pixel.push(args)});
-  stub('../src/lib/attribution-client',{getPaymentAttributionPayload:()=>({utm_source:'meta',meta_campaign_id:'123'})});
+  stub('../src/lib/soulmate-attribution-client',{getSoulmateAttributionPayload:()=>({utm_source:'meta',meta_campaign_id:'123'})});
   const store=new Map(); global.sessionStorage={getItem:key=>store.get(key)||null,setItem:(key,value)=>store.set(key,value)};
   global.window={location:{hostname:'astrorekha.com'}};
   process.env.NODE_ENV='production';
