@@ -91,9 +91,7 @@ The requested tax is calculated at 18% on the full selected subtotal and rounded
 
 Stripe receives the purchased products plus a separate line named **Tax**, using the exact saved amount. This implements the requested display without a visible percentage; it is not Stripe automatic tax or a Stripe Tax rate object. Products and prices are generated through Checkout `price_data` when a session is created, so there is no separate catalog to manually synchronize. Live page creation/testing awaits the dedicated Stripe credentials.
 
-Existing schema names such as `amount_paise`, `spendInr` and `gst_amount` remain internal compatibility fields: US monetary minor units mean cents, spend is USD at parity, and `gst_amount` stores the configured tax. Customer-facing and admin amounts display USD. Existing India-oriented question choices, artwork and report content
-are retained as requested; broader US copy/localization and a US reporting timezone are separate
-product decisions.
+Existing schema names such as `amount_paise`, `spendInr` and `gst_amount` remain internal compatibility fields: US monetary minor units mean cents, spend is USD at parity, and `gst_amount` stores the configured tax. Customer-facing and admin amounts display USD. The US background options are White, African American, Hispanic / Latino, Native American and Other. Both sketch-generation paths respect this selection without forcing an Indian subject; Other leaves ethnicity unspecified. Broader copy changes and a US reporting timezone remain separate product decisions.
 
 ## Verification
 

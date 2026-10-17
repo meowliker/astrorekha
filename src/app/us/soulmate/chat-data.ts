@@ -11,7 +11,7 @@ export const choices = {
   preferenceSelection: ["I like men", "I like women", "I’m open to both"],
   preference: ["I like men", "I like women", "I’m open to both"],
   feeling: ["Safe — someone who stays", "Passionate — someone who sees me", "Peaceful — no games or guessing"],
-  ethnicity: ["North Indian", "South Indian", "East / Northeast Indian", "West / Central Indian", "Any Indian background"],
+  ethnicity: ["White", "African American", "Hispanic / Latino", "Native American", "Other"],
 } satisfies Partial<Record<Step, string[]>>;
 
 export function preferenceOptions(selected: string | undefined) {
@@ -157,7 +157,7 @@ export function conversation(answers: Answers, location: string | null): Message
   bot("zodiac-name", `${zodiac.name}. I had a feeling, ${answers.name}.`);
   bot("zodiac-reflection", `A ${zodiac.element.toLowerCase()} sign. ${zodiac.reflection}`);
   bot("zodiac-deeper", `${answers.name}, there’s a softer side to this, too. ${zodiac.deeperReflection}`);
-  bot("ethnicity", "One more thing, so I can shape the portrait: which Indian background would you like your soulmate sketch to reflect?");
+  bot("ethnicity", "One more thing, so I can shape the portrait: which background would you like your soulmate sketch to reflect?");
   if (!answers.ethnicity) return messages;
   reply("ethnicity");
   bot("complete", `That’s everything I need, ${answers.name}. Stay with me for a moment…`);

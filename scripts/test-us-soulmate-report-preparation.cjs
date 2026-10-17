@@ -13,7 +13,7 @@ const { submitReportSketch, generateReportDescription } = require('../src/lib/us
 const { buildSoulmateCart } = require('../src/lib/us-soulmate-cart');
 const { TIMELINE_TITLES, validateTimeline, assertTimelineContext, timelinePrompt, timelineSections } = require('../src/lib/us-soulmate-timeline');
 const date = new Date('2026-10-17T01:00:00Z');
-const answers = { name: 'Fixture Buyer', heart: 'I feel like I’ve been waiting forever', preferenceSelection: 'I like men', preference: 'I like women', feeling: 'Safe — someone who stays', birthDate: '1967-04-05', ethnicity: 'Any Indian background' };
+const answers = { name: 'Fixture Buyer', heart: 'I feel like I’ve been waiting forever', preferenceSelection: 'I like men', preference: 'I like women', feeling: 'Safe — someone who stays', birthDate: '1967-04-05', ethnicity: 'Other' };
 const order = (plan = 'express', addons = []) => ({ id: 'us_sm_aaaaaaaaaaaaaaaaaaaa', catalog_version: 2, payment_status: 'paid', review_status: 'pending', answer_revision: 1, answers, entitlements: buildSoulmateCart(plan, addons).entitlements, scheduled_send_at: '2026-10-17T05:30:00Z', fulfillment_status: 'pending' });
 const prose = 'You may imagine a warm and steady connection that grows through mutual care and honest conversation. Its possibilities are an invitation to reflect, with room for your own choices and experience.';
 const draft = () => ({ sections: DESCRIPTION_TITLES.map(title => ({ title, paragraphs: [prose, prose] })), closing: prose });
@@ -163,4 +163,25 @@ test('editing during timeline generation stops stale output before any PDF is sa
   await assert.rejects(advanceReportPreparation(state, h.io, { execute: true, providers: h.providers, now: date }), /changed/);
   assert.equal(h.files.length, 0);
   await assert.rejects(advanceReportPreparation({ ...h.saved(), plan: buildReportPlan({ ...o, answer_revision: 2 }, date) }, h.io, { execute: true, providers: h.providers, now: date }), /uncertain/);
+});
+test('US background choices validate and reach both sketch generation paths',()=>{
+  const {choices,validateAnswer,sanitizeAnswers,conversation}=require('../src/app/us/soulmate/chat-data');
+  const {buildStandalonePrompt}=require('../src/lib/us-soulmate-fulfillment');
+  assert.deepEqual(choices.ethnicity,['White','African American','Hispanic / Latino','Native American','Other']);
+  for(const ethnicity of choices.ethnicity){
+    const chosen={...answers,ethnicity};
+    assert.equal(validateAnswer('ethnicity',ethnicity),null);
+    assert.equal(sanitizeAnswers(chosen).ethnicity,ethnicity);
+    const plan=buildReportPlan({...order(),answers:chosen},date);
+    assert.equal(plan.profile.background,ethnicity);
+    const prompts=[plan.sketchPrompt,buildStandalonePrompt(order().id,chosen,date.toISOString())];
+    for(const prompt of prompts){
+      assert.doesNotMatch(prompt,/fictional Indian|Indian background|natural brown iris/);
+      if(ethnicity==='Other')assert.match(prompt,/do not assume a particular ethnicity/);
+      else assert.ok(prompt.includes(ethnicity));
+    }
+  }
+  assert.ok(validateAnswer('ethnicity','North Indian'));
+  assert.equal(sanitizeAnswers({...answers,ethnicity:'North Indian'}).ethnicity,undefined);
+  assert.doesNotMatch(conversation({...answers,ethnicity:undefined},null).find(m=>m.id==='ethnicity').text,/Indian/);
 });

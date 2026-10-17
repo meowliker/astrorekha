@@ -36,7 +36,7 @@ const webhook=require('../src/app/api/us/soulmate/payment/webhook/route');
 const status=require('../src/app/api/us/soulmate/payment/status/route');
 const stripe=require('../src/lib/us-soulmate-stripe');
 const cart=require('../src/lib/us-soulmate-cart');
-const answers={name:'Maya',heart:'I feel like I’ve been waiting forever',preferenceSelection:'I like men',preference:'I like men',feeling:'Safe — someone who stays',birthDate:'1995-01-01',ethnicity:'North Indian'};
+const answers={name:'Maya',heart:'I feel like I’ve been waiting forever',preferenceSelection:'I like men',preference:'I like men',feeling:'Safe — someone who stays',birthDate:'1995-01-01',ethnicity:'White'};
 const body=(extra={})=>({plan:'standard',answers,email:'maya@example.com',phone:'2025550123',checkoutKey:crypto.randomUUID(),...extra});
 const req=(data,origin='https://example.com')=>new NextRequest('https://example.com/api/us/soulmate/checkout',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify(data)});
 async function create(data=body()){const response=await checkout.POST(req(data)); assert.equal(response.status,200);return{response,data:await response.json(),order:[...orders.values()].at(-1)}}

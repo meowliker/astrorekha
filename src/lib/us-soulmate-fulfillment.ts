@@ -27,7 +27,7 @@ export function buildStandalonePrompt(orderId: string, value: Answers, paidAt: s
   if (!Number.isFinite(age) || age < 18) throw new Error("Invalid adult birth date");
   const feeling = a.feeling === choices.feeling[1] ? "an expressive, confident gaze and warm romantic presence" : a.feeling === choices.feeling[2] ? "a peaceful, relaxed expression and gentle presence" : "a kind, steady gaze and reassuring warmth";
   const heart = choices.heart.includes(a.heart!) ? "Convey emotional warmth and hope through the expression." : "";
-  const background = a.ethnicity === "Any Indian background" ? "Indian background" : `${a.ethnicity} background`;
+  const background = a.ethnicity === "Other" ? "no specific ethnic background prescribed; do not assume a particular ethnicity" : `the requested ${a.ethnicity} background, without stereotypes`;
   return `Create one realistic graphite pencil portrait of an adult ${subject}, approximately ${Math.max(18, age - 3)}–${age + 3} years old, with ${background}. ${feeling}. ${heart} Gentle ${getZodiac(a.birthDate!).element.toLowerCase()} zodiac-inspired mood, without symbols. Head and shoulders, one person only, detailed natural facial features and hair, hand-drawn pencil texture on cream paper. Black and white, square composition, whole head visible. No text, watermark, signature, frame, astrology symbols, extra faces or photographs. This is an imaginative artistic portrait, not a prediction or identification of a real person.`;
 }
 
