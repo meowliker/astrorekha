@@ -20,6 +20,7 @@ export type StripeCheckout = {
   on(event: "change", handler: (session: StripeSessionView) => void): void;
 };
 export type DeferredElements = {
+  update(options: { amount: number }): Promise<void>;
   create(type: "payment", options: { layout: "tabs"; wallets: { link: "never" }; fields: { billingDetails: { email: "never"; phone: "never" } } }): PaymentElement;
   submit(): Promise<{ error?: { message?: string } }>;
 };

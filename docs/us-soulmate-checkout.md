@@ -8,7 +8,7 @@ The checkout accepts Stripe promotion codes from the configured US Stripe accoun
 
 Use unrestricted, all-product coupons eligible for USD guest purchases. Customer-specific codes and product-restricted coupons are not supported by this guest/inline-price catalog. The current paid-order checkout requires a final total of at least USD 0.50; free orders are not enabled.
 
-Stripe allocates the coupon across product and explicit Tax lines. The server checks every line against the immutable catalog basket, then atomically freezes the product discount, remaining Tax and total before returning the client secret. Checkout, saved order, invoice and payment verification use those amounts. Changing email/cart or removing the code starts a distinct checkout attempt. Apply/Remove refreshes the secure card form, so apply the code before entering card information.
+Stripe allocates the coupon across product and explicit Tax lines. The server checks every line against the immutable catalog basket, then atomically freezes the product discount, remaining Tax and total before returning the client secret. Checkout, saved order, invoice and payment verification use those amounts. Changing email/cart or removing the code starts a distinct checkout attempt. Apply/Remove updates the existing Stripe Elements amount without remounting the secure card form, preserving entered card details. Pay Now waits for Stripe to finish the amount update and confirms only the current cart.
 
 Migration `20261017210000_us_soulmate_promotions.sql` adds the discount snapshot and a service-role-only finalization RPC. The RPC cannot alter an existing Stripe session or a paid order. Existing invoices are unchanged.
 

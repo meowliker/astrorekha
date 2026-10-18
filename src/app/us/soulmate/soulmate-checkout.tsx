@@ -129,7 +129,7 @@ export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
 
           <section className={styles.panel} aria-labelledby="payment-title">
             <div className={styles.panelHeading}><h2 id="payment-title">Payment Information</h2><p>Payments are securely processed by Stripe.</p></div>
-            <StripePaymentFields key={signature} signature={signature} amount={Math.round((displayTotal || 0) * 100)} enabled={ready && !!totals} onPayment={setPayment} />
+            <StripePaymentFields signature={signature} amount={Math.round((displayTotal || 0) * 100)} enabled={ready && !!totals} onPayment={setPayment} />
             <div className={styles.paymentNote}><LockKeyhole size={17} aria-hidden="true" /><p>Enter your card details here, then click Pay Now to complete your order securely.</p></div>
           </section>
         </div>
