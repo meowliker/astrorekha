@@ -17,8 +17,8 @@ The existing `/admin` dashboard now includes **US Soulmate workspace** with all 
 It uses existing admin authentication. Its orders, saved views, advertising accounts, settings,
 report jobs, invoices, refunds and profit rows are independent. Copying cards does not copy customers,
 credentials or historical records. Tracking contains the same campaign controls and columns.
-US ad accounts must be separate from both existing workspaces and use USD billing currency.
-Add their credentials through US Profit Sheet settings. Reporting retains the existing IST calendar
+US ad accounts use USD billing currency. Shared accounts are supported through explicit campaign selection.
+Add credentials and select US campaigns through Tracking → Campaigns or Profit Sheet → Accounts & Campaigns. Reporting retains the existing IST calendar
 and 11:30 IST business-day choices, clearly labeled in the UI.
 
 ## Database isolation
@@ -31,7 +31,7 @@ verified permissions, session ownership, immutability, invoice allocation and jo
 
 Order IDs start `us_sm_`; invoices start `ARUS-`; the funnel is `us_soulmate_standalone`. All API
 writes stay in US tables, including marketing events. The shared `admin_sessions` table is read
-for authentication. Existing ad settings are read only to reject shared account IDs.
+for authentication. US credentials and campaign selections never fall back to other workspaces.
 
 Browser answers, checkout keys, attribution, analytics sessions and receipt cookies have separate
 US names. Main marketing components are excluded on US routes; US Meta events target only the US
@@ -74,8 +74,9 @@ Public values require a rebuild.
 | `/api/cron/fulfill-us-soulmate-orders` | Every minute |
 | `/api/cron/sync-us-soulmate-profit` | Hourly |
 
-No US cron schedules, Stripe endpoint or production environment variables have been activated by
-this change. The code has not been deployed. Existing scheduled jobs do not query US tables.
+Existing scheduled jobs do not query US tables. US generation and delivery remain disabled.
+Production Stripe and receipt variable names were verified in Vercel before the 18 October release;
+credential values and webhook setup are managed by the owner. No new US cron schedules are enabled.
 
 Stripe sessions use server-built USD cents, isolated order metadata and order-level idempotency.
 The return URL does not prove payment: the API retrieves Stripe's session, intent and charge and
