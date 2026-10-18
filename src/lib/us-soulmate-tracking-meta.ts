@@ -1,4 +1,6 @@
-import { getMetaAccountWindowForRequest, type MetaAccountCredential } from "@/lib/meta-ad-accounts";
+// Soulmate-only Meta reader. Normal tracking keeps its original account-wide reader.
+import { campaignInsightFilter, selectedCampaignIds, type SoulmateCredential } from "./us-soulmate-campaigns";
+import { getMetaAccountWindowForRequest } from "@/lib/meta-ad-accounts";
 import { trackingDayStartUtc, type TrackingCampaign, type TrackingDayMode } from "@/lib/tracking-dashboard";
 import { bufferedMetaRange, campaignHourlySpendForBusinessDays, campaignSpendForBusinessDays, metaPurchasesMatchWindow, normalizeHourlySpendToDailyTotals, type CampaignSpendRow } from "@/lib/tracking-meta-spend";
 
@@ -51,11 +53,12 @@ async function collectPages<T>(url: string, limitPages: number): Promise<{ rows:
 
 /** Fetch each account-calendar day separately: Meta's multi-day hourly breakdown can differ from its single-day numbers. */
 export async function fetchMetaTrackingExactHourlySpend(
-  credential: MetaAccountCredential,
+  credential: SoulmateCredential,
   day: string,
   usdInrRate: number,
   dayMode: TrackingDayMode = "business_1130_ist",
 ): Promise<{ hourlySpendInr: Record<string, number[]> }> {
+  const allowed = new Set(selectedCampaignIds(credential));
   const empty = { hourlySpendInr: {} };
   const accountId = credential.accountId;
   const accountUrl = `${META_BASE}/act_${accountId}`;
@@ -83,9 +86,10 @@ export async function fetchMetaTrackingExactHourlySpend(
       time_increment: "1", breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone",
       time_range: JSON.stringify({ since: accountDay, until: accountDay }), limit: "5000",
     });
+    params.set("filtering", campaignInsightFilter(credential));
     const response = await collectPages<CampaignSpendRow>(`${accountUrl}/insights?${params}`, 20);
     if (response.truncated) throw new Error(`Meta hourly spend is incomplete for ${accountDay}`);
-    return response.rows;
+    return response.rows.filter((row) => allowed.has(row.campaign_id || ""));
   }));
   const base = { hourly: results.flat(), daily: [], start: day, end: day,
     timezoneOffsetHoursUtc: offset, accountWindow: window, nowMillis: Date.now(), dayMode };
@@ -99,7 +103,7 @@ export async function fetchMetaTrackingExactHourlySpend(
 }
 
 export async function fetchMetaTrackingAccount(
-  credential: MetaAccountCredential,
+  credential: SoulmateCredential,
   dates: { start: string; end: string },
   usdInrRate: number,
   dayMode: TrackingDayMode = "business_1130_ist",
@@ -115,6 +119,7 @@ export async function fetchMetaTrackingAccount(
   const fallbackName = credential.label || `Ad account ${accountId}`;
 
   try {
+    const allowed = new Set(selectedCampaignIds(credential));
     const metadata = await metaJson<{ name?: string; currency?: string; timezone_name?: string; timezone_offset_hours_utc?: number }>(
       `${accountUrl}?${new URLSearchParams({ access_token: credential.accessToken, fields: "name,currency,timezone_name,timezone_offset_hours_utc" })}`
     );
@@ -152,12 +157,18 @@ export async function fetchMetaTrackingAccount(
       time_range: JSON.stringify(buffered),
       limit: "5000",
     });
+    for (const params of [insightParams, hourlyParams, dailyParams]) params.set("filtering", campaignInsightFilter(credential));
+    campaignParams.set("filtering", JSON.stringify([{ field: "id", operator: "IN", value: [...allowed] }]));
     const [insights, metadataRows, hourlySpend, dailySpend] = await Promise.all([
       collectPages<MetaInsight>(`${accountUrl}/insights?${insightParams}`, 20),
       collectPages<MetaCampaign>(`${accountUrl}/campaigns?${campaignParams}`, 20),
       collectPages<CampaignSpendRow>(`${accountUrl}/insights?${hourlyParams}`, 20),
       collectPages<CampaignSpendRow>(`${accountUrl}/insights?${dailyParams}`, 20),
     ]);
+    insights.rows = insights.rows.filter((row) => allowed.has(row.campaign_id || ""));
+    metadataRows.rows = metadataRows.rows.filter((row) => allowed.has(row.id));
+    hourlySpend.rows = hourlySpend.rows.filter((row) => allowed.has(row.campaign_id || ""));
+    dailySpend.rows = dailySpend.rows.filter((row) => allowed.has(row.campaign_id || ""));
     const warnings: string[] = [];
     if (insights.truncated) warnings.push(`${accountName}: Meta insights exceeded 4,000 campaigns; narrow the date range.`);
     if (metadataRows.truncated) warnings.push(`${accountName}: campaign metadata exceeded 4,000 rows; some statuses may be missing.`);

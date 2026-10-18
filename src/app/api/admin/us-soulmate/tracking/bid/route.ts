@@ -1,3 +1,4 @@
+import { assertSoulmateCampaignObject, SoulmateCampaignAccessError, SoulmateCampaignSelectionError } from "@/lib/us-soulmate-campaigns";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { soulmateTrackingCredentials } from "@/lib/us-soulmate-tracking-data";
@@ -25,8 +26,10 @@ async function authorize(request: NextRequest, accountId: string) {
 }
 
 function respondToError(error: unknown) {
+  if (error instanceof SoulmateCampaignAccessError) return json({ error: error.message }, 403);
+  if (error instanceof SoulmateCampaignSelectionError) return json({ error: error.message }, 400);
   if (error instanceof MetaBidError) return json({ error: error.message }, error.status);
-  console.error("[admin/soulmate/tracking/bid]", error instanceof Error ? error.message : error);
+  console.error("[admin/us-soulmate/tracking/bid]", error instanceof Error ? error.message : error);
   return json({ error: "Unable to reach Meta for this bid." }, 502);
 }
 
@@ -37,6 +40,7 @@ export async function GET(request: NextRequest) {
     const adsetId = params.get("adsetId");
     if (!isId(accountId) || !isId(adsetId)) return json({ error: "Choose a valid Meta ad set." }, 400);
     const credential = await authorize(request, accountId);
+    await assertSoulmateCampaignObject(credential, "adset", adsetId);
     return json({ bid: await readMetaBid(credential, adsetId) });
   } catch (error) { return respondToError(error); }
 }
@@ -49,6 +53,7 @@ export async function POST(request: NextRequest) {
       return json({ error: "Choose a valid bid change." }, 400);
     }
     const credential = await authorize(request, input.accountId);
+    await assertSoulmateCampaignObject(credential, "adset", input.adsetId);
     return json({ bid: await changeMetaBid(credential, input.adsetId, input.expectedAmountMinor, input.newAmountMinor) });
   } catch (error) { return respondToError(error); }
 }

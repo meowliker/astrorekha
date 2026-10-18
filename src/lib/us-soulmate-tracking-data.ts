@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getMetaAccountCredentialsFromSettings, getMetaAdAccountIdsFromEnv, type MetaAdAccountCredentialRange } from "./meta-ad-accounts";
+import { getMetaAccountCredentialsFromSettings, type MetaAdAccountCredentialRange } from "./meta-ad-accounts";
+import { selectedCampaignIds, type SoulmateCredential } from "./us-soulmate-campaigns";
 import { loadSoulmateProfitSettings } from "./us-soulmate-profit-settings";
 import type { TrackingPayment as BaseTrackingPayment } from "./tracking-dashboard";
 import { parseTrackedUtmVisit, type TrackingUtmVisit } from "./tracking-utm-visits";
@@ -84,21 +85,13 @@ export async function soulmateTrackingRate(db: SupabaseClient) {
   return { rate: 1, source: "US Soulmate USD reporting" };
 }
 
-/** No normal-flow account/token fallback. Reject shared accounts rather than mix metrics or permit shared ad edits. */
-export async function soulmateTrackingCredentials(db: SupabaseClient, range: MetaAdAccountCredentialRange) {
+/** Shared accounts are allowed; every credential carries an explicit campaign allowlist. */
+export async function soulmateTrackingCredentials(db: SupabaseClient, range: MetaAdAccountCredentialRange): Promise<SoulmateCredential[]> {
   const settings = await loadSoulmateProfitSettings(db);
   if (!settings.accounts.length) return [];
-  const { data, error } = await db.from("settings").select("value").eq("key", "meta_ad_accounts").maybeSingle();
-  if (error) throw new Error("Unable to verify ad-account isolation.");
-  const mainIds = new Set(getMetaAdAccountIdsFromEnv());
-  const india = await db.from("soulmate_admin_settings").select("accounts").eq("id", true).single();
-  if (india.error) throw new Error("Unable to verify India Soulmate account isolation.");
-  for (const account of india.data?.accounts || []) mainIds.add(String(account.accountId || "").replace(/^act_/i, ""));
-  for (const account of data?.value?.accounts || []) mainIds.add(String(account.accountId || "").replace(/^act_/i, ""));
-  if (settings.accounts.some((account) => mainIds.has(account.accountId))) {
-    throw new Error("A US Soulmate ad account is also connected to the main or India Soulmate flow. Connect separate US accounts to keep tracking and ad edits isolated.");
-  }
-  return getMetaAccountCredentialsFromSettings({ accounts: settings.accounts }, range);
+  return getMetaAccountCredentialsFromSettings({ accounts: settings.accounts }, range).map((credential) => ({
+    ...credential, campaignIds: selectedCampaignIds(settings.accounts.find((account) => account.accountId === credential.accountId)!),
+  }));
 }
 
 type SoulmateLanding = {

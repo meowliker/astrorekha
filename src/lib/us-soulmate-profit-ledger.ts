@@ -1,9 +1,9 @@
-import { assertUSAdAccountIsolation } from "./us-soulmate-account-isolation";
 import { randomUUID } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { stripeRequest } from "./us-soulmate-stripe";
 import { loadSoulmateProfitSettings } from "./us-soulmate-profit-settings";
 import { fetchSoulmateMetaSpend } from "./us-soulmate-meta-spend";
+import { selectedCampaignIds } from "./us-soulmate-campaigns";
 import { DAY_MS, US_SOULMATE_PROFIT_START, profitDay, shiftProfitDate, soulmateProfitRows, type SoulmateProfitRow } from "./us-soulmate-profit";
 
 type Refund = { event_id: string; order_id: string; date: string; amount_paise: number; gst_paise: number; occurred_at?: string };
@@ -13,7 +13,12 @@ export async function readSoulmateProfitLedger(db: SupabaseClient, start: string
     db.from("us_soulmate_profit_sheet").select("date,data,synced_at,config_revision").gte("date", start).lte("date", end).order("date"),
   ]);
   if (saved.error) throw new Error("Unable to read saved Soulmate profit rows.");
-  const rows: SoulmateProfitRow[] = (saved.data || []).map((row) => ({ ...row.data, syncedAt: row.synced_at, stale: row.config_revision !== settings.revision }));
+  const rows: SoulmateProfitRow[] = (saved.data || []).map((row) => {
+    const stale = row.config_revision !== settings.revision || row.data.adScope !== "selected_campaigns_v1";
+    // Old account-wide numbers must not appear as campaign-only costs/profit.
+    return { ...row.data, ...(stale ? { adsUsd: null, adsInr: null, adGst: null, profit: null, roas: null, accounts: [] } : {}),
+      balance: null, balanceCapturedAt: null, syncedAt: row.synced_at, stale };
+  });
   const dates = new Set(rows.map((row) => row.date));
   const missing: string[] = [];
   for (let date = start; date <= end; date = shiftProfitDate(date, 1)) if (!dates.has(date)) missing.push(date);
@@ -62,15 +67,14 @@ export async function syncSoulmateProfitLedger(db: SupabaseClient, start: string
   if (claim.error || !claim.data) throw new Error("A Soulmate refresh is already running. Try again shortly.");
   try {
     const settings = await loadSoulmateProfitSettings(db);
-    await assertUSAdAccountIsolation(db, settings.accounts);
+    settings.accounts.forEach(selectedCampaignIds);
     const rate = 1;
-    const [receipts, refunds, spend, previous, savedRefunds] = await Promise.all([
+    const [receipts, refunds, spend, savedRefunds] = await Promise.all([
       readReceipts(db, start, end), readRefunds(db, start, end),
       settings.accounts.length ? fetchSoulmateMetaSpend(settings.accounts, start, end, rate!, now) : Promise.resolve([]),
-      db.from("us_soulmate_profit_sheet").select("date,data").gte("date", start).lte("date", end),
       db.from("us_soulmate_refund_events").select("*").gte("date", start).lte("date", end),
     ]);
-    if (previous.error || savedRefunds.error) throw new Error("Unable to read saved Soulmate figures.");
+    if (savedRefunds.error) throw new Error("Unable to read saved Soulmate figures.");
     const allRefunds = new Map<string, Refund>((savedRefunds.data || []).map((r) => [r.event_id, r]));
     refunds.forEach((r) => allRefunds.set(r.event_id, r));
     const rows = soulmateProfitRows(start, end, receipts).map((row) => {
@@ -82,12 +86,8 @@ export async function syncSoulmateProfitLedger(db: SupabaseClient, start: string
       const adsUsd = settings.accounts.length ? accounts.reduce((sum, a) => sum + a.adsUsd, 0) : null;
       const adsInr = settings.accounts.length ? accounts.reduce((sum, a) => sum + a.adsInr, 0) : null;
       const adGst = settings.accounts.length ? accounts.reduce((sum, a) => sum + a.adGst, 0) : null;
-      const old = previous.data.find((r) => r.date === row.date)?.data;
-      // Never backdate today's balance; preserve the day's earlier genuine snapshot.
-      const balances = accounts.filter((a) => a.balanceCapturedAt);
-      const balance = balances.length === accounts.length && balances.length ? balances.reduce((sum, a) => sum + a.balance!, 0) : old?.balance ?? null;
-      return { ...row, refund, salesGst, revenue, adsUsd, adsInr, adGst, balance, accounts, exchangeRate: rate,
-        balanceCapturedAt: balances.length ? balances[0].balanceCapturedAt : old?.balanceCapturedAt ?? null,
+      return { ...row, refund, salesGst, revenue, adsUsd, adsInr, adGst, balance: null, accounts, exchangeRate: rate,
+        adScope: "selected_campaigns_v1", balanceCapturedAt: null,
         profit: adsInr === null || adGst === null ? null : revenue - salesGst - adsInr - adGst,
         roas: adsInr !== null && adsInr > 0 ? revenue / adsInr : null };
     });

@@ -82,7 +82,7 @@ test('live sales show Soulmate product name and only verified production purchas
 });
 test('Meta purchases and internal sales stay distinct and profit deducts saved tax',async()=>{
   tables.us_soulmate_orders[0]={...base,gst_amount:20000};
-  tables.us_soulmate_admin_settings[0].accounts=[{accountId:'777777',accessToken:'soulmate-fixture'}];
+  tables.us_soulmate_admin_settings[0].accounts=[{accountId:'777777',accessToken:'soulmate-fixture',campaignIds:['123456789']}];
   metaResult={account:{id:'777777',name:'Soulmate only',currency:'USD',timezone:'Asia/Kolkata'},warnings:[],hourlySpendInr:{},dailySpendInr:{'2026-10-16':{total:100,indian:100}},campaigns:[{
     key:'meta:777777:123456789',accountId:'777777',accountName:'Soulmate only',campaignId:'123456789',campaignName:'Soulmate A',currency:'USD',spend:100,spendInr:100,metaPurchases:7,metaPurchaseValue:12381.74,
     orders:0,grossRevenue:0,refunds:0,refundAmount:0,revenue:0,utmSources:[],utmMediums:[],utmTerms:[],utmContents:[],adBreakdown:[],attribution:'none',
@@ -109,15 +109,20 @@ test('no session or an expired session cannot read tracking or views',async()=>{
   assert.equal((await GET(req())).status,401);assert.equal((await views.GET(req('/views'))).status,401);
   assert.ok(reads.every(table=>table==='admin_sessions'));
 });
-test('dedicated credentials never fall back to main credentials and shared accounts are rejected',async()=>{
+test('US credentials never fall back to other flows and shared accounts retain campaign scope',async()=>{
   assert.deepEqual(await helpers.soulmateTrackingCredentials(db,{}),[]);
   for(const accountId of ['888888','999999','666666']) {
-    tables.us_soulmate_admin_settings[0].accounts=[{accountId,accessToken:'soulmate-fixture'}];
-    await assert.rejects(helpers.soulmateTrackingCredentials(db,{}),/also connected/);
+    tables.us_soulmate_admin_settings[0].accounts=[{accountId,accessToken:'soulmate-fixture',campaignIds:['123456789']}];
+    const scoped=await helpers.soulmateTrackingCredentials(db,{});
+    assert.equal(scoped[0].accessToken,'soulmate-fixture');
+    assert.deepEqual(scoped[0].campaignIds,['123456789']);
   }
-  tables.us_soulmate_admin_settings[0].accounts=[{accountId:'777777',accessToken:'soulmate-fixture',startDate:'2026-10-15',startTime:'11:30'}];
+  tables.us_soulmate_admin_settings[0].accounts=[{accountId:'777777',accessToken:'soulmate-fixture',campaignIds:['123456789'],startDate:'2026-10-15',startTime:'11:30'}];
   const accounts=await helpers.soulmateTrackingCredentials(db,{startMillis:Date.parse(range.start),endMillis:Date.parse(range.end)});
   assert.deepEqual(accounts.map(row=>row.accountId),['777777']);
+  assert.ok(!reads.includes('settings') && !reads.includes('soulmate_admin_settings'));
+  tables.us_soulmate_admin_settings[0].accounts[0].campaignIds=[];
+  await assert.rejects(helpers.soulmateTrackingCredentials(db,{}),/Select/);
 });
 test('arrival URLs take precedence over old attribution and reloads do not inflate visits',async()=>{
   tables.us_soulmate_marketing_events.push({...tables.us_soulmate_marketing_events[0],id:'reload'});
@@ -161,4 +166,12 @@ test('Soulmate browser attribution cannot inherit or overwrite normal campaign s
   window.location.href='https://astrorekha.com/us/soulmate/checkout';
   assert.equal(capture().meta_campaign_id,undefined);
   delete global.window;delete global.document;
+});
+
+test('missing campaign selection preserves US sales without requesting account-wide Meta data',async()=>{
+  tables.us_soulmate_admin_settings[0].accounts=[{accountId:'777777',accessToken:'soulmate-fixture'}];
+  const response=await GET(req('?start=2026-10-15&end=2026-10-17&dayMode=calendar_ist'));
+  assert.equal(response.status,200);const data=await response.json();
+  assert.equal(data.totals.orders,1);
+  assert.ok(data.warnings.some(w=>w.includes('Select the US Soulmate campaigns')));
 });

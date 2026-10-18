@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { MetaAdAccountSettingsRow } from "./meta-ad-accounts";
+import { selectedCampaignIds, type SoulmateAdAccount } from "./us-soulmate-campaigns";
 import { US_SOULMATE_PROFIT_START, validProfitDate } from "./us-soulmate-profit";
 
-export type SoulmateProfitSettings = { accounts: MetaAdAccountSettingsRow[]; exchange_rate: number | null; revision: number };
+export type SoulmateProfitSettings = { accounts: SoulmateAdAccount[]; exchange_rate: number | null; revision: number };
 export async function loadSoulmateProfitSettings(db: SupabaseClient): Promise<SoulmateProfitSettings> {
   const { data, error } = await db.from("us_soulmate_admin_settings").select("accounts,exchange_rate,revision").eq("id", true).single();
   if (error || !data) throw new Error("Soulmate reporting tables are unavailable.");
@@ -13,7 +13,7 @@ export function publicSoulmateSettings(settings: SoulmateProfitSettings) {
   return { revision: settings.revision, exchangeRate: settings.exchange_rate,
     accounts: settings.accounts.map(({ accessToken, ...account }) => ({ ...account, hasAccessToken: Boolean(accessToken) })) };
 }
-export function validateSoulmateAccounts(input: unknown, existing: MetaAdAccountSettingsRow[]): MetaAdAccountSettingsRow[] {
+export function validateSoulmateAccounts(input: unknown, existing: SoulmateAdAccount[]): SoulmateAdAccount[] {
   if (!Array.isArray(input) || input.length > 20) throw new Error("Use up to 20 Soulmate ad accounts.");
   const seen = new Set<string>();
   return input.map((raw) => {
@@ -31,6 +31,7 @@ export function validateSoulmateAccounts(input: unknown, existing: MetaAdAccount
     const timeValid = (t: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t);
     if (!validProfitDate(startDate) || startDate < US_SOULMATE_PROFIT_START || !timeValid(startTime) || (!active && (!validProfitDate(endDate!) || !timeValid(endTime!) || `${endDate}T${endTime}` <= `${startDate}T${startTime}`))) throw new Error("Use valid account dates and times, starting on or after 15 October 2026.");
     if (raw.balanceMode && !["outstanding", "remaining_spend_limit"].includes(raw.balanceMode)) throw new Error("Choose a valid balance type.");
-    return { accountId, accessToken, label: String(raw.label || "").trim().slice(0, 100), startDate, startTime, active, endDate, endTime, balanceMode: raw.balanceMode || "outstanding" };
+    const campaignIds = selectedCampaignIds({ accountId, campaignIds: raw.campaignIds });
+    return { accountId, accessToken, campaignIds, label: String(raw.label || "").trim().slice(0, 100), startDate, startTime, active, endDate, endTime, balanceMode: raw.balanceMode || "outstanding" };
   });
 }

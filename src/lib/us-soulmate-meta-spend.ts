@@ -1,12 +1,12 @@
-import type { MetaAdAccountSettingsRow } from "./meta-ad-accounts";
+import { campaignInsightFilter, selectedCampaignIds, type SoulmateAdAccount } from "./us-soulmate-campaigns";
 import { getMetaAccountWindowForRequest } from "./meta-ad-accounts";
 import { DAY_MS, profitDay, shiftProfitDate, type SoulmateAccountSpend } from "./us-soulmate-profit";
 
 const BASE = "https://graph.facebook.com/v21.0";
 const HOUR = 3600000;
-type Insight = { date_start: string; spend: string; hourly_stats_aggregated_by_advertiser_time_zone?: string };
+type Insight = { campaign_id: string; date_start: string; spend: string; hourly_stats_aggregated_by_advertiser_time_zone?: string };
 
-async function metaRead(account: MetaAdAccountSettingsRow, path: string, params: Record<string, string>) {
+async function metaRead(account: SoulmateAdAccount, path: string, params: Record<string, string>) {
   const url = new URL(`${BASE}/act_${account.accountId}${path}`);
   Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
   try {
@@ -16,7 +16,7 @@ async function metaRead(account: MetaAdAccountSettingsRow, path: string, params:
     return data;
   } catch { throw new Error(`Meta data is unavailable for ${account.label || account.accountId}. Check its access token and ads_read permission. Saved figures have been kept.`); }
 }
-async function insights(account: MetaAdAccountSettingsRow, params: Record<string, string>): Promise<Insight[]> {
+async function insights(account: SoulmateAdAccount, params: Record<string, string>): Promise<Insight[]> {
   const rows: Insight[] = [];
   let after = "";
   for (let page = 0; page < 100; page++) {
@@ -60,19 +60,22 @@ export function allocateSoulmateHour(bucketStart: number, spend: number, window:
   }
   return result;
 }
-export async function fetchSoulmateMetaSpend(accounts: MetaAdAccountSettingsRow[], start: string, end: string, rate: number, now = Date.now()): Promise<SoulmateAccountSpend[]> {
+export async function fetchSoulmateMetaSpend(accounts: SoulmateAdAccount[], start: string, end: string, rate: number, now = Date.now()): Promise<SoulmateAccountSpend[]> {
   const result: SoulmateAccountSpend[] = [];
   // Bounded sequential accounts prevent a burst against Meta's account rate limits.
   for (const account of accounts) {
     const window = getMetaAccountWindowForRequest(account, start, end);
     if (!window) continue;
     if (!account.accessToken) throw new Error(`Missing Meta access for ${account.label || account.accountId}.`);
-    const params = { fields: "date_start,spend", time_increment: "1", time_range: JSON.stringify({ since: shiftProfitDate(start, -1), until: shiftProfitDate(end, 1) }) };
-    const [info, daily, hourly] = await Promise.all([
-      metaRead(account, "", { fields: "name,currency,timezone_name,balance,amount_spent,spend_cap" }),
+    const allowed = new Set(selectedCampaignIds(account));
+    const params = { fields: "campaign_id,date_start,spend", level: "campaign", filtering: campaignInsightFilter(account), time_increment: "1", time_range: JSON.stringify({ since: shiftProfitDate(start, -1), until: shiftProfitDate(end, 1) }) };
+    const [info, dailyResult, hourlyResult] = await Promise.all([
+      metaRead(account, "", { fields: "name,currency,timezone_name" }),
       insights(account, params),
       insights(account, { ...params, breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone" }),
     ]);
+    const daily = dailyResult.filter((row) => allowed.has(row.campaign_id));
+    const hourly = hourlyResult.filter((row) => allowed.has(row.campaign_id));
     const currency = String(info.currency || "");
     if (currency !== "USD" || !info.timezone_name) throw new Error(`Unsupported currency or missing timezone for ${account.label || account.accountId}.`);
     const spend = new Map<string, number>();
@@ -87,32 +90,27 @@ export async function fetchSoulmateMetaSpend(accounts: MetaAdAccountSettingsRow[
       const at = accountHourMillis(row.date_start, 0, info.timezone_name);
       const day = profitDay(at);
       if (at === Date.parse(`${day}T06:00:00Z`) && window.startMillis <= at && window.endMillis >= at + DAY_MS) {
-        add(day, amountOf(row)); applied.add(row.date_start);
+        add(day, amountOf(row)); applied.add(`${row.campaign_id}:${row.date_start}`);
       }
     }
     for (const row of daily) {
-      if (!applied.has(row.date_start) && amountOf(row) > 0 && !hourly.some((h) => h.date_start === row.date_start)) throw new Error(`Hourly spend is missing for ${account.label || account.accountId}. Saved figures have been kept.`);
+      if (!applied.has(`${row.campaign_id}:${row.date_start}`) && amountOf(row) > 0 && !hourly.some((h) => h.date_start === row.date_start && h.campaign_id === row.campaign_id)) throw new Error(`Hourly spend is missing for ${account.label || account.accountId}. Saved figures have been kept.`);
     }
     for (const row of hourly) {
-      if (applied.has(row.date_start)) continue;
+      if (applied.has(`${row.campaign_id}:${row.date_start}`)) continue;
       const hour = Number(row.hourly_stats_aggregated_by_advertiser_time_zone?.match(/^(\d{2}):/)?.[1]);
       if (!Number.isInteger(hour) || hour < 0 || hour > 23) throw new Error("Meta returned an invalid hourly bucket.");
       const bucket = accountHourMillis(row.date_start, hour, info.timezone_name);
       for (const [day, amount] of allocateSoulmateHour(bucket, amountOf(row), window, now)) add(day, amount);
     }
-    const rawBalance = account.balanceMode === "remaining_spend_limit"
-      ? (info.spend_cap === undefined || info.amount_spent === undefined ? NaN : Math.max(0, Number(info.spend_cap) - Number(info.amount_spent)))
-      : info.balance === undefined ? NaN : -Math.abs(Number(info.balance));
-    const balance = Number.isFinite(rawBalance) ? Math.round(currency === "USD" ? rawBalance : rawBalance / rate) : null;
     for (let date = start; date <= end; date = shiftProfitDate(date, 1)) {
       if (!getMetaAccountWindowForRequest(account, date, date)) continue;
       const nativeSpend = spend.get(date) || 0;
-      const current = date === profitDay(now) && now >= window.startMillis && now < window.endMillis;
       result.push({ date, accountId: account.accountId, label: account.label || info.name || account.accountId, currency,
         nativeSpend, adsUsd: Math.round((currency === "USD" ? nativeSpend : nativeSpend / rate) * 100),
-        adsInr: Math.round((currency === "USD" ? nativeSpend : nativeSpend * rate) * 100),
+        adsInr: Math.round(nativeSpend * 100),
         adGst: 0,
-        balance: current ? balance : null, balanceCapturedAt: current && balance !== null ? new Date(now).toISOString() : null });
+        balance: null, balanceCapturedAt: null });
     }
   }
   return result;

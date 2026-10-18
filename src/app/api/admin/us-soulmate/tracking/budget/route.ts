@@ -1,3 +1,4 @@
+import { assertSoulmateCampaignObject, SoulmateCampaignAccessError, SoulmateCampaignSelectionError } from "@/lib/us-soulmate-campaigns";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { soulmateTrackingCredentials } from "@/lib/us-soulmate-tracking-data";
@@ -27,8 +28,10 @@ async function authorize(request: NextRequest, accountId: string) {
 }
 
 function respondToError(error: unknown) {
+  if (error instanceof SoulmateCampaignAccessError) return json({ error: error.message }, 403);
+  if (error instanceof SoulmateCampaignSelectionError) return json({ error: error.message }, 400);
   if (error instanceof MetaBudgetError) return json({ error: error.message }, error.status);
-  console.error("[admin/soulmate/tracking/budget]", error instanceof Error ? error.message : error);
+  console.error("[admin/us-soulmate/tracking/budget]", error instanceof Error ? error.message : error);
   return json({ error: "Unable to reach Meta for this budget." }, 502);
 }
 
@@ -40,6 +43,7 @@ export async function GET(request: NextRequest) {
     const level = params.get("level");
     if (!isId(accountId) || !isId(id) || !isLevel(level)) return json({ error: "Choose a valid Meta campaign or ad set." }, 400);
     const credential = await authorize(request, accountId);
+    await assertSoulmateCampaignObject(credential, level, id);
     return json({ budget: await readMetaBudget(credential, level, id) });
   } catch (error) { return respondToError(error); }
 }
@@ -53,6 +57,7 @@ export async function POST(request: NextRequest) {
       return json({ error: "Choose a valid budget change." }, 400);
     }
     const credential = await authorize(request, input.accountId);
+    await assertSoulmateCampaignObject(credential, input.level, input.id);
     const budget = await changeMetaBudget(credential, input.level, input.id,
       { type: input.type as BudgetType, amountMinor: input.expectedAmountMinor }, input.newAmountMinor);
     return json({ budget });
