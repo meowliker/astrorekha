@@ -31,16 +31,23 @@ function fixture({ holdUpdates = false } = {}) {
   global.sessionStorage = { getItem: key => store.get(key) || null, setItem: (key, value) => store.set(key, value) };
   global.window = { setTimeout, clearTimeout, location: { origin: 'http://localhost', assign: value => { calls.receipt = value; } } };
   // An opaque marker represents Stripe-owned input. Application code cannot read it.
-  let entered = false, currentAmount, serverAmount;
+  let entered = false, currentAmount, serverAmount, hiddenBillingFields = {};
   const element = { mount() { calls.mounts++; handlers.ready(); }, destroy() { calls.destroys++; entered = false; }, on(event, handler) { handlers[event] = handler; } };
   const elements = {
-    create() { calls.creates++; return element; },
+    create(type, options) { hiddenBillingFields = options.fields.billingDetails; calls.creates++; return element; },
     async submit() { return entered ? {} : { error: { message: 'Card details missing' } }; },
     async update({ amount }) { calls.updates.push(amount); if (holdUpdates) { const wait = deferred(); pending.push(wait); await wait.promise; } currentAmount = amount; },
   };
   const stripe = {
     elements({ amount }) { currentAmount = amount; return elements; },
-    async createPaymentMethod() { calls.methods++; return { paymentMethod: { id: 'pm_fixture' } }; },
+    async createPaymentMethod({ params }) {
+      // Mirror Stripe's integration contract: `never` delegates collection to the caller.
+      for (const [field, mode] of Object.entries(hiddenBillingFields)) {
+        if (mode === 'never') assert.notEqual(params.billing_details[field], undefined, `Hidden billing field ${field} must be supplied to Stripe`);
+      }
+      assert.equal(params.billing_details.phone, '', 'Do not require or fabricate a customer phone');
+      calls.methods++; return { paymentMethod: { id: 'pm_fixture' } };
+    },
     initCheckoutElementsSdk() {
       const amount = serverAmount;
       return { async loadActions() { return { type: 'success', actions: {

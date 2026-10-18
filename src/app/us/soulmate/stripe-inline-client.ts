@@ -26,7 +26,7 @@ export type DeferredElements = {
 };
 export type StripeClient = {
   elements(options: { mode: "payment"; amount: number; currency: "usd"; allowedPaymentMethodTypes: ["card"]; paymentMethodCreation: "manual"; appearance: { theme: "stripe"; variables: Record<string, string> } }): DeferredElements;
-  createPaymentMethod(options: { elements: DeferredElements; params: { billing_details: { email: string } } }): Promise<{ paymentMethod?: { id: string }; error?: { message?: string } }>;
+  createPaymentMethod(options: { elements: DeferredElements; params: { billing_details: { email: string; phone: "" } } }): Promise<{ paymentMethod?: { id: string }; error?: { message?: string } }>;
   initCheckoutElementsSdk(options: { clientSecret: string; elementsOptions: { appearance: { theme: "stripe"; variables: Record<string, string> } } }): StripeCheckout;
 };
 type StripeFactory = (key: string) => StripeClient;
@@ -74,7 +74,9 @@ export async function collectDeferredPayment(stripe: StripeClient, elements: Def
   if (!/^[^\s@|]+@[^\s@|]+\.[^\s@|]+$/.test(email) || email.length > 254) throw new Error("Please enter a valid email address.");
   const submitted = await elements.submit();
   if (submitted.error) throw new Error(submitted.error.message || "Please complete your card details.");
-  const result = await stripe.createPaymentMethod({ elements, params: { billing_details: { email } } });
+  // Every field hidden with `never` must be supplied to Stripe, even when optional.
+  // An explicit empty phone keeps checkout phone-free without promising a missing value.
+  const result = await stripe.createPaymentMethod({ elements, params: { billing_details: { email, phone: "" } } });
   if (result.error || !result.paymentMethod) throw new Error(result.error?.message || "Please check your card details and try again.");
   return result.paymentMethod.id;
 }

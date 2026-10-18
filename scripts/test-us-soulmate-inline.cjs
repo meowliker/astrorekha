@@ -53,7 +53,7 @@ test('deferred card collection validates email and card details before creating 
  const stripe={createPaymentMethod:async options=>{calls.push(options);return{paymentMethod:{id:'pm_fixture'}}}};
  await assert.rejects(collectDeferredPayment(stripe,elements,''),/valid email/);assert.equal(calls.length,0);
  assert.equal(await collectDeferredPayment(stripe,elements,'buyer@example.com'),'pm_fixture');
- assert.equal(calls[0],'submit');assert.equal(calls[1].elements,elements);assert.deepEqual(calls[1].params,{billing_details:{email:'buyer@example.com'}});
+ assert.equal(calls[0],'submit');assert.equal(calls[1].elements,elements);assert.deepEqual(calls[1].params,{billing_details:{email:'buyer@example.com',phone:''}});
  calls.length=0;
  await assert.rejects(collectDeferredPayment(stripe,{submit:async()=>({error:{message:'Your card number is incomplete.'}})},'buyer@example.com'),/incomplete/);
  assert.equal(calls.length,0);
