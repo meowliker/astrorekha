@@ -6,14 +6,11 @@ import { saveSoulmateSession, sessionCredentials } from "@/lib/us-soulmate-sessi
 import { NextRequest, NextResponse } from "next/server";
 import { deliveryPlans, sanitizeAnswers, steps } from "@/app/us/soulmate/chat-data";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { usPricesReady } from "@/lib/us-soulmate-prices";
 import { US_SOULMATE_FUNNEL, US_SOULMATE_ORDERS_TABLE, US_SOULMATE_ORDER_PREFIX } from "@/lib/us-soulmate-orders";
 import { createStripeCheckout, resolvePromotionCode, PromotionCodeError, stripeCheckoutConfig, receiptPath, receiptCookie, type SoulmateOrder } from "@/lib/us-soulmate-stripe";
 
 export async function POST(request: NextRequest) {
   try {
-    if (process.env.US_SOULMATE_CHECKOUT_ENABLED !== "true" || !usPricesReady()) return NextResponse.json({ error: "US checkout will open once pricing and payment setup are ready." }, { status: 503 });
-
     // Next's dev server can normalize 127.0.0.1 to localhost in nextUrl.
     // Compare the browser Origin with the actual HTTP Host instead.
     const originHeader = request.headers.get("origin") || "";

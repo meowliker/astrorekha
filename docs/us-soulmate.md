@@ -48,19 +48,13 @@ Use `docs/us-soulmate.env.example`; add its values alongside existing app variab
 `BREVO_API_KEY` and `BREVO_SENDER_EMAIL`; US workers use the existing `CRON_SECRET`.
 Public values require a rebuild.
 
-1. The six approved USD prices are built into the US catalog and listed in the dedicated env template. The
-   standard basket has three optional extras; express includes description/colour/priority and has
-   the optional timeline. Explicit blank or invalid overrides block payment. Without overrides the approved US prices apply.
-2. Configure dedicated Stripe test credentials (matching `NEXT_PUBLIC_US_SOULMATE_STRIPE_PUBLISHABLE_KEY` and `US_SOULMATE_STRIPE_SECRET_KEY`) and a random receipt secret of at least 32 characters.
-   Both keys are required for inline payment fields. Set `US_SOULMATE_STRIPE_MODE=test` for test checkout;
-   use `pk_test_` with `sk_test_`. Live mode requires `pk_live_` with `sk_live_`.
+1. The six approved USD prices are fixed in `src/lib/us-soulmate-prices.ts`, shared by the UI and server cart. There are no price environment overrides. Standard has three optional extras; express includes description/colour/priority and has the optional timeline.
+2. Configure dedicated live Stripe credentials (`NEXT_PUBLIC_US_SOULMATE_STRIPE_PUBLISHABLE_KEY` starts with `pk_live_`; `US_SOULMATE_STRIPE_SECRET_KEY` starts with `sk_live_`) and a random receipt secret of at least 32 characters. US Stripe is always live, with no mode environment variable. Test keys are rejected.
 3. Configure the Stripe endpoint `https://astrorekha.com/api/us/soulmate/payment/webhook`, using API
    version `2026-03-25.dahlia`, for `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
    `checkout.session.async_payment_failed` and `checkout.session.expired`. Store that endpoint's
    signing secret in `US_SOULMATE_STRIPE_WEBHOOK_SECRET`.
-4. Set `US_SOULMATE_CHECKOUT_ENABLED=true` only when Stripe setup is ready. Run a Stripe
-   test-mode purchase and verify webhook recovery, admin order, USD invoice and purchased outputs.
-   For launch, switch the dedicated key, endpoint secret and mode together to live values.
+4. Checkout is always enabled in code and still requires valid live credentials before creating an order. Complete payment/webhook/email verification before launch. Offline tests use mocked Stripe responses; they do not charge a card.
 5. Configure US Kie and Anthropic keys for reports; reuse the existing Brevo configuration.
    Generation and scheduled delivery are disabled in `src/lib/us-soulmate-automation.ts`.
    Change those code controls only after the owner requests activation; there are no enable env vars.
@@ -91,7 +85,7 @@ revert a paid order. Refund reporting reconciles only matching live US orders.
 
 The requested tax is calculated at 18% on the full selected subtotal and rounded once to USD cents. The UI labels it only **Tax**, with no GST text or percentage. For example, $37 + $6.66 = $43.66; Vision is $67 + $12.06 = $79.06. The checkout, Stripe total, order snapshot, receipt and profit reporting all use the same saved amount. The follow-up migration `20261017184000_us_soulmate_tax.sql` removes the earlier US-only zero-tax constraint.
 
-Stripe receives the purchased products plus a separate line named **Tax**, using the exact saved amount. This implements the requested display without a visible percentage; it is not Stripe automatic tax or a Stripe Tax rate object. Products and prices are generated through Checkout `price_data` when a session is created, so there is no separate catalog to manually synchronize. Live page creation/testing awaits the dedicated Stripe credentials.
+Stripe receives the purchased products plus a separate line named **Tax**, using the exact saved amount. This implements the requested display without a visible percentage; it is not Stripe automatic tax or a Stripe Tax rate object. Products and prices are generated through Checkout `price_data` when a session is created, so there is no separate catalog to manually synchronize. The dedicated live credentials are configured locally; production configuration is managed separately.
 
 Existing schema names such as `amount_paise`, `spendInr` and `gst_amount` remain internal compatibility fields: US monetary minor units mean cents, spend is USD at parity, and `gst_amount` stores the configured tax. Customer-facing and admin amounts display USD. The US background options are White, African American, Hispanic / Latino, Native American and Other. Both sketch-generation paths respect this selection without forcing an Indian subject; Other leaves ethnicity unspecified. Broader copy changes and a US reporting timezone remain separate product decisions.
 
@@ -103,7 +97,7 @@ Existing schema names such as `amount_paise`, `spendInr` and `gst_amount` remain
 - `scripts/test-us-soulmate.sql` (transaction rolls back all fixtures)
 
 Offline tests mock Stripe/provider calls and do not prove live account activation, payment-method
-eligibility or email deliverability. A real Stripe test-mode integration run awaits credentials.
+eligibility or email deliverability. A completed live payment and email verification remains outstanding.
 
 
 ## Inline card checkout

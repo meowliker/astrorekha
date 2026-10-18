@@ -18,7 +18,7 @@ Migration `20261017210000_us_soulmate_promotions.sql` adds the discount snapshot
 
 `NEXT_PUBLIC_US_SOULMATE_META_PIXEL_ID` and `US_SOULMATE_META_CAPI_ACCESS_TOKEN` are separate from both older funnels. Leave them blank until the US pixel is available; rebuild after setting the public ID.
 
-The local preview uses live Stripe keys. No real payment or customer email was sent during the promo implementation. A successful charge/webhook/email test remains necessary before production launch. Use Stripe test-mode credentials for test-card testing.
+The local preview uses live Stripe keys. No real payment or customer email was sent during the promo implementation. A successful charge/webhook/email test remains necessary before production launch. The US application is live-only and rejects test credentials. Offline tests stub all Stripe calls.
 
 ## Verification
 
@@ -26,3 +26,5 @@ The local preview uses live Stripe keys. No real payment or customer email was s
 - `scripts/test-us-soulmate-promotions.sql` runs inside BEGIN/ROLLBACK; fixtures never persist.
 - Production build and targeted ESLint/type checks.
 - Browser checks for cards before email, promo visibility, missing-email guidance and invalid-code rejection.
+
+Prices are fixed in `src/lib/us-soulmate-prices.ts`, checkout is always enabled, and Stripe always uses live mode. None of these settings require environment variables.

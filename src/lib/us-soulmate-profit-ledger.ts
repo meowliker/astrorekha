@@ -34,7 +34,6 @@ async function readReceipts(db: SupabaseClient, start: string, end: string) {
   throw new Error("Choose a smaller reporting range.");
 }
 async function readRefunds(db: SupabaseClient, start: string, end: string): Promise<Refund[]> {
-  if (process.env.US_SOULMATE_STRIPE_MODE !== "live") throw new Error("Configure live US Stripe reporting before refreshing refunds.");
   const rows: Refund[] = [];
   let after = "";
   for (let page = 0; page < 100; page++) {

@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { data: session, error } = await db.from("admin_sessions").select("expires_at").eq("id", token).maybeSingle();
   if (error || !session || Date.parse(session.expires_at) <= Date.now()) return NextResponse.json({ error: "Session expired" }, { status: 401 });
-  if (process.env.VERCEL_ENV !== "production" || process.env.US_SOULMATE_STRIPE_MODE !== "live") return NextResponse.json({ checked: 0, recovered: 0, skipped: "Local preview" });
+  if (process.env.VERCEL_ENV !== "production") return NextResponse.json({ checked: 0, recovered: 0, skipped: "Local preview" });
   try {
     const { data, error: queryError } = await db.from("us_soulmate_orders").select("*")
       .eq("funnel", "us_soulmate_standalone").eq("payment_mode", "live")

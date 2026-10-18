@@ -15,9 +15,8 @@ export type SoulmateOrder = {
 };
 export function stripeConfig() {
   const key = process.env.US_SOULMATE_STRIPE_SECRET_KEY?.trim();
-  const mode = process.env.US_SOULMATE_STRIPE_MODE;
-  if (!key || !["live", "test"].includes(mode || "") || !key.startsWith(`sk_${mode}_`)) throw new Error("US Stripe configuration unavailable");
-  return { key, mode: mode as "live" | "test" };
+  if (!key?.startsWith("sk_live_")) throw new Error("US Stripe live secret key unavailable");
+  return { key, mode: "live" as const };
 }
 export function stripeCheckoutConfig() {
   const config = stripeConfig();

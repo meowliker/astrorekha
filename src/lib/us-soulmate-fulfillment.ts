@@ -292,8 +292,7 @@ export async function processSoulmateJob(db: DB, job: GenerationJob) {
 
 export async function runSoulmateFulfillment() {
   if (!usSoulmateAutomation.deliveryEnabled) return { enabled: false, processed: 0 };
-  const mode = process.env.US_SOULMATE_STRIPE_MODE;
-  if (mode !== "live" && mode !== "test") throw new Error("Missing payment mode");
+  const mode = "live";
   const db = getSupabaseAdmin({ fresh: true });
   // Track already-submitted emails independently of generation/review/delivery gates.
   const pending = await db.from("us_soulmate_email_deliveries").select("order_id")

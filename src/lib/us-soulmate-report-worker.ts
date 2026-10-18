@@ -176,8 +176,7 @@ export async function processAutomaticReportJob(job: Job) {
 }
 export async function runAutomaticSoulmateReports() {
   if (!usSoulmateAutomation.reportsEnabled || process.env.VERCEL_ENV !== "production") return { enabled: false, processed: 0 };
-  const mode = process.env.US_SOULMATE_STRIPE_MODE;
-  if (mode !== "live" && mode !== "test") throw new Error("Invalid payment mode");
+  const mode = "live";
   assertReportCredentials(true);
   const db = getSupabaseAdmin({ fresh: true });
   const { data, error } = await db.rpc("claim_us_soulmate_report_jobs", { p_mode: mode, p_limit: 2 });

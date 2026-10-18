@@ -1,5 +1,4 @@
 
-for (const name of ['STANDARD','EXPRESS','DESCRIPTION','COLOUR','PRIORITY','TIMELINE']) process.env[`NEXT_PUBLIC_US_SOULMATE_PRICE_${name}`] = '10';
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const path = require('node:path');

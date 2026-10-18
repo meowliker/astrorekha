@@ -8,10 +8,8 @@ const Module = require('node:module');
 require('ts-node').register({ transpileOnly: true, compilerOptions: { module: 'CommonJS', moduleResolution: 'node' } });
 const resolve = Module._resolveFilename;
 Module._resolveFilename = function(name,parent,...rest) { return resolve.call(this,name.startsWith('@/') ? path.join(__dirname,'../src',name.slice(2)) : name,parent,...rest); };
-for (const [key,value] of Object.entries({STANDARD:'37',EXPRESS:'67',DESCRIPTION:'67',COLOUR:'37',PRIORITY:'29.95',TIMELINE:'19'})) process.env['NEXT_PUBLIC_US_SOULMATE_PRICE_'+key]=value;
-process.env.US_SOULMATE_STRIPE_SECRET_KEY='sk_test_fixture';
-process.env.NEXT_PUBLIC_US_SOULMATE_STRIPE_PUBLISHABLE_KEY='pk_test_fixture';
-process.env.US_SOULMATE_STRIPE_MODE='test';
+process.env.US_SOULMATE_STRIPE_SECRET_KEY='sk_live_fixture';
+process.env.NEXT_PUBLIC_US_SOULMATE_STRIPE_PUBLISHABLE_KEY='pk_live_fixture';
 process.env.US_SOULMATE_RECEIPT_SECRET='a'.repeat(40);
 process.env.US_SOULMATE_STRIPE_WEBHOOK_SECRET='whsec_fixture';
 const orders=new Map(); let calls=[], failInsert=false, failSave=false, session=null, confirmations=0, conversions=0;
@@ -41,10 +39,11 @@ const answers={name:'Maya',heart:'I feel like I’ve been waiting forever',prefe
 const body=(extra={})=>({plan:'standard',answers,email:'maya@example.com',checkoutKey:crypto.randomUUID(),...extra});
 const req=(data,origin='https://example.com')=>new NextRequest('https://example.com/api/us/soulmate/checkout',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify(data)});
 async function create(data=body()){const response=await checkout.POST(req(data)); assert.equal(response.status,200);return{response,data:await response.json(),order:[...orders.values()].at(-1)}}
-function paid(order,extra={}){return{id:order.stripe_session_id,mode:'payment',status:'complete',client_reference_id:order.id,metadata:{funnel:'us_soulmate_standalone',order_id:order.id},currency:'usd',amount_total:order.amount,livemode:false,payment_status:'paid',payment_intent:{id:'pi_fixture',status:'succeeded',currency:'usd',amount_received:order.amount,metadata:{funnel:'us_soulmate_standalone',order_id:order.id},livemode:false,latest_charge:{id:'ch_fixture',created:Math.floor(Date.now()/1000)-10,paid:true,captured:true,currency:'usd',amount:order.amount}},...extra};}
+function paid(order,extra={}){return{id:order.stripe_session_id,mode:'payment',status:'complete',client_reference_id:order.id,metadata:{funnel:'us_soulmate_standalone',order_id:order.id},currency:'usd',amount_total:order.amount,livemode:true,payment_status:'paid',payment_intent:{id:'pi_fixture',status:'succeeded',currency:'usd',amount_received:order.amount,metadata:{funnel:'us_soulmate_standalone',order_id:order.id},livemode:true,latest_charge:{id:'ch_fixture',created:Math.floor(Date.now()/1000)-10,paid:true,captured:true,currency:'usd',amount:order.amount}},...extra};}
 function signedEvent(payload,secret='whsec_fixture',at=Math.floor(Date.now()/1000)){const raw=JSON.stringify(payload);return new NextRequest('https://example.com/api/us/soulmate/payment/webhook',{method:'POST',headers:{'stripe-signature':`t=${at},v1=${crypto.createHmac('sha256',secret).update(`${at}.${raw}`).digest('hex')}`},body:raw});}
-beforeEach(()=>{orders.clear();calls=[];failInsert=false;failSave=false;session=null;confirmations=0;conversions=0;process.env.US_SOULMATE_CHECKOUT_ENABLED='true';process.env.US_SOULMATE_STRIPE_MODE='test';global.fetch=async(url,init)=>{calls.push({url,init});assert.ok(String(url).startsWith('https://api.stripe.com/v1/'));assert.equal(init.headers.Authorization,'Bearer sk_test_fixture');const order=[...orders.values()].at(-1);const open={id:'cs_test_fixture',status:'open',ui_mode:'elements',mode:'payment',client_secret:'cs_test_fixture_secret',client_reference_id:order?.id,metadata:{order_id:order?.id,funnel:'us_soulmate_standalone'},currency:'usd',amount_total:order?.amount,livemode:false};return{ok:true,json:async()=>init.method==='POST'?open:session||open};};});
-test('disabled checkout does not write or contact Stripe',async()=>{process.env.US_SOULMATE_CHECKOUT_ENABLED='false';assert.equal((await checkout.POST(req(body()))).status,503);assert.equal(orders.size,0);assert.equal(calls.length,0)});
+beforeEach(()=>{orders.clear();calls=[];failInsert=false;failSave=false;session=null;confirmations=0;conversions=0;process.env.US_SOULMATE_STRIPE_SECRET_KEY='sk_live_fixture';process.env.NEXT_PUBLIC_US_SOULMATE_STRIPE_PUBLISHABLE_KEY='pk_live_fixture';global.fetch=async(url,init)=>{calls.push({url,init});assert.ok(String(url).startsWith('https://api.stripe.com/v1/'));assert.equal(init.headers.Authorization,'Bearer sk_live_fixture');const order=[...orders.values()].at(-1);const open={id:'cs_test_fixture',status:'open',ui_mode:'elements',mode:'payment',client_secret:'cs_test_fixture_secret',client_reference_id:order?.id,metadata:{order_id:order?.id,funnel:'us_soulmate_standalone'},currency:'usd',amount_total:order?.amount,livemode:true};return{ok:true,json:async()=>init.method==='POST'?open:session||open};};});
+test('checkout is enabled without a feature flag and creates live orders',async()=>{delete process.env.US_SOULMATE_CHECKOUT_ENABLED;delete process.env.US_SOULMATE_STRIPE_MODE;const {order}=await create();assert.equal(order.payment_mode,'live')});
+test('retired checkout and mode settings cannot disable checkout or select test payments',async()=>{process.env.US_SOULMATE_CHECKOUT_ENABLED='false';process.env.US_SOULMATE_STRIPE_MODE='test';const {order}=await create();assert.equal(order.payment_mode,'live');delete process.env.US_SOULMATE_CHECKOUT_ENABLED;delete process.env.US_SOULMATE_STRIPE_MODE});
 test('all ten baskets calculate approved USD prices plus tax rounded to cents',()=>{
   for(let mask=0;mask<8;mask++){
     const ids=['description','colour','priority'].filter((_,i)=>mask&(1<<i));
@@ -65,10 +64,10 @@ test('changed basket cannot reuse a checkout key',async()=>{const b=body();await
 test('database failure never initiates a Stripe payment',async()=>{failInsert=true;assert.equal((await checkout.POST(req(body()))).status,503);assert.equal(calls.length,0)});
 test('foreign origin is rejected',async()=>{assert.equal((await checkout.POST(req(body(),'https://evil.example'))).status,403);assert.equal(orders.size,0)});
 test('incomplete or invalid preferences are rejected',async()=>{assert.equal((await checkout.POST(req(body({answers:{name:'Maya'}})))).status,400);assert.equal((await checkout.POST(req(body({email:'invalid'})))).status,400)});
-test('US credentials never fall back to India or main credentials',()=>{process.env.US_SOULMATE_STRIPE_MODE='live';assert.throws(stripe.stripeConfig);assert.equal(stripe.validReceiptToken('sm_'+'a'.repeat(20),'b'.repeat(64)),false)});
+test('US credentials reject test keys and never fall back to earlier funnels',()=>{process.env.US_SOULMATE_STRIPE_SECRET_KEY='sk_test_fixture';assert.throws(stripe.stripeConfig);delete process.env.US_SOULMATE_STRIPE_SECRET_KEY;assert.throws(stripe.stripeConfig);assert.equal(stripe.validReceiptToken('sm_'+'a'.repeat(20),'b'.repeat(64)),false)});
 test('receipt capability is order-scoped',async()=>{const{order}=await create();const token=stripe.receiptToken(order.id);assert.equal(stripe.validReceiptToken(order.id,token),true);assert.equal(stripe.validReceiptToken('us_sm_'+'a'.repeat(20),token),false);const result=await status.GET(new NextRequest(`https://example.com/api/us/soulmate/payment/status?order=${order.id}`));assert.equal(result.status,403)});
 test('valid Stripe payment queues US fulfillment with verified charge time',async()=>{const{order}=await create();session=paid(order);const out=await stripe.reconcileSoulmateOrder(order);assert.equal(out.payment_status,'paid');assert.equal(out.stripe_payment_id,'pi_fixture');assert.equal(out.paid_at,new Date(session.payment_intent.latest_charge.created*1000).toISOString());assert.equal(out.fulfillment_status,'queued');assert.equal(confirmations,1);assert.equal(conversions,1)});
-for (const [name,change] of Object.entries({currency:{currency:'inr'},amount:{amount_total:1},funnel:{metadata:{funnel:'soulmate_standalone'}},mode:{livemode:true},session:{id:'cs_other'},order:{client_reference_id:'sm_other'},unconfirmed:{payment_intent:{status:'processing'}}})) test(`Stripe rejects ${name} mismatch`,async()=>{const{order}=await create();assert.throws(()=>stripe.verifiedStripeUpdate(order,paid(order,change)));assert.equal(order.payment_status,'created')});
+for (const [name,change] of Object.entries({currency:{currency:'inr'},amount:{amount_total:1},funnel:{metadata:{funnel:'soulmate_standalone'}},mode:{livemode:false},session:{id:'cs_other'},order:{client_reference_id:'sm_other'},unconfirmed:{payment_intent:{status:'processing'}}})) test(`Stripe rejects ${name} mismatch`,async()=>{const{order}=await create();assert.throws(()=>stripe.verifiedStripeUpdate(order,paid(order,change)));assert.equal(order.payment_status,'created')});
 test('unpaid Stripe session cannot queue fulfillment',async()=>{const{order}=await create();session=paid(order,{payment_status:'unpaid',status:'open',payment_intent:null});const out=await stripe.reconcileSoulmateOrder(order);assert.equal(out.payment_status,'pending');assert.equal(confirmations,0)});
 test('expired Stripe session becomes failed without fulfillment',async()=>{const{order}=await create();session=paid(order,{payment_status:'unpaid',status:'expired',payment_intent:null});assert.equal((await stripe.reconcileSoulmateOrder(order)).payment_status,'failed');assert.equal(confirmations,0)});
 test('paid order cannot be downgraded by delayed webhook',async()=>{const{order}=await create();session=paid(order);const out=await stripe.reconcileSoulmateOrder(order);session=paid(order,{payment_status:'unpaid',status:'expired'});assert.equal((await stripe.reconcileSoulmateOrder(out)).payment_status,'paid');assert.equal(calls.filter(c=>c.init.method==='GET').length,1)});
@@ -108,10 +107,10 @@ test('confirmation breakdown uses Tax with no GST or percentage wording',()=>{
   await create({...b,phone:'999'});assert.equal(orders.size,1);
  });
  test('missing or mismatched publishable key prevents creating an order',async()=>{
-  for(const key of ['', 'pk_live_fixture']){process.env.NEXT_PUBLIC_US_SOULMATE_STRIPE_PUBLISHABLE_KEY=key;
+  for(const key of ['', 'pk_test_fixture']){process.env.NEXT_PUBLIC_US_SOULMATE_STRIPE_PUBLISHABLE_KEY=key;
    assert.equal((await checkout.POST(req(body()))).status,503);assert.equal(orders.size,0);assert.equal(calls.length,0);
   }
-  process.env.NEXT_PUBLIC_US_SOULMATE_STRIPE_PUBLISHABLE_KEY='pk_test_fixture';
+  process.env.NEXT_PUBLIC_US_SOULMATE_STRIPE_PUBLISHABLE_KEY='pk_live_fixture';
  });
  test('a reused session cannot expose a client secret for a different amount or order',async()=>{
   const b=body();const {order}=await create(b);session={...paid(order),status:'open',ui_mode:'elements',client_secret:'cs_other_secret',amount_total:1};
@@ -150,11 +149,11 @@ test('Stripe promotion amounts are frozen before returning a client secret and p
  assert.throws(()=>stripe.verifiedStripeUpdate(order,paid(order,{amount_total:4366})));
 });
 test('promotion quote rejects changed basket, tax, currency, identity, totals and free orders',()=>{
- const c=cart.buildSoulmateCart('standard');const o={id:'us_sm_'+'a'.repeat(20),line_items:c.lineItems,base_amount:3700,gst_amount:666,payment_mode:'test'};
- const s={mode:'payment',ui_mode:'elements',client_reference_id:o.id,metadata:{order_id:o.id,funnel:'us_soulmate_standalone'},currency:'usd',livemode:false,amount_subtotal:4366,amount_total:3929,total_details:{amount_discount:437}};
+ const c=cart.buildSoulmateCart('standard');const o={id:'us_sm_'+'a'.repeat(20),line_items:c.lineItems,base_amount:3700,gst_amount:666,payment_mode:'live'};
+ const s={mode:'payment',ui_mode:'elements',client_reference_id:o.id,metadata:{order_id:o.id,funnel:'us_soulmate_standalone'},currency:'usd',livemode:true,amount_subtotal:4366,amount_total:3929,total_details:{amount_discount:437}};
  const l={has_more:false,data:[{description:c.lineItems[0].name,currency:'usd',quantity:1,amount_subtotal:3700,amount_discount:370,amount_tax:0,amount_total:3330},{description:'Tax',currency:'usd',quantity:1,amount_subtotal:666,amount_discount:67,amount_tax:0,amount_total:599}]};
  assert.equal(stripe.verifiedPromotionQuote(o,s,l).total,3929);
- for(const patch of [{amount_total:1},{currency:'inr'},{livemode:true},{amount_subtotal:1},{metadata:{funnel:'soulmate_standalone'}},{total_details:{amount_discount:1}}]) assert.throws(()=>stripe.verifiedPromotionQuote(o,{...s,...patch},l));
+ for(const patch of [{amount_total:1},{currency:'inr'},{livemode:false},{amount_subtotal:1},{metadata:{funnel:'soulmate_standalone'}},{total_details:{amount_discount:1}}]) assert.throws(()=>stripe.verifiedPromotionQuote(o,{...s,...patch},l));
  for(const patch of [{amount_tax:1},{description:'Another item'},{quantity:2},{amount_subtotal:3699},{amount_discount:-1},{amount_total:1}]) assert.throws(()=>stripe.verifiedPromotionQuote(o,s,{...l,data:[{...l.data[0],...patch},l.data[1]]}));
  assert.throws(()=>stripe.verifiedPromotionQuote(o,s,{...l,has_more:true}));
  const free={...l,data:l.data.map(x=>({...x,amount_discount:x.amount_subtotal,amount_total:0}))};
@@ -165,4 +164,11 @@ test('discounted confirmation email and invoice contain the same accounting tota
  const invoice={invoice_number:'ARUS-26-PROMO',issued_at:'2026-10-17T00:00:00Z',snapshot:{customerName:'Fixture',customerEmail:'fixture@example.com',orderId:null,items:c.lineItems,entitlements:c.entitlements,subtotal:3700,discount:370,gst:599,total:3929,paidAt:'2026-10-17T00:00:00Z',deliveryDueAt:null}};
  const email=soulmateConfirmationEmail(invoice);assert.match(email.text,/Subtotal: USD 37.00\nDiscount: -USD 3.70\nTax: USD 5.99\nTotal paid: USD 39.29/);
  assert.match(email.html,/Discount/);assert.match(generateSoulmateInvoicePdf(invoice).subarray(0,4).toString(),/%PDF/);
+});
+
+test('approved US catalog ignores retired price overrides in a fresh process',()=>{
+ const {execFileSync}=require('node:child_process');
+ const script="require('ts-node').register({transpileOnly:true,compilerOptions:{module:'CommonJS',moduleResolution:'node'}});const {usPrice}=require('./src/lib/us-soulmate-prices');console.log(JSON.stringify(['standard','express','description','colour','priority','timeline'].map(usPrice)))";
+ const env={...process.env};for(const key of ['STANDARD','EXPRESS','DESCRIPTION','COLOUR','PRIORITY','TIMELINE'])env['NEXT_PUBLIC_US_SOULMATE_PRICE_'+key]='1';
+ assert.deepEqual(JSON.parse(execFileSync(process.execPath,['-e',script],{cwd:path.join(__dirname,'..'),env,encoding:'utf8'})),[37,67,67,37,29.95,19]);
 });
