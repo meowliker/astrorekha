@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Activity, ArrowDown, ArrowLeft, ArrowUp, ChevronDown, Columns3, GripVertical, RefreshCw, Search, ShoppingBag, X } from "lucide-react";
 import { accountTrackingDayMode, trackingDate, trackingWindowLabel, type TrackingActivity, type TrackingCampaign, type TrackingDayMode, type TrackingSale, type TrackingSummary } from "@/lib/tracking-dashboard";
 import type { TrackingSavedView, TrackingViewConfig } from "@/lib/soulmate-tracking-views";
+import { SoulmateAdAccountsDialog } from "../ad-accounts-dialog";
 import TrackingDateRangePicker, { type TrackingRange } from "./TrackingDateRangePicker";
 import TrackingCampaignRows from "./TrackingCampaignRows";
 import TrackingHourlyModal from "./TrackingHourlyModal";
@@ -140,6 +141,7 @@ function displayIst(iso: string) {
 
 export default function TrackingPage() {
   const router = useRouter();
+  const [campaignsOpen, setCampaignsOpen] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [dates, setDates] = useState(() => {
     const today = businessToday();
@@ -544,6 +546,7 @@ export default function TrackingPage() {
 
   return (
     <div className="min-h-screen bg-[#0A0E1A] text-slate-100">
+      {campaignsOpen && <SoulmateAdAccountsDialog close={() => setCampaignsOpen(false)} saved={() => { setCampaignsOpen(false); window.location.reload(); }} />}
       {hourCampaign && hourSelection && <TrackingHourlyModal campaign={hourCampaign} day={hourDate} dayMode={hourSelection.dayMode} hours={modalSummary?.hourly || []} spend={hourSpend} visits={hourVisits} error={!hourCampaign.accountId ? "No matched Meta campaign for this row" : exactHourlyError[hourSelection.dayMode] || ""} onClose={() => setHourSelection(null)} />}
       <div aria-live="polite" className="pointer-events-none fixed right-4 top-4 z-50 flex w-[min(380px,calc(100vw-2rem))] flex-col gap-2">
         <AnimatePresence initial={false}>{toastSales.map((sale) => <motion.div key={sale.id} role="status" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 40 }} transition={{ duration: 0.2 }} className="pointer-events-auto rounded-xl border border-emerald-400/35 bg-[#1b2437] p-4 shadow-2xl shadow-black/50">
@@ -558,6 +561,7 @@ export default function TrackingPage() {
             <p className="mt-1 text-sm text-slate-400">Soulmate campaign performance and verified paid orders, joined by saved UTMs.</p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
+            <button onClick={() => setCampaignsOpen(true)} className="rounded-lg border border-white/10 px-3 py-2 text-sm hover:bg-white/5">Campaigns</button>
             <TrackingDateRangePicker value={dates} maxDate={maxDate} onChange={(range) => { setDatesCustomized(true); applyDates(range); }} />
             <button onClick={() => token && void Promise.all((showBoth ? ["business_1130_ist", "calendar_ist"] as TrackingDayMode[] : [primaryMode]).map((mode) => fetchSummary(token, dates, mode, true)))} title="Refresh Meta and orders" className="rounded-lg border border-white/10 p-2 hover:bg-white/5"><RefreshCw size={18} className={refreshing ? "animate-spin" : ""} /></button>
           </div>

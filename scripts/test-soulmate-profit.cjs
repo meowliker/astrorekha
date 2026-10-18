@@ -9,7 +9,7 @@ const {validateSoulmateAccounts,publicSoulmateSettings}=require('../src/lib/soul
 const meta=require('../src/lib/soulmate-meta-spend');
 const actualFetchMeta=meta.fetchSoulmateMetaSpend;
 const now=Date.parse('2026-10-16T12:00:00Z');
-const account={accountId:'12345',accessToken:'fixture-token',active:true,startDate:'2026-10-15',startTime:'11:30',label:'Soulmate'};
+const account={accountId:'12345',accessToken:'fixture-token',active:true,startDate:'2026-10-15',startTime:'11:30',label:'Soulmate',campaignIds:['111111']};
 test('reporting boundary, launch floor and exact paise aggregation',()=>{
  assert.equal(profitDay('2026-10-16T05:59:59Z'),'2026-10-15');
  assert.equal(profitDay('2026-10-16T06:00:00Z'),'2026-10-16');
@@ -42,14 +42,14 @@ test('Meta pagination, isolated authorization, currency conversion and failure p
  global.fetch=async(url,init)=>{
   const u=new URL(url);calls.push(u);assert.equal(init.headers.Authorization,'Bearer fixture-token');assert.equal(u.searchParams.has('access_token'),false);
   if(!u.pathname.endsWith('/insights'))return Response.json({name:'Soulmate',currency:'INR',timezone_name:'Asia/Kolkata',balance:'1000'});
-  if(!u.searchParams.has('breakdowns'))return Response.json({data:[{date_start:'2026-10-16',spend:'200'}]});
-  if(!u.searchParams.has('after'))return Response.json({data:[{date_start:'2026-10-16',spend:'100',hourly_stats_aggregated_by_advertiser_time_zone:'11:00:00 - 11:59:59'}],paging:{next:'yes',cursors:{after:'next-page'}}});
-  return Response.json({data:[{date_start:'2026-10-16',spend:'100',hourly_stats_aggregated_by_advertiser_time_zone:'12:00:00 - 12:59:59'}]});
+  if(!u.searchParams.has('breakdowns'))return Response.json({data:[{campaign_id:'111111',date_start:'2026-10-16',spend:'200'}]});
+  if(!u.searchParams.has('after'))return Response.json({data:[{campaign_id:'111111',date_start:'2026-10-16',spend:'100',hourly_stats_aggregated_by_advertiser_time_zone:'11:00:00 - 11:59:59'}],paging:{next:'yes',cursors:{after:'next-page'}}});
+  return Response.json({data:[{campaign_id:'111111',date_start:'2026-10-16',spend:'100',hourly_stats_aggregated_by_advertiser_time_zone:'12:00:00 - 12:59:59'}]});
  };
  try{
   const rows=await actualFetchMeta([account],'2026-10-15','2026-10-16',100,now);
   assert.equal(rows[0].adsInr,5000);assert.equal(rows[1].adsInr,15000);assert.equal(rows[1].adsUsd,150);assert.equal(rows[1].adGst,2700);
-  assert.equal(rows[0].balance,null);assert.equal(rows[1].balance,-10);
+  assert.equal(rows[0].balance,null);assert.equal(rows[1].balance,null);
   assert.ok(calls.some(u=>u.searchParams.get('after')==='next-page'));
   global.fetch=async()=>Response.json({error:{message:'secret never surface'}},{status:403});
   await assert.rejects(actualFetchMeta([account],'2026-10-15','2026-10-16',95,now),/Saved figures/);
@@ -62,9 +62,9 @@ meta.fetchSoulmateMetaSpend=async()=>[{date:'2026-10-15',accountId:'12345',adsUs
 const {readSoulmateProfitLedger,syncSoulmateProfitLedger}=require('../src/lib/soulmate-profit-ledger');
 process.env.PAYU_MODE='live';
 test('cached reads do not call PayU, Meta, orders or writes; mark missing/stale rows',async()=>{
- state.tables=[];state.gateway=[];state.rpcs=[];state.saved=[{date:'2026-10-15',data:{date:'2026-10-15',received:223964},synced_at:'2026-10-16T12:00Z',config_revision:0}];
+ state.tables=[];state.gateway=[];state.rpcs=[];state.saved=[{date:'2026-10-15',data:{date:'2026-10-15',received:223964,adsInr:99999,profit:12345},synced_at:'2026-10-16T12:00Z',config_revision:0}];
  const result=await readSoulmateProfitLedger(db,'2026-10-15','2026-10-16');
- assert.deepEqual(result.missing,['2026-10-16']);assert.equal(result.rows[0].stale,true);
+ assert.deepEqual(result.missing,['2026-10-16']);assert.equal(result.rows[0].stale,true);assert.equal(result.rows[0].adsInr,null);assert.equal(result.rows[0].profit,null);
  assert.deepEqual(state.tables.sort(),['soulmate_admin_settings','soulmate_profit_sheet']);assert.equal(state.gateway.length,0);assert.equal(state.rpcs.length,0);
 });
 test('sync only saves requested Soulmate dates and uses verified live production receipts',async()=>{
@@ -72,7 +72,7 @@ test('sync only saves requested Soulmate dates and uses verified live production
  await syncSoulmateProfitLedger(db,'2026-10-15','2026-10-16',now);
  const saved=state.rpcs.find(([n])=>n==='finish_soulmate_profit_sync')[1];
  assert.deepEqual(saved.p_rows.map(r=>r.date),['2026-10-15','2026-10-16']);
- assert.equal(saved.p_rows[0].profit,180300);assert.equal(saved.p_rows[0].roas,223964/9500);
+ assert.equal(saved.p_rows[0].adScope,'selected_campaigns_v1');assert.equal(saved.p_rows[0].profit,180300);assert.equal(saved.p_rows[0].roas,223964/9500);
  for(const [k,v]of [['funnel','soulmate_standalone'],['payment_mode','live'],['payment_status','paid'],['attribution->>trackingEnvironment','production'],['paid_at','2026-10-15T06:00:00Z']])assert.ok(state.filters.some(f=>f[1]===k&&f[2]===v));
  assert.ok(state.tables.every(t=>t.startsWith('soulmate_')));
  assert.deepEqual(state.gateway.at(-1),['2026-10-15','2026-10-17','11:30:00','11:29:59']);
