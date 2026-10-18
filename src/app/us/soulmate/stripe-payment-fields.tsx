@@ -100,7 +100,7 @@ export function StripePaymentFields({ signature, amount, enabled, onPayment }: {
               }
               setStripeTotal(checkedPaymentTotal(prepared.actions.getSession(), amount));
               trackSoulmate("payment_submit", { plan: details.planId, value: amount / 100, once: orderId });
-              await confirmInlinePayment(prepared.actions, amount, { paymentMethod, email });
+              await confirmInlinePayment(prepared.actions, amount, { paymentMethod });
               return receiptUrl;
             } finally { confirming = false; }
           } });

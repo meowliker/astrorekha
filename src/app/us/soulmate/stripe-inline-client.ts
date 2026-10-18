@@ -6,7 +6,7 @@ export type StripeSessionView = {
 };
 export type CheckoutActions = {
   getSession(): StripeSessionView;
-  confirm(options: { redirect: "if_required"; paymentMethod?: string; email?: string }): Promise<{ type: "success" } | { type: "error"; error: { message: string } }>;
+  confirm(options: { redirect: "if_required"; paymentMethod?: string }): Promise<{ type: "success" } | { type: "error"; error: { message: string } }>;
 };
 export type PaymentElement = {
   mount(target: HTMLElement): void;
@@ -59,9 +59,11 @@ export function checkedPaymentTotal(session: StripeSessionView, expectedCents: n
   // Read and display Stripe's formatted total as required by Checkout Elements.
   return amount.amount;
 }
-export async function confirmInlinePayment(actions: CheckoutActions, expectedCents: number, payment?: { paymentMethod: string; email: string }) {
+export async function confirmInlinePayment(actions: CheckoutActions, expectedCents: number, payment?: { paymentMethod: string }) {
   checkedPaymentTotal(actions.getSession(), expectedCents);
-  const result = await actions.confirm({ redirect: "if_required", ...payment });
+  // customer_email is fixed when the server creates the Checkout Session.
+  // Only forward confirmation options owned by this layer, never contact overrides.
+  const result = await actions.confirm({ redirect: "if_required", ...(payment ? { paymentMethod: payment.paymentMethod } : {}) });
   if (result.type === "error") throw new Error(result.error.message);
 }
 export function checkedReceiptPath(value: unknown): string {

@@ -61,5 +61,5 @@ test('deferred card collection validates email and card details before creating 
 test('deferred payment method is confirmed on the existing Checkout Session without a forced redirect', async () => {
  let options;
  await confirmInlinePayment({getSession:()=>session(),confirm:async value=>{options=value;return{type:'success'}}},4366,{paymentMethod:'pm_fixture',email:'buyer@example.com'});
- assert.deepEqual(options,{redirect:'if_required',paymentMethod:'pm_fixture',email:'buyer@example.com'});
+ assert.deepEqual(options,{redirect:'if_required',paymentMethod:'pm_fixture'});
 });

@@ -52,7 +52,12 @@ function fixture({ holdUpdates = false } = {}) {
       const amount = serverAmount;
       return { async loadActions() { return { type: 'success', actions: {
         getSession: () => ({ currency: 'usd', minorUnitsAmountDivisor: 100, canConfirm: true, total: { total: { minorUnitsAmount: amount, amount: '$' + (amount / 100).toFixed(2) } } }),
-        async confirm(options) { calls.confirms.push({ amount, options }); return { type: 'success' }; },
+        async confirm(options) {
+          // Our server sets customer_email at session creation; Stripe locks it then.
+          assert.equal(Object.hasOwn(options, 'email'), false, 'Cannot override the server-set Checkout Session email in confirm()');
+          assert.equal(Object.hasOwn(options, 'phoneNumber'), false, 'Checkout Session phone collection is disabled');
+          calls.confirms.push({ amount, options }); return { type: 'success' };
+        },
       } }; } };
     },
   };
@@ -95,7 +100,7 @@ test('real checkout Apply, Remove, invalid promo and add-ons preserve the mounte
   assert.equal(f.calls.mounts, 1); assert.equal(f.calls.creates, 1); assert.equal(f.calls.destroys, 0);
   await act(async () => tree.root.findByType('form').props.onSubmit({ preventDefault() {} }));
   assert.equal(f.calls.requests.at(-1).promotionCode, 'Soulmate97');
-  assert.deepEqual(f.calls.confirms, [{ amount: 304, options: { redirect: 'if_required', paymentMethod: 'pm_fixture', email: 'fixture@example.com' } }]);
+  assert.deepEqual(f.calls.confirms, [{ amount: 304, options: { redirect: 'if_required', paymentMethod: 'pm_fixture' } }]);
   assert.match(f.calls.receipt, /^\/us\/soulmate\/payment/);
 });
 

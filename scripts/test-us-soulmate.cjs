@@ -172,3 +172,30 @@ test('approved US catalog ignores retired price overrides in a fresh process',()
  const env={...process.env};for(const key of ['STANDARD','EXPRESS','DESCRIPTION','COLOUR','PRIORITY','TIMELINE'])env['NEXT_PUBLIC_US_SOULMATE_PRICE_'+key]='1';
  assert.deepEqual(JSON.parse(execFileSync(process.execPath,['-e',script],{cwd:path.join(__dirname,'..'),env,encoding:'utf8'})),[37,67,67,37,29.95,19]);
 });
+
+test('server-created email and return URL remain authoritative through inline confirmation and paid reconciliation', async () => {
+ const {collectDeferredPayment, confirmInlinePayment} = require('../src/app/us/soulmate/stripe-inline-client');
+ for (const [plan, addOns] of [['standard',[]],['express',['timeline']]]) {
+  const {order,data}=await create(body({plan,addOns}));
+  const params=calls.findLast(call=>call.init.method==='POST').init.body;
+  assert.equal(params.get('customer_email'),order.customer_email);
+  assert.equal(params.get('phone_number_collection[enabled]'),'false');
+  assert.equal(params.get('return_url'),'https://example.com'+data.receiptUrl);
+  assert.equal(params.get('billing_address_collection'),null);
+  assert.equal(params.get('automatic_tax[enabled]'),null);
+  const paymentMethod=await collectDeferredPayment({createPaymentMethod:async ({params:billing})=>{
+   assert.deepEqual(billing,{billing_details:{email:order.customer_email,phone:''}});
+   return {paymentMethod:{id:'pm_fixture'}};
+  }},{submit:async()=>({})},order.customer_email);
+  let confirmed=false;
+  await confirmInlinePayment({getSession:()=>({currency:'usd',minorUnitsAmountDivisor:100,canConfirm:true,total:{total:{minorUnitsAmount:order.amount,amount:'$'+(order.amount/100).toFixed(2)}}}),confirm:async options=>{
+   // Stripe rejects these overrides when already fixed or disabled by Session creation.
+   assert.deepEqual(options,{redirect:'if_required',paymentMethod});
+   confirmed=true;session=paid(order);return {type:'success'};
+  }},data.amount,{paymentMethod});
+  assert.equal(confirmed,true);
+  const verified=await stripe.reconcileSoulmateOrder(order);
+  assert.equal(verified.payment_status,'paid');
+ }
+ assert.equal(confirmations,2);
+});
