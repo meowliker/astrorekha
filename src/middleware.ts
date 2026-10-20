@@ -53,6 +53,7 @@ export async function middleware(request: NextRequest) {
     "/past-life",
     "/numerology",
     "/spirit-animal",
+    "/witch-archetype",
     "/soulmate-sketch",
     "/future-partner",
     "/profile",

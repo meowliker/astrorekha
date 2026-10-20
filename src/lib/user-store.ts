@@ -24,6 +24,7 @@ export interface UnlockedFeatures {
   pastLifeReport: boolean;
   numerologyReport: boolean;
   spiritAnimalReport: boolean;
+  witchArchetypeReport: boolean;
 }
 
 interface UserState {
@@ -73,6 +74,7 @@ interface UserState {
     pastLifeReport?: boolean;
     numerologyReport?: boolean;
     spiritAnimalReport?: boolean;
+    witchArchetypeReport?: boolean;
     coins?: number;
     purchasedBundle?: PurchasedBundle;
   }) => void;
@@ -91,6 +93,7 @@ const initialUnlockedFeatures: UnlockedFeatures = {
   pastLifeReport: false,
   numerologyReport: false,
   spiritAnimalReport: false,
+  witchArchetypeReport: false,
 };
 
 const initialState = {
@@ -158,6 +161,7 @@ export const useUserStore = create<UserState>()(
             pastLifeReport: true,
             numerologyReport: true,
             spiritAnimalReport: true,
+            witchArchetypeReport: true,
           },
         }),
 
@@ -219,6 +223,7 @@ export const useUserStore = create<UserState>()(
             pastLifeReport: true,
             numerologyReport: true,
             spiritAnimalReport: true,
+            witchArchetypeReport: true,
           },
         }),
 
@@ -249,6 +254,8 @@ export const useUserStore = create<UserState>()(
             data.unlockedFeatures?.numerologyReport ?? data.numerologyReport ?? false,
           spiritAnimalReport:
             data.unlockedFeatures?.spiritAnimalReport ?? data.spiritAnimalReport ?? false,
+          witchArchetypeReport:
+            data.unlockedFeatures?.witchArchetypeReport ?? data.witchArchetypeReport ?? false,
         };
         updates.unlockedFeatures = features;
         
@@ -299,6 +306,7 @@ export const featureNames: Record<keyof UnlockedFeatures, string> = {
   pastLifeReport: "Past Life Report",
   numerologyReport: "Numerology Report",
   spiritAnimalReport: "Spirit Animal Report",
+  witchArchetypeReport: "Witch Archetype Report",
 };
 
 // Feature prices (INR)
@@ -315,4 +323,5 @@ export const featurePrices: Record<keyof UnlockedFeatures, number> = {
   pastLifeReport: 582,
   numerologyReport: 582,
   spiritAnimalReport: 582,
+  witchArchetypeReport: 582,
 };

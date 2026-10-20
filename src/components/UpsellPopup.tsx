@@ -28,6 +28,7 @@ const featureToReportId: Record<keyof UnlockedFeatures, string> = {
   pastLifeReport: "report-past-life",
   numerologyReport: "report-numerology",
   spiritAnimalReport: "report-spirit-animal",
+  witchArchetypeReport: "report-witch-archetype",
 };
 
 const PENDING_PAYMENT_KEY = "astrorekha_pending_payu_payment";
@@ -207,6 +208,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
   const isAstrocartographyReport = feature === "astrocartographyReport";
   const isPastLifeReport = feature === "pastLifeReport";
   const isNumerologyReport = feature === "numerologyReport";
+  const isWitchArchetypeReport = feature === "witchArchetypeReport";
   const isSpiritAnimalReport = feature === "spiritAnimalReport";
   const displayName = isVastuGuide ? "Vastu Shastra Guide" : featureName;
   const description = isVastuGuide
@@ -221,6 +223,8 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
     ? "Unlock your Mulank, Bhagyank, name number, compatibility numbers, remedies, and complete numerology guidance."
     : isSpiritAnimalReport
     ? "Reveal the spirit animal that reflects your instincts, inner strengths, and personal path, with guidance inspired by its symbolism."
+    : isWitchArchetypeReport
+    ? "Discover your symbolic witch archetype, strengths, relationships, and personal practices."
     : `Get your personalized ${featureName.toLowerCase()} and discover deeper insights about your cosmic journey.`;
   const ctaLabel = isVastuGuide ? "Get EBook" : `Get ${featureName}`;
 

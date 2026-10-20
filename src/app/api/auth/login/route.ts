@@ -1,3 +1,4 @@
+import { setReportSession } from "@/lib/report-session";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import bcrypt from "bcryptjs";
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
       .update({ updated_at: new Date().toISOString() })
       .eq("id", user.id);
 
-    return NextResponse.json({
+    return setReportSession(NextResponse.json({
       success: true,
       user: {
         id: user.id,
@@ -66,7 +67,7 @@ export async function POST(request: NextRequest) {
         bundlePurchased: user.bundle_purchased,
         unlockedFeatures: user.unlocked_features,
       },
-    });
+    }), user.id);
   } catch (error: any) {
     console.error("Login error:", error);
     return NextResponse.json(

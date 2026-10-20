@@ -185,6 +185,16 @@ const upsellOffers = [
       { icon: Briefcase, label: "Purpose and growth", description: "Career direction, daily practices, and personal guidance" },
     ],
   },
+  {
+    id: "witch-archetype", name: "Witch Archetype Report",
+    description: "Discover your symbolic archetype, strengths, and personal practices.",
+    price: 499, originalPrice: 999, discount: "50% OFF", icon: Moon, emoji: "✦",
+    features: [
+      { icon: Moon, label: "Your witch archetype", description: "Reveal your strongest archetype match" },
+      { icon: Heart, label: "Strengths and relationships", description: "Explore your gifts, blind spots, and connections" },
+      { icon: Sparkles, label: "Personal practices", description: "A reflection ritual and everyday guidance" },
+    ],
+  },
 ];
 
 function BundleUpsellContent() {

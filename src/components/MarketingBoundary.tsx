@@ -29,6 +29,7 @@ export function MarketingBoundary() {
     return () => document.removeEventListener("click", onClick, true);
   }, [initialUS]);
   useEffect(() => { if (us !== initialUS) window.location.replace(window.location.href); }, [us, initialUS]);
+  if (pathname === "/page-previews" || pathname.startsWith("/page-previews/")) return null;
   if (us !== initialUS) return null;
   if (!us) return <><MetaPixel /><GoogleAnalytics /><Clarity /></>;
   const pixel = process.env.NEXT_PUBLIC_US_SOULMATE_META_PIXEL_ID;

@@ -67,3 +67,29 @@ test('legacy checkout email matching is read-only and never fulfils another emai
  }
  assert.equal(verifyCount,0);assert.equal(payment.payment_status,'created');assert.equal(payment.fulfilled_at,null);
 });
+
+test('Witch report and combined add-on purchases unlock only their purchased features',async()=>{
+ for(const offer of [
+  {type:'report',bundle_id:'report-witch-archetype',feature:'witchArchetypeReport',amount:58200},
+  {type:'upsell',bundle_id:'witch-archetype,compatibility',feature:'witchArchetypeReport,compatibilityTest',amount:99800},
+ ]){
+  Object.assign(payment,offer,{payment_status:'created',fulfilled_at:null});
+  user.unlocked_features={birthChart:true};
+  const result=await fulfillPayUPayment({...payload(),amount:(offer.amount/100).toFixed(2)},{verifiedByPayUApi:true});
+  assert.equal(result.success,true);assert.ok(payment.fulfilled_at);
+  assert.equal(user.unlocked_features.witchArchetypeReport,true);
+  assert.equal(user.unlocked_features.birthChart,true);
+  assert.equal(user.unlocked_features.spiritAnimalReport,undefined);
+  assert.equal(!!user.unlocked_features.compatibilityTest,offer.type==='upsell');
+ }
+});
+
+test('Witch catalog prices match peers and merge into an existing saved catalog',()=>{
+ const {DEFAULT_PRICING,normalizePricing}=require('../src/lib/pricing');
+ const old={...DEFAULT_PRICING,upsells:DEFAULT_PRICING.upsells.filter(p=>p.id!=='witch-archetype'),reports:DEFAULT_PRICING.reports.filter(p=>p.id!=='report-witch-archetype')};
+ const pricing=normalizePricing(old);
+ assert.equal(pricing.upsells.find(p=>p.id==='witch-archetype').price,499);
+ assert.equal(pricing.reports.find(p=>p.id==='report-witch-archetype').price,582);
+ assert.equal(pricing.upsells.find(p=>p.id==='witch-archetype').price,pricing.upsells.find(p=>p.id==='spirit-animal').price);
+ assert.equal(pricing.reports.find(p=>p.id==='report-witch-archetype').price,pricing.reports.find(p=>p.id==='report-spirit-animal').price);
+});

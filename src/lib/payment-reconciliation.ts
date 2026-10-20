@@ -52,6 +52,8 @@ const OFFER_ID_TO_FEATURE: Record<string, string> = {
   "spirit-animal": "spiritAnimalReport",
   "spirit-animal-report": "spiritAnimalReport",
   "report-spirit-animal": "spiritAnimalReport",
+  "witch-archetype": "witchArchetypeReport",
+  "report-witch-archetype": "witchArchetypeReport",
   "vastu-shastra-guide": "vastuShastraGuide",
   "report-vastu-shastra-guide": "vastuShastraGuide",
 };
@@ -89,6 +91,7 @@ function mergeFeatures(
     pastLifeReport: false,
     numerologyReport: false,
     spiritAnimalReport: false,
+    witchArchetypeReport: false,
     ...(current || {}),
   };
 
@@ -234,6 +237,7 @@ export async function reconcilePaidPaymentsForEmail({
     pastLifeReport: false,
     numerologyReport: false,
     spiritAnimalReport: false,
+    witchArchetypeReport: false,
     ...(userData?.unlocked_features || {}),
   };
   let computedCoinsFromPayments = 0;

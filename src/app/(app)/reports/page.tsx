@@ -811,6 +811,42 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
+                {/* Witch Archetype Report */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+                  onClick={() => {
+                    if (unlockedFeatures.witchArchetypeReport) {
+                      router.push("/witch-archetype");
+                      return;
+                    }
+                    setUpsellPopup({ isOpen: true, feature: "witchArchetypeReport" });
+                  }}
+                  className="bg-[#1A2235] rounded-2xl border border-primary/20 p-3 cursor-pointer hover:border-primary/40 transition-colors relative"
+                >
+                  {!unlockedFeatures.witchArchetypeReport && (
+                    <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
+                      <Lock className="w-3 h-3 text-white/60" />
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-500/30 to-purple-600/30 flex items-center justify-center flex-shrink-0 overflow-hidden border border-white/10">
+                      <span className="text-3xl">✦</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-semibold">Witch Archetype Report</h3>
+                      <p className="text-white/50 text-xs mt-0.5">Discover your symbolic archetype, gifts, and growth practices</p>
+                      {!unlockedFeatures.witchArchetypeReport && (
+                        <span className="inline-block mt-1 px-3 py-1 bg-primary/20 text-primary text-xs rounded-full">
+                          Get Report
+                        </span>
+                      )}
+                    </div>
+                    <ChevronRight className="w-6 h-6 text-white/40" />
+                  </div>
+                </div>
+
                 {/* Astrocartography */}
                 <div
                   onClick={() => {
@@ -1023,6 +1059,11 @@ export default function DashboardPage() {
               if (upsellPopup.feature === "spiritAnimalReport") {
                 unlockFeature("spiritAnimalReport");
                 router.push("/spirit-animal");
+                return;
+              }
+              if (upsellPopup.feature === "witchArchetypeReport") {
+                unlockFeature("witchArchetypeReport");
+                router.push("/witch-archetype");
                 return;
               }
               if (upsellPopup.feature === "vastuShastraGuide") {

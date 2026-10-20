@@ -294,6 +294,8 @@ function mapUpsellName(raw: string): string {
     "spirit-animal": "Spirit Animal Report",
     "spirit-animal-report": "Spirit Animal Report",
     "report-spirit-animal": "Spirit Animal Report",
+    "report-witch-archetype": "Witch Archetype Report",
+    "witch-archetype": "Witch Archetype Report",
     numerologyreport: "Numerology Report",
     "vastu-shastra-guide": "Complete Vastu Shastra Guide Ebook",
     "report-vastu-shastra-guide": "Complete Vastu Shastra Guide Ebook",

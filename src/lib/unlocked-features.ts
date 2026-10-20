@@ -11,6 +11,7 @@ export interface NormalizedUnlockedFeatures {
   pastLifeReport: boolean;
   numerologyReport: boolean;
   spiritAnimalReport: boolean;
+  witchArchetypeReport: boolean;
 }
 
 const DEFAULT_UNLOCKED_FEATURES: NormalizedUnlockedFeatures = {
@@ -26,6 +27,7 @@ const DEFAULT_UNLOCKED_FEATURES: NormalizedUnlockedFeatures = {
   pastLifeReport: false,
   numerologyReport: false,
   spiritAnimalReport: false,
+  witchArchetypeReport: false,
 };
 
 function toBoolean(value: unknown): boolean {
@@ -69,5 +71,6 @@ export function normalizeUnlockedFeatures(raw: unknown): NormalizedUnlockedFeatu
     pastLifeReport: toBoolean(source.pastLifeReport),
     numerologyReport: toBoolean(source.numerologyReport),
     spiritAnimalReport: toBoolean(source.spiritAnimalReport),
+    witchArchetypeReport: toBoolean(source.witchArchetypeReport),
   };
 }

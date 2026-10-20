@@ -1,3 +1,4 @@
+import { setReportSession } from "@/lib/report-session";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
     // Delete used OTP
     await supabase.from("otp_codes").delete().eq("email", normalizedEmail);
 
-    return NextResponse.json({
+    return setReportSession(NextResponse.json({
       success: true,
       message: "OTP verified successfully",
       user: {
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
         bundlePurchased: userData.bundle_purchased,
         unlockedFeatures: userData.unlocked_features,
       },
-    });
+    }), userData.id);
   } catch (error: any) {
     console.error("Verify OTP error:", error);
     return NextResponse.json(

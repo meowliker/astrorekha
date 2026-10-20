@@ -159,6 +159,7 @@ function humanizeFeature(value: string): string {
     pastLifeReport: "Past Life Report",
     numerologyReport: "Numerology Report",
     spiritAnimalReport: "Spirit Animal Report",
+    witchArchetypeReport: "Witch Archetype Report",
   };
   return labels[value] || value.replace(/[-_]/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").trim();
 }

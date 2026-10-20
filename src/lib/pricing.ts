@@ -348,6 +348,12 @@ export const DEFAULT_PRICING: PricingConfig = {
       feature: "spiritAnimalReport",
       active: true,
     },
+    {
+      id: "witch-archetype", name: "Witch Archetype Report",
+      price: 499, displayPrice: 499, originalPrice: 999, discount: "50% OFF",
+      description: "Explore your symbolic archetype, gifts, and growth practices.",
+      feature: "witchArchetypeReport", active: true,
+    },
   ],
   reports: [
     {
@@ -437,6 +443,10 @@ export const DEFAULT_PRICING: PricingConfig = {
       originalPrice: 999,
       feature: "vastuShastraGuide",
       active: true,
+    },
+    {
+      id: "report-witch-archetype", name: "Witch Archetype Report",
+      price: 582, originalPrice: 999, feature: "witchArchetypeReport", active: true,
     },
   ],
   coinPackages: [

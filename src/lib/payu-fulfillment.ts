@@ -62,6 +62,8 @@ const OFFER_ID_TO_FEATURE: Record<string, string> = {
   "spirit-animal": "spiritAnimalReport",
   "spirit-animal-report": "spiritAnimalReport",
   "report-spirit-animal": "spiritAnimalReport",
+  "witch-archetype": "witchArchetypeReport",
+  "report-witch-archetype": "witchArchetypeReport",
   "vastu-shastra-guide": "vastuShastraGuide",
   "report-vastu-shastra-guide": "vastuShastraGuide",
 };
@@ -448,6 +450,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
     pastLifeReport: false,
     numerologyReport: false,
     spiritAnimalReport: false,
+    witchArchetypeReport: false,
   };
   const updatedFeatures = { ...currentFeatures } as Record<string, boolean>;
   let updatedCoins = typeof user?.coins === "number" ? user.coins : 0;

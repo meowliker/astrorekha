@@ -79,6 +79,7 @@ function featureToName(feature: string): string {
     pastLifeReport: "Past Life Report",
     numerologyReport: "Numerology Report",
     spiritAnimalReport: "Spirit Animal Report",
+    witchArchetypeReport: "Witch Archetype Report",
   };
   return labels[feature] || feature.replace(/([A-Z])/g, " $1").trim();
 }

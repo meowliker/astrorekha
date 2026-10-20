@@ -675,6 +675,7 @@ export function buildRevenueDashboard(input: {
       "past-life",
       "numerology",
       "spirit-animal",
+      "witch-archetype",
     ].flatMap((id) => product("upsell", id).items),
   );
   for (const row of products.values()) {
