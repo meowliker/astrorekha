@@ -23,3 +23,13 @@ export function soulmateProfitRows(start: string, end: string, orders: { amount:
   }
   return [...rows.values()];
 }
+/** Only contiguous stale/missing dates, with the API's seven-day limit. */
+export function soulmateBackfillRanges(dates: string[]) {
+  const ranges: { start: string; end: string }[] = [];
+  for (const date of [...new Set(dates)].sort()) {
+    const last = ranges[ranges.length - 1];
+    if (last && date === shiftProfitDate(last.end, 1) && Date.parse(date) - Date.parse(last.start) < 7 * DAY_MS) last.end = date;
+    else ranges.push({ start: date, end: date });
+  }
+  return ranges;
+}

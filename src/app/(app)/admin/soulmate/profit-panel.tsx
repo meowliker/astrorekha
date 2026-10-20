@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, RefreshCw, Settings, X } from "lucide-react";
-import { SOULMATE_PROFIT_START, profitDay, shiftProfitDate, type SoulmateProfitRow } from "@/lib/soulmate-profit";
+import { SOULMATE_PROFIT_START, profitDay, shiftProfitDate, soulmateBackfillRanges, type SoulmateProfitRow } from "@/lib/soulmate-profit";
 import { SoulmateAdAccountsDialog } from "./ad-accounts-dialog";
 
 const control = "h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white/80 transition-colors hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary";
@@ -78,6 +78,18 @@ export function SoulmateProfitPanel() {
     } catch (e) { setNotice(e instanceof Error ? e.message : "Unable to save exchange rate."); }
     finally { setSyncing(false); setRefresh((n) => n + 1); }
   }
+  async function backfill() {
+    setSyncing(true); setNotice("");
+    try {
+      for (const range of soulmateBackfillRanges(needsSync)) {
+        const res = await fetch("/api/admin/soulmate/profit", { method: "POST", headers: authHeaders(), body: JSON.stringify({ mode: "range", ...range }) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Sync failed. Try again for the remaining dates.");
+      }
+      setNotice(`Updated ${needsSync.length} ${needsSync.length === 1 ? "day" : "days"}.`);
+    } catch (e) { setNotice(e instanceof Error ? e.message : "Sync failed. Saved figures were kept."); }
+    finally { setSyncing(false); setRefresh((n) => n + 1); }
+  }
 
   function selectPeriod(value: string) {
     const year = Number(today.slice(0, 4));
@@ -109,8 +121,6 @@ export function SoulmateProfitPanel() {
   const total = (key: ColumnKey): number | null => visible.some((row) => row[key] === null) ? null : visible.reduce((sum, row) => sum + Number(row[key]), 0);
   const year = Number(today.slice(0, 4)), currentMonth = Number(today.slice(5, 7));
   const needsSync = [...new Set([...missing, ...rows.filter((r) => r.stale).map((r) => r.date)])].sort();
-  const backfillStart = needsSync[0];
-  const backfillEnd = backfillStart ? [rangeEnd, shiftProfitDate(backfillStart, 6)].sort()[0] : "";
 
   return <section className="space-y-4 py-6" aria-label="Soulmate profit sheet">
     <div className="flex justify-end"><button type="button" disabled={syncing} onClick={() => setAccountsOpen(true)} className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-primary hover:bg-white/5 disabled:opacity-40"><Settings size={15} />Accounts &amp; Campaigns<span className="rounded-full bg-primary px-1.5 text-xs text-white">{accountCount}</span></button></div>
@@ -132,7 +142,7 @@ export function SoulmateProfitPanel() {
       <p className="mt-2 text-xs text-white/40">Saved rows load from Supabase. Refresh updates only the latest two reporting days.{appliedRate !== null ? ` Saved rate: ₹${appliedRate.toFixed(2)} per USD.` : ""}</p>
     </div>
     {notice && <p role="status" className="text-sm text-amber-200">{notice}</p>}
-    {!loading && needsSync.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-sm"><span className="text-amber-200">{needsSync.length} dates need an initial sync or recalculation.</span><button type="button" disabled={syncing} className={control} onClick={() => sync("range", backfillStart, backfillEnd)}>Backfill {formatDate(backfillStart)} – {formatDate(backfillEnd)}</button></div>}
+    {!loading && !error && needsSync.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-sm"><span className="text-amber-200">{needsSync.length === 1 ? `${formatDate(needsSync[0])} needs` : `${needsSync.length} days need`} an initial sync or recalculation.</span><button type="button" disabled={syncing} className={control} onClick={backfill}>{syncing ? "Syncing…" : needsSync.length === 1 ? `Sync ${formatDate(needsSync[0])}` : `Sync ${needsSync.length} days`}</button></div>}
 
     {picker && <ProfitDatePicker key={picker} mode={picker} start={start} end={end} days={days} max={today} close={() => setPicker(null)} apply={(first, last, selection) => { setStart(first); setEnd(last); setDays(selection); setPeriod("custom"); setPicker(null); }} />}
     <div className="overflow-hidden rounded-xl border border-white/10 bg-[#1A2235]">

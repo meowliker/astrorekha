@@ -6,9 +6,10 @@ require('ts-node').register({ transpileOnly: true, compilerOptions: { module: 'C
 const resolve = Module._resolveFilename;
 Module._resolveFilename = function(name, parent, ...rest) { return resolve.call(this, name.startsWith('@/') ? path.join(__dirname, '../src', name.slice(2)) : name, parent, ...rest); };
 const { buildSoulmateCart } = require('../src/lib/soulmate-cart');
-const { DESCRIPTION_TITLES } = require('../src/lib/soulmate-report-plan');
+const { DESCRIPTION_TITLES, descriptionSections } = require('../src/lib/soulmate-report-plan');
 const { TIMELINE_TITLES } = require('../src/lib/soulmate-timeline');
 const { initialPreparation } = require('../src/lib/soulmate-report-preparation');
+const { renderTimelinePdf } = require('../src/lib/soulmate-report-pdf');
 const { deterministicReportIssues, checkPreparedPdf } = require('../src/lib/soulmate-report-quality');
 const providers = require('../src/lib/soulmate-report-providers');
 const supabase = require('../src/lib/supabase-admin');
@@ -71,8 +72,37 @@ test('repair is bounded and invalidates dependent timeline and PDF approval',()=
   const s={...initialPreparation(order()),startedAt:new Date().toISOString(),stage:'prepared',description:{report:report(DESCRIPTION_TITLES)},timeline:{report:report(TIMELINE_TITLES)},quality:{passed:true},assets:[]};
   const next=repairReportState(s,[{kind:'description',reason:'Repeated text'}]);
   assert.equal(next.stage,'sketch_ready'); assert.equal(next.description,undefined); assert.equal(next.timeline,undefined); assert.equal(next.quality,undefined);
-  assert.throws(()=>repairReportState(next,[{kind:'description',reason:'Repeated text'}]),/after repair/);
+  const second=repairReportState(next,[{kind:'description',reason:'Paragraph too long'}]);
+  assert.match(second.feedback.description,/Repeated text\nParagraph too long/);
+  assert.throws(()=>repairReportState(second,[{kind:'description',reason:'Repeated text'}]),/after repair/);
   assert.throws(()=>repairReportState(s,[{kind:'sketch',reason:'Invalid image'}]),/manual attention/);
+});
+test('valid custom chat answers can prepare without changing the saved preferences', async()=>{
+  const value=order('standard',[]);
+  value.answers={...answers,heart:'I have one person in my heart',feeling:'A calm connection with mutual respect'};
+  const h=harness(value);
+  for(let i=0;i<6 && h.status()!=='ready';i++) await h.tick();
+  assert.equal(h.status(),'ready',h.error());
+  assert.equal(h.saved().plan.profile.heart,value.answers.heart);
+  assert.equal(h.saved().plan.profile.feeling,value.answers.feeling);
+  assert.equal(h.calls.filter(c=>c==='sketch').length,1);
+});
+test('confirmed terminal timeout retries once, preserving failed task history',async()=>{
+  const h=harness(order('standard',[]));
+  await h.tick();
+  providers.pollReportSketch=async id=>{throw new providers.SoulmateSketchFailure(id,'524',true);};
+  assert.equal(await h.tick(),'sketch_retry_queued');
+  assert.equal(h.saved().stage,'planned');
+  assert.equal(h.saved().failedSketchTasks[0].taskId,'mock-task');
+  await h.tick();
+  assert.equal(await h.tick(),'needs_review');
+  assert.equal(h.calls.filter(c=>c==='sketch').length,2);
+});
+test('provider refusal never creates a replacement image',async()=>{
+  const h=harness(); await h.tick();
+  providers.pollReportSketch=async id=>{throw new providers.SoulmateSketchFailure(id,'400',false);};
+  assert.equal(await h.tick(),'needs_review');
+  assert.equal(h.calls.filter(c=>c==='sketch').length,1);
 });
 test('paragraph tolerance permits a fitting 86-word paragraph but rejects excessive prose',()=>{
   const s={...initialPreparation(order()),description:{report:report(DESCRIPTION_TITLES)},timeline:{report:report(TIMELINE_TITLES)}};
@@ -82,6 +112,15 @@ test('paragraph tolerance permits a fitting 86-word paragraph but rejects excess
   assert.deepEqual(deterministicReportIssues(s),[]);
   s.timeline.report.sections[0].paragraphs[0]=padTo(100);
   assert(deterministicReportIssues(s).some(i=>i.kind==='timeline'&&/paragraph/.test(i.reason)));
+});
+test('timeline pagination fits longer allowed prose without redundant forced page breaks',()=>{
+  const plan=initialPreparation(order()).plan;
+  const description=report(DESCRIPTION_TITLES),draft=report(TIMELINE_TITLES);
+  const extend=p=>p+' '+Array.from({length:86-p.split(/\s+/).length},()=> 'care').join(' ');
+  draft.sections.forEach(s=>s.paragraphs=s.paragraphs.map(extend)); draft.closing=extend(draft.closing);
+  const context={...plan,descriptionText:JSON.stringify({sections:descriptionSections(plan,description),closing:description.closing})};
+  const pdf=renderTimelinePdf(context,draft);
+  assert(checkPreparedPdf('timeline',pdf)<=3);
 });
 test('unpaid, delivered and changed-answer snapshots cannot submit provider requests',async()=>{
   for(const patch of [{payment_status:'failed'},{fulfillment_status:'delivered'},{answer_revision:2}]) {

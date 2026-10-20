@@ -53,9 +53,9 @@ function renderReadingPdf(plan: { customerName: string; preparedOn: string }, ti
   frame();
   heading(headingText, 28);
   paragraph(`Prepared for ${ascii(plan.customerName) || "you"} | ${formatDate(plan.preparedOn)}`, true);
-  sections.forEach((section, i) => {
-    // Keep the approved two-sections-per-page rhythm, allowing overflow if needed.
-    if (i > 0 && i % 2 === 0) nextPage();
+  sections.forEach((section) => {
+    // Paginate by measured space. Fixed two-section breaks created extra pages
+    // when a title or month label pushed the preceding section onto a new page.
     doc.setFont("helvetica", "normal"); doc.setFontSize(10.3);
     const firstLines: string[] = doc.splitTextToSize(ascii(section.paragraphs[0] || ""), width - 112);
     heading(section.title, 18, firstLines.length * 16.2 + 12);

@@ -4,12 +4,17 @@ const path = require('node:path'), Module = require('node:module');
 require('ts-node').register({ transpileOnly: true, compilerOptions: { module: 'CommonJS', moduleResolution: 'node' } });
 const resolve = Module._resolveFilename;
 Module._resolveFilename = function(name, parent, ...rest) { return resolve.call(this, name.startsWith('@/') ? path.join(__dirname, '../src', name.slice(2)) : name, parent, ...rest); };
-const { profitDay, validProfitDate, soulmateProfitRows, latestSoulmateProfitRange } = require('../src/lib/soulmate-profit');
+const { profitDay, validProfitDate, soulmateProfitRows, latestSoulmateProfitRange, soulmateBackfillRanges } = require('../src/lib/soulmate-profit');
 const {validateSoulmateAccounts,publicSoulmateSettings}=require('../src/lib/soulmate-profit-settings');
 const meta=require('../src/lib/soulmate-meta-spend');
 const actualFetchMeta=meta.fetchSoulmateMetaSpend;
 const now=Date.parse('2026-10-16T12:00:00Z');
 const account={accountId:'12345',accessToken:'fixture-token',active:true,startDate:'2026-10-15',startTime:'11:30',label:'Soulmate',campaignIds:['111111']};
+test('backfill only targets unsynced dates, skips current rows and batches seven days',()=>{
+ assert.deepEqual(soulmateBackfillRanges(['2026-10-15']),[{start:'2026-10-15',end:'2026-10-15'}]);
+ assert.deepEqual(soulmateBackfillRanges(['2026-10-18','2026-10-15','2026-10-15','2026-10-19']),[{start:'2026-10-15',end:'2026-10-15'},{start:'2026-10-18',end:'2026-10-19'}]);
+ assert.deepEqual(soulmateBackfillRanges(Array.from({length:8},(_,i)=>`2026-10-${15+i}`)),[{start:'2026-10-15',end:'2026-10-21'},{start:'2026-10-22',end:'2026-10-22'}]);
+});
 test('reporting boundary, launch floor and exact paise aggregation',()=>{
  assert.equal(profitDay('2026-10-16T05:59:59Z'),'2026-10-15');
  assert.equal(profitDay('2026-10-16T06:00:00Z'),'2026-10-16');
