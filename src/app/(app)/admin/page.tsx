@@ -32,15 +32,6 @@ interface AdminOption {
 
 const adminOptions: AdminOption[] = [
   {
-    id: "witch-archetype",
-    title: "Witch Archetype Reports",
-    description: "Review customer access, purchases, quiz answers, and saved reports",
-    icon: Sparkles,
-    href: "/admin/witch-archetype",
-    color: "text-purple-300",
-    bgColor: "bg-purple-500/20",
-  },
-  {
     id: "revenue",
     title: "Revenue Dashboard",
     description: "View MRR, ARR, subscriptions, transactions, and financial metrics",

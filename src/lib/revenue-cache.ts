@@ -18,7 +18,7 @@ import {
 export const REVENUE_BUCKET = "admin-revenue-cache";
 const VERSION = 3;
 // Recalculate reports after formula changes without rereading source payment history.
-const REPORT_VERSION = 5;
+const REPORT_VERSION = 6;
 type Manifest = { version: number; id: string; generatedAt: string };
 type Source = Manifest & {
   payments: PaymentRow[];
@@ -492,7 +492,9 @@ export async function savedRevenueReport(
   const result = buildRevenueDashboard({
     payments: source.payments,
     events: source.events,
-    pricing: source.pricing,
+    // Stored snapshots can predate a newly added report. Merge the current catalog
+    // while preserving saved prices and computing all metrics from saved records.
+    pricing: normalizePricing(source.pricing),
     range: storedRange,
     attribution,
     usage: source.usage,

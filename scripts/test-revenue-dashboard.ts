@@ -395,6 +395,46 @@ assert.deepEqual(
     "pastLifeReport",
     "numerologyReport",
     "spiritAnimalReport",
+    "witchArchetypeReport",
   ].sort(),
   "empty cohort shows the post-bundle add-on catalog, not every standalone report",
 );
+
+
+// Witch uses the same report, add-on, refund and access aggregation as its peers.
+const witchPayments: PaymentRow[] = [
+  payment("witch-bundle", { user_id: "witch-buyer", amount: 100000 }),
+  payment("witch-direct", { user_id: "direct-buyer", type: "report", bundle_id: "report-witch-archetype", amount: 58200 }),
+  payment("witch-addon", { user_id: "witch-buyer", type: "upsell", bundle_id: "witch-archetype", amount: 49900, created_at: "2026-10-10T09:00:00Z" }),
+  payment("witch-combo", { user_id: "witch-buyer", type: "upsell", bundle_id: "witch-archetype,compatibility", amount: 99800, created_at: "2026-10-10T10:00:00Z" }),
+  payment("witch-failed", { type: "report", bundle_id: "report-witch-archetype", amount: 58200, payment_status: "failed" }),
+  payment("witch-pending", { type: "report", bundle_id: null, feature: "witchArchetypeReport", amount: 58200, payment_status: "created" }),
+  payment("witch-returned", { type: "report", bundle_id: "report-witch-archetype", amount: 58200 }),
+  payment("witch-refund", { payu_txn_id: "witch-returned", type: "report", bundle_id: "report-witch-archetype", amount: 58200, payment_status: "refund_success" }),
+];
+const witchData = buildRevenueDashboard({
+  payments: witchPayments, events: [], pricing: DEFAULT_PRICING, range, attribution: "last",
+  usage: { capturedAt: "2026-10-12T10:00:00Z", chats: [], users: [
+    { id: "witch-buyer", unlocked_features: { witchArchetypeReport: true } },
+    { id: "direct-buyer", unlocked_features: { witchArchetypeReport: true } },
+    { id: "witch-returned", unlocked_features: { witchArchetypeReport: false } },
+  ] },
+});
+const witchRow = witchData.reportAnalytics.find(r => r.id === "witchArchetypeReport")!;
+assert.equal(witchRow.name, "Witch Archetype Report");
+assert.equal(witchData.reportAnalytics.filter(r => r.id === "witchArchetypeReport").length, 1);
+assert.equal(witchRow.standaloneOrders, 1, "fully refunded purchase is excluded from retained orders");
+assert.equal(witchRow.standalonePaise, 58200);
+assert.equal(witchRow.upsellOrders, 2);
+assert.equal(witchRow.singleUpsellPaise, 49900);
+assert.equal(witchRow.sharedOrders, 1, "combo price is not incorrectly assigned to one report");
+assert.equal(witchRow.individualAddOnOrders, 1);
+assert.equal(witchRow.addOnBuyers, 1, "same add-on buyer counted once");
+assert.equal(witchRow.holders?.holders, 2);
+assert.equal(witchRow.direct.failed, 1);
+assert.equal(witchRow.direct.pending, 1);
+const emptyWitch = build([]).reportAnalytics.find(r => r.id === "witchArchetypeReport")!;
+assert.equal(emptyWitch.standaloneOrders, 0);
+assert.equal(emptyWitch.standalonePaise, 0);
+assert.equal(emptyWitch.upsellOrders, 0);
+console.log("Witch report uses standard revenue rows for direct purchases, add-ons, combos, refunds, pending/failed payments and current access.");

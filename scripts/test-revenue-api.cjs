@@ -679,6 +679,26 @@ const request = (
     recent.orders.some((o) => o.id === "recent-order"),
     "the 48-hour safety scan also catches new recent rows",
   );
+  // A deployment must rebuild old report caches and merge new catalog entries
+  // without rereading payment history or changing historical financial totals.
+  const { gzipSync } = require("node:zlib");
+  const sourcePath = `sources/${syncState.snapshot_id}.json.gz`;
+  const oldSource = JSON.parse(gunzipSync(objects.get(sourcePath)).toString("utf8"));
+  oldSource.pricing.reports = oldSource.pricing.reports.filter(p => p.feature !== "witchArchetypeReport");
+  oldSource.pricing.upsells = oldSource.pricing.upsells.filter(p => p.feature !== "witchArchetypeReport");
+  const savedPrice = oldSource.pricing.reports[0].price;
+  objects.set(sourcePath, gzipSync(JSON.stringify(oldSource)));
+  for (const key of [...objects.keys()]) if (key.startsWith("reports/")) objects.delete(key);
+  objects.set("reports/v5/2026-10-10_2026-10-11_last.json.gz", gzipSync(JSON.stringify({ sourceId: syncState.snapshot_id, reportAnalytics: [] })));
+  const readsBeforeCatalogUpdate = paymentReads;
+  const updatedCatalogResponse = await GET(request());
+  assert.equal(updatedCatalogResponse.status, 200);
+  const updatedCatalog = await updatedCatalogResponse.json();
+  assert(updatedCatalog.reportAnalytics.some(r => r.id === "witchArchetypeReport"));
+  assert(updatedCatalog.upsells.cohorts[0].reports.some(r => r.id === "witchArchetypeReport"));
+  assert.equal(paymentReads, readsBeforeCatalogUpdate, "new catalog uses saved source data");
+  assert.deepEqual(updatedCatalog.totals, repeated.totals, "adding the catalog entry does not change financial totals");
+  assert.equal(JSON.parse(gunzipSync(objects.get(sourcePath)).toString("utf8")).pricing.reports[0].price, savedPrice);
   for (const bytes of objects.values())
     assert.ok(!gunzipSync(bytes).toString("utf8").includes("PRIVATE QUESTION"));
   assert.equal(syncState.lease_token, null);
