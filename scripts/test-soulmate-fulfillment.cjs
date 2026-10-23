@@ -95,6 +95,21 @@ test('bounced mail remains reviewable rather than being marked delivered or rese
   global.fetch = async () => json({ events: [{ event: 'hard_bounce', messageId: email.provider_message_id, email: order.customer_email }] });
   await run(); assert.equal(email.status, 'needs_review'); assert.equal(order.delivered_at, undefined);
 });
+test('statistics API bounce names expose mailbox-full cause without another send', async()=>{
+  for(const event of ['softBounces','hardBounces','soft_bounce','hard_bounce']) {
+    job.status='ready';email.status='sent';email.provider_message_id='<fixture@brevo>';
+    global.fetch=async(url,init)=>{assert.notEqual(init.method,'POST');return json({events:[{event,messageId:email.provider_message_id,email:order.customer_email,reason:"452-4.2.2 The recipient's inbox is out of storage space."}]});};
+    await run();assert.equal(email.status,'needs_review');assert.match(email.last_error,/Recipient inbox is full/);assert.equal(order.delivered_at,undefined);
+  }
+});
+test('bounce for another recipient is ignored; later confirmed delivery clears failure', async()=>{
+  job.status='ready';email.status='sent';email.provider_message_id='<fixture@brevo>';
+  global.fetch=async()=>json({events:[{event:'softBounces',messageId:email.provider_message_id,email:'someone-else@example.invalid'}]});
+  await run();assert.equal(email.status,'sent');
+  const delivered=new Date().toISOString();
+  global.fetch=async()=>json({events:[{event:'softBounces',messageId:email.provider_message_id,email:order.customer_email},{event:'delivered',messageId:email.provider_message_id,email:order.customer_email,date:delivered}]});
+  await run();assert.equal(email.status,'delivered');assert.equal(email.last_error,null);
+});
 test('late recovered order sends promptly; internal image hosts rejected', () => {
   email.scheduled_at = new Date(Date.now() - 60000).toISOString();
   assert.equal(emailBody(order, email, Buffer.from('image'), 'sketch.jpg').scheduledAt, undefined);

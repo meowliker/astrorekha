@@ -138,14 +138,22 @@ export async function reconcileEmail(db: DB, order: Pick<Order, "id" | "customer
   const sentEvent = events.find((e: { event: string }) => e.event === "requests" || e.event === "request");
   if (sentEvent?.date && Number.isFinite(Date.parse(sentEvent.date))) await patchEmail(db, email, { sent_at: new Date(sentEvent.date).toISOString() });
   const delivered = events.find((e: { event: string }) => e.event === "delivered");
+  // The statistics API uses softBounces/hardBounces; webhook-style names may
+  // use underscores. Match both without confusing submission with delivery.
+  const failure = events.find((e: { event?: string }) => ["hardbounce", "hardbounces", "softbounce", "softbounces", "blocked", "invalid", "error"]
+    .includes((e.event || "").replace(/[^a-z]/gi, "").toLowerCase()));
   if (delivered) {
     const deliveredAt = new Date(delivered.date).toISOString();
     // If the second write fails, the next worker run retries it before ending the job.
     const { error } = await db.from("soulmate_orders").update({ fulfillment_status: "delivered", delivered_at: deliveredAt }).eq("id", order.id).eq("payment_status", "paid");
     if (error) throw new Error("Unable to save delivery confirmation");
     await patchEmail(db, email, { status: "delivered", delivered_at: deliveredAt, last_error: null });
-  } else if (events.some((e: { event: string }) => ["hard_bounce", "soft_bounce", "blocked", "invalid", "error"].includes(e.event))) {
-    await patchEmail(db, email, { status: "needs_review", last_error: "Brevo reported a delivery failure; check recipient and provider log" });
+  } else if (failure) {
+    const reason = typeof failure.reason === "string" ? failure.reason.replace(/[\r\n\t]+/g, " ").trim().slice(0, 500) : "";
+    const message = /out of storage|mailbox (?:is )?full|over.?quota/i.test(reason)
+      ? "Recipient inbox is full. The email was sent but could not be delivered; the recipient needs to free storage."
+      : `Brevo reported a delivery failure${reason ? `: ${reason}` : "; check recipient and provider log"}`;
+    await patchEmail(db, email, { status: "needs_review", last_error: message });
   } else if (Date.now() > new Date(email.scheduled_at).getTime() + 24 * 3600000) {
     await patchEmail(db, email, { status: "needs_review", last_error: "No delivery confirmation within 24 hours; check Brevo" });
   } else if (events.some((e: { event: string }) => e.event === "requests" || e.event === "request")) {
