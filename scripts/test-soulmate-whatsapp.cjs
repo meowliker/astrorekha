@@ -106,3 +106,32 @@ test('automatic worker remains disabled and requires launch cutoff when enabled'
   process.env.SOULMATE_WHATSAPP_ENABLED = 'true'; delete process.env.SOULMATE_WHATSAPP_START_AT;
   await assert.rejects(runSoulmateWhatsApp(), /launch date/); assert.equal(calls.length, 0);
 });
+
+test('immediate invoice sends without approval, report files or report due time; reports still wait', async () => {
+  order.review_status = 'pending'; order.scheduled_send_at = new Date(Date.now()+8*3600000).toISOString(); assets = [];
+  const { documents } = await prepareSoulmateWhatsApp(db, order.id, 'invoice');
+  await dispatchSoulmateWhatsApp(order, documents, ledger, 'invoice');
+  assert.equal(calls.length, 1); assert.equal(calls[0].campaignName, 'soulmate_invoice_delivery_api');
+  await assert.rejects(prepareSoulmateWhatsApp(db, order.id, 'reports'));
+  await dispatchSoulmateWhatsApp(order, documents, ledger, 'invoice');
+  assert.equal(calls.length, 1, 'invoice does not resend');
+  order.payment_status = 'failed'; await assert.rejects(prepareSoulmateWhatsApp(db, order.id, 'invoice'));
+});
+test('immediate confirmation eligibility excludes old, local, preview and test orders', () => {
+  const { soulmateWhatsAppEligible } = require('../src/lib/soulmate-whatsapp');
+  process.env.SOULMATE_WHATSAPP_ENABLED = 'true'; process.env.SOULMATE_WHATSAPP_START_AT = '2026-10-23T07:12:30Z';
+  const eligible = { paid_at:'2026-10-23T07:12:30Z', payment_mode:'live', attribution:{trackingEnvironment:'production'} };
+  assert.equal(soulmateWhatsAppEligible(eligible),true);
+  for (const override of [{paid_at:'2026-10-23T07:12:29Z'}, {paid_at:null}, {payment_mode:'test'}, {attribution:{trackingEnvironment:'local'}}, {attribution:{trackingEnvironment:'preview'}}])
+    assert.equal(soulmateWhatsAppEligible({...eligible,...override}),false);
+  delete process.env.SOULMATE_WHATSAPP_START_AT; assert.equal(soulmateWhatsAppEligible(eligible),false);
+});
+test('dashboard never calls an accepted submission sent or delivered', () => {
+  const { soulmateWhatsAppStatus: status } = require('../src/lib/soulmate-whatsapp-status');
+  assert.equal(status({status:'accepted'},true,true,null,'sketch'),'Accepted by AiSensy');
+  assert.equal(status(undefined,false,true,null,'sketch'),'Not enrolled for automatic WhatsApp');
+  assert.equal(status(undefined,true,false,null,'invoice'),'Queued after payment');
+  assert.equal(status(undefined,true,false,null,'sketch'),'Awaiting report preparation');
+  assert.equal(status(undefined,true,true,'2099-01-01','sketch'),'Scheduled');
+  assert.match(status({status:'submitting',submitted_at:'2000-01-01'},true,true,null,'invoice'),/unconfirmed/);
+});

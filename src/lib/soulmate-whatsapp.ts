@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { getSupabaseAdmin } from "./supabase-admin";
 import type { SoulmateEntitlements } from "./soulmate-cart";
 
+type Phase = "invoice" | "reports";
 type DB = ReturnType<typeof getSupabaseAdmin>;
 export type WhatsAppKind = "invoice" | "sketch" | "description" | "timeline";
 export type WhatsAppDocument = { kind: WhatsAppKind; filename: string; url: string; campaignName: string; params: string[] };
@@ -37,18 +38,18 @@ export function soulmateWhatsAppKinds(entitlements: SoulmateEntitlements): Whats
   return ["invoice", ...expected] as WhatsAppKind[];
 }
 
-/** Preflight ALL purchased PDFs before submitting any WhatsApp message. URLs expire in 24 hours. */
-export async function prepareSoulmateWhatsApp(db: DB, orderId: string) {
+/** Invoice-only confirmation is immediate. Report batches preflight every purchased PDF. URLs expire in 24 hours. */
+export async function prepareSoulmateWhatsApp(db: DB, orderId: string, phase: Phase = "reports") {
   const result = await db.from("soulmate_orders").select("*").eq("id", orderId).single();
   const order = result.data;
   if (result.error || !order || order.funnel !== "soulmate_standalone" || order.catalog_version !== 2 ||
-      order.payment_status !== "paid" || order.review_status !== "approved") throw new Error("Paid, approved Soulmate order required");
-  if (!Number.isFinite(Date.parse(order.scheduled_send_at)) || Date.parse(order.scheduled_send_at) > Date.now()) throw new Error("Order is not due for delivery");
+      order.payment_status !== "paid" || (phase === "reports" && order.review_status !== "approved")) throw new Error("Paid, approved Soulmate order required");
+  if (phase === "reports" && (!Number.isFinite(Date.parse(order.scheduled_send_at)) || Date.parse(order.scheduled_send_at) > Date.now())) throw new Error("Order is not due for delivery");
   soulmateWhatsAppPhone(order.customer_phone);
-  const kinds = soulmateWhatsAppKinds(order.entitlements);
+  const kinds: WhatsAppKind[] = phase === "invoice" ? ["invoice"] : soulmateWhatsAppKinds(order.entitlements);
   const [invoices, assets] = await Promise.all([
     db.from("soulmate_order_invoices").select("*").eq("order_id", orderId).eq("source", "purchase").single(),
-    db.from("soulmate_order_assets").select("*").eq("order_id", orderId),
+    phase === "invoice" ? Promise.resolve({ data: [], error: null }) : db.from("soulmate_order_assets").select("*").eq("order_id", orderId),
   ]);
   const invoice = invoices.data;
   if (invoices.error || assets.error || !invoice || invoice.snapshot?.orderId !== orderId ||
@@ -81,10 +82,10 @@ export async function prepareSoulmateWhatsApp(db: DB, orderId: string) {
 }
 
 /** Acceptance is not handset delivery. Never retry an ambiguous POST without provider review. */
-export async function dispatchSoulmateWhatsApp(order: WhatsAppOrder, documents: WhatsAppDocument[], ledger: WhatsAppLedger) {
+export async function dispatchSoulmateWhatsApp(order: WhatsAppOrder, documents: WhatsAppDocument[], ledger: WhatsAppLedger, phase: Phase = "reports") {
   const key = process.env.AISENSY_API_KEY?.trim();
   if (!key) throw new Error("AiSensy API key is missing");
-  const expected = soulmateWhatsAppKinds(order.entitlements);
+  const expected = phase === "invoice" ? ["invoice"] : soulmateWhatsAppKinds(order.entitlements);
   if (documents.length !== expected.length || documents.some((doc, i) => doc.kind !== expected[i])) throw new Error("Invoice-first document sequence required");
   const destination = soulmateWhatsAppPhone(order.customer_phone);
   const results: { kind: WhatsAppKind; status: "accepted" | "already_accepted"; providerId?: string | null }[] = [];
@@ -140,9 +141,24 @@ function databaseLedger(db: DB, order: WhatsAppOrder): WhatsAppLedger {
 }
 
 /** Explicit operator send for one approved order, using the same durable duplicate protection. */
-export async function sendSoulmateWhatsAppOrder(db: DB, orderId: string) {
-  const { order, documents } = await prepareSoulmateWhatsApp(db, orderId);
-  return dispatchSoulmateWhatsApp(order, documents, databaseLedger(db, order));
+export async function sendSoulmateWhatsAppOrder(db: DB, orderId: string, phase: Phase = "reports") {
+  const { order, documents } = await prepareSoulmateWhatsApp(db, orderId, phase);
+  return dispatchSoulmateWhatsApp(order, documents, databaseLedger(db, order), phase);
+}
+
+/** Automatic sends must preserve the launch cutoff, including immediate invoice sends. */
+export function soulmateWhatsAppEligible(order: { paid_at: string | null; payment_mode: string; attribution?: { trackingEnvironment?: string } | null }) {
+  const cutoff = Date.parse(process.env.SOULMATE_WHATSAPP_START_AT || "");
+  return process.env.SOULMATE_WHATSAPP_ENABLED === "true" && Number.isFinite(cutoff) &&
+    order.payment_mode === "live" && order.attribution?.trackingEnvironment === "production" &&
+    Date.parse(order.paid_at || "") >= cutoff;
+}
+
+export async function sendSoulmateWhatsAppConfirmation(db: DB, orderId: string) {
+  const result = await db.from("soulmate_orders").select("paid_at,payment_mode,attribution").eq("id", orderId).single();
+  if (result.error) throw new Error("Unable to check WhatsApp eligibility");
+  if (!result.data || !soulmateWhatsAppEligible(result.data)) return;
+  return sendSoulmateWhatsAppOrder(db, orderId, "invoice");
 }
 
 /** Separate opt-in and launch cutoff: enabling must never message historical buyers. */
@@ -152,13 +168,13 @@ export async function runSoulmateWhatsApp() {
   if (!Number.isFinite(Date.parse(cutoff))) throw new Error("Soulmate WhatsApp launch date is required");
   if (!process.env.AISENSY_API_KEY) throw new Error("AiSensy API key is missing");
   const db = getSupabaseAdmin({ fresh: true });
-  const due = await db.rpc("due_soulmate_whatsapp_orders", { p_start: new Date(cutoff).toISOString() });
+  const due = await db.rpc("due_soulmate_whatsapp_jobs", { p_start: new Date(cutoff).toISOString() });
   if (due.error) throw new Error("Soulmate WhatsApp queue unavailable; apply migration first");
   let failures = 0;
   // One order per cron keeps the four bounded provider calls within the request budget.
   for (const row of due.data || []) {
     try {
-      await sendSoulmateWhatsAppOrder(db, row.id);
+      await sendSoulmateWhatsAppOrder(db, row.id, row.phase === "invoice" ? "invoice" : "reports");
     } catch {
       failures++;
       // Prevent a corrupt/missing PDF from starving all subsequent orders.

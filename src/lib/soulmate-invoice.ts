@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { sendSoulmateWhatsAppConfirmation } from "./soulmate-whatsapp";
 import { getSupabaseAdmin } from "./supabase-admin";
 import { submitBrevoEmail } from "./brevo-send-monitoring";
 import { generateSoulmateInvoicePdf, soulmateConfirmationEmail, type SoulmateInvoiceDocument } from "./soulmate-invoice-template";
@@ -83,7 +84,13 @@ export async function confirmSoulmatePurchase(order: {id:string;payment_status:s
   try {
     const result=await getSupabaseAdmin().rpc("ensure_soulmate_invoice",{p_order:order.id});
     if(result.error || !result.data)throw new Error("Invoice queue unavailable");
-    await sendSoulmateConfirmation(result.data);
+    const invoice = await prepareSoulmateInvoice(result.data);
+    if (!invoice) return;
+    const sends = await Promise.allSettled([
+      sendSoulmateConfirmation(result.data),
+      sendSoulmateWhatsAppConfirmation(getSupabaseAdmin(), order.id),
+    ]);
+    if (sends.some(send => send.status === "rejected")) console.warn("[soulmate-invoice] A confirmation channel awaits retry or review", { orderId: order.id });
   } catch { console.warn("[soulmate-invoice] Confirmation awaits retry or review",{orderId:order.id}); }
 }
 export async function retrySoulmateConfirmations() {

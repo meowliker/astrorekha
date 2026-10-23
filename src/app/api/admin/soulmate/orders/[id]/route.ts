@@ -1,3 +1,4 @@
+import { soulmateWhatsAppEligible } from "@/lib/soulmate-whatsapp";
 import { NextRequest, NextResponse } from "next/server";
 import { soulmateAdmin, validSoulmateId } from "@/lib/soulmate-admin";
 import { sanitizeAnswers, steps } from "@/app/soulmate/chat-data";
@@ -18,10 +19,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     if (!order.data) return NextResponse.json({ error: "Order not found" }, { status: 404 });
 
     const syncFailures = await refreshSoulmateDeliveryStatuses(db, [order.data]);
-    const [jobs, emails, assets] = await Promise.all([
+    const [jobs, emails, assets, whatsapp] = await Promise.all([
       db.from("soulmate_generation_jobs").select("order_id,status,generation_attempts,last_error,storage_path").eq("order_id", params.id).maybeSingle(),
       db.from("soulmate_email_deliveries").select("order_id,status,scheduled_at,submitted_at,sent_at,delivered_at,last_error").eq("order_id", params.id).maybeSingle(),
       db.from("soulmate_order_assets").select("order_id,kind,filename,uploaded_at,size_bytes").eq("order_id", params.id),
+      db.from("soulmate_whatsapp_deliveries").select("kind,status,submitted_at,accepted_at,last_error").eq("order_id", params.id),
     ]);
     if (jobs.error || emails.error || assets.error) throw new Error("Unable to load delivery details");
 
@@ -39,6 +41,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         generation: jobs.data || null,
         email: emails.data || null,
         assets: assets.data || [],
+        whatsapp: { eligible: soulmateWhatsAppEligible(order.data), messages: whatsapp.data || [], unavailable: Boolean(whatsapp.error) },
       },
     }, { headers: { "Cache-Control": "no-store" } });
   } catch {
@@ -59,7 +62,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     const result = await db.rpc("revise_soulmate_order_answers", { p_order: params.id, p_answers: answers });
     if (result.error) {
       const message = result.error.message || "";
-      if (message.includes("Delivered") || message.includes("submitted")) return NextResponse.json({ error: "Answers cannot be changed after delivery has started." }, { status: 409 });
+      if (message.includes("Delivered") || message.includes("submitted") || message.includes("delivery has already started")) return NextResponse.json({ error: "Answers cannot be changed after delivery has started." }, { status: 409 });
       if (message.includes("not paid")) return NextResponse.json({ error: "Only paid orders can be revised." }, { status: 409 });
       throw new Error("Unable to revise order answers");
     }

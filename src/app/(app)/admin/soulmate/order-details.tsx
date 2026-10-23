@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { soulmateWhatsAppStatus } from "@/lib/soulmate-whatsapp-status";
 import { SoulmateInvoicesPanel } from "./invoices-panel";
 import { soulmateItemName } from "@/lib/soulmate-product-names";
 import type { SoulmateOrderView } from "@/lib/soulmate-order-view";
@@ -29,7 +30,7 @@ export function SoulmateOrderDetails({ order, refresh }: { order: SoulmateOrderV
   const generated = order.assets.length > 0 || order.generation?.status === "ready";
   const generating = ["generating", "submitting"].includes(order.generation?.status || "");
   const answerChanges = useMemo(() => steps.some((step) => (answers[step] || "") !== (order.answers[step] || "")), [answers, order.answers]);
-  const answerEditingLocked = Boolean(order.delivered_at || ["submitting", "scheduled", "sent", "delivered"].includes(order.email?.status || ""));
+  const answerEditingLocked = Boolean(order.whatsapp?.messages.some(message => message.kind !== "invoice" && message.submitted_at) || order.delivered_at || ["submitting", "scheduled", "sent", "delivered"].includes(order.email?.status || ""));
 
   async function upload(kind: SoulmateAssetKind, file?: File) {
     if (!file) return;
@@ -83,6 +84,34 @@ export function SoulmateOrderDetails({ order, refresh }: { order: SoulmateOrderV
   return <div className="text-sm">
     <SoulmateInvoicesPanel orderId={order.id} summary={orderSummary} />
 
+    <section className="border-t border-white/10 py-7" aria-labelledby="whatsapp-title">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h2 id="whatsapp-title" className="font-medium">WhatsApp delivery</h2>
+          <p className="mt-2 text-xs text-white/50">Order confirmation and invoice send after verified payment. Reports use the email delivery schedule, normally 8 hours after payment.</p>
+          <p className="mt-1 text-xs text-white/50">Destination: {order.customer_phone || "No phone number saved"}</p></div>
+        <a href="https://www.app.aisensy.com" target="_blank" rel="noreferrer" className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/75 hover:bg-white/5">Open AiSensy</a>
+      </div>
+      {order.whatsapp?.unavailable ? <p role="alert" className="mt-4 text-amber-200">WhatsApp status could not be loaded. Please refresh.</p> :
+        <div className="mt-5 overflow-x-auto rounded-xl border border-white/10">
+          <table className="w-full text-left text-xs"><thead className="bg-white/[0.04] text-white/50"><tr>
+            {["Message", "Scheduled", "Submission status", "Submitted", "Accepted", "Delivery confirmation"].map(label => <th key={label} className="px-4 py-3 font-medium">{label}</th>)}
+          </tr></thead><tbody className="divide-y divide-white/10">
+            {(["invoice", ...required] as const).map(kind => {
+              const message = order.whatsapp?.messages.find(item => item.kind === kind);
+              const enrolled = Boolean(order.whatsapp?.eligible || order.whatsapp?.messages.length);
+              const status = soulmateWhatsAppStatus(message, enrolled, order.review_status === "approved", order.scheduled_send_at, kind);
+              const title = { invoice: "Order confirmation & invoice", sketch: "Soulmate Sketch", description: "Soulmate Description", timeline: "Soulmate Connection Timeline" }[kind];
+              return <tr key={kind} className="align-top text-white/70"><td className="px-4 py-4 font-medium text-white/90">{title}</td>
+                <td className="px-4 py-4">{kind === "invoice" ? "Immediately after payment" : date(order.scheduled_send_at)}</td>
+                <td className="px-4 py-4"><span className={message?.status === "needs_review" ? "text-amber-200" : message?.status === "accepted" ? "text-sky-300" : "text-white/70"}>{status}</span>{message?.last_error && <p className="mt-2 max-w-xs text-amber-200/80">{message.last_error}</p>}</td>
+                <td className="px-4 py-4">{date(message?.submitted_at || null)}</td><td className="px-4 py-4">{date(message?.accepted_at || null)}</td>
+                <td className="px-4 py-4 text-white/45">Not available on current AiSensy plan</td></tr>;
+            })}
+          </tbody></table>
+        </div>}
+      <p className="mt-3 text-xs leading-relaxed text-white/45">Accepted means AiSensy accepted the request; it does not confirm that WhatsApp sent or delivered the message. Check Sent, Delivered and Read in AiSensy&apos;s campaign dashboard. Historical orders are excluded from automatic WhatsApp unless individually authorised.</p>
+    </section>
+
     <section className="border-t border-white/10 py-7" aria-labelledby="answers-title">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h2 id="answers-title" className="font-medium">Buyer&apos;s confirmed answers</h2><p className="mt-1 text-xs text-white/45">Revision {order.answer_revision || 1}{order.answers_updated_at ? ` · updated ${date(order.answers_updated_at)}` : ""}</p></div>
@@ -104,7 +133,7 @@ export function SoulmateOrderDetails({ order, refresh }: { order: SoulmateOrderV
 
     {order.catalog_version === 2 && <section className="mt-7 border-t border-white/10 pt-7" aria-label="Prepare and review purchased deliverables">
       <h2 className="font-medium">Prepare & review</h2>
-      <p className="mt-2 max-w-3xl text-xs leading-relaxed text-white/50">Upload the correct {order.entitlements.sketch === "colour" ? "colour" : "black-and-white"} sketch and every purchased report. Maximum 3 MiB per file and 7 MiB combined. Approved orders send at the scheduled time: 12 hours for priority/express and 48 hours for normal delivery. If approved after that time, the next worker run sends them.</p>
+      <p className="mt-2 max-w-3xl text-xs leading-relaxed text-white/50">Upload the correct {order.entitlements.sketch === "colour" ? "colour" : "black-and-white"} sketch and every purchased report. Maximum 3 MiB per file and 7 MiB combined. Approved orders send at the saved scheduled time, normally 8 hours after payment. If approved after that time, the next worker run sends them.</p>
       <div className="mt-5 divide-y divide-white/[0.07] border-y border-white/[0.07]">
         {required.map((kind) => <div key={kind} className="flex flex-wrap items-center gap-3 py-4"><span className="w-28 capitalize">{kind}</span><span className="min-w-24 text-xs text-white/45">{order.assets.some((asset) => asset.kind === kind) ? "Uploaded" : "Not uploaded"}</span>{canUpload && <input aria-label={`Upload ${kind}`} type="file" accept={kind === "sketch" ? "application/pdf,image/png,image/jpeg,image/webp" : "application/pdf"} disabled={busy} className="max-w-full text-xs" onChange={(event) => { void upload(kind,event.target.files?.[0]); event.target.value=""; }} />}</div>)}
       </div>

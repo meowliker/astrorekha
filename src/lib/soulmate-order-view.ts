@@ -1,3 +1,4 @@
+import type { SoulmateWhatsAppMessage } from "./soulmate-whatsapp-status";
 import type { SoulmateEntitlements, SoulmateLineItem, SoulmateAssetKind } from "./soulmate-cart";
 export type SoulmateOrderView = {
   id: string; plan: string; product_info: string; checkout_environment: "local" | "preview" | "production" | "unknown"; customer_name: string; customer_email: string; customer_phone: string;
@@ -9,5 +10,6 @@ export type SoulmateOrderView = {
   delivered_at: string | null;
   generation: { status: string; generation_attempts: number; last_error: string | null; storage_path: string | null } | null;
   email: { status: string; scheduled_at: string; submitted_at: string | null; sent_at: string | null; delivered_at: string | null; last_error: string | null } | null;
+  whatsapp?: { eligible: boolean; messages: SoulmateWhatsAppMessage[]; unavailable?: boolean };
   assets: { kind: SoulmateAssetKind; filename: string; uploaded_at: string; size_bytes: number }[];
 };
