@@ -1,5 +1,6 @@
 "use client";
 
+import { isReportAvailableForPurchase } from "@/lib/customer-report-visibility";
 import ProductOfferTracker from "@/components/ProductOfferTracker";
 
 import { AnimatePresence, motion } from "framer-motion";
@@ -113,7 +114,7 @@ async function waitForPayUConfirmation(txnId: string, attempts = 8): Promise<boo
 
 const upsellOffers = [
   {
-    id: "compatibility",
+    id: "compatibility", feature: "compatibilityTest",
     name: "Compatibility Report",
     description: "Know how your relationship energy aligns.",
     price: 499,
@@ -127,7 +128,7 @@ const upsellOffers = [
     ],
   },
   {
-    id: "2026-predictions",
+    id: "2026-predictions", feature: "prediction2026",
     name: "2026 Future Predictions",
     description: "Month-wise timeline of your next big year.",
     price: 499,
@@ -142,7 +143,7 @@ const upsellOffers = [
     ],
   },
   {
-    id: "past-life",
+    id: "past-life", feature: "pastLifeReport",
     name: "Past Life Report",
     description: "Karmic patterns, soul lessons, and hidden gifts.",
     price: 499,
@@ -156,7 +157,7 @@ const upsellOffers = [
     ],
   },
   {
-    id: "numerology",
+    id: "numerology", feature: "numerologyReport",
     name: "Numerology Report",
     description: "Decode your core numbers, strengths, timing, and personal remedies.",
     price: 499,
@@ -171,7 +172,7 @@ const upsellOffers = [
     ],
   },
   {
-    id: "spirit-animal",
+    id: "spirit-animal", feature: "spiritAnimalReport",
     name: "Spirit Animal Report",
     description: "Reveal your spirit animal and discover its guidance.",
     price: 499,
@@ -186,7 +187,7 @@ const upsellOffers = [
     ],
   },
   {
-    id: "witch-archetype", name: "Witch Archetype Report",
+    id: "witch-archetype", feature: "witchArchetypeReport", name: "Witch Archetype Report",
     description: "Discover your symbolic archetype, strengths, and personal practices.",
     price: 499, originalPrice: 999, discount: "50% OFF", icon: Moon, emoji: "✦",
     features: [
@@ -195,7 +196,7 @@ const upsellOffers = [
       { icon: Sparkles, label: "Personal practices", description: "A reflection ritual and everyday guidance" },
     ],
   },
-];
+].filter((offer) => isReportAvailableForPurchase(offer.feature));
 
 function BundleUpsellContent() {
   const router = useRouter();

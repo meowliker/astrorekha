@@ -1,5 +1,6 @@
 "use client";
 
+import { isReportAvailableForPurchase } from "@/lib/customer-report-visibility";
 import ProductOfferTracker from "@/components/ProductOfferTracker";
 
 import { useEffect, useState } from "react";
@@ -82,6 +83,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
   }, []);
 
   const handlePurchase = async () => {
+    if (!isReportAvailableForPurchase(feature)) return;
     setIsProcessing(true);
     setError("");
 
@@ -227,6 +229,8 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
     ? "Discover your symbolic witch archetype, strengths, relationships, and personal practices."
     : `Get your personalized ${featureName.toLowerCase()} and discover deeper insights about your cosmic journey.`;
   const ctaLabel = isVastuGuide ? "Get EBook" : `Get ${featureName}`;
+
+  if (!isReportAvailableForPurchase(feature)) return null;
 
   return (
     <>

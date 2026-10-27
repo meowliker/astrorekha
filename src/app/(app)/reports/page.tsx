@@ -15,6 +15,7 @@ import { TrialStatusBanner } from "@/components/TrialStatusBanner";
 import { supabase } from "@/lib/supabase";
 import { UserAvatar, cacheUserInfo } from "@/components/UserAvatar";
 import { BirthChartTimer } from "@/components/BirthChartTimer";
+import { isCustomerReportVisible } from "@/lib/customer-report-visibility";
 import { resolveStoredUserSession } from "@/lib/session-recovery";
 
 // Removed unused DailyData interface - these API calls were failing and not displayed in UI
@@ -709,6 +710,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Future Partner Report */}
+                {isCustomerReportVisible("futurePartnerReport", unlockedFeatures) && (
                 <div
                   onClick={() => {
                     if (unlockedFeatures.futurePartnerReport) {
@@ -740,6 +742,7 @@ export default function DashboardPage() {
                     <ChevronRight className="w-6 h-6 text-white/40" />
                   </div>
                 </div>
+                )}
 
                 {/* Aura Color Quiz */}
                 <div
@@ -881,6 +884,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Past Life Report */}
+                {isCustomerReportVisible("pastLifeReport", unlockedFeatures) && (
                 <div
                   onClick={() => {
                     if (unlockedFeatures.pastLifeReport) {
@@ -912,6 +916,7 @@ export default function DashboardPage() {
                     <ChevronRight className="w-6 h-6 text-white/40" />
                   </div>
                 </div>
+                )}
 
                 {/* Numerology Report */}
                 <div
@@ -947,6 +952,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Prediction 2026 Report */}
+                {isCustomerReportVisible("prediction2026", unlockedFeatures) && (
                 <div 
                   onClick={() => {
                     if (unlockedFeatures.prediction2026) {
@@ -978,6 +984,7 @@ export default function DashboardPage() {
                     <ChevronRight className="w-6 h-6 text-white/40" />
                   </div>
                 </div>
+                )}
 
                 {/* Vastu Shastra Guide Ebook */}
                 {!hideVastuGuideCard && (
