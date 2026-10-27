@@ -12,6 +12,7 @@ function stub(file, exports) { const id = require.resolve(file); require.cache[i
 stub('next/image', () => null);
 stub('next/link', ({ children, ...props }) => React.createElement('a', props, children));
 stub('../src/app/us/soulmate/soulmate-image', { SoulmateImage: () => null });
+stub('../src/lib/us-soulmate-ga-client', { readSoulmateGaIdentity: async () => ({gaClientId:'123.456',gaSessionId:'456'}) });
 stub('../src/lib/us-soulmate-tracking', { trackSoulmate() {}, soulmateTrackingContext: () => ({}) });
 stub('../src/app/us/soulmate/session-save', { checkoutSession: () => null });
 const state = require('../src/app/us/soulmate/checkout-state');
@@ -65,6 +66,7 @@ function fixture({ holdUpdates = false } = {}) {
   global.fetch = async (url, options) => {
     assert.equal(url, '/api/us/soulmate/checkout');
     const body = JSON.parse(options.body); calls.requests.push(body);
+    assert.deepEqual(body.tracking,{gaClientId:'123.456',gaSessionId:'456'});
     if (body.promotionCode === 'INVALID') return { ok: false, json: async () => ({ error: 'Invalid promo code' }) };
     serverAmount = body.promotionCode ? 304 : currentAmount;
     return { ok: true, json: async () => ({ amount: serverAmount, clientSecret: 'cs_fixture', receiptUrl: '/us/soulmate/payment?order=us_sm_' + 'a'.repeat(20), quote: body.promotionCode ? { subtotal: 8600, discount: 8342, tax: 46, total: 304, code: body.promotionCode } : undefined }) };

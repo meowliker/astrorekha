@@ -199,3 +199,11 @@ test('server-created email and return URL remain authoritative through inline co
  }
  assert.equal(confirmations,2);
 });
+
+test('US checkout saves validated SDK identifiers without relying on GA cookies',async()=>{
+  const result=await create(body({tracking:{gaClientId:'123.456',gaSessionId:'456'}}));
+  assert.equal(result.order.attribution.gaClientId,'123.456');
+  assert.equal(result.order.attribution.gaSessionId,'456');
+  const malformed=await create(body({tracking:{gaClientId:'someone@example.com',gaSessionId:'invalid'}}));
+  assert.equal(malformed.order.attribution.gaClientId,null);
+});

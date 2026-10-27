@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { readSoulmateGaIdentity } from "@/lib/us-soulmate-ga-client";
 import { soulmateTrackingContext, trackSoulmate } from "@/lib/us-soulmate-tracking";
 import { CHECKOUT_ATTEMPT_KEY, CHECKOUT_RECOVERY_KEY } from "./checkout-state";
 import { checkoutSession } from "./session-save";
@@ -22,9 +23,10 @@ export async function prepareCheckout(signature: string, email: string, signal?:
   }
   memoryAttempt = attempt;
   try { sessionStorage.setItem(CHECKOUT_ATTEMPT_KEY, JSON.stringify(attempt)); } catch { /* Keep retries idempotent in memory. */ }
+  const ga = await readSoulmateGaIdentity();
   const response = await fetch("/api/us/soulmate/checkout", {
     method: "POST", headers: { "Content-Type": "application/json" }, signal,
-    body: JSON.stringify({ ...details, email, plan: details.planId, tracking: soulmateTrackingContext(), session: checkoutSession(), checkoutKey: attempt.key }),
+    body: JSON.stringify({ ...details, email, plan: details.planId, tracking: { ...soulmateTrackingContext(), ...ga }, session: checkoutSession(), checkoutKey: attempt.key }),
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Unable to prepare your payment. Please try again.");

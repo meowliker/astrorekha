@@ -1,4 +1,5 @@
 "use client";
+import { readSoulmateGaIdentity } from "@/lib/us-soulmate-ga-client";
 import { SoulmateOrderConfirmation } from "./order-confirmation";
 import { useEffect, useState } from "react";
 import { soulmateTrackingEnabled } from "@/lib/us-soulmate-tracking";
@@ -52,6 +53,18 @@ export function SoulmatePaymentStatus({ orderId }: { orderId: string }) {
     trackPixelEvent("Purchase", { value: payment.amount / 100, currency: "USD", content_ids: payment.items?.length ? payment.items.map((item) => item.id) : [`us_soulmate_${payment.plan}`], content_name: plan?.checkoutTitle || "Soulmate Sketch", content_type: "product", funnel: "us_soulmate_standalone" }, { eventId: orderId });
     try { sessionStorage.setItem(key, "1"); } catch { /* Meta also deduplicates by order ID. */ }
   }, [payment, orderId]);
+  useEffect(() => {
+    if (payment?.status !== "paid" || !payment.trackingAllowed || !soulmateTrackingEnabled()) return;
+    let active = true;
+    void readSoulmateGaIdentity().then(identity => {
+      if (!active || !identity.gaClientId) return;
+      return fetch("/api/us/soulmate/payment/attribution", {
+        method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
+        body: JSON.stringify({ orderId, ...identity }),
+      });
+    }).catch(() => {}); // Analytics must not change the buyer's confirmation screen.
+    return () => { active = false; };
+  }, [payment?.status, payment?.trackingAllowed, orderId]);
   const paid = payment?.status === "paid";
   const failed = payment?.status === "failed";
   if (paid) return <SoulmateOrderConfirmation orderId={orderId} />;
