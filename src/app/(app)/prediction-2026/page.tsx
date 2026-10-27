@@ -1,5 +1,7 @@
 "use client";
 
+import ReportInfoButton from "@/components/ReportInfoButton";
+
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -131,7 +133,8 @@ export default function Prediction2026Page() {
               <button onClick={() => router.back()} className="w-10 h-10 flex items-center justify-center">
                 <ArrowLeft className="w-5 h-5 text-white" />
               </button>
-              <h1 className="text-white text-xl font-semibold flex-1 text-center pr-10">2026 Predictions</h1>
+              <h1 className="text-white text-xl font-semibold flex-1 text-center">2026 Predictions</h1>
+              <ReportInfoButton report="prediction2026" />
             </div>
           </div>
           <div className="flex-1 flex items-center justify-center px-6">
@@ -160,7 +163,7 @@ export default function Prediction2026Page() {
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white text-xl font-semibold">2026 Predictions</h1>
-            <div className="w-10" />
+            <ReportInfoButton report="prediction2026" />
           </div>
         </div>
 

@@ -1,5 +1,7 @@
 "use client";
 
+import ReportInfoButton from "@/components/ReportInfoButton";
+
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -525,9 +527,10 @@ export default function PastLifePage() {
             <button onClick={() => router.push("/reports")} className="flex h-10 w-10 items-center justify-center">
               <ArrowLeft className="h-5 w-5 text-white" />
             </button>
-            <div className="flex-1 text-center pr-10">
+            <div className="flex-1 text-center">
               <h1 className="text-lg font-semibold text-white">Past Life Report</h1>
             </div>
+            <ReportInfoButton report="pastLifeReport" />
           </div>
         </div>
 

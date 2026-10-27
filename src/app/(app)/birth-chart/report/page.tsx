@@ -1,5 +1,7 @@
 "use client";
 
+import ReportInfoButton from "@/components/ReportInfoButton";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
@@ -232,6 +234,7 @@ export default function BirthChartReportPage() {
               <ArrowLeft className="w-4 h-4" />
               Birth Chart
             </button>
+            <ReportInfoButton report="birthChart" />
           </div>
         </div>
 

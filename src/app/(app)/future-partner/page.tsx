@@ -1,5 +1,7 @@
 "use client";
 
+import ReportInfoButton from "@/components/ReportInfoButton";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -186,6 +188,7 @@ export default function FuturePartnerPage() {
             <div>
               <h1 className="text-2xl font-semibold text-white">Future Partner Report</h1>
             </div>
+            <ReportInfoButton report="futurePartnerReport" />
           </div>
 
           {loading || isGenerating ? (

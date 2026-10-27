@@ -1,5 +1,7 @@
 "use client";
 
+import ReportInfoButton from "@/components/ReportInfoButton";
+
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
@@ -379,7 +381,7 @@ function LockedState() {
               <ArrowLeft className="h-5 w-5" />
             </Link>
             <h1 className="text-lg font-semibold text-white">Numerology Report</h1>
-            <div className="h-10 w-10" />
+            <ReportInfoButton report="numerologyReport" />
           </div>
         </div>
         <div className="flex flex-1 items-center px-6">
@@ -566,7 +568,7 @@ export default function NumerologyPage() {
               <ArrowLeft className="h-5 w-5" />
             </Link>
             <h1 className="text-lg font-semibold text-white">Numerology Report</h1>
-            <div className="h-10 w-10" />
+            <ReportInfoButton report="numerologyReport" />
           </div>
         </div>
 

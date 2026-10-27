@@ -1,5 +1,7 @@
 "use client";
 
+import ReportInfoButton from "@/components/ReportInfoButton";
+
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -604,7 +606,8 @@ export default function PalmReadingPage() {
               <button onClick={() => router.push("/reports")} className="w-10 h-10 flex items-center justify-center">
                 <ArrowLeft className="w-5 h-5 text-white" />
               </button>
-              <h1 className="text-white text-xl font-semibold flex-1 text-center pr-10">Palm Reading</h1>
+              <h1 className="text-white text-xl font-semibold flex-1 text-center">Palm Reading</h1>
+              <ReportInfoButton report="palmReading" />
             </div>
           </div>
 
@@ -670,7 +673,7 @@ export default function PalmReadingPage() {
               <span className="text-white text-sm">← Back</span>
             </button>
             <h1 className="text-white text-lg font-bold">Results</h1>
-            <div className="w-24" />
+            <div className="flex w-24 justify-end"><ReportInfoButton report="palmReading" /></div>
           </div>
         </div>
 

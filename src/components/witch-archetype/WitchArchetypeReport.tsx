@@ -1,5 +1,7 @@
 "use client";
 
+import ReportInfoButton from "@/components/ReportInfoButton";
+
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
@@ -210,7 +212,8 @@ export default function WitchArchetypeReport({ preview }: { preview?: { submit: 
   return <main className="min-h-screen bg-[#0a0a0f] text-white"><div className="mx-auto min-h-screen w-full max-w-md bg-[#0A0E1A] shadow-2xl shadow-black/50">
     <header className="sticky top-0 z-30 flex items-center border-b border-[#d6b6d3]/15 bg-[#0A0E1A]/95 px-4 py-3 backdrop-blur-sm">
       <Link href="/reports" aria-label="Back to reports" className="flex h-10 w-10 items-center justify-center"><ArrowLeft className="h-5 w-5" /></Link>
-      <div className="flex-1 pr-10 text-center"><h1 className="font-semibold">Witch Archetype</h1><p className="text-[10px] uppercase tracking-[.22em] text-[#d7b8d1]">Symbolic archetype report</p></div>
+      <div className="flex-1 text-center"><h1 className="font-semibold">Witch Archetype</h1><p className="text-[10px] uppercase tracking-[.22em] text-[#d7b8d1]">Symbolic archetype report</p></div>
+      <ReportInfoButton report="witchArchetypeReport" />
     </header>
     <div className="space-y-4 px-4 py-5">
       {loading && <div className="flex min-h-[70vh] items-center justify-center text-center"><div><Loader2 className="mx-auto h-10 w-10 animate-spin text-[#dfbfd8]" /><p className="mt-4 text-sm text-white/60">Opening your report...</p></div></div>}

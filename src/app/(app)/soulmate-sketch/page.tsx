@@ -1,5 +1,7 @@
 "use client";
 
+import ReportInfoButton from "@/components/ReportInfoButton";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -290,7 +292,10 @@ export default function SoulmateSketchPage() {
         </button>
 
         <div className="rounded-3xl border border-primary/20 bg-[#1A2235] p-5">
-          <h1 className="text-2xl font-semibold text-white">Your Soulmate Portrait</h1>
+          <div className="flex items-start gap-3">
+            <h1 className="flex-1 text-2xl font-semibold text-white">Your Soulmate Portrait</h1>
+            <ReportInfoButton report="soulmateSketch" />
+          </div>
 
           {status?.status === "generating" || isGenerating ? (
             <div className="mt-6 rounded-2xl border border-primary/30 bg-primary/10 p-6 text-center">

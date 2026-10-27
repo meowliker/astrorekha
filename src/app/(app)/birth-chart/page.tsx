@@ -1,5 +1,7 @@
 "use client";
 
+import ReportInfoButton from "@/components/ReportInfoButton";
+
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -287,7 +289,8 @@ export default function BirthChartPage() {
             <button onClick={() => router.push("/reports")} className="w-10 h-10 flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
-            <h1 className="text-white text-xl font-semibold flex-1 text-center pr-10">Your Birth Chart</h1>
+            <h1 className="text-white text-xl font-semibold flex-1 text-center">Your Birth Chart</h1>
+            <ReportInfoButton report="birthChart" />
           </div>
         </div>
 

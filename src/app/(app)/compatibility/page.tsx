@@ -1,5 +1,7 @@
 "use client";
 
+import ReportInfoButton from "@/components/ReportInfoButton";
+
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -661,7 +663,8 @@ export default function CompatibilityPage() {
             >
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
-            <h1 className="text-white text-xl font-semibold italic flex-1 text-center pr-10">Compatibility Report</h1>
+            <h1 className="text-white text-xl font-semibold italic flex-1 text-center">Compatibility Report</h1>
+            <ReportInfoButton report="compatibilityTest" />
           </div>
         </div>
 

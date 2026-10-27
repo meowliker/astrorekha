@@ -1,5 +1,7 @@
 "use client";
 
+import ReportInfoButton from "@/components/ReportInfoButton";
+
 import type { ReactNode } from "react";
 import { motion } from "framer-motion";
 import Image from "next/image";
@@ -49,10 +51,11 @@ export function SpiritAnimalPageShell({
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <div className="flex-1 pr-10 text-center">
+          <div className="flex-1 text-center">
             <h1 className="font-semibold">Spirit Animal</h1>
             <p className="text-[10px] uppercase tracking-[0.22em] text-primary/70">Symbolic archetype report</p>
           </div>
+          <ReportInfoButton report="spiritAnimalReport" />
         </header>
 
         <div className="px-4 py-5">{children}</div>
