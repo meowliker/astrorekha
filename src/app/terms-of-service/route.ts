@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const filePath = path.join(process.cwd(), "Terms", "terms-of-service.html");
+    const filePath = path.join(process.cwd(), "public", "Terms", "terms-of-service.html");
     const html = await readFile(filePath, "utf8");
 
     return new Response(html, {
