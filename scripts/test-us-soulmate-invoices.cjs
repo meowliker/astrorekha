@@ -38,10 +38,25 @@ test('invoice and email display names omit promotional labels while preserving p
  assert.equal(JSON.stringify(row.snapshot.items),before);
 });
 
-test('confirmation with invoice remains available while report generation and delivery are off',async()=>{
+test('confirmation with invoice remains independent of the production automation workers',async()=>{
  const {usSoulmateAutomation}=require('../src/lib/us-soulmate-automation');
- assert.equal(usSoulmateAutomation.reportsEnabled,false);assert.equal(usSoulmateAutomation.deliveryEnabled,false);
+ assert.equal(usSoulmateAutomation.reportsEnabled,true);assert.equal(usSoulmateAutomation.deliveryEnabled,true);
  await sendSoulmateConfirmation(row.id);
  assert.equal(calls.length,1);assert.equal(calls[0].attachment.length,1);
  assert.match(calls[0].attachment[0].name,/^ARUS-.*\.pdf$/);assert.equal(row.status,'sent');
+});
+
+test('US confirmation and delivery use USD, Tax, American copy and US links', () => {
+  row.issued_at='2027-01-01T01:00:00Z';
+  const {soulmateDeliveryTemplate}=require('../src/lib/us-soulmate-delivery-template');
+  const email=soulmateConfirmationEmail(row);
+  const delivery=soulmateDeliveryTemplate({id:row.order_id,customer_name:'Taylor',entitlements:row.snapshot.entitlements});
+  for(const text of [email.html,email.text,delivery.htmlContent,delivery.textContent]) {
+    assert.doesNotMatch(text,/\b(?:India|Indian|INR|GST|IST|rupees|colour)\b|₹|18%/i);
+  }
+  assert.match(email.html,/Dec 31, 2026/);
+  assert.match(email.html,/https:\/\/astrorekha.com\/us\/soulmate/);
+  assert.match(email.text,/USD/);
+  assert.match(email.text,/Tax/);
+  assert.match(delivery.textContent,/color soulmate sketch/);
 });

@@ -32,6 +32,11 @@ export async function submitReportSketch(plan: ReportPlan) {
   if (!response.ok || payload.code !== 200 || typeof payload.data?.taskId !== "string" || !payload.data.taskId) throw new Error("Kie submission outcome unknown; inspect the saved request before retrying");
   return payload.data.taskId as string;
 }
+export class SoulmateSketchFailure extends Error {
+  constructor(readonly taskId: string, readonly code: string, readonly retryable: boolean) {
+    super(`Kie generation failed (${code || "unknown"}): ${retryable ? "provider timeout" : "provider rejected the task; manual review required"}`);
+  }
+}
 export async function pollReportSketch(taskId: string) {
   if (!taskId || taskId.length > 200) throw new Error("Invalid saved Kie task ID");
   const response = await fetch(`https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`, {
@@ -40,7 +45,12 @@ export async function pollReportSketch(taskId: string) {
   if (!response.ok) throw new Error("Kie status unavailable; retry polling the same task");
   const payload = await response.json();
   if (payload.code !== 200 || !payload.data) throw new Error("Kie status unavailable");
-  if (payload.data.state === "fail") throw new Error("Kie generation failed; manual review required");
+  if (payload.data.state === "fail") {
+    const code = String(payload.data.failCode || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
+    // Only a confirmed terminal timeout permits a replacement task. Unknown
+    // submissions, refusals and pending tasks must never create a second charge.
+    throw new SoulmateSketchFailure(taskId, code, ["408", "504", "524"].includes(code));
+  }
   if (payload.data.state !== "success") return null;
   const result = JSON.parse(payload.data.resultJson);
   if (!Array.isArray(result.resultUrls) || result.resultUrls.length !== 1 || typeof result.resultUrls[0] !== "string") throw new Error("Expected one generated portrait");

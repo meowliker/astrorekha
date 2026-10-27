@@ -11,6 +11,7 @@ export const maxDuration = 60;
 /** Reconcile abandoned browsers and missed redirects without touching the main app ledger. */
 export async function GET(request: NextRequest) {
   if (!process.env.CRON_SECRET || request.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (process.env.VERCEL_ENV !== "production") return NextResponse.json({ enabled: false }, { headers: { "Cache-Control": "no-store" } });
   try {
     const { mode } = stripeConfig();
     const { data, error } = await getSupabaseAdmin().from(US_SOULMATE_ORDERS_TABLE).select("*")

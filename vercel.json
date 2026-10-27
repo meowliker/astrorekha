@@ -38,6 +38,18 @@
     {
       "path": "/api/cron/fulfill-soulmate-orders",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/prepare-us-soulmate-reports",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/fulfill-us-soulmate-orders",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-us-soulmate-payments",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

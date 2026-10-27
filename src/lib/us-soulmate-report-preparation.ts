@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { assertPreparationOrder, buildReportPlan, descriptionSections, indiaDate, orderFingerprint, type PreparationOrder, type ReportPlan, type DescriptionDraft } from "./us-soulmate-report-plan";
+import { assertPreparationOrder, buildReportPlan, descriptionSections, usDate, orderFingerprint, type PreparationOrder, type ReportPlan, type DescriptionDraft } from "./us-soulmate-report-plan";
 import { renderSketchPdf, renderDescriptionPdf, renderTimelinePdf } from "./us-soulmate-report-pdf";
 import { assertReportCredentials, submitReportSketch, pollReportSketch, generateReportDescription, generateReportTimeline } from "./us-soulmate-report-providers";
 import { timelineFingerprint, type TimelineContext, type TimelineDraft } from "./us-soulmate-timeline";
@@ -40,7 +40,7 @@ export async function advanceReportPreparation(state: PreparationState, io: Prep
   }
   await current();
   if (state.stage === "prepared") {
-    if (indiaDate(now) <= state.plan.referenceDay) return state;
+    if (usDate(now) <= state.plan.referenceDay) return state;
     if (state.plan.timeline) throw new Error("Timeline dates need joint review with the description before preparing a later delivery");
     // A later preview re-renders future dates without another billable request.
     state = { ...state, stage: state.description ? "description_ready" : "sketch_ready" };
@@ -72,7 +72,7 @@ export async function advanceReportPreparation(state: PreparationState, io: Prep
     return save({ stage: "description_ready", description });
   }
   if (state.plan.description && !state.description) throw new Error("Missing purchased description");
-  if (indiaDate(now) > state.plan.referenceDay) {
+  if (usDate(now) > state.plan.referenceDay) {
     if (state.timeline) throw new Error("Timeline dates need joint review with the description");
     // Prose contains no dates. Rebuild only the deterministic timing section if render was delayed.
     await save({ plan: buildReportPlan(await current(), now) });

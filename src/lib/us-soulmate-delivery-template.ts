@@ -4,7 +4,7 @@ const escape = (value: string) => value.replace(/[&<>"']/g, (c) => ({ "&": "&amp
 
 export function soulmateDeliveryTemplate(order: { id: string; customer_name: string; entitlements?: SoulmateEntitlements }) {
   const items = [
-    { name: order.entitlements?.sketch === "colour" ? "Your colour soulmate sketch" : "Your black & white soulmate sketch", detail: "A personal portrait inspired by the preferences you shared." },
+    { name: order.entitlements?.sketch === "colour" ? "Your color soulmate sketch" : "Your black & white soulmate sketch", detail: "A personal portrait inspired by the preferences you shared." },
     ...(order.entitlements?.description ? [{ name: "Your soulmate description", detail: "An exploration of personality, connection and possible meeting moments." }] : []),
     ...(order.entitlements?.timeline ? [{ name: "Your Soulmate Connection Timeline", detail: "A look at possible milestones and how your connection might unfold." }] : []),
   ];

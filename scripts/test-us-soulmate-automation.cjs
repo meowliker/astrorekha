@@ -19,8 +19,8 @@ const { runSoulmateFulfillment } = require('../src/lib/us-soulmate-fulfillment')
 const reports = require('../src/app/api/cron/prepare-us-soulmate-reports/route');
 const delivery = require('../src/app/api/cron/fulfill-us-soulmate-orders/route');
 
-test('credentials and obsolete enable envs cannot activate US automation', async () => {
-  process.env.VERCEL_ENV = 'production';
+test('preview and local deployments cannot activate US automation even with credentials', async () => {
+  process.env.VERCEL_ENV = 'preview';
   process.env.US_SOULMATE_AUTO_REPORTS_ENABLED = 'true';
   process.env.US_SOULMATE_DELIVERY_ENABLED = 'true';
   process.env.US_SOULMATE_KIE_API_KEY = 'fixture';
@@ -39,4 +39,30 @@ test('US worker endpoints authenticate with the existing shared cron secret', as
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { enabled: false, processed: 0 });
   }
+});
+
+test('production activation uses only US queues and the shared cron secret', async () => {
+  const {usSoulmateAutomation}=require('../src/lib/us-soulmate-automation');
+  assert.equal(usSoulmateAutomation.reportsEnabled,true);
+  assert.equal(usSoulmateAutomation.deliveryEnabled,true);
+  const seen=[];
+  require.cache[dbPath].exports.getSupabaseAdmin=()=>({
+    from(table) {
+      assert.ok(table.startsWith('us_soulmate_'),table); seen.push(table);
+      const q={select(columns){if(columns.includes('!inner'))assert.ok(columns.includes('us_soulmate_orders!inner'));return q;},in(){return q;},not(){return q;},lte(){return q;},order(){return q;},limit(){return q;},eq(){return q;},then(resolve){resolve({data:[],count:0,error:null});}};return q;
+    },
+    async rpc(name,args) {assert.ok(['claim_us_soulmate_report_jobs','claim_us_soulmate_deliveries'].includes(name));assert.equal(args.p_mode,'live');seen.push(name);return {data:[],error:null};},
+  });
+  process.env.VERCEL_ENV='production';
+  assert.equal((await runAutomaticSoulmateReports()).processed,0);
+  assert.equal((await runSoulmateFulfillment()).processed,0);
+  assert.ok(seen.includes('claim_us_soulmate_report_jobs'));
+  assert.ok(seen.includes('claim_us_soulmate_deliveries'));
+});
+test('US workers are scheduled without replacing the existing flows',()=>{
+  const fs=require('fs'),cp=require('child_process');
+  const current=JSON.parse(fs.readFileSync(path.join(__dirname,'../vercel.json'))).crons;
+  const before=JSON.parse(cp.execFileSync('git',['show','HEAD:vercel.json'],{encoding:'utf8'})).crons;
+  for(const cron of before)assert.ok(current.some(c=>c.path===cron.path && c.schedule===cron.schedule));
+  for(const route of ['prepare-us-soulmate-reports','fulfill-us-soulmate-orders','reconcile-us-soulmate-payments'])assert.ok(current.some(c=>c.path===`/api/cron/${route}`));
 });

@@ -3,9 +3,9 @@ import crypto from "node:crypto";
 import sharp from "sharp";
 import { getSupabaseAdmin } from "./supabase-admin";
 import { advanceReportPreparation, initialPreparation, type PreparationState, type PreparedAsset } from "./us-soulmate-report-preparation";
-import { assertPreparationOrder, buildReportPlan, descriptionSections, indiaDate, orderFingerprint, validateDescription, type PreparationOrder } from "./us-soulmate-report-plan";
+import { assertPreparationOrder, buildReportPlan, descriptionSections, usDate, orderFingerprint, validateDescription, type PreparationOrder } from "./us-soulmate-report-plan";
 import { timelineFingerprint, validateTimeline } from "./us-soulmate-timeline";
-import { generateReportDescription, generateReportTimeline, pollReportSketch, submitReportSketch, assertReportCredentials } from "./us-soulmate-report-providers";
+import { generateReportDescription, generateReportTimeline, pollReportSketch, submitReportSketch, assertReportCredentials, SoulmateSketchFailure } from "./us-soulmate-report-providers";
 import { checkPreparedPdf, deterministicReportIssues, parseProviderJson, reportContentFingerprint, type QualityIssue, type QualityResult } from "./us-soulmate-report-quality";
 
 const BUCKET = "us-soulmate-sketches-private";
@@ -15,20 +15,21 @@ export type AutomaticReportState = Omit<PreparationState, "assets"> & {
   repairs?: Partial<Record<"description" | "timeline", number>>;
   feedback?: Partial<Record<"description" | "timeline", string>>;
   quality?: QualityResult;
+  failedSketchTasks?: { taskId: string; code: string }[];
 };
 type Job = { order_id: string; answer_revision: number; lease_id: string; state: AutomaticReportState | null; failures: number };
 const digest = (b: Buffer) => crypto.createHash("sha256").update(b).digest("hex");
 
-/** One bounded repair per purchased text report; never create another image job. */
+/** At most two text repairs; a schema repair can expose a later layout finding. */
 export function repairReportState(s: AutomaticReportState, issues: QualityIssue[]): AutomaticReportState {
   if (issues.some(i => i.kind === "sketch")) throw new Error("Sketch failed local checks; manual attention required");
   const kinds = [...new Set(issues.map(i => i.kind))] as ("description" | "timeline")[];
   if (!kinds.length) throw new Error("Missing repair findings");
   const next = { ...s, quality: undefined, assets: undefined, repairs: { ...s.repairs }, feedback: { ...s.feedback } };
   for (const kind of kinds) {
-    if (!s.plan[kind] || (s.repairs?.[kind] || 0) >= 1) throw new Error(`${kind} still fails local checks after repair; manual attention required`);
+    if (!s.plan[kind] || (s.repairs?.[kind] || 0) >= 2) throw new Error(`${kind} still fails local checks after repair; manual attention required`);
     next.repairs[kind] = (s.repairs?.[kind] || 0) + 1;
-    next.feedback[kind] = issues.filter(i => i.kind === kind).map(i => i.reason).join("\n").slice(0, 6000);
+    next.feedback[kind] = [s.feedback?.[kind], ...issues.filter(i => i.kind === kind).map(i => i.reason)].filter(Boolean).join("\n").slice(-6000);
     delete next[kind];
     if (kind === "description") delete next.descriptionRaw;
     else delete next.timelineRaw;
@@ -108,9 +109,8 @@ export async function processAutomaticReportJob(job: Job) {
       }
     }
     if (state.stage === "sketch_submitting") throw new Error("Image submission outcome is uncertain; inspect the existing Kie request before retrying");
-    if (state.stage === "sketch_generating" && Date.now() - new Date(state.startedAt).getTime() > 2 * 60 * 60 * 1000) throw new Error("Sketch provider has not completed within two hours; inspect the saved task");
     // Prose dates are prohibited. Re-anchor the deterministic month labels before rendering if delayed.
-    if (state.image && indiaDate(new Date()) > state.plan.referenceDay) {
+    if (state.image && usDate(new Date()) > state.plan.referenceDay) {
       state.plan = buildReportPlan(order);
       if (state.timeline && state.description) state.timelineSource = timelineFingerprint({ ...state.plan, descriptionText: JSON.stringify({ sections: descriptionSections(state.plan, state.description.report), closing: state.description.report.closing }) }, Buffer.from(state.image.base64, "base64"));
       state.quality = undefined; state.assets = undefined;
@@ -142,6 +142,7 @@ export async function processAutomaticReportJob(job: Job) {
       submit: submitReportSketch,
       poll: async id => {
         const result = await pollReportSketch(id);
+        if (!result && Date.now() - new Date(activeState.startedAt).getTime() > 2 * 60 * 60 * 1000) throw new Error("Sketch provider has not completed within two hours; inspect the saved task");
         if (result && !activeState.plan.profile.colour) {
           result.buffer = await sharp(result.buffer).grayscale().jpeg({ quality: 90 }).toBuffer();
         }
@@ -156,8 +157,15 @@ export async function processAutomaticReportJob(job: Job) {
     const message = error instanceof Error ? error.message : "Report preparation failed";
     // A complete response is recoverable on the next run; uncertain POSTs are never automatically repeated.
     const recoverable = state && ((state.stage === "description_submitting" && state.descriptionRaw) || (state.stage === "timeline_submitting" && state.timelineRaw));
-    const safePollRetry = state?.stage === "sketch_generating" && /status unavailable|fetch failed|timeout/i.test(message) && job.failures < 4;
+    const safePollRetry = !(error instanceof SoulmateSketchFailure) && state?.stage === "sketch_generating" && /status unavailable|fetch failed|timeout/i.test(message) && job.failures < 4;
     if (state) {
+      if (error instanceof SoulmateSketchFailure && error.retryable && state.stage === "sketch_generating" &&
+          state.taskId === error.taskId && !state.image && !(state.failedSketchTasks?.length)) {
+        state = { ...state, stage: "planned", taskId: undefined, startedAt: new Date().toISOString(),
+          failedSketchTasks: [{ taskId: error.taskId, code: error.code }] };
+        await checkpoint(state, true);
+        return "sketch_retry_queued";
+      }
       // Rendering overflow is repaired as text, without spending credits on a new portrait.
       const layout = message.match(/^(description|timeline) PDF exceeds/);
       if (layout) {

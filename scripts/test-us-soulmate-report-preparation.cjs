@@ -48,7 +48,7 @@ test('confirmed preference wins; open-to-either choice is stable and unrelated t
   assert.match(p.sketchPrompt, /silver strands/);
   const open = { ...order(), answers: { ...answers, preference: 'I’m open to both' } };
   assert.equal(buildReportPlan(open, date).profile.subject, buildReportPlan({ ...open, answers: { ...open.answers, name: 'Another Name' } }, date).profile.subject);
-  const man = buildReportPlan({ ...order(), answers: { ...answers, preference: 'I like men', birthDate: '2008-10-17' } }, date);
+  const man = buildReportPlan({ ...order(), answers: { ...answers, preference: 'I like men', birthDate: '2008-10-16' } }, date);
   assert.equal(man.profile.subject, 'man'); assert.deepEqual(man.profile.ageRange, [18, 21]);
 });
 test('provider prompts contain no customer identity or exact birthday; B&W has no colour promise', () => {
@@ -60,13 +60,13 @@ test('provider prompts contain no customer identity or exact birthday; B&W has n
   assert.match(p.sketchPrompt, /Strict grayscale/);
   assert.match(descriptionPrompt(p), /Never claim to see eye/);
 });
-test('future dates use current India day or later delivery day, with leap/month-end handling', () => {
+test('future dates use current US Eastern day or later delivery day, with leap/month-end handling', () => {
   const p = buildReportPlan(order(), new Date('2026-12-31T19:00:00Z'));
-  assert.equal(p.preparedOn, '2027-01-01'); assert.deepEqual(p.meetingWindow, { start: '2027-07-01', end: '2028-01-01' });
+  assert.equal(p.preparedOn, '2026-12-31'); assert.deepEqual(p.meetingWindow, { start: '2027-06-30', end: '2027-12-31' });
   assert.equal(addMonths('2027-08-31', 6), '2028-02-29');
   const futureDelivery = buildReportPlan({ ...order(), scheduled_send_at: '2026-10-20T10:00:00Z' }, date);
   assert.equal(futureDelivery.referenceDay, '2026-10-20');
-  assert.match(descriptionSections(p, draft())[6].paragraphs[0], /July 2027/);
+  assert.match(descriptionSections(p, draft())[6].paragraphs[0], /June 2027/);
 });
 test('invalid, unpaid, approved, incomplete and underage snapshots cannot start', () => {
   for (const patch of [{ payment_status: 'pending' }, { review_status: 'approved' }, { answer_revision: 0 }, { answers: {} }, { answers: { ...answers, birthDate: '2020-01-01' } }, { entitlements: { ...order().entitlements, required_assets: ['sketch'] } }]) {
@@ -183,4 +183,27 @@ test('US background choices validate and reach both sketch generation paths',()=
   assert.ok(validateAnswer('ethnicity','North Indian'));
   assert.equal(sanitizeAnswers({...answers,ethnicity:'North Indian'}).ethnicity,undefined);
   assert.doesNotMatch(conversation({...answers,ethnicity:undefined},null).find(m=>m.id==='ethnicity').text,/Indian/);
+});
+
+test('US report prose rejects India-specific content in both generated reports', () => {
+  for (const unwanted of ['India', 'Mumbai', 'INR', 'GST', 'rupees', 'Kolkata', 'Vedic', 'kundali', 'IST']) {
+    const d = draft(); d.sections[0].paragraphs[0] += ` ${unwanted}`;
+    assert.throws(() => validateDescription(d), /US settings/);
+    const t = timelineDraft(); t.closing += ` ${unwanted}`;
+    assert.throws(() => validateTimeline(t), /US settings/);
+  }
+  const d = draft(); d.sections[0].paragraphs[0] += ' The Native American background you selected is respected without assumptions.';
+  assert.doesNotThrow(() => validateDescription(d));
+  const p = buildReportPlan(order('express', ['timeline']), date);
+  assert.match(descriptionPrompt(p), /American English/);
+  assert.match(timelinePrompt({...p, descriptionText: prose.repeat(4)}), /American English/);
+});
+test('US date boundaries use Eastern time across winter and daylight saving', () => {
+  const {usDate, dateLabel}=require('../src/lib/us-soulmate-report-plan');
+  assert.equal(usDate(new Date('2026-12-31T23:59:00Z')), '2026-12-31');
+  assert.equal(usDate(new Date('2027-01-01T04:59:00Z')), '2026-12-31');
+  assert.equal(usDate(new Date('2027-01-01T05:00:00Z')), '2027-01-01');
+  assert.equal(usDate(new Date('2027-07-01T03:59:00Z')), '2027-06-30');
+  assert.equal(usDate(new Date('2027-07-01T04:00:00Z')), '2027-07-01');
+  assert.equal(dateLabel('2027-01-01'), 'January 1, 2027');
 });
