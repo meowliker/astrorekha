@@ -987,7 +987,7 @@ export default function DashboardPage() {
                 )}
 
                 {/* Vastu Shastra Guide Ebook */}
-                {!hideVastuGuideCard && (
+                {isCustomerReportVisible("vastuShastraGuide", unlockedFeatures) && !hideVastuGuideCard && (
                   <div
                     onClick={() => {
                       if (!unlockedFeatures.vastuShastraGuide) {

@@ -5,6 +5,7 @@ const HIDDEN_UNPURCHASED_REPORTS = new Set<string>([
   "pastLifeReport",
   "futurePartnerReport",
   "prediction2026",
+  "vastuShastraGuide",
 ]);
 
 export function isReportAvailableForPurchase(feature: string): boolean {
