@@ -1,6 +1,7 @@
 "use client";
 import { trackSoulmate, soulmateTrackingContext } from "@/lib/soulmate-tracking";
 import Link from "next/link";
+import { readSoulmateGaIdentity } from "@/lib/soulmate-ga-client";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, CreditCard, Download, Landmark, LockKeyhole, Mail, ShieldCheck, Smartphone, HandCoins, Wallet } from "lucide-react";
 import { checkoutSession } from "./session-save";
@@ -68,9 +69,10 @@ export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
       } catch { /* Fall back to the in-memory attempt. */ }
       if (attempt.current.signature !== signature) attempt.current = { signature, key: crypto.randomUUID() };
       try { sessionStorage.setItem(CHECKOUT_ATTEMPT_KEY, JSON.stringify({ ...attempt.current, savedAt: Date.now() })); } catch { /* Double-click protection still applies. */ }
+      const ga = await readSoulmateGaIdentity();
       const response = await fetch("/api/soulmate/checkout", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tracking: soulmateTrackingContext(), email, phone, answers, session: checkoutSession(), addOns: selectedAddOns, plan: planId, checkoutKey: attempt.current.key }),
+        body: JSON.stringify({ tracking: { ...soulmateTrackingContext(), ...ga }, email, phone, answers, session: checkoutSession(), addOns: selectedAddOns, plan: planId, checkoutKey: attempt.current.key }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to start payment");

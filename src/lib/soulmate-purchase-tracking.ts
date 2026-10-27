@@ -56,7 +56,14 @@ export async function sendSoulmatePurchase(order: SoulmateOrder) {
     const token = process.env.META_CAPI_ACCESS_TOKEN;
     const gaId = process.env.GA4_MEASUREMENT_ID || process.env.NEXT_PUBLIC_GA_ID;
     const gaSecret = process.env.GA4_API_SECRET;
-    if (provider === "meta" ? !pixel || !token : !gaId || !gaSecret || !order.attribution?.gaClientId) return;
+    if (provider === "ga") {
+      // GA can silently re-date older events. Do not turn historical sales into today's conversions.
+      if (Date.now() - Date.parse(order.paid_at!) > 72 * 3600000) return;
+      if (!gaId || !gaSecret || !order.attribution?.gaClientId) {
+        console.warn("[soulmate-tracking] GA purchase pending", { orderId: order.id, reason: !gaId || !gaSecret ? "missing_configuration" : "missing_client_id" });
+        return;
+      }
+    } else if (!pixel || !token) return;
     const sent = `${provider}_purchase_sent_at`, claim = `${provider}_purchase_claimed_at`;
     const now = new Date().toISOString();
     const db = getSupabaseAdmin();

@@ -98,3 +98,10 @@ test('purchase analytics preserves every paid extra and included bundle entitlem
   assert.deepEqual(payload.ga.events[0].params.items.map(item=>item.price),[1499,399]);
   assert.equal(payload.ga.events[0].params.tax,341.64);
 });
+
+test('GA does not silently re-date sales older than its backdating limit',async()=>{
+  const input=order(); input.paid_at=new Date(Date.now()-73*3600000).toISOString(); rows.set(input.id,{...input});
+  await sendSoulmatePurchase(input);
+  assert.equal(requests.filter(r=>r.url.includes('google-analytics')).length,0);
+  assert.equal(rows.get(input.id).ga_purchase_sent_at,undefined);
+});

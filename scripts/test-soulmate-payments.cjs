@@ -330,3 +330,12 @@ test('local callback redirect preserves the browser host so its receipt cookie s
  const response=await callback.GET(request);
  assert.equal(response.headers.get('location'),'http://127.0.0.1:3112/soulmate/payment/problem');
 });
+
+test('checkout saves validated browser SDK identifiers when server cookies are unavailable', async () => {
+  const {data}=await create({tracking:{gaClientId:'123.456',gaSessionId:'456'}});
+  const saved=orders.get(data.orderId);
+  assert.equal(saved.attribution.gaClientId,'123.456');
+  assert.equal(saved.attribution.gaSessionId,'456');
+  const malformed=await create({tracking:{gaClientId:'someone@example.com',gaSessionId:'bad'}});
+  assert.equal(orders.get(malformed.data.orderId).attribution.gaClientId,null);
+});

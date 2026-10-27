@@ -1,6 +1,7 @@
 import { sanitizePaymentAttribution } from "@/lib/attribution";
 import { buildSoulmateCart } from "@/lib/soulmate-cart";
 import crypto from "crypto";
+import { chooseSoulmateGaIdentity } from "@/lib/soulmate-ga-identity";
 import { saveSoulmateSession, sessionCredentials } from "@/lib/soulmate-session";
 import { NextRequest, NextResponse } from "next/server";
 import { deliveryPlans, sanitizeAnswers, steps } from "@/app/soulmate/chat-data";
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
       catalog_version: 2, line_items: cart.lineItems, entitlements: cart.entitlements, add_ons: cart.addOns, review_status: "pending",
       delivery_hours: cart.entitlements.scheduled_hours,
       product_info: soulmatePayUProductInfo(cart.productInfo), payment_mode: mode,
-      attribution: { ...attribution, landing_path: "/soulmate",
+      attribution: { ...attribution, ...chooseSoulmateGaIdentity(body.tracking, attribution), landing_path: "/soulmate",
         marketing: sanitizePaymentAttribution(body.tracking?.attribution),
         sessionId: /^[a-f0-9-]{36}$/i.test(body.tracking?.sessionId || "") ? body.tracking.sessionId : null,
         trackingEnvironment: ["localhost", "127.0.0.1", "[::1]"].includes(originUrl.hostname) ? "local" : process.env.VERCEL_ENV === "production" && ["astrorekha.com", "www.astrorekha.com"].includes(originUrl.hostname) ? "production" : "preview",
