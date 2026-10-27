@@ -140,3 +140,14 @@ test('image compression retains square resolution and rejects tiny/malformed inp
   await assert.rejects(providers.normalizeReportImage(await sharp({create:{width:5,height:5,channels:3,background:'white'}}).png().toBuffer()),/dimensions/);
   assert.throws(()=>checkPreparedPdf('sketch',Buffer.from('%PDF-1.3 /Type /Page /Type /Page')),/layout/);
 });
+
+test('saved invalid provider response is held when both repairs are exhausted', async()=>{
+  const h=harness(order('express',[]));await h.tick();await h.tick();
+  const invalid=report(DESCRIPTION_TITLES);invalid.closing+=' You might meet in Mumbai.';
+  const payload={stop_reason:'end_turn',model:'mock',id:'invalid',content:[{type:'text',text:JSON.stringify(invalid)}]};
+  h.setState({...h.saved(),stage:'description_submitting',descriptionRaw:payload,repairs:{description:2}});
+  assert.equal(await h.tick(),'needs_review');
+  assert.equal(h.status(),'needs_review');
+  assert.match(h.error(),/after repair/);
+  assert.equal(h.calls.filter(c=>c==='description').length,0);
+});

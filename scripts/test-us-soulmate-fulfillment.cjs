@@ -174,3 +174,13 @@ test('dashboard never starts pending orders or queries unpaid/future emails',asy
   email.scheduled_at=new Date(Date.now()-60000).toISOString();order.payment_status='failed';
   assert.equal(await refreshSoulmateDeliveryStatuses(statusDb,[order]),0);
 });
+
+test('overdue order gets a full delivery-confirmation window after actual submission',async()=>{
+  const {reconcileEmail}=require('../src/lib/us-soulmate-fulfillment');
+  email.scheduled_at=new Date(Date.now()-9*86400000).toISOString();
+  email.submitted_at=new Date().toISOString();email.provider_message_id='recent-message';email.status='sent';
+  global.fetch=async()=>json({events:[]});
+  await reconcileEmail(db,order,email);assert.equal(email.status,'sent');
+  email.submitted_at=new Date(Date.now()-25*3600000).toISOString();
+  await reconcileEmail(db,order,email);assert.equal(email.status,'needs_review');
+});

@@ -106,6 +106,8 @@ export function emailBody(order: Order, email: Email, attachment: Buffer, filena
 
 export async function reconcileEmail(db: DB, order: Pick<Order, "id" | "customer_email">, email: Email) {
   const headers = brevoHeaders();
+  // Recovered orders can be overdue before the first email is submitted.
+  const deliveryWindowStart = Math.max(Date.parse(email.scheduled_at), Date.parse(email.submitted_at || "") || 0);
   if (!email.provider_message_id) {
     // Recover a timed-out submission using the durable batch id. Never blindly POST again.
     const res = await fetch(`https://api.brevo.com/v3/smtp/emailStatus/${encodeURIComponent(email.id)}`, { headers, cache: "no-store", signal: AbortSignal.timeout(5000) });
@@ -123,7 +125,7 @@ export async function reconcileEmail(db: DB, order: Pick<Order, "id" | "customer
       e.email?.toLowerCase() === order.customer_email.toLowerCase() && (e.tag?.split(",").includes(order.id) || e.tags?.includes(order.id)) && e.messageId);
     if (event?.messageId) {
       await patchEmail(db, email, { provider_message_id: event.messageId, status: "sent", last_error: null });
-    } else if (batches.length && Date.now() < new Date(email.scheduled_at).getTime() + 24 * 3600000) {
+    } else if (batches.length && Date.now() < deliveryWindowStart + 24 * 3600000) {
       await patchEmail(db, email, { status: "scheduled", last_error: null });
     } else if (!email.submitted_at || Date.now() > new Date(email.submitted_at).getTime() + 10 * 60000) {
       await patchEmail(db, email, { status: "needs_review", last_error: "Email request outcome unknown; check Brevo batch before retrying" });
@@ -155,7 +157,7 @@ export async function reconcileEmail(db: DB, order: Pick<Order, "id" | "customer
       ? "Recipient inbox is full. The email was sent but could not be delivered; the recipient needs to free storage."
       : `Brevo reported a delivery failure${reason ? `: ${reason}` : "; check recipient and provider log"}`;
     await patchEmail(db, email, { status: "needs_review", last_error: message });
-  } else if (Date.now() > new Date(email.scheduled_at).getTime() + 24 * 3600000) {
+  } else if (Date.now() > deliveryWindowStart + 24 * 3600000) {
     await patchEmail(db, email, { status: "needs_review", last_error: "No delivery confirmation within 24 hours; check Brevo" });
   } else if (events.some((e: { event: string }) => e.event === "requests" || e.event === "request")) {
     await patchEmail(db, email, { status: "sent" });

@@ -103,7 +103,13 @@ export async function processAutomaticReportJob(job: Job) {
         await checkpoint(state, true);
         return "recovered";
       } catch (error) {
-        state = repairReportState(state, [{ kind, reason: error instanceof Error ? error.message : "Invalid report" }]);
+        try {
+          state = repairReportState(state, [{ kind, reason: error instanceof Error ? error.message : "Invalid report" }]);
+        } catch (repairError) {
+          // A saved invalid response must not loop forever once repairs are exhausted.
+          await checkpoint(state, true, repairError instanceof Error ? repairError.message : "Report repairs exhausted", true);
+          return "needs_review";
+        }
         await checkpoint(state, true);
         return "repair_queued";
       }
