@@ -37,6 +37,7 @@ import {
 import RevenueDashboardTab from "@/components/admin/revenue/RevenueDashboardTab";
 import React from "react";
 import { createPortal } from "react-dom";
+import RevenueBreakdownButton from "@/components/admin/RevenueBreakdownButton";
 import SpendBreakdownButton from "@/components/admin/SpendBreakdownButton";
 import AccountBalanceButton from "@/components/admin/AccountBalanceButton";
 import GstBreakdownButton from "@/components/admin/GstBreakdownButton";
@@ -2225,7 +2226,12 @@ function ProfitSheetTab({
                     <td className="px-4 py-3 text-sm text-white/60">{row.day}</td>
                     <td className="px-4 py-3 text-right text-sm font-medium text-green-400">{formatCurrency(row.grossRevenue ?? row.revenue)}</td>
                     <td className="px-4 py-3 text-right text-sm font-medium text-red-400">-{formatCurrency(row.refundAmount ?? 0)}</td>
-                    <td className="px-4 py-3 text-right text-sm font-medium text-green-400">{formatCurrency(row.revenue)}</td>
+                    <td className="px-4 py-3 text-right text-sm font-medium text-green-400">
+                      <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+                        <RevenueBreakdownButton date={row.date} savedRevenue={row.revenue} dayMode={dayMode} />
+                        {formatCurrency(row.revenue)}
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-right text-sm text-red-400/50">${row.adsCostUSD.toFixed(2)}</td>
                     <td className="px-4 py-3 text-right text-sm text-red-400/70">
                       <div className="flex items-center justify-end gap-1 whitespace-nowrap">

@@ -39,14 +39,18 @@ function fixture(options = {}) {
   }
   const db = {
     from(table) {
+      const filters = {}; let bounds = [0, 999];
       const query = {
-        select() { return query; }, eq() { return query; }, in() { return query; },
-        gte() { return query; }, lte() { return query; }, order() { return query; },
+        select() { return query; }, eq(key, value) { filters[key] = value; return query; }, in() { return query; },
+        gte() { return query; }, lte() { return query; }, lt() { return query; }, order() { return query; },
+        range(start, end) { bounds = [start, end]; return query; },
         upsert(rows) {
           if (table === 'profit_sheet_calendar' || table === 'profit_sheet') storedRows.push(...rows);
           return { error: null };
         },
-        then(resolve) { resolve({ data: storedRows, error: null }); },
+        then(resolve) { resolve({ data: table === 'payments' ? filters.gateway === 'paytm'
+          ? (options.paytmRows || []).filter(row => row.payment_mode === 'live' && ['paid', 'refunded'].includes(row.payment_status)).slice(bounds[0], bounds[1] + 1)
+          : [] : storedRows, error: table === 'payments' && filters.gateway === 'paytm' && options.failPaytm ? { message: 'DB unavailable' } : null }); },
         async single() { assert.equal(table, 'admin_sessions'); return { data: { expires_at: options.expired ? '2020-01-01' : '2099-01-01' } }; },
         async maybeSingle() {
           if (table === 'settings') return { data: { value: { accounts: options.accounts || defaultAccounts } } };
@@ -235,4 +239,49 @@ test('standalone soulmate sales and refunds never enter either Profit Sheet ledg
     assert.equal(body.rows[0].refundAmount, 0);
     assert.equal(f.storedRows[0].revenue, 100);
   }
+});
+
+
+test('gateway breakdown matches received/refunds/net in the synced sheet, with the same business boundary', async () => {
+  const options = { now: '2026-10-28T15:00:00Z', accounts: [], payuTransactions: [
+    { txnid: 'pay_a', status: 'success', amount: '100.25', addedon: '2026-10-28 11:30:00' },
+    { txnid: 'pay_refund', status: 'refunded', amount: '10.05', addedon: '2026-10-28 13:00:00' },
+    { txnid: 'pay_earlier', status: 'success', amount: '500', addedon: '2026-10-28 11:29:59' },
+    { txnid: 'sm_separate', status: 'success', amount: '999', addedon: '2026-10-28 14:00:00' },
+    { txnid: 'pay_failed', status: 'failed', amount: '1000', addedon: '2026-10-28 15:00:00' },
+  ], paytmRows: [
+    { id: 'ptma', amount: 65962, type: 'bundle', paid_at: '2026-10-28T06:00:00Z', created_at: '2026-10-28T05:59:00Z', payment_status: 'paid', payment_mode: 'live' },
+    { id: 'pay_refund_ptm_a', amount: -5962, type: 'bundle', paid_at: '2026-10-28T06:01:00Z', payment_status: 'refunded', payment_mode: 'live' },
+    { id: 'ptmb', amount: 10000, type: 'bundle', paid_at: '2026-10-28T05:59:59Z', payment_status: 'paid', payment_mode: 'live' },
+    { id: 'ptmtest', amount: 100000, type: 'bundle', paid_at: '2026-10-28T06:00:00Z', payment_status: 'paid', payment_mode: 'test' },
+    { id: 'ptmpending', amount: 100000, type: 'bundle', paid_at: null, payment_status: 'pending', payment_mode: 'live' },
+  ] };
+  const f = fixture(options);
+  const result = await f.get('token=test&revenueBreakdownDate=2026-10-28&sync=range');
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.gateways.map(g => [g.gateway, g.received, g.refunds, g.revenue, g.salesCount]),
+    [['payu', 100.25, 10.05, 90.2, 1], ['paytm', 659.62, 59.62, 600, 1]]);
+  assert.equal(result.body.revenue, 690.2); assert.equal(f.storedRows.length, 0); assert.equal(f.requests.length, 0);
+  const synced = await f.get('token=test&startDate=2026-10-28&endDate=2026-10-28&sync=range&exchangeRate=85');
+  assert.equal(synced.status, 200);
+  assert.equal(Math.round(synced.body.rows[0].revenue * 100), Math.round(result.body.revenue * 100));
+  assert.equal(Math.round(synced.body.rows[0].grossRevenue * 100), Math.round(result.body.received * 100));
+  const calendar = await fixture({...options, dayMode:'calendar_ist'}).get('token=test&dayMode=calendar_ist&revenueBreakdownDate=2026-10-28');
+  assert.equal(calendar.body.received, 1359.87);
+});
+
+test('revenue breakdown validates authentication/date and never converts source failures into zero', async () => {
+  for (const [options, query, status] of [
+    [{}, 'revenueBreakdownDate=2026-09-07', 401],
+    [{expired:true}, 'token=test&revenueBreakdownDate=2026-09-07', 401],
+    [{}, 'token=test&revenueBreakdownDate=2026-02-31', 400],
+    [{}, 'token=test&revenueBreakdownDate=2099-01-01', 400],
+    [{failPaytm:true}, 'token=test&revenueBreakdownDate=2026-09-07', 500],
+  ]) { assert.equal((await fixture(options).get(query)).status, status); }
+});
+
+test('revenue breakdown reads all pages of Paytm payments', async () => {
+  const paytmRows = Array.from({length:1001}, (_, i) => ({id:'ptm'+i, amount:100, type:'bundle', paid_at:'2026-09-07T06:30:00Z', payment_status:'paid', payment_mode:'live'}));
+  const result = await fixture({paytmRows}).get('token=test&revenueBreakdownDate=2026-09-07');
+  assert.equal(result.status,200); assert.equal(result.body.gateways[1].received,1001); assert.equal(result.body.gateways[1].salesCount,1001);
 });

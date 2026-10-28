@@ -47,3 +47,21 @@ export interface AccountBalanceSummary {
   exchangeRate: number;
   fetchedAt: string;
 }
+
+export interface GatewayRevenueBreakdown {
+  date: string;
+  dayMode: "business_1130_ist" | "calendar_ist";
+  gateways: Array<{
+    gateway: "payu" | "paytm";
+    name: string;
+    received: number;
+    refunds: number;
+    revenue: number;
+    salesCount: number;
+    refundCount: number;
+  }>;
+  received: number;
+  refunds: number;
+  revenue: number;
+  fetchedAt: string;
+}

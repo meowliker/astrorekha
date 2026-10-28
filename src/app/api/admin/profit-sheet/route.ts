@@ -647,6 +647,61 @@ function calculateTotals(profitSheet: ProfitSheetRow[]) {
   };
 }
 
+type FinancialRow = {
+  createdAt: Date;
+  dayKey: string;
+  kind: "sale" | "refund";
+  amount: number;
+  signedAmount: number;
+  type: string;
+  gateway: "payu" | "paytm";
+};
+
+async function loadProfitFinancialRows(supabase: SupabaseClient, startDate: string, endDate: string, dayMode: ProfitSheetDayMode) {
+  const payuFetchEnd = addDaysToIsoDate(endDate, 1);
+  const payuTransactions = (await getPayUTransactions(startDate, payuFetchEnd)).filter((txn) => !isSoulmateTransaction(txn));
+  const savedPurchases = await loadSavedPurchases(supabase, payuTransactions);
+  const paymentRows = buildSyncedPaymentRows(payuTransactions, savedPurchases);
+  const financialRows: FinancialRow[] = payuTransactions
+    .map((txn) => {
+      const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
+      if (financial.kind === "ignore") return null;
+      const createdAt = new Date(String(txn.addedon || "").replace(" ", "T") + "+05:30");
+      if (Number.isNaN(createdAt.getTime())) return null;
+      const dayKey = getCostaRicaBusinessDayKeyFromDate(createdAt, dayMode);
+      if (dayKey < startDate || dayKey > endDate) return null;
+      return {
+        createdAt,
+        dayKey,
+        gateway: "payu",
+        kind: financial.kind,
+        amount: financial.amount,
+        signedAmount: financial.signedAmount,
+        type: purchaseMetadata(txn, savedPurchases.get(parentPaymentId(txn) || "")).type,
+      } as FinancialRow;
+    })
+    .filter((row): row is FinancialRow => !!row);
+
+  // Paytm sales are verified into the same ledger by callback/status/reconciliation.
+  // Never query PayU for these orders or synthesize PayU identifiers.
+  for (let offset = 0; ; offset += 1000) {
+    const paytmRows = await supabase.from("payments").select("id,amount,type,paid_at,created_at")
+      .eq("gateway", "paytm").eq("payment_mode", "live").in("payment_status", ["paid", "refunded"])
+      .gte("paid_at", `${addDaysToIsoDate(startDate, -1)}T00:00:00Z`).lt("paid_at", `${addDaysToIsoDate(endDate, 2)}T00:00:00Z`)
+      .order("id").range(offset, offset + 999);
+    if (paytmRows.error) throw new Error("Unable to read Paytm sales");
+    for (const payment of paytmRows.data) {
+      const createdAt = new Date(payment.paid_at || payment.created_at);
+      const dayKey = getCostaRicaBusinessDayKeyFromDate(createdAt, dayMode);
+      if (dayKey < startDate || dayKey > endDate) continue;
+      financialRows.push({ gateway: "paytm", createdAt, dayKey, kind: payment.amount < 0 ? "refund" : "sale", amount: Math.abs(payment.amount) / 100, signedAmount: payment.amount / 100, type: payment.type });
+    }
+    if (paytmRows.data.length < 1000) break;
+  }
+
+  return { financialRows, paymentRows };
+}
+
 async function buildProfitSheetRows(
   supabase: any,
   startDate: string,
@@ -668,54 +723,7 @@ async function buildProfitSheetRows(
     current.setDate(current.getDate() + 1);
   }
 
-  type FinancialRow = {
-    createdAt: Date;
-    dayKey: string;
-    kind: "sale" | "refund";
-    amount: number;
-    signedAmount: number;
-    type: string;
-  };
-
-  const payuFetchEnd = addDaysToIsoDate(endDate, 1);
-  const payuTransactions = (await getPayUTransactions(startDate, payuFetchEnd)).filter((txn) => !isSoulmateTransaction(txn));
-  const savedPurchases = await loadSavedPurchases(supabase, payuTransactions);
-  const paymentRows = buildSyncedPaymentRows(payuTransactions, savedPurchases);
-  const financialRows: FinancialRow[] = payuTransactions
-    .map((txn) => {
-      const financial = classifyPayUEvent(txn as unknown as Record<string, unknown>);
-      if (financial.kind === "ignore") return null;
-      const createdAt = new Date(String(txn.addedon || "").replace(" ", "T") + "+05:30");
-      if (Number.isNaN(createdAt.getTime())) return null;
-      const dayKey = getCostaRicaBusinessDayKeyFromDate(createdAt, dayMode);
-      if (dayKey < startDate || dayKey > endDate) return null;
-      return {
-        createdAt,
-        dayKey,
-        kind: financial.kind,
-        amount: financial.amount,
-        signedAmount: financial.signedAmount,
-        type: purchaseMetadata(txn, savedPurchases.get(parentPaymentId(txn) || "")).type,
-      } as FinancialRow;
-    })
-    .filter((row): row is FinancialRow => !!row);
-
-  // Paytm sales are verified into the same ledger by callback/status/reconciliation.
-  // Never query PayU for these orders or synthesize PayU identifiers.
-  for (let offset = 0; ; offset += 1000) {
-    const paytmRows = await supabase.from("payments").select("id,amount,type,paid_at,created_at")
-      .eq("gateway", "paytm").eq("payment_mode", "live").in("payment_status", ["paid", "refunded"])
-      .gte("paid_at", `${addDaysToIsoDate(startDate, -1)}T00:00:00Z`).lt("paid_at", `${addDaysToIsoDate(endDate, 2)}T00:00:00Z`)
-      .order("id").range(offset, offset + 999);
-    if (paytmRows.error) throw new Error("Unable to read Paytm sales");
-    for (const payment of paytmRows.data) {
-      const createdAt = new Date(payment.paid_at || payment.created_at);
-      const dayKey = getCostaRicaBusinessDayKeyFromDate(createdAt, dayMode);
-      if (dayKey < startDate || dayKey > endDate) continue;
-      financialRows.push({ createdAt, dayKey, kind: payment.amount < 0 ? "refund" : "sale", amount: Math.abs(payment.amount) / 100, signedAmount: payment.amount / 100, type: payment.type });
-    }
-    if (paytmRows.data.length < 1000) break;
-  }
+  const { financialRows, paymentRows } = await loadProfitFinancialRows(supabase, startDate, endDate, dayMode);
   const sourceUsed = "payu_live_and_verified_paytm";
   console.log(`Profit sheet financial source: ${sourceUsed}, rows: ${financialRows.length}`);
 
@@ -967,6 +975,33 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Session expired" }, { status: 401 });
     }
 
+    const revenueDate = searchParams.get("revenueBreakdownDate");
+    if (revenueDate !== null) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(revenueDate) ||
+        !Number.isFinite(Date.parse(`${revenueDate}T00:00:00Z`)) ||
+        new Date(`${revenueDate}T00:00:00Z`).toISOString().slice(0, 10) !== revenueDate ||
+        revenueDate < APP_LAUNCH_DATE || revenueDate > businessToday) {
+        return NextResponse.json({ error: "Choose a valid reporting date." }, { status: 400 });
+      }
+      // Use exactly the same events and day boundaries as the Profit Sheet sync.
+      // Opening the breakdown never refreshes or writes the saved sheet.
+      const { financialRows } = await loadProfitFinancialRows(supabase, revenueDate, revenueDate, dayMode);
+      const gateways = (["payu", "paytm"] as const).map((gateway) => {
+        const events = financialRows.filter((event) => event.gateway === gateway);
+        const sales = events.filter((event) => event.kind === "sale");
+        const refunds = events.filter((event) => event.kind === "refund");
+        const receivedPaise = sales.reduce((sum, event) => sum + Math.round(event.amount * 100), 0);
+        const refundPaise = refunds.reduce((sum, event) => sum + Math.round(event.amount * 100), 0);
+        return { gateway, name: gateway === "payu" ? "PayU" : "Paytm", received: receivedPaise / 100,
+          refunds: refundPaise / 100, revenue: (receivedPaise - refundPaise) / 100,
+          salesCount: sales.length, refundCount: refunds.length };
+      });
+      const sum = (key: "received" | "refunds" | "revenue") => gateways.reduce((total, row) => total + Math.round(row[key] * 100), 0) / 100;
+      return NextResponse.json({ date: revenueDate, dayMode, gateways,
+        received: sum("received"), refunds: sum("refunds"), revenue: sum("revenue"), fetchedAt: new Date().toISOString() },
+        { headers: { "Cache-Control": "no-store" } });
+    }
+
     if (searchParams.get("sync") === "gst") {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate) ||
         !indianAdGstApplies(startDate) || endDate > addDaysToIsoDate(startDate, 6)) {
@@ -1050,7 +1085,7 @@ export async function GET(request: NextRequest) {
         syncedRange = { start: syncStartDate, end: businessToday };
       } catch (syncError) {
         console.error("Profit Sheet refresh failed; serving saved rows:", syncError);
-        syncWarning = "The latest Meta or PayU data could not be refreshed. Showing the last saved Profit Sheet values.";
+        syncWarning = "The latest ad spend or payment data could not be refreshed. Showing the last saved Profit Sheet values.";
       }
     }
 
