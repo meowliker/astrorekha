@@ -4,6 +4,7 @@ import Script from "next/script";
 import { useEffect, useRef } from "react";
 import { MetaPixel } from "./MetaPixel";
 import { GoogleAnalytics } from "./GoogleAnalytics";
+import { GoogleTagManager } from "./GoogleTagManager";
 import { Clarity } from "./Clarity";
 
 const isUS = (path: string) => path === "/us/soulmate" || path.startsWith("/us/soulmate/");
@@ -31,7 +32,7 @@ export function MarketingBoundary() {
   useEffect(() => { if (us !== initialUS) window.location.replace(window.location.href); }, [us, initialUS]);
   if (pathname === "/page-previews" || pathname.startsWith("/page-previews/")) return null;
   if (us !== initialUS) return null;
-  if (!us) return <><MetaPixel /><GoogleAnalytics /><Clarity /></>;
+  if (!us) return <><GoogleTagManager /><MetaPixel /><GoogleAnalytics /><Clarity /></>;
   const pixel = process.env.NEXT_PUBLIC_US_SOULMATE_META_PIXEL_ID;
   const ga = process.env.NEXT_PUBLIC_US_SOULMATE_GA_ID;
   const clarity = process.env.NEXT_PUBLIC_US_SOULMATE_CLARITY_ID;
