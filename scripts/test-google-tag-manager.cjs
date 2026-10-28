@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const vm = require('node:vm');
 const Module = require('node:module');
+const path = require('node:path');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 require('ts-node').register({ transpileOnly: true, compilerOptions: { module: 'CommonJS', moduleResolution: 'node', jsx: 'react-jsx' } });
@@ -13,7 +14,7 @@ Module._load = function (name, ...args) {
   if (name === 'next/script') return { __esModule: true, default: props => React.createElement('script', props) };
   if (name === './MetaPixel') return { MetaPixel: () => React.createElement('meta', { name: 'existing-meta-pixel' }) };
   if (name === './Clarity') return { Clarity: () => React.createElement('meta', { name: 'existing-clarity' }) };
-  return load.call(this, name, ...args);
+  return load.call(this, name.startsWith('@/') ? path.join(__dirname, '../src', name.slice(2)) : name, ...args);
 };
 process.env.NEXT_PUBLIC_GA_ID = 'G-EXISTING123';
 process.env.NEXT_PUBLIC_US_SOULMATE_GA_ID = 'G-USFIXTURE1';
