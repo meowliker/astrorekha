@@ -34,6 +34,7 @@ test('US bootstrap opts out of automatic clicks before init, with a single initi
   act(()=>{tree=create(React.createElement(MarketingBoundary));});
   const script=tree.root.findByProps({id:'us-soulmate-pixel'}).props.children;
   vm.runInNewContext(script,{window,document,fbq:window.fbq});
+  assert.equal(window.fbq.disablePushState,true, 'Meta SDK must not also track history navigation');
   assert.deepEqual(calls,[['set','autoConfig',false,'2421426875035260'],['init','2421426875035260'],['trackSingle','2421426875035260','PageView']]);
 });
 test('SPA navigation emits one US PageView per path change, not per render',()=>{
