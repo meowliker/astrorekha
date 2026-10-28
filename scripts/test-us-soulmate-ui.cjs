@@ -14,6 +14,8 @@ stub('next/navigation', { usePathname: () => pathname });
 stub('next/script', ({ children, id, src }) => React.createElement('script', { id, src }, children));
 stub('next/image', ({ unoptimized, priority, ...props }) => React.createElement('img', props));
 for (const component of ['MetaPixel','GoogleAnalytics','Clarity']) stub('../src/components/'+component, { [component]: () => React.createElement('span', null, 'existing-'+component) });
+// GTM coverage lives in test-google-tag-manager; isolate the existing vendor assertions here.
+stub('../src/components/GoogleTagManager', { GoogleTagManager: () => null });
 const { MarketingBoundary } = require('../src/components/MarketingBoundary');
 test('normal and India pages retain exactly the original marketing components', () => {
   for (pathname of ['/', '/welcome', '/soulmate', '/soulmate/checkout']) {

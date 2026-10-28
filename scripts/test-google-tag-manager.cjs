@@ -35,11 +35,16 @@ test('main routes retain exactly one GA setup and both existing marketing compon
   }
 });
 
-test('preview pages stay excluded and the US flow keeps its own analytics only', () => {
+test('preview pages stay excluded; every US route loads GTM once with only US analytics', () => {
   for (pathname of ['/page-previews', '/page-previews/witch-archetype']) assert.equal(renderToStaticMarkup(React.createElement(MarketingBoundary)), '');
-  for (pathname of ['/us/soulmate', '/us/soulmate/checkout']) {
+  for (pathname of ['/us/soulmate', '/us/soulmate/checkout', '/us/soulmate/payment']) {
     const html = renderToStaticMarkup(React.createElement(MarketingBoundary));
-    assert.doesNotMatch(html, /GTM-TDGZTVTD|G-EXISTING123/);
+    assert.doesNotMatch(html, /G-EXISTING123|existing-meta-pixel|existing-clarity/);
+    assert.equal((html.match(/id="google-tag-manager"/g) || []).length, 1);
+    assert.equal((html.match(/id="us-soulmate-ga"/g) || []).length, 1);
+    assert.ok(html.startsWith('<noscript><iframe'));
+    assert.equal((html.match(/ns\.html\?id=GTM-TDGZTVTD/g) || []).length, 1);
+    assert.match(html, /cookie_prefix:&#x27;us_soulmate&#x27;/);
     assert.match(html, /G-USFIXTURE1/);
   }
 });

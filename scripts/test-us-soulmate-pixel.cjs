@@ -17,6 +17,8 @@ for(const name of ['MetaPixel','GoogleAnalytics','Clarity'])stub('../src/compone
 stub('../src/lib/us-soulmate-attribution-client',{getSoulmateAttributionPayload:()=>({utm_source:'fixture'})});
 const {trackPixelEvent}=require('../src/lib/us-soulmate-pixel');
 const {trackSoulmate}=require('../src/lib/us-soulmate-tracking');
+// GTM coverage lives in test-google-tag-manager; isolate the existing vendor assertions here.
+stub('../src/components/GoogleTagManager', { GoogleTagManager: () => null });
 const {MarketingBoundary}=require('../src/components/MarketingBoundary');
 let calls,requests,timers,tree;
 const realTimeout=global.setTimeout,realFetch=global.fetch,realEnv=process.env.NODE_ENV;
