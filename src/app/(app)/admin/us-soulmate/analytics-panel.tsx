@@ -30,7 +30,7 @@ export function SoulmateAnalyticsPanel() {
       <div><p className="mb-2 text-sm text-white/60">Date range · IST</p><TrackingDateRangePicker value={dates} onChange={setDates} minDate={US_ANALYTICS_LAUNCH_DATE} maxDate={analyticsToday()} maxDays={93} align="left" /></div>
       <button className="rounded-lg border border-white/10 px-4 py-2 text-sm" onClick={() => setRefresh((value) => value + 1)}>Refresh</button>
     </div>
-    <p className="mt-3 text-xs text-white/60">Reporting begins October 28, 2026 at 11:30 AM IST. Earlier visits and orders are excluded. Landing sessions include all tracked traffic, not only ads.</p>
+    <p className="mt-3 text-xs text-white/60">Reporting begins October 28, 2026 at 11:30 AM IST. Earlier visits, orders and explicitly tagged QA traffic are excluded. Landing sessions include all tracked traffic, not only ads.</p>
     {error ? <p role="alert" className="mt-6 text-primary">{error}</p> : !report ? <p className="mt-6 text-white/50" role="status">Loading analytics…</p> : <>
       <dl className="my-8 grid grid-cols-2 gap-6 lg:grid-cols-4">
         {[["Landing sessions", String(report.sessions)], ["Checkout rate", percent(report.checkoutRate)], ["Purchase conversion", percent(report.conversionRate)], ["Bounce rate · GA4", percent(report.bounce.value)], ["Checkout → purchase", percent(report.checkoutToPurchaseRate)], ["Checkout abandonment", percent(report.checkoutAbandonment)], ["Paid orders", String(report.paidOrders)], ["Gross sales", `$${report.grossRevenue.toLocaleString("en-US", { maximumFractionDigits: 2 })}`]].map(([label, value]) => <div key={label}><dt className="text-sm text-white/60">{label}</dt><dd className="mt-2 text-3xl font-light">{value}</dd></div>)}

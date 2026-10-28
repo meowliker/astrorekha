@@ -55,3 +55,10 @@ test('unauthorized requests remain blocked',async()=>{
   const response=await GET(new NextRequest('https://example.com/api/admin/us-soulmate/analytics'));
   assert.equal(response.status,401);
 });
+
+test('known QA sessions and orders are excluded without dropping untagged or paid ad traffic',()=>{
+  const {summarizeSoulmateAnalytics}=require('../src/lib/us-soulmate-analytics');
+  const event=(id,name,source)=>({session_id:id,event_name:`us_soulmate_${name}`,utm_source:source,created_at:'2026-10-28T07:00:00Z'});
+  const report=summarizeSoulmateAnalytics([event('qa','landing_view','codex_qa'),event('qa','checkout_view',null),event('real','landing_view',null),event('ad','landing_view','facebook')],[{id:'qa-order',amount:100,attribution:{sessionId:'qa'}},{id:'qa-no-session',amount:100,attribution:{marketing:{utm_source:'codex_qa'}}},{id:'real-order',amount:4366,attribution:{sessionId:'real'}}]);
+  assert.equal(report.sessions,2);assert.equal(report.paidOrders,1);assert.equal(report.grossRevenue,43.66);assert.equal(report.checkoutRate,0);
+});

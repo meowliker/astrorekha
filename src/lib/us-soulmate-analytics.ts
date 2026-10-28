@@ -1,8 +1,13 @@
 export type SoulmateAnalyticsEvent = { event_name: string; session_id: string | null; utm_source?: string | null; utm_campaign?: string | null; created_at: string };
-export type SoulmateAnalyticsOrder = { id: string; amount: number; attribution: { sessionId?: string | null } | null };
+export type SoulmateAnalyticsOrder = { id: string; amount: number; attribution: { sessionId?: string | null; marketing?: { utm_source?: string | null } | null } | null };
 const rate = (numerator: number, denominator: number) => denominator ? Math.round(numerator / denominator * 10000) / 100 : null;
 /** All funnel rates use the same cohort: sessions with a tracked soulmate landing. */
 export function summarizeSoulmateAnalytics(events: SoulmateAnalyticsEvent[], orders: SoulmateAnalyticsOrder[]) {
+  // Exclude explicitly tagged QA traffic, including its later funnel events/orders.
+  const isQA = (source?: string | null) => source?.trim().toLowerCase() === "codex_qa";
+  const qaSessions = new Set(events.filter((event) => isQA(event.utm_source)).map((event) => event.session_id).filter(Boolean));
+  events = events.filter((event) => !isQA(event.utm_source) && !qaSessions.has(event.session_id));
+  orders = orders.filter((order) => !isQA(order.attribution?.marketing?.utm_source) && !qaSessions.has(order.attribution?.sessionId || null));
   const landings = new Map<string, SoulmateAnalyticsEvent>();
   const stages = new Map<string, Set<string>>();
   for (const event of events) {
