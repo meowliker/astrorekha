@@ -1,3 +1,5 @@
+import { activePaymentGateway } from "@/lib/payment-gateway";
+import { initiatePaytmCheckout, paytmConfig } from "@/lib/paytm-api";
 import { sanitizePaymentAttribution } from "@/lib/attribution";
 import { buildSoulmateCart } from "@/lib/soulmate-cart";
 import crypto from "crypto";
@@ -34,10 +36,12 @@ export async function POST(request: NextRequest) {
     const session = body.session ? sessionCredentials(body.session) : null;
     if (body.session && !session) return NextResponse.json({ error: "Invalid sketch session" }, { status: 400 });
     if (session) await saveSoulmateSession(session, answers);
-    const { mode } = payuConfig();
+    const gateway = await activePaymentGateway();
+    const { mode } = gateway === "paytm" ? paytmConfig() : payuConfig();
     let cart;
     try { cart = buildSoulmateCart(plan.id, body.addOns ?? []); } catch { return NextResponse.json({ error: "Invalid add-ons for this package." }, { status: 400 }); }
-    const fingerprint = crypto.createHash("sha256").update(JSON.stringify({ answers, plan: plan.id, email, phone, mode, cart })).digest("hex");
+    const fingerprintFor = (savedGateway: string, savedMode: string) => crypto.createHash("sha256").update(JSON.stringify({ answers, plan: plan.id, email, phone, mode: savedMode, cart, ...(savedGateway === "paytm" ? { gateway: savedGateway } : {}) })).digest("hex");
+    const fingerprint = fingerprintFor(gateway, mode);
     const db = getSupabaseAdmin();
     const attribution = await readOrderAttribution();
     const record = {
@@ -48,6 +52,7 @@ export async function POST(request: NextRequest) {
       base_amount: cart.baseAmount, gst_amount: cart.gstAmount, amount: cart.amount,
       catalog_version: 2, line_items: cart.lineItems, entitlements: cart.entitlements, add_ons: cart.addOns, review_status: "pending",
       delivery_hours: cart.entitlements.scheduled_hours,
+      ...(gateway === "paytm" ? { gateway } : {}),
       product_info: soulmatePayUProductInfo(cart.productInfo), payment_mode: mode,
       attribution: { ...attribution, ...chooseSoulmateGaIdentity(body.tracking, attribution), landing_path: "/soulmate",
         marketing: sanitizePaymentAttribution(body.tracking?.attribution),
@@ -60,7 +65,7 @@ export async function POST(request: NextRequest) {
     let order = data as SoulmateOrder | null;
     if (error?.code === "23505") {
       const existing = await db.from(SOULMATE_ORDERS_TABLE).select("*").eq("checkout_key", checkoutKey).single();
-      if (existing.error || existing.data?.checkout_fingerprint !== fingerprint) return NextResponse.json({ error: "Checkout details changed. Please reopen checkout." }, { status: 409 });
+      if (existing.error || existing.data?.checkout_fingerprint !== fingerprintFor(existing.data?.gateway || "payu", existing.data?.payment_mode)) return NextResponse.json({ error: "Checkout details changed. Please reopen checkout." }, { status: 409 });
       order = existing.data as SoulmateOrder;
     } else if (error) {
       console.error("[soulmate/checkout] Order creation failed", error.code);
@@ -70,7 +75,7 @@ export async function POST(request: NextRequest) {
     const receiptUrl = receiptPath(order.id);
     const response = NextResponse.json(order.payment_status !== "created"
       ? { receiptUrl, checkStatus: true }
-      : { ...checkoutParameters(order, origin), receiptUrl, orderId: order.id }, { headers: { "Cache-Control": "no-store" } });
+      : { ...(order.gateway === "paytm" ? await initiatePaytmCheckout(order) : checkoutParameters(order, origin)), receiptUrl, orderId: order.id }, { headers: { "Cache-Control": "no-store" } });
     response.cookies.set(receiptCookie(order.id));
     return response;
   } catch (error) {

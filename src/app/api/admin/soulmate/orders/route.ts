@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const page = Math.max(0, Math.min(10000, Number(request.nextUrl.searchParams.get("page")) || 0));
     const mode = request.nextUrl.searchParams.get("mode");
     const search = (request.nextUrl.searchParams.get("search") || "").replace(/[^\p{L}\p{N} @._+-]/gu, "").slice(0, 100);
-    let query = db.from("soulmate_orders").select("id,plan,product_info,attribution,customer_name,customer_email,customer_phone,answers,answer_revision,answers_updated_at,catalog_version,line_items,add_ons,entitlements,base_amount,gst_amount,amount,payment_status,payment_mode,payu_payment_id,paid_at,created_at,scheduled_send_at,delivery_due_at,review_status,reviewed_at,review_note,fulfillment_status,delivered_at", { count: "exact" }).eq("funnel", "soulmate_standalone").eq("payment_status", "paid");
+    let query = db.from("soulmate_orders").select("id,plan,product_info,attribution,customer_name,customer_email,customer_phone,answers,answer_revision,answers_updated_at,catalog_version,line_items,add_ons,entitlements,base_amount,gst_amount,amount,payment_status,payment_mode,gateway,gateway_transaction_id,payu_payment_id,paid_at,created_at,scheduled_send_at,delivery_due_at,review_status,reviewed_at,review_note,fulfillment_status,delivered_at", { count: "exact" }).eq("funnel", "soulmate_standalone").eq("payment_status", "paid");
     if (mode === "test" || mode === "live") query = query.eq("payment_mode", mode);
     if (search) query = query.or(`id.ilike.%${search}%,customer_email.ilike.%${search}%,customer_name.ilike.%${search}%,customer_phone.ilike.%${search}%`);
     const result = await query.order("created_at", { ascending: false }).order("id").range(Math.floor(page) * 25, Math.floor(page) * 25 + 24);

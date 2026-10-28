@@ -13,7 +13,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
   try {
     const order = await db.from("soulmate_orders")
-      .select("id,plan,product_info,attribution,customer_name,customer_email,customer_phone,answers,answer_revision,answers_updated_at,catalog_version,line_items,add_ons,entitlements,base_amount,gst_amount,amount,payment_status,payment_mode,payu_payment_id,paid_at,created_at,scheduled_send_at,delivery_due_at,review_status,reviewed_at,review_note,fulfillment_status,delivered_at")
+      .select("id,plan,product_info,attribution,customer_name,customer_email,customer_phone,answers,answer_revision,answers_updated_at,catalog_version,line_items,add_ons,entitlements,base_amount,gst_amount,amount,payment_status,payment_mode,payu_payment_id,gateway,gateway_transaction_id,paid_at,created_at,scheduled_send_at,delivery_due_at,review_status,reviewed_at,review_note,fulfillment_status,delivered_at")
       .eq("funnel", "soulmate_standalone").eq("id", params.id).maybeSingle();
     if (order.error) throw new Error("Unable to load order");
     if (!order.data) return NextResponse.json({ error: "Order not found" }, { status: 404 });

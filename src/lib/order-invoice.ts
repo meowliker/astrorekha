@@ -21,6 +21,7 @@ type PaymentRow = {
   amount: number | null;
   currency: string | null;
   payment_status: string | null;
+  paid_at?: string | null; gateway?: string | null; gateway_order_id?: string | null; gateway_transaction_id?: string | null;
   payu_txn_id: string | null;
     payu_payment_id: string | null;
     tax_mode: string | null;
@@ -220,7 +221,7 @@ function buildPaymentItems(payment: PaymentRow, pricing: PricingConfig): OrderIn
   const total = getPaymentInvoiceLineInr(payment);
   const lineAmount = itemNames.length ? total / itemNames.length : total;
   const txnId = firstDefined(payment.payu_txn_id, payment.id);
-  const paymentId = firstDefined(payment.payu_payment_id);
+  const paymentId = firstDefined(payment.gateway_transaction_id, payment.payu_payment_id);
 
   return itemNames.length
     ? itemNames.map((name) => ({
@@ -249,7 +250,7 @@ async function findPaidPayment(txnId: string): Promise<PaymentRow | null> {
   const { data } = await supabase
     .from("payments")
     .select("*")
-    .or(`payu_txn_id.eq.${txnId},payu_payment_id.eq.${txnId},id.eq.${txnId}`)
+    .or(`payu_txn_id.eq.${txnId},payu_payment_id.eq.${txnId},gateway_transaction_id.eq.${txnId},id.eq.${txnId}`)
     .order("created_at", { ascending: false })
     .limit(10);
 
@@ -294,9 +295,9 @@ export async function buildCombinedOrderInvoice(txnIds: string[]): Promise<Order
 
   const [pricing, user] = await Promise.all([getPricingConfig(), findUser(payment)]);
   const invoiceNow = new Date();
-  const paidAt = firstDefined(payment.fulfilled_at, payment.created_at, invoiceNow.toISOString());
+  const paidAt = firstDefined(payment.paid_at, payment.fulfilled_at, payment.created_at, invoiceNow.toISOString());
   const paymentTxnId = firstDefined(payment.payu_txn_id, payment.id);
-  const paymentId = firstDefined(payment.payu_payment_id);
+  const paymentId = firstDefined(payment.gateway_transaction_id, payment.payu_payment_id);
     const items = uniquePayments.flatMap((paidPayment) => buildPaymentItems(paidPayment, pricing));
     const subtotal = roundMoney(items.reduce((sum, item) => sum + item.amount, 0));
     const total = roundMoney(uniquePayments.reduce((sum, paidPayment) => sum + getPaymentTotalInr(paidPayment), 0));
@@ -312,7 +313,7 @@ export async function buildCombinedOrderInvoice(txnIds: string[]): Promise<Order
     payment: {
       status: payment.payment_status || "paid",
       type: normalizeType(payment.type),
-      gateway: "PayU",
+      gateway: payment.gateway === "paytm" ? "Paytm" : "PayU",
       txnId: paymentTxnId,
       paymentId,
       paidAt,

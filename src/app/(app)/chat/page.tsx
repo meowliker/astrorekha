@@ -1,4 +1,5 @@
 "use client";
+import { openPaytmCheckout } from "@/lib/payment-checkout-browser";
 
 import ProductOfferTracker from "@/components/ProductOfferTracker";
 
@@ -305,7 +306,7 @@ export default function ChatPage() {
       const checkoutWhatsappNumber = normalizeIndianWhatsappNumber(
         localStorage.getItem("astrorekha_whatsapp_number")
       );
-      const response = await fetch("/api/payu/initiate-payment", {
+      const response = await fetch("/api/payments/initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -330,6 +331,7 @@ export default function ChatPage() {
           bundleId: pkg.packageId,
           returnTo: "/chat",
         });
+        if (openPaytmCheckout(data)) return;
         const bolt = (window as any).bolt;
         bolt.launch({
           key: data.key,
@@ -413,7 +415,7 @@ export default function ChatPage() {
       const checkoutWhatsappNumber = normalizeIndianWhatsappNumber(
         localStorage.getItem("astrorekha_whatsapp_number")
       );
-      const response = await fetch("/api/payu/initiate-payment", {
+      const response = await fetch("/api/payments/initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -451,6 +453,7 @@ export default function ChatPage() {
           bundleId: CHAT_UNLIMITED_PASS_ID,
           returnTo: "/chat",
         });
+        if (openPaytmCheckout(data)) return;
         const bolt = (window as any).bolt;
         bolt.launch({
           key: data.key,
@@ -1435,7 +1438,7 @@ export default function ChatPage() {
               {/* Footer */}
               <div className="mt-2 sm:mt-3 text-center">
                 <p className="text-white/40 text-[10px] sm:text-xs">
-                  Secure payment powered by PayU
+                  Secure online payment
                 </p>
               </div>
             </motion.div>

@@ -50,6 +50,14 @@
     {
       "path": "/api/cron/reconcile-us-soulmate-payments",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-paytm-payments",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-paytm-refunds",
+      "schedule": "17,47 * * * *"
     }
   ]
 }

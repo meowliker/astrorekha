@@ -1,4 +1,5 @@
 "use client";
+import { PaymentGatewaySettings } from "@/components/PaymentGatewaySettings";
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
@@ -159,6 +160,8 @@ export default function AdminPricingPage() {
         </div>
       )}
 
+      <PaymentGatewaySettings />
+
       {/* Tabs */}
       <div className="max-w-4xl mx-auto px-4 py-4">
         <div className="flex gap-2 border-b border-border pb-4">
@@ -232,7 +235,7 @@ export default function AdminPricingPage() {
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
-                    <label className="text-sm text-muted-foreground">PayU Price (₹)</label>
+                    <label className="text-sm text-muted-foreground">Checkout price (₹)</label>
                     <input
                       type="number"
                       value={bundle.price}
@@ -355,7 +358,7 @@ export default function AdminPricingPage() {
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
-                    <label className="text-sm text-muted-foreground">PayU Price (₹)</label>
+                    <label className="text-sm text-muted-foreground">Checkout price (₹)</label>
                     <input
                       type="number"
                       value={upsell.price}
@@ -515,7 +518,7 @@ export default function AdminPricingPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-sm text-muted-foreground">PayU Price (₹)</label>
+                    <label className="text-sm text-muted-foreground">Checkout price (₹)</label>
                     <input
                       type="number"
                       value={pkg.price}

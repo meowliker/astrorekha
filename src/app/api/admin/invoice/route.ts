@@ -24,6 +24,7 @@ type UserRow = {
 };
 
 type PaymentRow = {
+  paid_at?: string | null; gateway?: string | null; gateway_transaction_id?: string | null; customer_name?: string | null;
   id: string;
   user_id: string | null;
   type: string | null;
@@ -398,7 +399,7 @@ async function findPayments(userId: string, txnId: string, email: string): Promi
     const { data } = await supabase
       .from("payments")
       .select("*")
-      .or(`payu_txn_id.eq.${txnId},payu_payment_id.eq.${txnId},id.eq.${txnId}`)
+      .or(`payu_txn_id.eq.${txnId},payu_payment_id.eq.${txnId},gateway_transaction_id.eq.${txnId},id.eq.${txnId}`)
       .order("created_at", { ascending: false })
       .limit(20);
     addRows(data);
@@ -446,7 +447,7 @@ function selectInvoicePayments(payments: PaymentRow[], requestedTxnId: string): 
 
   if (requestedTxnId) {
     const exactMatches = payments.filter((payment) => {
-      return [payment.payu_txn_id, payment.payu_payment_id, payment.id]
+      return [payment.gateway_transaction_id, payment.payu_txn_id, payment.payu_payment_id, payment.id]
         .filter(Boolean)
         .some((value) => String(value).trim() === requestedTxnId);
     });
@@ -623,6 +624,7 @@ function toYmd(value: Date): string {
 }
 
 async function getPayUCustomerName(payment: PaymentRow, fallbackDate: string): Promise<string> {
+  if (payment.gateway === "paytm") return payment.customer_name || "";
   const txnId = firstDefined(payment.payu_txn_id, payment.id);
   const paymentId = firstDefined(payment.payu_payment_id);
   const anchorDate = new Date(firstDefined(payment.fulfilled_at, payment.created_at, fallbackDate));
@@ -677,9 +679,9 @@ async function buildInvoice(userId: string, txnId: string): Promise<InvoicePaylo
   const primaryPayment = invoicePayments[0];
   const invoiceNow = new Date();
   const invoiceDateIso = invoiceNow.toISOString();
-  const paidAt = firstDefined(primaryPayment.fulfilled_at, primaryPayment.created_at, user?.updated_at, user?.created_at);
-  const txn = firstDefined(txnId, primaryPayment.payu_txn_id, user?.payu_txn_id, primaryPayment.id);
-  const paymentId = firstDefined(primaryPayment.payu_payment_id, user?.payu_payment_id);
+  const paidAt = firstDefined(primaryPayment.paid_at, primaryPayment.fulfilled_at, primaryPayment.created_at, user?.updated_at, user?.created_at);
+  const txn = firstDefined(txnId, primaryPayment.gateway === "paytm" ? primaryPayment.id : null, primaryPayment.payu_txn_id, user?.payu_txn_id, primaryPayment.id);
+  const paymentId = firstDefined(primaryPayment.gateway_transaction_id, primaryPayment.payu_payment_id, primaryPayment.gateway === "paytm" ? null : user?.payu_payment_id);
   const invoiceNumber = buildInvoiceNumber({
     now: invoiceNow,
     txnId: txn,
@@ -737,9 +739,9 @@ async function buildInvoice(userId: string, txnId: string): Promise<InvoicePaylo
     payment: {
       status: primaryPayment.payment_status || user?.payment_status || "paid",
       type: normalizeType(primaryPayment.type || user?.purchase_type),
-      gateway: "PayU",
-      txnId: firstDefined(primaryPayment.payu_txn_id, user?.payu_txn_id, txnId, primaryPayment.id),
-      paymentId: firstDefined(primaryPayment.payu_payment_id, user?.payu_payment_id),
+      gateway: primaryPayment.gateway === "paytm" ? "Paytm" : "PayU",
+      txnId: firstDefined(primaryPayment.gateway === "paytm" ? primaryPayment.id : null, primaryPayment.payu_txn_id, user?.payu_txn_id, txnId, primaryPayment.id),
+      paymentId: firstDefined(primaryPayment.gateway_transaction_id, primaryPayment.payu_payment_id, primaryPayment.gateway === "paytm" ? null : user?.payu_payment_id),
       paidAt,
     },
       items: items.length ? items : [{ name: "AstroRekha Digital Service", quantity: 1, amount: total }],
@@ -756,8 +758,8 @@ async function buildInvoice(userId: string, txnId: string): Promise<InvoicePaylo
       purchaseType: user?.purchase_type || normalizeType(primaryPayment.type),
       bundle: itemNames.join(", ") || titleFromId(user?.bundle_purchased || primaryPayment.bundle_id),
       paymentStatus: primaryPayment.payment_status || user?.payment_status || "paid",
-      primaryTxnId: firstDefined(primaryPayment.payu_txn_id, user?.payu_txn_id, txnId, primaryPayment.id),
-      primaryPaymentId: firstDefined(primaryPayment.payu_payment_id, user?.payu_payment_id),
+      primaryTxnId: firstDefined(primaryPayment.gateway === "paytm" ? primaryPayment.id : null, primaryPayment.payu_txn_id, user?.payu_txn_id, txnId, primaryPayment.id),
+      primaryPaymentId: firstDefined(primaryPayment.gateway_transaction_id, primaryPayment.payu_payment_id, primaryPayment.gateway === "paytm" ? null : user?.payu_payment_id),
       accountCreated: user?.created_at || null,
       lastUpdated: user?.updated_at || primaryPayment.fulfilled_at || primaryPayment.created_at || null,
     },

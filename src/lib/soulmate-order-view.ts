@@ -4,7 +4,7 @@ export type SoulmateOrderView = {
   id: string; plan: string; product_info: string; checkout_environment: "local" | "preview" | "production" | "unknown"; customer_name: string; customer_email: string; customer_phone: string;
   answers: Record<string,string>; answer_revision: number; answers_updated_at: string | null; catalog_version: number; line_items: SoulmateLineItem[]; add_ons: string[];
   entitlements: SoulmateEntitlements; base_amount: number; gst_amount: number; amount: number;
-  payment_status: string; payment_mode: string; payu_payment_id: string | null; paid_at: string | null;
+  payment_status: string; payment_mode: string; payu_payment_id: string | null; gateway?: string | null; gateway_transaction_id?: string | null; paid_at: string | null;
   created_at: string; scheduled_send_at: string | null; delivery_due_at: string | null;
   review_status: string; reviewed_at: string | null; review_note: string | null; fulfillment_status: string;
   delivered_at: string | null;

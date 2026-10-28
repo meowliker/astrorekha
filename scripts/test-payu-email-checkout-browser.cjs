@@ -33,7 +33,7 @@ const base = process.env.QA_BASE_URL || 'http://127.0.0.1:3117';
      assert.equal(url.searchParams.has('userId'),false,'new email must not inherit old ID lookup');
      assert.equal(url.searchParams.get('email'),'new@example.com');
      json={hasPaidBundlePayment:false,hasRegisteredAccount:false};
-    } else if(url.pathname==='/api/payu/initiate-payment') {
+    } else if(['/api/payu/initiate-payment','/api/payments/initiate'].includes(url.pathname)) {
      initiated++;const body=request.postDataJSON();assert.equal(body.email,'new@example.com');assert.notEqual(body.userId,'old-id');assert.ok(body.userId);
      json={txnId:'new-txn',amount:'659.62',email:body.email,firstName:'Fixture',phone:'9999999999',key:'fixture',hash:'fixture'};
     }

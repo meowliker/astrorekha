@@ -50,6 +50,7 @@ const db = { async rpc(name, params) {
 } };
 function stub(file, exports) { require.cache[require.resolve(file)] = { id: require.resolve(file), filename: require.resolve(file), loaded: true, exports }; }
 stub('../src/lib/soulmate-invoice', { confirmSoulmatePurchase: async () => {} });
+stub('../src/lib/payment-gateway', { activePaymentGateway: async () => 'payu' });
 stub('../src/lib/supabase-admin', { getSupabaseAdmin: () => db });
 stub('../src/lib/order-attribution', { readOrderAttribution: async () => ({ firstTouch: null, lastTouch: { utm_campaign: 'soulmate-test' }, gaClientId: null, gaSessionId: null }) });
 const { NextRequest } = require('next/server');

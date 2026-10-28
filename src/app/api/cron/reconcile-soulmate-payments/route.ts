@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   try {
     const { mode } = payuConfig();
     const { data, error } = await getSupabaseAdmin().from(SOULMATE_ORDERS_TABLE).select("*")
-      .eq("payment_mode", mode).in("payment_status", ["created", "pending", "failed"])
+      .or("gateway.is.null,gateway.eq.payu").eq("payment_mode", mode).in("payment_status", ["created", "pending", "failed"])
       .gte("created_at", new Date(Date.now() - 14 * 86400000).toISOString())
       .order("last_verified_at", { ascending: true, nullsFirst: true }).limit(6);
     if (error) throw new Error("Unable to read pending orders");

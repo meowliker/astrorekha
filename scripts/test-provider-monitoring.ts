@@ -40,3 +40,7 @@ assert.equal(confirmProviderFailure({ ...aisensyFailure, status: "ok" }, {
 }, "cron", now).status, "ok", "a healthy AiSensy check must reset its streak");
 
 console.log("Provider monitoring failure confirmation tests passed");
+const paytmFailure: MonitorCheck = { ...failed, key: "paytm", name: "Paytm backup" };
+const paytmFirst = confirmProviderFailure(paytmFailure, null, "cron", now);
+assert.equal(paytmFirst.status, "warming");
+assert.equal(confirmProviderFailure(paytmFailure, { started_at: new Date(now - 30 * 60_000).toISOString(), checks: [paytmFirst] }, "cron", now).status, "down");

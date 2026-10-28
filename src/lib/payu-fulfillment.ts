@@ -248,12 +248,13 @@ async function ensureFulfillmentUser(params: {
   return normalizedUserId;
 }
 
-export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: { verifiedByPayUApi?: boolean } = {}): Promise<{
+export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: { verifiedByPayUApi?: boolean; verifiedByPaytmApi?: boolean; paidAt?: string } = {}): Promise<{
   success: boolean;
   alreadyPaid: boolean;
   userId: string | null;
   reason?: string;
 }> {
+  const isPaytm = options.verifiedByPaytmApi === true;
   const status = normalizeStatus(payload.status);
   const txnid = payload.txnid?.trim() || "";
   const mihpayid = payload.mihpayid?.trim() || "";
@@ -267,7 +268,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
   const { data: existingPayment, error: lookupError } = await supabase
     .from("payments")
     .select("*")
-    .eq("payu_txn_id", txnid)
+    .eq(isPaytm ? "id" : "payu_txn_id", txnid)
     .not("id", "like", "pay_refund_%")
     .maybeSingle();
 
@@ -276,7 +277,11 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
   if (!existingPayment) {
     return { success: false, alreadyPaid: false, userId: null, reason: "Unknown order" };
   }
-  if (!options.verifiedByPayUApi) {
+  if (isPaytm && (existingPayment.gateway !== "paytm" || parseAmountToPaise(payload.amount) !== existingPayment.amount || !mihpayid)) {
+    throw new Error("Invalid verified Paytm order");
+  }
+  if (!isPaytm && existingPayment.gateway === "paytm") throw new Error("Wrong payment gateway");
+  if (!options.verifiedByPayUApi && !isPaytm) {
     const key = process.env.PAYU_MERCHANT_KEY;
     const salt = process.env.PAYU_MERCHANT_SALT;
     if (!key || !salt || !verifyPayUResponseHash(payload, key, salt) ||
@@ -299,7 +304,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
       .from("payments")
       .update({
         payment_status: "failed",
-        payu_payment_id: mihpayid || null,
+        ...(isPaytm ? { gateway_transaction_id: mihpayid || null } : { payu_payment_id: mihpayid || null }),
       })
       .eq("id", existingPayment.id);
 
@@ -311,7 +316,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
       productId: existingPayment.bundle_id || null,
       productName: payload.productinfo || null,
       paymentId: existingPayment?.id || `pay_${txnid}`,
-      payuTxnId: txnid,
+      payuTxnId: isPaytm ? null : txnid,
       amount: parseAmountToPaise(payload.amount) || existingPayment?.amount || null,
       currency: "INR",
       attribution: attributionFromPayment(existingPayment),
@@ -343,7 +348,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
   const feature = (existingPayment.feature || (legacyUdfs ? payload.udf4 : null) || "").trim();
   const coins = String(existingPayment.coins || (legacyUdfs ? payload.udf5 : null) || "").trim();
 
-  if (existingPayment) {
+  if (existingPayment && !isPaytm) {
     const updatePayload: Record<string, unknown> = {
       payu_payment_id: mihpayid || null,
       user_id: resolvedUserId || null,
@@ -376,6 +381,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
   }
 
   const markFulfilled = async () => {
+    if (isPaytm) return;
     const { error } = await supabase.from("payments")
       .update({ fulfilled_at: existingPayment.fulfilled_at || nowIso }).eq("id", existingPayment.id);
     if (error) throw error;
@@ -455,7 +461,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
   const updatedFeatures = { ...currentFeatures } as Record<string, boolean>;
   let updatedCoins = typeof user?.coins === "number" ? user.coins : 0;
 
-  const featuresToUnlock = parseFeaturesFromMetadata(type, bundleId, feature);
+  const featuresToUnlock: string[] = isPaytm ? existingPayment.fulfillment_features : parseFeaturesFromMetadata(type, bundleId, feature);
   for (const f of featuresToUnlock) {
     updatedFeatures[f] = true;
   }
@@ -500,6 +506,10 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
     userUpdate.whatsapp_opt_in_source = "payu_fulfillment";
   }
 
+  if (isPaytm) {
+    // The RPC below grants access/coins atomically. Do not overwrite a concurrent purchase.
+    for (const field of ["unlocked_features", "coins", "payment_status", "purchase_type", "bundle_purchased", "payu_payment_id", "payu_txn_id"]) delete userUpdate[field];
+  }
   const { error: userSaveError } = await supabase.from("users").upsert(userUpdate, { onConflict: "id" });
   if (userSaveError) throw userSaveError;
 
@@ -515,6 +525,12 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
     );
     if (profileSaveError) throw profileSaveError;
   }
+  if (isPaytm) {
+    const grant = await supabase.rpc("fulfill_paytm_report_payment", { p_order: txnid, p_transaction: mihpayid,
+      p_amount: amountInPaise, p_paid_at: options.paidAt || nowIso });
+    if (grant.error) throw grant.error;
+    if (!grant.data) return { success: true, alreadyPaid: true, userId: resolvedUserId };
+  }
   await markFulfilled();
 
   if (!existingPayment.fulfilled_at) {
@@ -526,7 +542,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
       productId: bundleId || null,
       productName: payload.productinfo || bundleId || feature || type || null,
       paymentId: existingPayment?.id || `pay_${txnid}`,
-      payuTxnId: txnid,
+      payuTxnId: isPaytm ? null : txnid,
       amount: amountInPaise || existingPayment?.amount || null,
       currency: "INR",
       attribution: attributionFromPayment(existingPayment),
@@ -547,7 +563,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
         productId: bundleId,
         productName: payload.productinfo || "Unlimited Elysia Chat",
         paymentId: existingPayment?.id || `pay_${txnid}`,
-        payuTxnId: txnid,
+        payuTxnId: isPaytm ? null : txnid,
         amount: amountInPaise || existingPayment?.amount || null,
         currency: "INR",
         attribution: attributionFromPayment(existingPayment),

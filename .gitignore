@@ -62,3 +62,5 @@ DEPLOYMENT_CHECKLIST.md
 /tmp/
 /output/
 /outputs/
+
+!docs/paytm-backup.md

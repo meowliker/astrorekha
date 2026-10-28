@@ -23,6 +23,7 @@ function issueExplanation(check: MonitorCheck): string {
   if (key === "payment_reconciliation") return message.includes("remain created/pending")
     ? "Some payments succeeded in PayU but still show as pending in AstroRekha. Customers may be missing access. Check payment reconciliation."
     : "We couldn't check whether all successful payments were completed in AstroRekha. Check PayU and payment reconciliation.";
+  if (key === "paytm") return "The Paytm backup could not be verified on two scheduled checks. Check Paytm before switching new payments to it.";
   if (key === "payu") return "We couldn't confirm a recent payment with PayU. Check PayU and the payment status page.";
   if (key === "brevo") return "The Brevo email API failed two checks in a row. Check Brevo and recent email deliveries.";
   if (key === "brevo_send") return "Brevo did not accept a transactional email request. Check recent customer emails and the Brevo dashboard.";

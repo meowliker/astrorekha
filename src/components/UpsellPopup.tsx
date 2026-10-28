@@ -1,4 +1,5 @@
 "use client";
+import { openPaytmCheckout } from "@/lib/payment-checkout-browser";
 
 import { isReportAvailableForPurchase } from "@/lib/customer-report-visibility";
 import ProductOfferTracker from "@/components/ProductOfferTracker";
@@ -93,7 +94,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
         localStorage.getItem("astrorekha_whatsapp_number")
       );
       
-      const response = await fetch("/api/payu/initiate-payment", {
+      const response = await fetch("/api/payments/initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -118,6 +119,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
           bundleId: reportId,
           returnTo: window.location.pathname,
         });
+        if (openPaytmCheckout(data)) return;
         const bolt = (window as any).bolt;
         if (!bolt) {
           setError("Payment checkout is still loading. Please try again.");

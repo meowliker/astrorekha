@@ -1,3 +1,5 @@
+import { isPaytmReportOrderId } from "@/lib/paytm-order-id";
+import { reconcilePaytmOrder } from "@/lib/paytm-reconciliation";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { verifyPayUTransaction } from "@/lib/payu-api";
@@ -20,6 +22,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: "txnid is required" }, { status: 400 });
     }
 
+    if (txnid.startsWith("ptm")) {
+      if (!isPaytmReportOrderId(txnid)) return NextResponse.json({ error: "Invalid reference" }, { status: 400 });
+      const email = request.nextUrl.searchParams.get("checkoutEmail")?.trim().toLowerCase();
+      if (email) {
+        const row = await getSupabaseAdmin({ fresh: true }).from("payments").select("customer_email").eq("id", txnid).eq("gateway", "paytm").maybeSingle();
+        if (row.error) throw row.error;
+        return NextResponse.json({ success: true, matchesCheckout: !!row.data && row.data.customer_email?.toLowerCase() === email }, { headers: { "Cache-Control": "no-store" } });
+      }
+      const order = await reconcilePaytmOrder(txnid);
+      return NextResponse.json({ success: true, gateway: "paytm", status: order.payment_status === "paid" && !order.fulfilled_at ? "pending" : order.payment_status,
+        amount: order.amount / 100, userId: order.user_id, type: order.type, bundleId: order.bundle_id, feature: order.feature,
+        gatewayTransactionId: order.gateway_transaction_id }, { headers: { "Cache-Control": "no-store" } });
+    }
     const supabase = getSupabaseAdmin();
     const { data: payment, error: lookupError } = await supabase
       .from("payments")

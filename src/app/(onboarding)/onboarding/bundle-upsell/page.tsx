@@ -1,4 +1,5 @@
 "use client";
+import { openPaytmCheckout } from "@/lib/payment-checkout-browser";
 
 import { isReportAvailableForPurchase } from "@/lib/customer-report-visibility";
 import ProductOfferTracker from "@/components/ProductOfferTracker";
@@ -308,7 +309,7 @@ function BundleUpsellContent() {
       const checkoutWhatsappNumber = normalizeIndianWhatsappNumber(
         localStorage.getItem("astrorekha_whatsapp_number")
       );
-      const response = await fetch("/api/payu/initiate-payment", {
+      const response = await fetch("/api/payments/initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -336,6 +337,7 @@ function BundleUpsellContent() {
         pixelEvents.initiateCheckout(selectedOfferPrice, selectedOfferNames, data.txnId);
         pixelEvents.addPaymentInfo(selectedOfferPrice, selectedOfferLabel, data.txnId);
 
+        if (openPaytmCheckout(data)) return;
         const bolt = (window as Window & { bolt?: PayUBolt }).bolt;
         if (!bolt) {
           setPaymentError("Payment checkout is still loading. Please try again.");

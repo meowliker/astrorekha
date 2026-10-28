@@ -700,7 +700,23 @@ async function buildProfitSheetRows(
     })
     .filter((row): row is FinancialRow => !!row);
 
-  const sourceUsed = "payu_live";
+  // Paytm sales are verified into the same ledger by callback/status/reconciliation.
+  // Never query PayU for these orders or synthesize PayU identifiers.
+  for (let offset = 0; ; offset += 1000) {
+    const paytmRows = await supabase.from("payments").select("id,amount,type,paid_at,created_at")
+      .eq("gateway", "paytm").eq("payment_mode", "live").in("payment_status", ["paid", "refunded"])
+      .gte("paid_at", `${addDaysToIsoDate(startDate, -1)}T00:00:00Z`).lt("paid_at", `${addDaysToIsoDate(endDate, 2)}T00:00:00Z`)
+      .order("id").range(offset, offset + 999);
+    if (paytmRows.error) throw new Error("Unable to read Paytm sales");
+    for (const payment of paytmRows.data) {
+      const createdAt = new Date(payment.paid_at || payment.created_at);
+      const dayKey = getCostaRicaBusinessDayKeyFromDate(createdAt, dayMode);
+      if (dayKey < startDate || dayKey > endDate) continue;
+      financialRows.push({ createdAt, dayKey, kind: payment.amount < 0 ? "refund" : "sale", amount: Math.abs(payment.amount) / 100, signedAmount: payment.amount / 100, type: payment.type });
+    }
+    if (paytmRows.data.length < 1000) break;
+  }
+  const sourceUsed = "payu_live_and_verified_paytm";
   console.log(`Profit sheet financial source: ${sourceUsed}, rows: ${financialRows.length}`);
 
   const rows: ProfitSheetRow[] = dates.map((costaRicaDate) => {

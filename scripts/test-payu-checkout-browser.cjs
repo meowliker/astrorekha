@@ -24,7 +24,7 @@ const passed=[];
     if(url.origin!==base)return route.abort();
     if(!url.pathname.startsWith('/api/'))return route.continue();
     let json={success:true};
-    if(url.pathname==='/api/payu/initiate-payment'){
+    if(['/api/payu/initiate-payment','/api/payments/initiate'].includes(url.pathname)){
      initiated++;json={txnId:'qa-txn',amount:'659.62',productInfo:'Palm Reading',email:'fixture@example.com',firstName:'Fixture',phone:'9999999999',key:'fixture',hash:'fixture'};
     } else if(url.pathname==='/api/payu/status'){
      if(url.searchParams.has('checkoutEmail')) return route.fulfill({json:{success:true,matchesCheckout:true}});

@@ -1,3 +1,7 @@
+import { activePaymentGateway } from "@/lib/payment-gateway";
+import { initiatePaytmCheckout, paytmConfig } from "@/lib/paytm-api";
+import { createPaytmOrderId } from "@/lib/paytm-order-id";
+import { quotePaymentOrder } from "@/lib/payment-quote";
 import { ensurePaymentUser } from "@/lib/payu-checkout-user";
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
@@ -165,10 +169,12 @@ export async function POST(request: NextRequest) {
       finalAttribution.captured_at = lastTouch.captured_at || undefined;
     }
 
+    const gateway = await activePaymentGateway();
+    const paytm = gateway === "paytm" ? paytmConfig() : null;
     const merchantKey = process.env.PAYU_MERCHANT_KEY;
     const merchantSalt = process.env.PAYU_MERCHANT_SALT;
 
-    if (!merchantKey || !merchantSalt) {
+    if (gateway === "payu" && (!merchantKey || !merchantSalt)) {
       return NextResponse.json(
         { error: "PayU not configured" },
         { status: 500 }
@@ -271,6 +277,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid purchase type" }, { status: 400 });
     }
 
+    // Paytm stores the complete catalog snapshot, with server-side availability checks.
+    const quote = gateway === "paytm" ? quotePaymentOrder(pricing, { type: type || "", bundleId, packageId }) : null;
+    if (quote) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return NextResponse.json({ error: "A valid email is required" }, { status: 400 });
+      amount = quote.amount / 100; baseAmount = quote.baseAmount === null ? null : quote.baseAmount / 100;
+      gstAmount = quote.gstAmount === null ? null : quote.gstAmount / 100;
+      productInfo = quote.productName; taxMode = quote.taxMode;
+      metadata.feature = type === CHAT_UNLIMITED_PASS_TYPE ? CHAT_UNLIMITED_PASS_FEATURE : quote.features.join(","); metadata.coins = String(quote.coins);
+    }
     const supabase = getSupabaseAdmin();
     const checkoutWhatsappNumber =
       requestedWhatsappNumber || (await getExistingWhatsappNumber(supabase, userId));
@@ -285,11 +300,11 @@ export async function POST(request: NextRequest) {
 
     // Generate unique transaction ID
     // PayU v1 limits txnid to 25 characters; the same ID is our payments.id.
-    const txnId = `pay_${Date.now().toString(36)}${crypto.randomBytes(5).toString("hex")}`;
+    const txnId = gateway === "paytm" ? createPaytmOrderId() : `pay_${Date.now().toString(36)}${crypto.randomBytes(5).toString("hex")}`;
 
     // Prepare PayU parameters
     const payuParams = {
-      key: merchantKey,
+      key: merchantKey || "",
       txnid: txnId,
       amount: amount.toFixed(2),
       productinfo: productInfo,
@@ -304,7 +319,7 @@ export async function POST(request: NextRequest) {
     };
 
     // Generate hash
-    const hash = generateHash(payuParams, merchantSalt);
+    const hash = gateway === "payu" ? generateHash(payuParams, merchantSalt!) : "";
 
     const resolvedPaymentUserId = await ensurePaymentUser({
       supabase,
@@ -356,7 +371,10 @@ export async function POST(request: NextRequest) {
     // Save payment record (await to ensure it's created before returning)
     const paymentRecord = {
       id: txnId,
-      payu_txn_id: txnId,
+      payu_txn_id: gateway === "payu" ? txnId : null,
+      ...(quote && paytm ? { gateway: "paytm", gateway_order_id: txnId, payment_mode: paytm.mode,
+        product_name: productInfo, fulfillment_features: quote.features, fulfillment_coins: quote.coins,
+        customer_phone: payuPhone, customer_name: firstName || "Customer" } : {}),
       user_id: resolvedPaymentUserId,
       type,
       bundle_id: (bundleId || packageId || null),
@@ -432,8 +450,8 @@ export async function POST(request: NextRequest) {
       productId: bundleId || packageId || null,
       productName: productInfo,
       paymentId: txnId,
-      payuTxnId: txnId,
-        amount: toPaise(amount),
+      payuTxnId: gateway === "payu" ? txnId : null,
+      amount: toPaise(amount),
       currency: "INR",
       route: finalAttribution.landing_path || null,
       url: finalAttribution.landing_url || null,
@@ -442,12 +460,22 @@ export async function POST(request: NextRequest) {
       metadata,
     });
 
+    if (paytm) {
+      try {
+        const checkout = await initiatePaytmCheckout({ id: txnId, amount: toPaise(amount), customer_email: normalizedEmail,
+          customer_name: firstName, customer_phone: payuPhone, payment_mode: paytm.mode });
+        return NextResponse.json({ ...checkout, txnId, amount: amount.toFixed(2), productInfo }, { headers: { "Cache-Control": "no-store" } });
+      } catch {
+        // A timeout does not mean a charge failed. Keep the saved order for reconciliation.
+        return NextResponse.json({ error: "Payment checkout could not be opened. Please try again.", orderId: txnId }, { status: 503 });
+      }
+    }
     return NextResponse.json({
       txnId,
       amount: payuParams.amount,
       productInfo,
       hash,
-      key: merchantKey,
+      key: merchantKey || "",
       firstName: payuParams.firstname,
       email: payuParams.email,
       phone: payuParams.phone,

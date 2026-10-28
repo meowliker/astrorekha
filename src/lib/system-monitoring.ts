@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendEmail } from "@/lib/brevo";
 import { META_AD_ACCOUNTS_SETTINGS_KEY, getMetaAccountCredentialsFromEnv, normalizeMetaAdAccountsSettings } from "@/lib/meta-ad-accounts";
 import { selectMonitoredMetaAccounts } from "@/lib/monitoring-meta-accounts";
+import { fetchPaytmStatus, paytmConfig, isExpectedPaytmProbe } from "@/lib/paytm-api";
 import { verifyPayUTransaction } from "@/lib/payu-api";
 import { buildMonitoringAlert } from "@/lib/monitoring-alerts";
 import { confirmProviderFailure, requiresConsecutiveFailures } from "@/lib/monitoring-failure-policy";
@@ -211,6 +212,18 @@ async function payuCheck(db: SupabaseClient, now: number): Promise<MonitorCheck>
   });
 }
 
+async function paytmCheck(): Promise<MonitorCheck> {
+  if (!process.env.PAYTM_MID || !process.env.PAYTM_MERCHANT_KEY) return result("paytm", "Paytm backup", "unconfigured", "Backup credentials are not configured", Date.now());
+  return probe("paytm", "Paytm backup", async () => {
+    const { mode } = paytmConfig();
+    // A nonexistent diagnostic order checks authentication without creating a payment.
+    const status = await fetchPaytmStatus("ptm_monitor", mode);
+    return isExpectedPaytmProbe(status)
+      ? { status: "ok", message: "Signed payment-status API response verified; payment acceptance is not tested" }
+      : { status: "warning", message: "Payment-status API did not return the expected diagnostic response" };
+  });
+}
+
 async function reconciliationCheck(db: SupabaseClient, now: number): Promise<MonitorCheck> {
   if (!process.env.PAYU_MERCHANT_KEY || !process.env.PAYU_MERCHANT_SALT) {
     return result("payment_reconciliation", "Payment reconciliation", "unconfigured", "PayU credentials are not configured", Date.now());
@@ -280,6 +293,7 @@ export async function collectMonitoringChecks(db: SupabaseClient, now = Date.now
     }),
     salesCheck(db, now),
     payuCheck(db, now),
+    paytmCheck(),
     reconciliationCheck(db, now),
     provider("claude", "Claude / Anthropic", !!process.env.ANTHROPIC_API_KEY,
       "https://api.anthropic.com/v1/models?limit=1", { headers: { "x-api-key": process.env.ANTHROPIC_API_KEY || "", "anthropic-version": "2023-06-01" } }),

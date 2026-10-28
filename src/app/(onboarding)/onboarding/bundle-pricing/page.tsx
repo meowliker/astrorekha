@@ -1,4 +1,5 @@
 "use client";
+import { openPaytmCheckout } from "@/lib/payment-checkout-browser";
 
 import ProductOfferTracker from "@/components/ProductOfferTracker";
 
@@ -473,7 +474,7 @@ export default function BundlePricingPage() {
         localStorage.setItem("astrorekha_whatsapp_number", checkoutWhatsappNumber);
       }
 
-      const response = await fetch("/api/payu/initiate-payment", {
+      const response = await fetch("/api/payments/initiate", {
         method: "POST",
         signal: AbortSignal.timeout(30000),
         headers: { "Content-Type": "application/json" },
@@ -506,6 +507,7 @@ export default function BundlePricingPage() {
           pixelEvents.addPaymentInfo(chargedAmountInr, plan.name, data.txnId);
         } catch { /* Optional analytics must never block payment. */ }
         // Open PayU Bolt checkout
+        if (openPaytmCheckout(data)) return;
         const bolt = (window as Window & { bolt?: PayUBolt }).bolt;
         if (!bolt) {
           localStorage.removeItem(PENDING_PAYMENT_KEY);
