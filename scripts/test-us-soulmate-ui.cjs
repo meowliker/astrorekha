@@ -62,7 +62,7 @@ test('US checkout analytics queues before GA loads and targets only the US prope
   const requests = [], store = new Map();
   stub('../src/lib/us-soulmate-attribution-client', { getSoulmateAttributionPayload: () => ({ utm_source: 'meta' }) });
   process.env.NODE_ENV = 'production'; process.env.NEXT_PUBLIC_US_SOULMATE_GA_ID = 'G-USFIXTURE';
-  global.window = { location: { hostname: 'astrorekha.com', href: 'https://astrorekha.com/us/soulmate/checkout' } };
+  global.window = { fbq() {}, location: { pathname: '/us/soulmate/checkout', hostname: 'astrorekha.com', href: 'https://astrorekha.com/us/soulmate/checkout' } };
   global.sessionStorage = { getItem: k => store.get(k)||null, setItem: (k,v) => store.set(k,v) };
   global.fetch = async (url, init) => { assert.equal(url, '/api/us/soulmate/events'); requests.push(init); return {}; };
   try {

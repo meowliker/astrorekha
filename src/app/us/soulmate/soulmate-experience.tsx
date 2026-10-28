@@ -314,6 +314,7 @@ export function SoulmateExperience({ visitorLocation }: { visitorLocation: strin
 
   function selectPlan(planId: DeliveryId) {
     prepareCheckout(answers, planId);
+    trackSoulmate("add_to_cart", { plan: planId, value: deliveryPlans.find((plan) => plan.id === planId)!.price, once: "selected-plan" });
     router.push(`/us/soulmate/checkout?plan=${planId}`);
   }
 
