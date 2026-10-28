@@ -50,8 +50,9 @@ export function SoulmatePaymentStatus({ orderId }: { orderId: string }) {
     const key = `ar_us_soulmate_purchase_${orderId}`;
     try { if (sessionStorage.getItem(key)) return; } catch { /* Meta also deduplicates by order ID. */ }
     const plan = deliveryPlans.find((item) => item.id === payment.plan);
-    trackPixelEvent("Purchase", { value: payment.amount / 100, currency: "USD", content_ids: payment.items?.length ? payment.items.map((item) => item.id) : [`us_soulmate_${payment.plan}`], content_name: plan?.checkoutTitle || "Soulmate Sketch", content_type: "product", funnel: "us_soulmate_standalone" }, { eventId: orderId });
-    try { sessionStorage.setItem(key, "1"); } catch { /* Meta also deduplicates by order ID. */ }
+    trackPixelEvent("Purchase", { value: payment.amount / 100, currency: "USD", content_ids: payment.items?.length ? payment.items.map((item) => item.id) : [`us_soulmate_${payment.plan}`], content_name: plan?.checkoutTitle || "Soulmate Sketch", content_type: "product", funnel: "us_soulmate_standalone" }, { eventId: orderId, onQueued: () => {
+      try { sessionStorage.setItem(key, "1"); } catch { /* Meta also deduplicates by order ID. */ }
+    } });
   }, [payment, orderId]);
   useEffect(() => {
     if (payment?.status !== "paid" || !payment.trackingAllowed || !soulmateTrackingEnabled()) return;

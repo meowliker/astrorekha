@@ -31,6 +31,7 @@ export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
   const catalog = addOnsForPlan(planId);
   const selectedAddOns = sanitizeAddOnIds(addOns, planId);
   const totals = checkoutTotals(plan.price, selectedAddOns, catalog);
+  const checkoutTotal = totals?.total;
   const hasAnswers = steps.every((step) => answers[step]);
   const cartDetails = { planId, answers, addOns: selectedAddOns };
   const promoContext = JSON.stringify({ ...cartDetails, email: email.trim().toLowerCase() });
@@ -56,8 +57,8 @@ export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
     if (ready && hasAnswers) saveCheckoutDetails({ answers, planId, email, addOns: sanitizeAddOnIds(addOns, planId) });
   }, [ready, hasAnswers, answers, planId, email, addOns]);
   useEffect(() => {
-    if (ready && hasAnswers) trackSoulmate("checkout_view", { plan: planId, value: price.total, once: "checkout" });
-  }, [ready, hasAnswers, planId, price.total]);
+    if (ready && checkoutTotal !== undefined) trackSoulmate("checkout_view", { plan: planId, value: checkoutTotal, itemIds: [`us_soulmate_${planId}`, ...sanitizeAddOnIds(addOns, planId)], once: "checkout" });
+  }, [ready, planId, checkoutTotal, addOns]);
   async function applyPromotion() {
     if (submitting.current) return;
     setPromoError("");

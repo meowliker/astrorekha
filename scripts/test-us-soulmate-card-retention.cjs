@@ -13,7 +13,8 @@ stub('next/image', () => null);
 stub('next/link', ({ children, ...props }) => React.createElement('a', props, children));
 stub('../src/app/us/soulmate/soulmate-image', { SoulmateImage: () => null });
 stub('../src/lib/us-soulmate-ga-client', { readSoulmateGaIdentity: async () => ({gaClientId:'123.456',gaSessionId:'456'}) });
-stub('../src/lib/us-soulmate-tracking', { trackSoulmate() {}, soulmateTrackingContext: () => ({}) });
+const trackingEvents = [];
+stub('../src/lib/us-soulmate-tracking', { trackSoulmate(...args) { trackingEvents.push(args); }, soulmateTrackingContext: () => ({}) });
 stub('../src/app/us/soulmate/session-save', { checkoutSession: () => null });
 const state = require('../src/app/us/soulmate/checkout-state');
 const answers = { name: 'Test', heart: 'I feel like I’ve been waiting forever', preferenceSelection: 'I like men', preference: 'I like men', feeling: 'Safe — someone who stays', birthDate: '1995-01-01', ethnicity: 'White' };
@@ -27,6 +28,7 @@ let tree;
 afterEach(async () => { if (tree) await act(async () => tree.unmount()); tree = undefined; global.fetch = previousFetch; delete global.window; delete global.sessionStorage; delete process.env.NEXT_PUBLIC_US_SOULMATE_STRIPE_PUBLISHABLE_KEY; });
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 function fixture({ holdUpdates = false } = {}) {
+  trackingEvents.length = 0;
   process.env.NEXT_PUBLIC_US_SOULMATE_STRIPE_PUBLISHABLE_KEY = 'pk_test_fixture';
   const store = new Map(), handlers = {}, calls = { mounts: 0, destroys: 0, creates: 0, updates: [], requests: [], confirms: [], methods: 0 }, pending = [];
   global.sessionStorage = { getItem: key => store.get(key) || null, setItem: (key, value) => store.set(key, value) };
@@ -100,7 +102,9 @@ test('real checkout Apply, Remove, invalid promo and add-ons preserve the mounte
   await apply('Soulmate97');
   assert.equal(f.preserved(), true);
   assert.equal(f.calls.mounts, 1); assert.equal(f.calls.creates, 1); assert.equal(f.calls.destroys, 0);
+  assert.equal(trackingEvents.filter(([event]) => event === 'payment_submit').length, 0);
   await act(async () => tree.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.deepEqual(trackingEvents.find(([event]) => event === 'payment_submit')[1], { plan: 'express', value: 3.04, itemIds: ['us_soulmate_express', 'timeline'], once: 'us_sm_' + 'a'.repeat(20) });
   assert.equal(f.calls.requests.at(-1).promotionCode, 'Soulmate97');
   assert.deepEqual(f.calls.confirms, [{ amount: 304, options: { redirect: 'if_required', paymentMethod: 'pm_fixture' } }]);
   assert.match(f.calls.receipt, /^\/us\/soulmate\/payment/);
@@ -153,4 +157,14 @@ test('an amount update failure blocks payment and never silently clears card det
   await act(async () => f.pending[0].reject(new Error('Stripe update failed')));
   assert.equal(payment, null); assert.match(JSON.stringify(tree.toJSON()), /Stripe update failed/);
   assert.equal(f.calls.confirms.length, 0); assert.equal(f.calls.destroys, 0); assert.equal(f.preserved(), true);
+});
+
+ test('invalid card details never emit AddPaymentInfo or submit a payment', async () => {
+  const f = fixture(); let payment;
+  await mount(React.createElement(StripePaymentFields, { signature: JSON.stringify({planId:'standard', addOns:[]}), amount:4366, enabled:true, onPayment:value=>{payment=value;} }));
+  await act(async () => f.enter());
+  f.stripe.createPaymentMethod = async () => ({error:{message:'Invalid card'}});
+  await assert.rejects(payment.confirm('fixture@example.com'), /Invalid card/);
+  assert.equal(trackingEvents.filter(([event])=>event==='payment_submit').length,0);
+  assert.equal(f.calls.confirms.length,0);
 });

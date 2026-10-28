@@ -3,7 +3,7 @@ import { recordMarketingEvent } from "@/lib/us-soulmate-marketing-events";
 import { US_SOULMATE_FUNNEL } from "@/lib/us-soulmate-orders";
 import { sanitizePaymentAttribution } from "@/lib/attribution";
 
-const events = new Set(["landing_view", "chat_start", "chat_complete", "offer_view", "checkout_view", "stripe_redirect", "payment_submit", "engaged", "checkout_error"]);
+const events = new Set(["landing_view", "chat_start", "chat_complete", "offer_view", "add_to_cart", "checkout_view", "stripe_redirect", "payment_submit", "engaged", "checkout_error"]);
 export async function POST(request: NextRequest) {
   if (process.env.VERCEL_ENV !== "production") return new NextResponse(null, { status: 204 });
   if (request.headers.get("origin") !== `https://${request.headers.get("host")}`) return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
