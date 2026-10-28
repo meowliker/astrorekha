@@ -1,11 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
 import type { summarizeSoulmateAnalytics } from "@/lib/us-soulmate-analytics";
+import TrackingDateRangePicker from "./tracking/TrackingDateRangePicker";
+import { analyticsToday, defaultAnalyticsStart, US_ANALYTICS_LAUNCH_DATE } from "@/lib/us-soulmate-analytics-range";
 type Report = ReturnType<typeof summarizeSoulmateAnalytics> & { bounce: { value: number | null; status: string }; startDate: string; endDate: string };
 const percent = (value: number | null) => value === null ? "—" : `${value.toFixed(1)}%`;
 export function SoulmateAnalyticsPanel() {
-  const [start, setStart] = useState(() => new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10));
-  const [end, setEnd] = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }));
+  const [dates, setDates] = useState(() => { const today = analyticsToday(); return { start: defaultAnalyticsStart(today), end: today }; });
+  const { start, end } = dates;
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState("");
   const [refresh, setRefresh] = useState(0);
@@ -25,10 +27,10 @@ export function SoulmateAnalyticsPanel() {
   }, [start, end, refresh]);
   return <section className="py-8" aria-label="Soulmate analytics">
     <div className="flex flex-wrap items-end gap-4">
-      <label className="text-sm text-white/60">From<input className="mt-2 block rounded-lg border border-white/10 bg-[#0F1626] p-2 text-white" type="date" value={start} max={end} onChange={(event) => setStart(event.target.value)} /></label>
-      <label className="text-sm text-white/60">Through<input className="mt-2 block rounded-lg border border-white/10 bg-[#0F1626] p-2 text-white" type="date" value={end} min={start} onChange={(event) => setEnd(event.target.value)} /></label>
+      <div><p className="mb-2 text-sm text-white/60">Date range · IST</p><TrackingDateRangePicker value={dates} onChange={setDates} minDate={US_ANALYTICS_LAUNCH_DATE} maxDate={analyticsToday()} maxDays={93} align="left" /></div>
       <button className="rounded-lg border border-white/10 px-4 py-2 text-sm" onClick={() => setRefresh((value) => value + 1)}>Refresh</button>
     </div>
+    <p className="mt-3 text-xs text-white/60">Reporting begins October 28, 2026 at 11:30 AM IST. Earlier visits and orders are excluded. Landing sessions include all tracked traffic, not only ads.</p>
     {error ? <p role="alert" className="mt-6 text-primary">{error}</p> : !report ? <p className="mt-6 text-white/50" role="status">Loading analytics…</p> : <>
       <dl className="my-8 grid grid-cols-2 gap-6 lg:grid-cols-4">
         {[["Landing sessions", String(report.sessions)], ["Checkout rate", percent(report.checkoutRate)], ["Purchase conversion", percent(report.conversionRate)], ["Bounce rate · GA4", percent(report.bounce.value)], ["Checkout → purchase", percent(report.checkoutToPurchaseRate)], ["Checkout abandonment", percent(report.checkoutAbandonment)], ["Paid orders", String(report.paidOrders)], ["Gross sales", `$${report.grossRevenue.toLocaleString("en-US", { maximumFractionDigits: 2 })}`]].map(([label, value]) => <div key={label}><dt className="text-sm text-white/60">{label}</dt><dd className="mt-2 text-3xl font-light">{value}</dd></div>)}
