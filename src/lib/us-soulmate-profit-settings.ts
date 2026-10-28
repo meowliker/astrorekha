@@ -29,7 +29,7 @@ export function validateSoulmateAccounts(input: unknown, existing: SoulmateAdAcc
     const endDate = active ? undefined : String(raw.endDate || "");
     const endTime = active ? undefined : String(raw.endTime || "23:59");
     const timeValid = (t: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t);
-    if (!validProfitDate(startDate) || startDate < US_SOULMATE_PROFIT_START || !timeValid(startTime) || (!active && (!validProfitDate(endDate!) || !timeValid(endTime!) || `${endDate}T${endTime}` <= `${startDate}T${startTime}`))) throw new Error("Use valid account dates and times, starting on or after 15 October 2026.");
+    if (!validProfitDate(startDate) || startDate < US_SOULMATE_PROFIT_START || !timeValid(startTime) || (!active && (!validProfitDate(endDate!) || !timeValid(endTime!) || `${endDate}T${endTime}` <= `${startDate}T${startTime}`))) throw new Error("Use valid account dates and times, starting on or after 28 October 2026.");
     if (raw.balanceMode && !["outstanding", "remaining_spend_limit"].includes(raw.balanceMode)) throw new Error("Choose a valid balance type.");
     const campaignIds = selectedCampaignIds({ accountId, campaignIds: raw.campaignIds });
     return { accountId, accessToken, campaignIds, label: String(raw.label || "").trim().slice(0, 100), startDate, startTime, active, endDate, endTime, balanceMode: raw.balanceMode || "outstanding" };

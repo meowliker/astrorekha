@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   if (!db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const start = request.nextUrl.searchParams.get("start") || US_SOULMATE_PROFIT_START;
   const end = request.nextUrl.searchParams.get("end") || profitDay(Date.now());
-  if (!validProfitDate(start) || !validProfitDate(end) || start < US_SOULMATE_PROFIT_START || end > profitDay(Date.now()) || end < start || Date.parse(end) - Date.parse(start) >= 366 * DAY_MS) return json({ error: "Choose valid dates from 15 October 2026, up to 366 days at a time." }, 400);
+  if (!validProfitDate(start) || !validProfitDate(end) || start < US_SOULMATE_PROFIT_START || end > profitDay(Date.now()) || end < start || Date.parse(end) - Date.parse(start) >= 366 * DAY_MS) return json({ error: "Choose valid dates from 28 October 2026, up to 366 days at a time." }, 400);
   try {
     return json(await readSoulmateProfitLedger(db, start, end));
   } catch { return json({ error: "Unable to load saved Soulmate profit rows." }, 503); }

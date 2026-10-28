@@ -61,7 +61,7 @@ async function readRefunds(db: SupabaseClient, start: string, end: string): Prom
   throw new Error("Choose a smaller refund range.");
 }
 export async function syncSoulmateProfitLedger(db: SupabaseClient, start: string, end: string, now = Date.now()) {
-  if (start < US_SOULMATE_PROFIT_START || end > profitDay(now) || start > end || Date.parse(end) - Date.parse(start) >= 7 * DAY_MS) throw new Error("Sync up to seven days, starting on 15 October 2026 or later.");
+  if (start < US_SOULMATE_PROFIT_START || end > profitDay(now) || start > end || Date.parse(end) - Date.parse(start) >= 7 * DAY_MS) throw new Error("Sync up to seven days, starting on 28 October 2026 or later.");
   const owner = randomUUID();
   const claim = await db.rpc("claim_us_soulmate_profit_sync", { p_owner: owner });
   if (claim.error || !claim.data) throw new Error("A Soulmate refresh is already running. Try again shortly.");

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, RefreshCw, Settings, X } from "lucide-react";
 import { US_SOULMATE_PROFIT_START, profitDay, shiftProfitDate, type SoulmateProfitRow } from "@/lib/us-soulmate-profit";
+import TrackingDateRangePicker from "./tracking/TrackingDateRangePicker";
 import { SoulmateAdAccountsDialog } from "./ad-accounts-dialog";
 
 const control = "h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white/80 transition-colors hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary";
@@ -105,10 +106,10 @@ export function SoulmateProfitPanel() {
     {accountsOpen && <SoulmateAdAccountsDialog close={() => setAccountsOpen(false)} saved={() => { setAccountsOpen(false); setRefresh((n) => n + 1); setNotice("US Soulmate campaign selection saved for Tracking and Profit Sheet. Refresh updates the latest two days; use Backfill for older dates."); }} />}
     <div className="rounded-xl border border-white/10 bg-[#1A2235] p-4">
       <div className="flex flex-wrap items-end gap-4">
-        <div><p className="mb-1 text-xs text-white/50">Custom Range</p><button type="button" aria-haspopup="dialog" className={control} onClick={() => setPicker("range")}>{formatDate(start)} – {formatDate(end)}</button></div>
+        <div><p className="mb-1 text-xs text-white/50">Date range · IST</p><TrackingDateRangePicker value={{ start, end }} maxDate={today} minDate={US_SOULMATE_PROFIT_START} maxDays={366} align="left" onChange={(range) => { setStart(range.start); setEnd(range.end); setDays([]); setPeriod("custom"); }} /></div>
         <div><p className="mb-1 text-xs text-white/50">Specific Days</p><button type="button" aria-haspopup="dialog" className={`${control} ${days.length ? "border-primary/40 text-primary" : ""}`} onClick={() => setPicker("days")}>{days.length ? `${days.length} days selected` : "Pick Days"}</button></div>
         <label className="text-xs text-white/50">Period<select aria-label="Period" value={period} onChange={(e) => selectPeriod(e.target.value)} className={`${control} mt-1 block`}>
-          <option value="custom" disabled>Custom selection</option><option value="sinceLaunch">Since 15 Oct 2026</option><option value="today">Today</option><option value="yesterday" disabled={today <= US_SOULMATE_PROFIT_START}>Yesterday</option><option value="last7">Last 7 Days</option><option value="last30">Last 30 Days</option><option value="thisMonth">This Month</option>
+          <option value="custom" disabled>Custom selection</option><option value="sinceLaunch">Since 28 Oct 2026</option><option value="today">Today</option><option value="yesterday" disabled={today <= US_SOULMATE_PROFIT_START}>Yesterday</option><option value="last7">Last 7 Days</option><option value="last30">Last 30 Days</option><option value="thisMonth">This Month</option>
           {[1, 2, 3, 4].map((q) => <option key={q} value={`q${q}`} disabled={(q - 1) * 3 + 1 > currentMonth || `${year}-${String(q * 3).padStart(2, "0")}-31` < US_SOULMATE_PROFIT_START}>Q{q} ({monthNames[(q - 1) * 3].slice(0, 3)}–{monthNames[q * 3 - 1].slice(0, 3)})</option>)}
           {monthNames.map((name, i) => <option key={name} value={`month-${i + 1}`} disabled={i + 1 > currentMonth || `${year}-${String(i + 1).padStart(2, "0")}-31` < US_SOULMATE_PROFIT_START}>{name} {year}</option>)}
         </select></label>
@@ -116,7 +117,7 @@ export function SoulmateProfitPanel() {
         <div className="text-xs text-white/50">Reporting currency: USD</div>
         <button type="button" disabled={loading || syncing} onClick={() => sync("last2")} className="flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm text-white transition-colors hover:bg-primary/80 disabled:opacity-50"><RefreshCw size={15} className={syncing ? "animate-spin" : ""} />{syncing ? "Refreshing…" : "Refresh"}</button>
       </div>
-      <p className="mt-3 text-xs leading-relaxed text-white/40">Each reporting day covers 11:30 AM IST to 11:29 AM IST the next day. Only verified live Soulmate purchases made in production are included. Advertising costs include only your selected US Soulmate campaigns.</p>
+      <p className="mt-3 text-xs leading-relaxed text-white/40">Reporting begins October 28, 2026 at 11:30 AM IST. Each reporting day covers 11:30 AM IST to 11:29 AM IST the next day. Only verified live Soulmate purchases made in production are included. Advertising costs include only your selected US Soulmate campaigns.</p>
       <p className="mt-2 text-xs text-white/40">Saved rows load from Supabase. Refresh updates only the latest two reporting days.</p>
     </div>
     {notice && <p role="status" className="text-sm text-amber-200">{notice}</p>}
@@ -153,7 +154,7 @@ function ProfitDatePicker({ mode, start, end, days, max, close, apply }: { mode:
   return <dialog ref={dialog} onCancel={close} onClick={(e) => { if (e.target === dialog.current) close(); }} aria-labelledby="profit-date-picker-title" className="w-[680px] max-w-[94vw] rounded-2xl border border-white/15 bg-[#1A2235] p-5 text-white shadow-2xl backdrop:bg-black/60 [color-scheme:dark]">
     <div className="flex items-center justify-between"><h2 id="profit-date-picker-title" className="font-medium">{mode === "range" ? "Custom Range" : "Specific Days"}</h2><button type="button" aria-label="Close date picker" onClick={close} className="rounded-md p-2 hover:bg-white/10"><X size={17} /></button></div>
     <div className="my-3 flex items-center justify-between"><button type="button" aria-label="Previous month" disabled={month.slice(0, 7) <= US_SOULMATE_PROFIT_START.slice(0, 7)} className={`${control} disabled:opacity-30`} onClick={() => setMonth(moveMonth(-1))}><ChevronLeft size={16} /></button><p className="text-sm text-white/60">{mode === "range" ? "Select start and end dates" : "Select individual dates"}</p><button type="button" aria-label="Next month" disabled={month.slice(0, 7) >= max.slice(0, 7)} className={`${control} disabled:opacity-30`} onClick={() => setMonth(moveMonth(1))}><ChevronRight size={16} /></button></div>
-    <div className="grid gap-5 sm:grid-cols-2">{[month, moveMonth(1)].map((monthStart) => {
+    <div className="grid gap-5">{[month].map((monthStart) => {
       const date = new Date(`${monthStart}T00:00:00Z`), offset = (date.getUTCDay() + 6) % 7;
       const count = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
       return <div key={monthStart}><p className="mb-3 text-sm text-white/80">{formatDate(monthStart, { month: "long", year: "numeric" })}</p><div className="grid grid-cols-7 gap-1">{["M", "T", "W", "T", "F", "S", "S"].map((d, i) => <span key={i} className="py-1 text-center text-xs text-white/35">{d}</span>)}{Array.from({ length: offset }, (_, i) => <span key={`empty-${i}`} />)}{Array.from({ length: count }, (_, i) => {

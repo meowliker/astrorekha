@@ -1,5 +1,6 @@
 export const DAY_MS = 86400000;
-export const US_SOULMATE_PROFIT_START = "2026-10-15";
+import { US_ANALYTICS_LAUNCH_DATE } from "./us-soulmate-analytics-range";
+export const US_SOULMATE_PROFIT_START = US_ANALYTICS_LAUNCH_DATE;
 export const shiftProfitDate = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
 // Same reporting boundary as the main business-day profit sheet: 11:30 IST = 06:00 UTC.
 export const profitDay = (at: string | number) => new Date((typeof at === "number" ? at : Date.parse(at)) - 6 * 3600000).toISOString().slice(0, 10);

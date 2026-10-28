@@ -1,8 +1,9 @@
+import { summarizeUSProducts, type ProductAnalyticsOrder } from "./us-soulmate-product-analytics";
 export type SoulmateAnalyticsEvent = { event_name: string; session_id: string | null; utm_source?: string | null; utm_campaign?: string | null; created_at: string };
 export type SoulmateAnalyticsOrder = { id: string; amount: number; attribution: { sessionId?: string | null; marketing?: { utm_source?: string | null } | null } | null };
 const rate = (numerator: number, denominator: number) => denominator ? Math.round(numerator / denominator * 10000) / 100 : null;
 /** All funnel rates use the same cohort: sessions with a tracked soulmate landing. */
-export function summarizeSoulmateAnalytics(events: SoulmateAnalyticsEvent[], orders: SoulmateAnalyticsOrder[]) {
+export function summarizeSoulmateAnalytics(events: SoulmateAnalyticsEvent[], orders: ProductAnalyticsOrder[]) {
   // Exclude explicitly tagged QA traffic, including its later funnel events/orders.
   const isQA = (source?: string | null) => source?.trim().toLowerCase() === "codex_qa";
   const qaSessions = new Set(events.filter((event) => isQA(event.utm_source)).map((event) => event.session_id).filter(Boolean));
@@ -30,6 +31,7 @@ export function summarizeSoulmateAnalytics(events: SoulmateAnalyticsEvent[], ord
     campaigns.set(key, row);
   }
   return {
+    products: summarizeUSProducts(orders),
     sessions: landings.size, checkoutRate: rate(checkouts.size, landings.size), conversionRate: rate(buyers.size, landings.size),
     checkoutToPurchaseRate: rate(paidCheckouts, checkouts.size), checkoutAbandonment: rate(checkouts.size - paidCheckouts, checkouts.size),
     chatCompletionRate: rate([...completed].filter((id) => chats.has(id)).length, chats.size),

@@ -40,11 +40,11 @@ const queries=[];
 stub('../src/lib/supabase-admin',{getSupabaseAdmin:()=>({from(table){const query={table,filters:[]};queries.push(query);const q={select(){return q},eq(k,v){query.filters.push(['eq',k,v]);return q},gte(k,v){query.filters.push(['gte',k,v]);return q},lt(k,v){query.filters.push(['lt',k,v]);return q},order(){return q},range(){return Promise.resolve({data:[],error:null})},maybeSingle(){return Promise.resolve({data:{expires_at:'2099-01-01T00:00:00Z'},error:null})}};return q}})});
 const {GET}=require('../src/app/api/admin/us-soulmate/analytics/route');
 const {NextRequest}=require('next/server');
-test('API applies identical launch cutoff to events and paid orders without mixing GA full-day data',async()=>{
+test('API applies identical launch cutoff to events and paid orders with GA full-day reporting separately labelled',async()=>{
   queries.length=0;
   const response=await GET(new NextRequest('https://example.com/api/admin/us-soulmate/analytics?start=2026-10-28&end=2026-10-28',{headers:{authorization:'Bearer fixture'}}));
   assert.equal(response.status,200);
-  const body=await response.json();assert.equal(body.startAt,'2026-10-28T06:00:00.000Z');assert.equal(body.bounce.value,null);
+  const body=await response.json();assert.equal(body.startAt,'2026-10-28T06:00:00.000Z');assert.equal(body.bounce.value,null);assert.equal(body.bounce.scope,'full_days');
   for(const [table,field] of [['us_soulmate_marketing_events','created_at'],['us_soulmate_orders','paid_at']]) {
     const query=queries.find(q=>q.table===table);assert(query);
     assert(query.filters.some(f=>f[0]==='gte'&&f[1]===field&&f[2]==='2026-10-28T06:00:00.000Z'));
@@ -61,4 +61,12 @@ test('known QA sessions and orders are excluded without dropping untagged or pai
   const event=(id,name,source)=>({session_id:id,event_name:`us_soulmate_${name}`,utm_source:source,created_at:'2026-10-28T07:00:00Z'});
   const report=summarizeSoulmateAnalytics([event('qa','landing_view','codex_qa'),event('qa','checkout_view',null),event('real','landing_view',null),event('ad','landing_view','facebook')],[{id:'qa-order',amount:100,attribution:{sessionId:'qa'}},{id:'qa-no-session',amount:100,attribution:{marketing:{utm_source:'codex_qa'}}},{id:'real-order',amount:4366,attribution:{sessionId:'real'}}]);
   assert.equal(report.sessions,2);assert.equal(report.paidOrders,1);assert.equal(report.grossRevenue,43.66);assert.equal(report.checkoutRate,0);
+});
+
+test('US GA reporting reuses shared credentials only with a verified matching stream or explicit US property',()=>{
+ const {usGAReportingConfig}=require('../src/lib/us-soulmate-ga-report');
+ const shared={NEXT_PUBLIC_GA_ID:'G-MAIN',NEXT_PUBLIC_US_SOULMATE_GA_ID:'G-MAIN',GA4_PROPERTY_ID:'123',GOOGLE_SERVICE_ACCOUNT_EMAIL:'fixture@example.com',GOOGLE_PRIVATE_KEY:'private-fixture'};
+ assert.equal(usGAReportingConfig(shared).property,'123');
+ assert.equal(usGAReportingConfig({...shared,NEXT_PUBLIC_US_SOULMATE_GA_ID:'G-US'}).property,undefined);
+ assert.equal(usGAReportingConfig({...shared,NEXT_PUBLIC_US_SOULMATE_GA_ID:'G-US',US_SOULMATE_GA4_PROPERTY_ID:'456'}).property,'456');
 });
