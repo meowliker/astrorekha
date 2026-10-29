@@ -4,6 +4,7 @@ import { fetchPineLabsOrder, isPineLabsReference, isPineLabsProviderId, pineLabs
 import { reconcilePineLabsOrder } from "./pinelabs-reconciliation";
 import { recordPineLabsRefund } from "./pinelabs-refunds";
 import { receiptCookie, receiptPath } from "./soulmate-payu";
+import { diagnosePineLabsWebhook } from "./pinelabs-webhook-diagnostics";
 
 export async function processPineLabsEvent(event: { event_id: string; event_type?: string; provider_order_id: string; payment_mode: string }) {
   const db = getSupabaseAdmin({ fresh: true });
@@ -33,6 +34,7 @@ export async function pineLabsWebhook(request: NextRequest) {
       // Never log signatures, secrets, raw payloads or customer data.
       const deliveryId = request.headers.get("webhook-id") || request.headers.get("svix-id") || "";
       console.warn("[pinelabs] Webhook rejected", { reason: verification.reason, bodyBytes: Buffer.byteLength(raw),
+        diagnosticMatches: verification.reason === "signature_mismatch" ? diagnosePineLabsWebhook(raw, request.headers) : [],
         deliveryId: /^[a-zA-Z0-9_-]{1,100}$/.test(deliveryId) ? deliveryId : undefined,
         webhookIdPresent: request.headers.has("webhook-id"), webhookTimestampPresent: request.headers.has("webhook-timestamp"), webhookSignaturePresent: request.headers.has("webhook-signature"),
         svixIdPresent: request.headers.has("svix-id"), svixTimestampPresent: request.headers.has("svix-timestamp"), svixSignaturePresent: request.headers.has("svix-signature") });
