@@ -207,3 +207,18 @@ test('US checkout saves validated SDK identifiers without relying on GA cookies'
   const malformed=await create(body({tracking:{gaClientId:'someone@example.com',gaSessionId:'invalid'}}));
   assert.equal(malformed.order.attribution.gaClientId,null);
 });
+
+test('Ads purchase exposes the saved discounted USD total only to its paid production receipt owner',async()=>{
+ const {order}=await create();
+ Object.assign(order,{payment_status:'paid',amount:3493,discount_amount:740,paid_at:new Date().toISOString(),payment_mode:'live',attribution:{trackingEnvironment:'production'}});
+ const url=`https://example.com/api/us/soulmate/payment/status?order=${order.id}`;
+ const read=()=>status.GET(new NextRequest(url,{headers:{cookie:`us_sm_receipt_${order.id}=${stripe.receiptToken(order.id)}`}}));
+ const response=await read(); const result=await response.json();
+ assert.deepEqual(result.adsPurchase,{transactionId:order.id,amountCents:3493,currency:'USD',email:order.customer_email});
+ assert.equal(response.headers.get('cache-control'),'no-store');
+ assert.equal((await status.GET(new NextRequest(url))).status,403);
+ for(const patch of [{payment_status:'pending'},{payment_status:'failed'},{payment_mode:'test'},{currency:'INR'},{attribution:{trackingEnvironment:'local'}},{attribution:{trackingEnvironment:'preview'}}]) {
+  const original={...order};Object.assign(order,patch,{last_verified_at:new Date().toISOString()});
+  assert.equal((await (await read()).json()).adsPurchase,undefined);Object.assign(order,original);
+ }
+});

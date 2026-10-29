@@ -150,7 +150,7 @@ test('server verification rejects wrong amount, wrong order, wrong funnel and au
   assert.equal(payu.verifiedOrderUpdate(order, transaction(order, { unmappedstatus: 'auth' })).payment_status, 'pending');
   assert.equal(payu.verifiedOrderUpdate(order, transaction(order, { status: 'failure', unmappedstatus: 'failed' })).payment_status, 'failed');
 });
-test('status needs a private receipt cookie, reconciles missed callback and returns no contact details', async () => {
+test('status needs a private receipt cookie, reconciles missed callback and hides test-order contact details', async () => {
   const { data } = await create();
   const url = `https://example.com/api/soulmate/payment/status?order=${data.orderId}`;
   assert.equal((await statusRoute.GET(new NextRequest(url))).status, 403);
@@ -158,8 +158,24 @@ test('status needs a private receipt cookie, reconciles missed callback and retu
   const state = await response.json();
   assert.equal(state.status, 'paid');
   assert.equal(state.customer_email, undefined);
+  assert.equal(state.adsPurchase, undefined);
   assert.equal(state.answers, undefined);
   assert.equal(payu.validReceiptToken(data.orderId, 'f'.repeat(64)), false);
+});
+test('Ads purchase fields require a receipt-authorized, paid live production order', async () => {
+  const { data } = await create({ plan: 'express', addOns: ['timeline'] });
+  const order = orders.get(data.orderId);
+  const url = `https://example.com/api/soulmate/payment/status?order=${data.orderId}`;
+  const read = () => statusRoute.GET(new NextRequest(url, { headers: { cookie: `sm_receipt_${data.orderId}=${payu.receiptToken(data.orderId)}` } }));
+  order.payment_status = 'paid'; order.payment_mode = 'live'; order.attribution.trackingEnvironment = 'production';
+  const response = await read(), state = await response.json();
+  assert.deepEqual(state.adsPurchase, { transactionId: order.id, amountPaise: order.amount, currency: 'INR', email: order.customer_email });
+  assert.equal(state.adsPurchase.amountPaise, 223964); assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal((await statusRoute.GET(new NextRequest(url))).status, 403);
+  for (const [status, mode, environment] of [['pending','live','production'],['failed','live','production'],['paid','test','production'],['paid','live','local'],['paid','live','preview']]) {
+    order.payment_status = status; order.payment_mode = mode; order.attribution.trackingEnvironment = environment; order.last_verified_at = new Date().toISOString();
+    assert.equal((await (await read()).json()).adsPurchase, undefined);
+  }
 });
 test('late failure cannot overwrite a concurrently paid order', async () => {
   const { data } = await create();

@@ -1,5 +1,6 @@
 "use client";
 import { readSoulmateGaIdentity } from "@/lib/us-soulmate-ga-client";
+import { trackSoulmateAdsPurchase, type SoulmateAdsPurchase } from "@/lib/us-soulmate-ads-events";
 import { SoulmateOrderConfirmation } from "./order-confirmation";
 import { useEffect, useState } from "react";
 import { soulmateTrackingEnabled } from "@/lib/us-soulmate-tracking";
@@ -8,7 +9,7 @@ import type { SoulmateLineItem } from "@/lib/us-soulmate-cart";
 import { SoulmatePaymentProblem } from "./payment-problem";
 import { deliveryPlans } from "../chat-data";
 
-type PaymentState = { items?: SoulmateLineItem[]; trackingAllowed?: boolean; status: string; plan: string; amount: number; deliveryHours: number; deliveryDueAt: string | null };
+type PaymentState = { adsPurchase?: SoulmateAdsPurchase; items?: SoulmateLineItem[]; trackingAllowed?: boolean; status: string; plan: string; amount: number; deliveryHours: number; deliveryDueAt: string | null };
 export function SoulmatePaymentStatus({ orderId }: { orderId: string }) {
   const [payment, setPayment] = useState<PaymentState | null>(null);
   const [error, setError] = useState("");
@@ -45,6 +46,11 @@ export function SoulmatePaymentStatus({ orderId }: { orderId: string }) {
     void check();
     return () => { active = false; abort.abort(); clearTimeout(timer); };
   }, [orderId, retry]);
+  useEffect(() => {
+    if (payment?.status === "paid" && payment.trackingAllowed && payment.adsPurchase?.transactionId === orderId) {
+      trackSoulmateAdsPurchase(payment.adsPurchase);
+    }
+  }, [payment, orderId]);
   useEffect(() => {
     if (payment?.status !== "paid" || !payment.trackingAllowed || !soulmateTrackingEnabled()) return;
     const key = `ar_us_soulmate_purchase_${orderId}`;

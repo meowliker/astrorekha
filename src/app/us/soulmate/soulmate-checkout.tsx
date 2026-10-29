@@ -1,5 +1,6 @@
 "use client";
 import { trackSoulmate } from "@/lib/us-soulmate-tracking";
+import { trackSoulmateEmail } from "@/lib/us-soulmate-ads-events";
 import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Download, LockKeyhole, Mail, ShieldCheck, HandCoins } from "lucide-react";
@@ -78,6 +79,7 @@ export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
   async function checkout(event: FormEvent) {
     event.preventDefault();
     if (submitting.current || !hasAnswers || !validEmail || !totals || !paymentReady || !payment) return;
+    trackSoulmateEmail(email);
     submitting.current = true;
     setLoading(true);
     setError("");

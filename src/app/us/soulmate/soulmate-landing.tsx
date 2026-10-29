@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect } from "react";
 import { SoulmateImage as Image } from "./soulmate-image";
 import { ArrowRight, LockKeyhole, ShieldCheck, Star } from "lucide-react";
 import { trackSoulmate } from "@/lib/us-soulmate-tracking";
+import { trackSoulmateCta } from "@/lib/us-soulmate-ads-events";
 import styles from "./soulmate.module.css";
 
 // Replace these slots with approved assets and testimonials when supplied.
@@ -43,15 +44,16 @@ const customerStories = [
   { src: "/soulmate/messages/22.png", width: 3334, height: 4606 },
 ];
 
-function ReadingButton({ position, onStart }: { position: string; onStart: () => void }) {
+function ReadingButton({ position, onStart }: { position: "hero" | "footer"; onStart: () => void }) {
   const showActionNote = position !== "footer";
 
   return (
     <div className={styles.action}>
       <button
         type="button"
+        id={`us-soulmate-cta-${position === "footer" ? "bottom" : "hero"}`}
         className={styles.cta}
-        onClick={onStart}
+        onClick={() => { trackSoulmateCta(position === "footer" ? "bottom" : "hero"); onStart(); }}
         aria-describedby={showActionNote ? `reading-notice-${position}` : undefined}
       >
         Begin My Chat Reading <ArrowRight size={20} aria-hidden="true" />

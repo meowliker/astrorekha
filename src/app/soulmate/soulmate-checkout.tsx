@@ -1,5 +1,6 @@
 "use client";
 import { openPaytmCheckout } from "@/lib/payment-checkout-browser";
+import { trackSoulmateEmail } from "@/lib/soulmate-ads-events";
 import { trackSoulmate, soulmateTrackingContext } from "@/lib/soulmate-tracking";
 import Link from "next/link";
 import { readSoulmateGaIdentity } from "@/lib/soulmate-ga-client";
@@ -59,6 +60,7 @@ export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
   async function checkout(event: FormEvent) {
     event.preventDefault();
     if (submitting.current || !hasAnswers || !totals) return;
+    trackSoulmateEmail(email);
     submitting.current = true;
     setLoading(true);
     setError("");
