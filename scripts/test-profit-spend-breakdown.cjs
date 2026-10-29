@@ -41,16 +41,16 @@ function fixture(options = {}) {
     from(table) {
       const filters = {}; let bounds = [0, 999];
       const query = {
-        select() { return query; }, eq(key, value) { filters[key] = value; return query; }, in() { return query; },
+        select() { return query; }, eq(key, value) { filters[key] = value; return query; }, in(key, value) { filters[key] = value; return query; },
         gte() { return query; }, lte() { return query; }, lt() { return query; }, order() { return query; },
         range(start, end) { bounds = [start, end]; return query; },
         upsert(rows) {
           if (table === 'profit_sheet_calendar' || table === 'profit_sheet') storedRows.push(...rows);
           return { error: null };
         },
-        then(resolve) { resolve({ data: table === 'payments' ? filters.gateway === 'paytm'
-          ? (options.paytmRows || []).filter(row => row.payment_mode === 'live' && ['paid', 'refunded'].includes(row.payment_status)).slice(bounds[0], bounds[1] + 1)
-          : [] : storedRows, error: table === 'payments' && filters.gateway === 'paytm' && options.failPaytm ? { message: 'DB unavailable' } : null }); },
+        then(resolve) { resolve({ data: table === 'payments' ? Array.isArray(filters.gateway)
+          ? [...(options.paytmRows || []).map(row => ({...row,gateway:'paytm'})), ...(options.pineRows || []).map(row => ({...row,gateway:'pinelabs'}))].filter(row => row.payment_mode === 'live' && ['paid', 'refunded'].includes(row.payment_status)).slice(bounds[0], bounds[1] + 1)
+          : [] : storedRows, error: table === 'payments' && Array.isArray(filters.gateway) && options.failPaytm ? { message: 'DB unavailable' } : null }); },
         async single() { assert.equal(table, 'admin_sessions'); return { data: { expires_at: options.expired ? '2020-01-01' : '2099-01-01' } }; },
         async maybeSingle() {
           if (table === 'settings') return { data: { value: { accounts: options.accounts || defaultAccounts } } };
@@ -260,7 +260,7 @@ test('gateway breakdown matches received/refunds/net in the synced sheet, with t
   const result = await f.get('token=test&revenueBreakdownDate=2026-10-28&sync=range');
   assert.equal(result.status, 200);
   assert.deepEqual(result.body.gateways.map(g => [g.gateway, g.received, g.refunds, g.revenue, g.salesCount]),
-    [['payu', 100.25, 10.05, 90.2, 1], ['paytm', 659.62, 59.62, 600, 1]]);
+    [['payu', 100.25, 10.05, 90.2, 1], ['paytm', 659.62, 59.62, 600, 1], ['pinelabs', 0, 0, 0, 0]]);
   assert.equal(result.body.revenue, 690.2); assert.equal(f.storedRows.length, 0); assert.equal(f.requests.length, 0);
   const synced = await f.get('token=test&startDate=2026-10-28&endDate=2026-10-28&sync=range&exchangeRate=85');
   assert.equal(synced.status, 200);
@@ -284,4 +284,17 @@ test('revenue breakdown reads all pages of Paytm payments', async () => {
   const paytmRows = Array.from({length:1001}, (_, i) => ({id:'ptm'+i, amount:100, type:'bundle', paid_at:'2026-09-07T06:30:00Z', payment_status:'paid', payment_mode:'live'}));
   const result = await fixture({paytmRows}).get('token=test&revenueBreakdownDate=2026-09-07');
   assert.equal(result.status,200); assert.equal(result.body.gateways[1].received,1001); assert.equal(result.body.gateways[1].salesCount,1001);
+});
+
+test('Pine Labs verified revenue and refunds use the same day boundaries and sheet totals', async () => {
+  const f = fixture({now:'2026-10-28T15:00:00Z',accounts:[],pineRows:[
+    {id:'pnl1',amount:65962,type:'bundle',paid_at:'2026-10-28T06:00:00Z',payment_status:'paid',payment_mode:'live'},
+    {id:'refund1',amount:-5962,type:'bundle',paid_at:'2026-10-28T07:00:00Z',payment_status:'refunded',payment_mode:'live'},
+    {id:'pnlprevious',amount:10000,type:'bundle',paid_at:'2026-10-28T05:59:59Z',payment_status:'paid',payment_mode:'live'},
+    {id:'pnltest',amount:50000,type:'bundle',paid_at:'2026-10-28T06:00:00Z',payment_status:'paid',payment_mode:'test'},
+    {id:'pnlfailed',amount:50000,type:'bundle',paid_at:'2026-10-28T06:00:00Z',payment_status:'failed',payment_mode:'live'},
+  ]});
+  const {body,status}=await f.get('token=test&revenueBreakdownDate=2026-10-28');assert.equal(status,200);
+  assert.equal(body.gateways[2].gateway,'pinelabs');assert.equal(body.gateways[2].received,659.62);assert.equal(body.gateways[2].refunds,59.62);assert.equal(body.revenue,600);
+  const synced=await f.get('token=test&startDate=2026-10-28&endDate=2026-10-28&sync=range&exchangeRate=85');assert.equal(synced.body.rows[0].revenue,600);
 });

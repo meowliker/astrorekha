@@ -1,5 +1,7 @@
-/** Hosted Paytm checkout; preserves the existing recovery state saved by each caller. */
+import { pineLabsCheckoutUrl } from "./pinelabs-checkout-url";
+/** Hosted backup checkout; preserves the existing recovery state saved by each caller. */
 export function openPaytmCheckout(data: { gateway?: string; action?: string; fields?: Record<string, string> }): boolean {
+  if (data.gateway === "pinelabs") { window.location.assign(pineLabsCheckoutUrl(data.action || "")); return true; }
   if (data.gateway !== "paytm") return false;
   const url = new URL(data.action || "");
   if (!["https://secure.paytmpayments.com", "https://securestage.paytmpayments.com"].includes(url.origin) || url.pathname !== "/theia/api/v1/showPaymentPage" || !data.fields?.txnToken) throw new Error("Invalid checkout destination");

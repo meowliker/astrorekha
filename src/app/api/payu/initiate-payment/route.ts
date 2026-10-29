@@ -1,3 +1,4 @@
+import { initiatePineLabsCheckout, pineLabsConfig } from "@/lib/pinelabs-api";
 import { activePaymentGateway } from "@/lib/payment-gateway";
 import { initiatePaytmCheckout, paytmConfig } from "@/lib/paytm-api";
 import { createPaytmOrderId } from "@/lib/paytm-order-id";
@@ -170,7 +171,7 @@ export async function POST(request: NextRequest) {
     }
 
     const gateway = await activePaymentGateway();
-    const paytm = gateway === "paytm" ? paytmConfig() : null;
+    const backup = gateway === "pinelabs" ? pineLabsConfig() : gateway === "paytm" ? paytmConfig() : null;
     const merchantKey = process.env.PAYU_MERCHANT_KEY;
     const merchantSalt = process.env.PAYU_MERCHANT_SALT;
 
@@ -277,8 +278,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid purchase type" }, { status: 400 });
     }
 
-    // Paytm stores the complete catalog snapshot, with server-side availability checks.
-    const quote = gateway === "paytm" ? quotePaymentOrder(pricing, { type: type || "", bundleId, packageId }) : null;
+    // Backup gateways store the complete catalog snapshot, with server-side availability checks.
+    const quote = gateway !== "payu" ? quotePaymentOrder(pricing, { type: type || "", bundleId, packageId }) : null;
     if (quote) {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return NextResponse.json({ error: "A valid email is required" }, { status: 400 });
       amount = quote.amount / 100; baseAmount = quote.baseAmount === null ? null : quote.baseAmount / 100;
@@ -300,7 +301,7 @@ export async function POST(request: NextRequest) {
 
     // Generate unique transaction ID
     // PayU v1 limits txnid to 25 characters; the same ID is our payments.id.
-    const txnId = gateway === "paytm" ? createPaytmOrderId() : `pay_${Date.now().toString(36)}${crypto.randomBytes(5).toString("hex")}`;
+    const txnId = gateway === "pinelabs" ? `pnl${crypto.randomBytes(12).toString("hex")}` : gateway === "paytm" ? createPaytmOrderId() : `pay_${Date.now().toString(36)}${crypto.randomBytes(5).toString("hex")}`;
 
     // Prepare PayU parameters
     const payuParams = {
@@ -372,7 +373,7 @@ export async function POST(request: NextRequest) {
     const paymentRecord = {
       id: txnId,
       payu_txn_id: gateway === "payu" ? txnId : null,
-      ...(quote && paytm ? { gateway: "paytm", gateway_order_id: txnId, payment_mode: paytm.mode,
+      ...(quote && backup ? { gateway, gateway_order_id: gateway === "paytm" ? txnId : null, payment_mode: backup.mode,
         product_name: productInfo, fulfillment_features: quote.features, fulfillment_coins: quote.coins,
         customer_phone: payuPhone, customer_name: firstName || "Customer" } : {}),
       user_id: resolvedPaymentUserId,
@@ -460,10 +461,10 @@ export async function POST(request: NextRequest) {
       metadata,
     });
 
-    if (paytm) {
+    if (backup) {
       try {
-        const checkout = await initiatePaytmCheckout({ id: txnId, amount: toPaise(amount), customer_email: normalizedEmail,
-          customer_name: firstName, customer_phone: payuPhone, payment_mode: paytm.mode });
+        const checkout = await (gateway === "pinelabs" ? initiatePineLabsCheckout : initiatePaytmCheckout)({ id: txnId, amount: toPaise(amount), customer_email: normalizedEmail,
+          customer_name: firstName, customer_phone: payuPhone, payment_mode: backup.mode, ...(gateway === "pinelabs" ? { product_name: productInfo } : {}) });
         return NextResponse.json({ ...checkout, txnId, amount: amount.toFixed(2), productInfo }, { headers: { "Cache-Control": "no-store" } });
       } catch {
         // A timeout does not mean a charge failed. Keep the saved order for reconciliation.

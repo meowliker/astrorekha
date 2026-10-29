@@ -1,3 +1,4 @@
+import { pineLabsConfig, initiatePineLabsCheckout } from "@/lib/pinelabs-api";
 import { activePaymentGateway } from "@/lib/payment-gateway";
 import { initiatePaytmCheckout, paytmConfig } from "@/lib/paytm-api";
 import { sanitizePaymentAttribution } from "@/lib/attribution";
@@ -37,10 +38,10 @@ export async function POST(request: NextRequest) {
     if (body.session && !session) return NextResponse.json({ error: "Invalid sketch session" }, { status: 400 });
     if (session) await saveSoulmateSession(session, answers);
     const gateway = await activePaymentGateway();
-    const { mode } = gateway === "paytm" ? paytmConfig() : payuConfig();
+    const { mode } = gateway === "pinelabs" ? pineLabsConfig() : gateway === "paytm" ? paytmConfig() : payuConfig();
     let cart;
     try { cart = buildSoulmateCart(plan.id, body.addOns ?? []); } catch { return NextResponse.json({ error: "Invalid add-ons for this package." }, { status: 400 }); }
-    const fingerprintFor = (savedGateway: string, savedMode: string) => crypto.createHash("sha256").update(JSON.stringify({ answers, plan: plan.id, email, phone, mode: savedMode, cart, ...(savedGateway === "paytm" ? { gateway: savedGateway } : {}) })).digest("hex");
+    const fingerprintFor = (savedGateway: string, savedMode: string) => crypto.createHash("sha256").update(JSON.stringify({ answers, plan: plan.id, email, phone, mode: savedMode, cart, ...(savedGateway !== "payu" ? { gateway: savedGateway } : {}) })).digest("hex");
     const fingerprint = fingerprintFor(gateway, mode);
     const db = getSupabaseAdmin();
     const attribution = await readOrderAttribution();
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
       base_amount: cart.baseAmount, gst_amount: cart.gstAmount, amount: cart.amount,
       catalog_version: 2, line_items: cart.lineItems, entitlements: cart.entitlements, add_ons: cart.addOns, review_status: "pending",
       delivery_hours: cart.entitlements.scheduled_hours,
-      ...(gateway === "paytm" ? { gateway } : {}),
+      ...(gateway !== "payu" ? { gateway } : {}),
       product_info: soulmatePayUProductInfo(cart.productInfo), payment_mode: mode,
       attribution: { ...attribution, ...chooseSoulmateGaIdentity(body.tracking, attribution), landing_path: "/soulmate",
         marketing: sanitizePaymentAttribution(body.tracking?.attribution),
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
     const receiptUrl = receiptPath(order.id);
     const response = NextResponse.json(order.payment_status !== "created"
       ? { receiptUrl, checkStatus: true }
-      : { ...(order.gateway === "paytm" ? await initiatePaytmCheckout(order) : checkoutParameters(order, origin)), receiptUrl, orderId: order.id }, { headers: { "Cache-Control": "no-store" } });
+      : { ...(order.gateway === "pinelabs" ? await initiatePineLabsCheckout(order) : order.gateway === "paytm" ? await initiatePaytmCheckout(order) : checkoutParameters(order, origin)), receiptUrl, orderId: order.id }, { headers: { "Cache-Control": "no-store" } });
     response.cookies.set(receiptCookie(order.id));
     return response;
   } catch (error) {

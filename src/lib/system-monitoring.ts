@@ -1,3 +1,4 @@
+import { pineLabsAccessToken } from "@/lib/pinelabs-api";
 import { randomUUID } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendEmail } from "@/lib/brevo";
@@ -224,6 +225,14 @@ async function paytmCheck(): Promise<MonitorCheck> {
   });
 }
 
+async function pineLabsCheck(): Promise<MonitorCheck> {
+  if (!process.env.PINELABS_CLIENT_ID || !process.env.PINELABS_CLIENT_SECRET) return result("pinelabs", "Pine Labs backup", "unconfigured", "Backup credentials are not configured", Date.now());
+  return probe("pinelabs", "Pine Labs backup", async () => {
+    await pineLabsAccessToken();
+    return { status: "ok", message: "Pine Labs accepted the API credentials. Payment acceptance is not tested by this check." };
+  });
+}
+
 async function reconciliationCheck(db: SupabaseClient, now: number): Promise<MonitorCheck> {
   if (!process.env.PAYU_MERCHANT_KEY || !process.env.PAYU_MERCHANT_SALT) {
     return result("payment_reconciliation", "Payment reconciliation", "unconfigured", "PayU credentials are not configured", Date.now());
@@ -294,6 +303,7 @@ export async function collectMonitoringChecks(db: SupabaseClient, now = Date.now
     salesCheck(db, now),
     payuCheck(db, now),
     paytmCheck(),
+    pineLabsCheck(),
     reconciliationCheck(db, now),
     provider("claude", "Claude / Anthropic", !!process.env.ANTHROPIC_API_KEY,
       "https://api.anthropic.com/v1/models?limit=1", { headers: { "x-api-key": process.env.ANTHROPIC_API_KEY || "", "anthropic-version": "2023-06-01" } }),

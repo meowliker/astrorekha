@@ -64,3 +64,7 @@ DEPLOYMENT_CHECKLIST.md
 /outputs/
 
 !docs/paytm-backup.md
+!docs/pinelabs-backup.md
+
+# Supabase CLI local project metadata
+/supabase/.temp/

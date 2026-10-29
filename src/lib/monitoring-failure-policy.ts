@@ -1,7 +1,7 @@
 import type { MonitorCheck } from "./system-monitoring";
 
 type PreviousRun = { started_at: string; checks: MonitorCheck[] } | null;
-const GUARDED_CHECKS = new Set(["brevo", "aisensy", "paytm"]);
+const GUARDED_CHECKS = new Set(["brevo", "aisensy", "paytm", "pinelabs"]);
 
 export function requiresConsecutiveFailures(key: string): boolean {
   return GUARDED_CHECKS.has(key);

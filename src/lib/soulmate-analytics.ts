@@ -13,7 +13,7 @@ export function summarizeSoulmateAnalytics(events: SoulmateAnalyticsEvent[], ord
     stages.set(event.event_name, set);
   }
   const cohort = (name: string) => new Set([...(stages.get(name) || [])].filter((id) => landings.has(id)));
-  const chats = cohort("soulmate_chat_start"), completed = cohort("soulmate_chat_complete"), checkouts = cohort("soulmate_checkout_view"), redirects = new Set([...cohort("soulmate_payu_redirect"), ...cohort("soulmate_paytm_redirect")]);
+  const chats = cohort("soulmate_chat_start"), completed = cohort("soulmate_chat_complete"), checkouts = cohort("soulmate_checkout_view"), redirects = new Set([...cohort("soulmate_payu_redirect"), ...cohort("soulmate_paytm_redirect"), ...cohort("soulmate_pinelabs_redirect")]);
   const buyers = new Set(orders.map((order) => order.attribution?.sessionId).filter((id): id is string => Boolean(id && landings.has(id))));
   const paidCheckouts = [...buyers].filter((id) => checkouts.has(id)).length;
   const campaigns = new Map<string, { source: string; campaign: string; sessions: number; checkoutSessions: number; purchasingSessions: number }>();

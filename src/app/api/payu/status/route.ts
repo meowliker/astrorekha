@@ -1,3 +1,5 @@
+import { isPineLabsReportId } from "@/lib/pinelabs-api";
+import { reconcilePineLabsOrder } from "@/lib/pinelabs-reconciliation";
 import { isPaytmReportOrderId } from "@/lib/paytm-order-id";
 import { reconcilePaytmOrder } from "@/lib/paytm-reconciliation";
 import { NextRequest, NextResponse } from "next/server";
@@ -22,16 +24,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: "txnid is required" }, { status: 400 });
     }
 
-    if (txnid.startsWith("ptm")) {
-      if (!isPaytmReportOrderId(txnid)) return NextResponse.json({ error: "Invalid reference" }, { status: 400 });
+    if (txnid.startsWith("ptm") || txnid.startsWith("pnl")) {
+      const gateway = txnid.startsWith("pnl") ? "pinelabs" : "paytm";
+      if (!(gateway === "pinelabs" ? isPineLabsReportId(txnid) : isPaytmReportOrderId(txnid))) return NextResponse.json({ error: "Invalid reference" }, { status: 400 });
       const email = request.nextUrl.searchParams.get("checkoutEmail")?.trim().toLowerCase();
       if (email) {
-        const row = await getSupabaseAdmin({ fresh: true }).from("payments").select("customer_email").eq("id", txnid).eq("gateway", "paytm").maybeSingle();
+        const row = await getSupabaseAdmin({ fresh: true }).from("payments").select("customer_email").eq("id", txnid).eq("gateway", gateway).maybeSingle();
         if (row.error) throw row.error;
         return NextResponse.json({ success: true, matchesCheckout: !!row.data && row.data.customer_email?.toLowerCase() === email }, { headers: { "Cache-Control": "no-store" } });
       }
-      const order = await reconcilePaytmOrder(txnid);
-      return NextResponse.json({ success: true, gateway: "paytm", status: order.payment_status === "paid" && !order.fulfilled_at ? "pending" : order.payment_status,
+      const order = await (gateway === "pinelabs" ? reconcilePineLabsOrder : reconcilePaytmOrder)(txnid);
+      return NextResponse.json({ success: true, gateway, status: order.payment_status === "paid" && !order.fulfilled_at ? "pending" : order.payment_status,
         amount: order.amount / 100, userId: order.user_id, type: order.type, bundleId: order.bundle_id, feature: order.feature,
         gatewayTransactionId: order.gateway_transaction_id }, { headers: { "Cache-Control": "no-store" } });
     }

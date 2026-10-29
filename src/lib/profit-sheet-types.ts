@@ -52,7 +52,7 @@ export interface GatewayRevenueBreakdown {
   date: string;
   dayMode: "business_1130_ist" | "calendar_ist";
   gateways: Array<{
-    gateway: "payu" | "paytm";
+    gateway: "payu" | "paytm" | "pinelabs";
     name: string;
     received: number;
     refunds: number;

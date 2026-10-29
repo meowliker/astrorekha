@@ -624,7 +624,7 @@ function toYmd(value: Date): string {
 }
 
 async function getPayUCustomerName(payment: PaymentRow, fallbackDate: string): Promise<string> {
-  if (payment.gateway === "paytm") return payment.customer_name || "";
+  if (["paytm", "pinelabs"].includes(payment.gateway || "")) return payment.customer_name || "";
   const txnId = firstDefined(payment.payu_txn_id, payment.id);
   const paymentId = firstDefined(payment.payu_payment_id);
   const anchorDate = new Date(firstDefined(payment.fulfilled_at, payment.created_at, fallbackDate));
@@ -680,8 +680,8 @@ async function buildInvoice(userId: string, txnId: string): Promise<InvoicePaylo
   const invoiceNow = new Date();
   const invoiceDateIso = invoiceNow.toISOString();
   const paidAt = firstDefined(primaryPayment.paid_at, primaryPayment.fulfilled_at, primaryPayment.created_at, user?.updated_at, user?.created_at);
-  const txn = firstDefined(txnId, primaryPayment.gateway === "paytm" ? primaryPayment.id : null, primaryPayment.payu_txn_id, user?.payu_txn_id, primaryPayment.id);
-  const paymentId = firstDefined(primaryPayment.gateway_transaction_id, primaryPayment.payu_payment_id, primaryPayment.gateway === "paytm" ? null : user?.payu_payment_id);
+  const txn = firstDefined(txnId, ["paytm", "pinelabs"].includes(primaryPayment.gateway || "") ? primaryPayment.id : null, primaryPayment.payu_txn_id, user?.payu_txn_id, primaryPayment.id);
+  const paymentId = firstDefined(primaryPayment.gateway_transaction_id, primaryPayment.payu_payment_id, ["paytm", "pinelabs"].includes(primaryPayment.gateway || "") ? null : user?.payu_payment_id);
   const invoiceNumber = buildInvoiceNumber({
     now: invoiceNow,
     txnId: txn,
@@ -739,9 +739,9 @@ async function buildInvoice(userId: string, txnId: string): Promise<InvoicePaylo
     payment: {
       status: primaryPayment.payment_status || user?.payment_status || "paid",
       type: normalizeType(primaryPayment.type || user?.purchase_type),
-      gateway: primaryPayment.gateway === "paytm" ? "Paytm" : "PayU",
-      txnId: firstDefined(primaryPayment.gateway === "paytm" ? primaryPayment.id : null, primaryPayment.payu_txn_id, user?.payu_txn_id, txnId, primaryPayment.id),
-      paymentId: firstDefined(primaryPayment.gateway_transaction_id, primaryPayment.payu_payment_id, primaryPayment.gateway === "paytm" ? null : user?.payu_payment_id),
+      gateway: primaryPayment.gateway === "pinelabs" ? "Pine Labs" : ["paytm", "pinelabs"].includes(primaryPayment.gateway || "") ? "Paytm" : "PayU",
+      txnId: firstDefined(["paytm", "pinelabs"].includes(primaryPayment.gateway || "") ? primaryPayment.id : null, primaryPayment.payu_txn_id, user?.payu_txn_id, txnId, primaryPayment.id),
+      paymentId: firstDefined(primaryPayment.gateway_transaction_id, primaryPayment.payu_payment_id, ["paytm", "pinelabs"].includes(primaryPayment.gateway || "") ? null : user?.payu_payment_id),
       paidAt,
     },
       items: items.length ? items : [{ name: "AstroRekha Digital Service", quantity: 1, amount: total }],
@@ -758,8 +758,8 @@ async function buildInvoice(userId: string, txnId: string): Promise<InvoicePaylo
       purchaseType: user?.purchase_type || normalizeType(primaryPayment.type),
       bundle: itemNames.join(", ") || titleFromId(user?.bundle_purchased || primaryPayment.bundle_id),
       paymentStatus: primaryPayment.payment_status || user?.payment_status || "paid",
-      primaryTxnId: firstDefined(primaryPayment.gateway === "paytm" ? primaryPayment.id : null, primaryPayment.payu_txn_id, user?.payu_txn_id, txnId, primaryPayment.id),
-      primaryPaymentId: firstDefined(primaryPayment.gateway_transaction_id, primaryPayment.payu_payment_id, primaryPayment.gateway === "paytm" ? null : user?.payu_payment_id),
+      primaryTxnId: firstDefined(["paytm", "pinelabs"].includes(primaryPayment.gateway || "") ? primaryPayment.id : null, primaryPayment.payu_txn_id, user?.payu_txn_id, txnId, primaryPayment.id),
+      primaryPaymentId: firstDefined(primaryPayment.gateway_transaction_id, primaryPayment.payu_payment_id, ["paytm", "pinelabs"].includes(primaryPayment.gateway || "") ? null : user?.payu_payment_id),
       accountCreated: user?.created_at || null,
       lastUpdated: user?.updated_at || primaryPayment.fulfilled_at || primaryPayment.created_at || null,
     },

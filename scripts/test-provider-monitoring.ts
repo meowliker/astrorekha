@@ -44,3 +44,8 @@ const paytmFailure: MonitorCheck = { ...failed, key: "paytm", name: "Paytm backu
 const paytmFirst = confirmProviderFailure(paytmFailure, null, "cron", now);
 assert.equal(paytmFirst.status, "warming");
 assert.equal(confirmProviderFailure(paytmFailure, { started_at: new Date(now - 30 * 60_000).toISOString(), checks: [paytmFirst] }, "cron", now).status, "down");
+
+const pineFailure: MonitorCheck = { ...failed, key: "pinelabs", name: "Pine Labs backup" };
+const pineFirst = confirmProviderFailure(pineFailure, null, "cron", now);
+assert.equal(pineFirst.status, "warming");
+assert.equal(confirmProviderFailure(pineFailure, { started_at: new Date(now - 30 * 60_000).toISOString(), checks: [pineFirst] }, "cron", now).status, "down");

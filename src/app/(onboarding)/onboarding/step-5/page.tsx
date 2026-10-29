@@ -166,7 +166,6 @@ export default function Step5Page() {
                 <span className="text-xs text-muted-foreground">Ascendant</span>
               </div>
             </motion.div>
-            <p className="mb-4 text-center text-xs text-muted-foreground">Calculated using the Vedic (Lahiri) zodiac.</p>
             {signsError && <div className="mb-5 text-center text-sm text-amber-300">
               <p>{signsError}</p>
               <button type="button" onClick={() => fetchAccurateSigns()} className="mt-2 underline underline-offset-2">Try again</button>

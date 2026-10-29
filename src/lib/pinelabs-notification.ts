@@ -1,0 +1,87 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseAdmin } from "./supabase-admin";
+import { fetchPineLabsOrder, isPineLabsReference, isPineLabsProviderId, pineLabsCallbackOrigin, pineLabsConfig, readPineLabsReturnToken, validatePineLabsOrder, verifyPineLabsWebhook } from "./pinelabs-api";
+import { reconcilePineLabsOrder } from "./pinelabs-reconciliation";
+import { recordPineLabsRefund } from "./pinelabs-refunds";
+import { receiptCookie, receiptPath } from "./soulmate-payu";
+
+export async function processPineLabsEvent(event: { event_id: string; event_type?: string; provider_order_id: string; payment_mode: string }) {
+  const db = getSupabaseAdmin({ fresh: true });
+  try {
+    const remote = await fetchPineLabsOrder(event.provider_order_id, event.payment_mode, true);
+    if (remote.order_id !== event.provider_order_id || String(remote.merchant_id) !== pineLabsConfig().merchantId) throw new Error("Pine Labs event identity mismatch");
+    if (remote.type === "REFUND") {
+      if (!["FAILED", "CANCELLED"].includes(remote.status)) await recordPineLabsRefund(remote, event.payment_mode);
+    }
+    else if (isPineLabsReference(remote.merchant_order_reference)) {
+      const order = await reconcilePineLabsOrder(remote.merchant_order_reference, remote);
+      if (order.payment_status !== "paid" && !["PAYMENT_FAILED", "ORDER_AUTHORIZED"].includes(event.event_type || "") && !["FAILED", "CANCELLED"].includes(remote.status)) throw new Error("Pine Labs payment confirmation pending");
+      if (order.payment_status === "paid" && !order.id.startsWith("sm_") && !order.fulfilled_at) throw new Error("Pine Labs fulfillment pending");
+    }
+    const saved = await db.from("pinelabs_webhook_events").update({ processed_at: new Date().toISOString() }).eq("event_id", event.event_id);
+    if (saved.error) throw new Error("Unable to acknowledge Pine Labs event");
+  } finally {
+    await db.from("pinelabs_webhook_events").update({ checked_at: new Date().toISOString() }).eq("event_id", event.event_id);
+  }
+}
+export async function pineLabsWebhook(request: NextRequest) {
+  try {
+    const raw = await request.text();
+    if (raw.length > 1000000 || !verifyPineLabsWebhook(raw, request.headers)) return NextResponse.json({ error: "Invalid webhook signature" }, { status: 400 });
+    const payload = JSON.parse(raw);
+    if (!["ORDER_PROCESSED", "ORDER_AUTHORIZED", "ORDER_FAILED", "ORDER_CANCELLED", "PAYMENT_FAILED", "REFUND_PROCESSED", "REFUND_FAILED"].includes(payload.event_type)) return NextResponse.json({ ignored: true });
+    const providerId = payload.data?.order_id;
+    if (!isPineLabsProviderId(providerId || "")) return NextResponse.json({ error: "Invalid order reference" }, { status: 400 });
+    const event = { event_id: request.headers.get("webhook-id")!, event_type: String(payload.event_type), provider_order_id: providerId, payment_mode: pineLabsConfig().mode };
+    const db = getSupabaseAdmin({ fresh: true });
+    const stored = await db.from("pinelabs_webhook_events").upsert(event, { onConflict: "event_id", ignoreDuplicates: true });
+    if (stored.error) throw new Error("Webhook persistence failed");
+    const saved = await db.from("pinelabs_webhook_events").select("*").eq("event_id", event.event_id).single();
+    if (saved.error) throw new Error("Webhook read failed");
+    if (!saved.data.processed_at) {
+      try { await processPineLabsEvent(saved.data); } catch { return NextResponse.json({ accepted: true, queued: true }); }
+    }
+    return NextResponse.json({ accepted: true });
+  } catch { return NextResponse.json({ error: "Unable to accept notification; retry required" }, { status: 503 }); }
+}
+export async function pineLabsCallback(request: NextRequest) {
+  try {
+    // This token is created by our checkout, not a provider callback-signing key.
+    // It binds the browser return to its original order, including guest receipts.
+    const states = request.nextUrl.searchParams.getAll("state");
+    const id = states.length === 1 ? readPineLabsReturnToken(states[0]) : null;
+    if (!id) return NextResponse.json({ error: "Invalid checkout return" }, { status: 400 });
+    const fields: Record<string, string> = {};
+    if (request.method === "GET") request.nextUrl.searchParams.forEach((v, k) => { fields[k] = v; });
+    else if (request.headers.get("content-type")?.includes("application/json")) {
+      for (const [k, v] of Object.entries(await request.json())) if (typeof v === "string") fields[k] = v;
+    } else (await request.formData()).forEach((v, k) => { if (typeof v === "string") fields[k] = v; });
+    if (!isPineLabsProviderId(fields.order_id || "")) return NextResponse.json({ error: "Invalid payment reference" }, { status: 400 });
+    const db = getSupabaseAdmin({ fresh: true });
+    const mode = pineLabsConfig().mode;
+    const { data: order, error } = await db.from(id.startsWith("sm_") ? "soulmate_orders" : "payments")
+      .select("*").eq("id", id).eq("gateway", "pinelabs").eq("payment_mode", mode).maybeSingle();
+    if (error || !order) throw new Error("Unknown checkout return");
+    if (order.gateway_order_id && order.gateway_order_id !== fields.order_id) return NextResponse.json({ error: "Payment reference mismatch" }, { status: 400 });
+    let remote;
+    try {
+      remote = await fetchPineLabsOrder(fields.order_id, mode, true);
+    } catch {
+      // Token proves ownership, but API outage never proves payment success.
+      // The existing status page and reconciliation job retry the same order.
+      console.warn("[pinelabs] Return awaits status API", { orderId: id });
+    }
+    if (remote) {
+      if (remote.order_id !== fields.order_id) throw new Error("Provider order mismatch");
+      validatePineLabsOrder(order, remote);
+      try { await reconcilePineLabsOrder(id, remote); }
+      catch { console.warn("[pinelabs] Verified return awaits fulfillment retry", { orderId: id }); }
+      console.info("[pinelabs] Return verified by API", { orderId: id, providerOrderId: remote.order_id, status: remote.status });
+    }
+    const response = NextResponse.redirect(new URL(id.startsWith("sm_") ? receiptPath(id) : `/payment/processing?txnid=${encodeURIComponent(id)}`, pineLabsCallbackOrigin()), 303);
+    response.headers.set("Cache-Control", "no-store");
+    response.headers.set("Referrer-Policy", "no-referrer");
+    if (id.startsWith("sm_")) response.cookies.set(receiptCookie(id));
+    return response;
+  } catch { return NextResponse.json({ error: "Payment verification unavailable. Return to your checkout to check this payment; do not pay again." }, { status: 503 }); }
+}

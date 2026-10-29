@@ -7,7 +7,7 @@ import { getPayUTransactions } from "@/lib/payu-api";
 import type { PayUTransaction } from "@/lib/payu-api";
 import { parentPaymentId, purchaseMetadata } from "@/lib/payu-purchase-metadata";
 import type { SavedPurchaseMetadata } from "@/lib/payu-purchase-metadata";
-import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromSettings, getMetaAccountWindowForRequest, loadMetaAdAccountsSettings, normalizeMetaAdAccountsSettings } from "@/lib/meta-ad-accounts";
+import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromSettings, getMetaAccountWindowForRequest, normalizeMetaAdAccountsSettings } from "@/lib/meta-ad-accounts";
 import type { AccountBalanceSummary, AccountSpendBreakdown, IndianAdAccountSpend, ProfitSheetGstBreakdown } from "@/lib/profit-sheet-types";
 import { calculateProfitSheetGst, indianAdGstApplies } from "@/lib/profit-sheet-gst";
 
@@ -350,7 +350,7 @@ function addHourlySpendToBusinessWindow(
 
 // Fetch Meta Ads daily spend for a date range, normalized to 11:30 AM IST business-day windows.
 async function fetchMetaAdsDailySpend(
-  supabase: any,
+  supabase: SupabaseClient,
   startDate: string,
   endDate: string,
   exchangeRate: number,
@@ -534,35 +534,6 @@ async function fetchMetaAdsDailySpend(
   }
 }
 
-// Convert Costa Rica date to IST date range
-// Costa Rica is UTC-6, IST is UTC+5:30
-// Difference: 11.5 hours (IST is ahead)
-// Costa Rica "March 13 00:00" = IST "March 13 11:30"
-// Costa Rica "March 13 23:59:59" = IST "March 14 11:29:59"
-function getISTRangeForCostaRicaDate(costaRicaDate: string): { start: Date; end: Date } {
-  const [year, month, day] = costaRicaDate.split("-").map(Number);
-  
-  // Costa Rica midnight (00:00:00 UTC-6) = UTC 06:00:00
-  // IST = UTC + 5:30, so UTC 06:00 = IST 11:30
-  // Create start time: Costa Rica date at 00:00 = IST same date at 11:30
-  const startIST = new Date(`${costaRicaDate}T11:30:00+05:30`);
-  
-  // Costa Rica end of day (23:59:59 UTC-6) = UTC next day 05:59:59
-  // IST = UTC + 5:30, so UTC 05:59:59 = IST 11:29:59
-  // Create end time: next day IST at 11:29:59
-  // Use UTC date to avoid timezone issues
-  const nextDayYear = day === 31 ? (month === 12 ? year + 1 : year) : year;
-  const nextDayMonth = day === 31 ? (month === 12 ? 1 : month + 1) : (day >= 28 && month === 2 ? 3 : month);
-  const nextDayDay = day >= 28 ? (month === 2 ? 1 : (day === 31 ? 1 : (day === 30 && [4,6,9,11].includes(month) ? 1 : day + 1))) : day + 1;
-  
-  // Simpler approach: add 1 day in milliseconds to start, then set to 11:29:59
-  const nextDayDate = new Date(startIST.getTime() + 24 * 60 * 60 * 1000);
-  const nextDayStr = `${nextDayDate.getUTCFullYear()}-${String(nextDayDate.getUTCMonth() + 1).padStart(2, '0')}-${String(nextDayDate.getUTCDate()).padStart(2, '0')}`;
-  const endIST = new Date(`${nextDayStr}T11:29:59+05:30`);
-  
-  return { start: startIST, end: endIST };
-}
-
 // Get day of week
 function getDayOfWeek(dateStr: string): string {
   const date = new Date(dateStr);
@@ -654,7 +625,7 @@ type FinancialRow = {
   amount: number;
   signedAmount: number;
   type: string;
-  gateway: "payu" | "paytm";
+  gateway: "payu" | "paytm" | "pinelabs";
 };
 
 async function loadProfitFinancialRows(supabase: SupabaseClient, startDate: string, endDate: string, dayMode: ProfitSheetDayMode) {
@@ -682,28 +653,28 @@ async function loadProfitFinancialRows(supabase: SupabaseClient, startDate: stri
     })
     .filter((row): row is FinancialRow => !!row);
 
-  // Paytm sales are verified into the same ledger by callback/status/reconciliation.
+  // Backup gateway sales are verified into the same ledger by callback/status/reconciliation.
   // Never query PayU for these orders or synthesize PayU identifiers.
   for (let offset = 0; ; offset += 1000) {
-    const paytmRows = await supabase.from("payments").select("id,amount,type,paid_at,created_at")
-      .eq("gateway", "paytm").eq("payment_mode", "live").in("payment_status", ["paid", "refunded"])
+    const backupRows = await supabase.from("payments").select("id,amount,type,paid_at,created_at,gateway")
+      .in("gateway", ["paytm", "pinelabs"]).eq("payment_mode", "live").in("payment_status", ["paid", "refunded"])
       .gte("paid_at", `${addDaysToIsoDate(startDate, -1)}T00:00:00Z`).lt("paid_at", `${addDaysToIsoDate(endDate, 2)}T00:00:00Z`)
       .order("id").range(offset, offset + 999);
-    if (paytmRows.error) throw new Error("Unable to read Paytm sales");
-    for (const payment of paytmRows.data) {
+    if (backupRows.error) throw new Error("Unable to read backup gateway sales");
+    for (const payment of backupRows.data) {
       const createdAt = new Date(payment.paid_at || payment.created_at);
       const dayKey = getCostaRicaBusinessDayKeyFromDate(createdAt, dayMode);
       if (dayKey < startDate || dayKey > endDate) continue;
-      financialRows.push({ gateway: "paytm", createdAt, dayKey, kind: payment.amount < 0 ? "refund" : "sale", amount: Math.abs(payment.amount) / 100, signedAmount: payment.amount / 100, type: payment.type });
+      financialRows.push({ gateway: payment.gateway as "paytm" | "pinelabs", createdAt, dayKey, kind: payment.amount < 0 ? "refund" : "sale", amount: Math.abs(payment.amount) / 100, signedAmount: payment.amount / 100, type: payment.type });
     }
-    if (paytmRows.data.length < 1000) break;
+    if (backupRows.data.length < 1000) break;
   }
 
   return { financialRows, paymentRows };
 }
 
 async function buildProfitSheetRows(
-  supabase: any,
+  supabase: SupabaseClient,
   startDate: string,
   endDate: string,
   exchangeRate: number,
@@ -724,7 +695,7 @@ async function buildProfitSheetRows(
   }
 
   const { financialRows, paymentRows } = await loadProfitFinancialRows(supabase, startDate, endDate, dayMode);
-  const sourceUsed = "payu_live_and_verified_paytm";
+  const sourceUsed = "payu_live_and_verified_backups";
   console.log(`Profit sheet financial source: ${sourceUsed}, rows: ${financialRows.length}`);
 
   const rows: ProfitSheetRow[] = dates.map((costaRicaDate) => {
@@ -786,8 +757,8 @@ async function buildProfitSheetRows(
 function toDbRow(row: ProfitSheetRow, exchangeRate: number, source: string) {
   const nowIso = new Date().toISOString();
   return {
-    date: row.date,
-    day: row.day,
+    date: String(row.date),
+    day: String(row.day),
     revenue: row.revenue,
     gross_revenue: row.grossRevenue || 0,
     refund_amount: row.refundAmount || 0,
@@ -811,7 +782,7 @@ function toDbRow(row: ProfitSheetRow, exchangeRate: number, source: string) {
   };
 }
 
-function fromDbRow(row: any): ProfitSheetRow {
+function fromDbRow(row: Record<string, unknown>): ProfitSheetRow {
   const revenue = Number(row.revenue || 0);
   const adsCostINR = Number(row.ads_cost_inr || 0);
   // Older rows have no saved per-account spend yet. Preserve their prior gross
@@ -847,8 +818,8 @@ function fromDbRow(row: any): ProfitSheetRow {
     : undefined;
 
   return {
-    date: row.date,
-    day: row.day,
+    date: String(row.date),
+    day: String(row.day),
     revenue,
     grossRevenue: Number(row.gross_revenue || 0),
     refundAmount: Number(row.refund_amount || 0),
@@ -872,7 +843,7 @@ function profitSheetTableForMode(dayMode: ProfitSheetDayMode): string {
   return dayMode === CALENDAR_DAY_MODE ? "profit_sheet_calendar" : "profit_sheet";
 }
 
-async function readProfitSheetRows(supabase: any, startDate: string, endDate: string, dayMode: ProfitSheetDayMode = BUSINESS_DAY_MODE): Promise<ProfitSheetRow[]> {
+async function readProfitSheetRows(supabase: SupabaseClient, startDate: string, endDate: string, dayMode: ProfitSheetDayMode = BUSINESS_DAY_MODE): Promise<ProfitSheetRow[]> {
   const { data, error } = await supabase
     .from(profitSheetTableForMode(dayMode))
     .select("*")
@@ -904,7 +875,7 @@ function getMissingReportingRanges(rows: ProfitSheetRow[], startDate: string, en
 }
 
 async function syncProfitSheetRows(
-  supabase: any,
+  supabase: SupabaseClient,
   startDate: string,
   endDate: string,
   exchangeRate: number,
@@ -986,13 +957,13 @@ export async function GET(request: NextRequest) {
       // Use exactly the same events and day boundaries as the Profit Sheet sync.
       // Opening the breakdown never refreshes or writes the saved sheet.
       const { financialRows } = await loadProfitFinancialRows(supabase, revenueDate, revenueDate, dayMode);
-      const gateways = (["payu", "paytm"] as const).map((gateway) => {
+      const gateways = (["payu", "paytm", "pinelabs"] as const).map((gateway) => {
         const events = financialRows.filter((event) => event.gateway === gateway);
         const sales = events.filter((event) => event.kind === "sale");
         const refunds = events.filter((event) => event.kind === "refund");
         const receivedPaise = sales.reduce((sum, event) => sum + Math.round(event.amount * 100), 0);
         const refundPaise = refunds.reduce((sum, event) => sum + Math.round(event.amount * 100), 0);
-        return { gateway, name: gateway === "payu" ? "PayU" : "Paytm", received: receivedPaise / 100,
+        return { gateway, name: gateway === "pinelabs" ? "Pine Labs" : gateway === "payu" ? "PayU" : "Paytm", received: receivedPaise / 100,
           refunds: refundPaise / 100, revenue: (receivedPaise - refundPaise) / 100,
           salesCount: sales.length, refundCount: refunds.length };
       });
@@ -1102,10 +1073,10 @@ export async function GET(request: NextRequest) {
       syncedRange,
       syncWarning,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Profit sheet error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to generate profit sheet" },
+      { error: error instanceof Error ? error.message : "Failed to generate profit sheet" },
       { status: 500 }
     );
   }

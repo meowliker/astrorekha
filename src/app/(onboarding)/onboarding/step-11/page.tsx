@@ -2,19 +2,12 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect } from "react";
-import { fadeUp, staggerContainer, staggerItem } from "@/lib/motion";
+import { fadeUp } from "@/lib/motion";
 import { OnboardingHeader, ProgressBar } from "@/components/onboarding/OnboardingHeader";
 import { Button } from "@/components/ui/button";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { useRouter } from "next/navigation";
 import { useHaptic } from "@/hooks/useHaptic";
-
-interface SignData {
-  name: string;
-  symbol: string;
-  element: string;
-  description: string;
-}
 
 const goalLabels: Record<string, string> = {
   "family-harmony": "Family harmony",
@@ -63,9 +56,6 @@ export default function Step11Page() {
     birthDay,
     birthYear,
     birthPlace,
-    birthHour,
-    birthMinute,
-    birthPeriod,
     relationshipStatus,
     goals,
     colorPreference,
@@ -303,37 +293,37 @@ export default function Step11Page() {
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, ease: "easeOut" }}
-                className="flex justify-center gap-8 relative z-10 py-4"
+                className="grid grid-cols-3 gap-2 relative z-10 py-4 text-center"
               >
                 <motion.div 
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.1, duration: 0.4 }}
-                  className="flex flex-col items-center"
+                  className="flex min-w-0 flex-col items-center"
                 >
                   <span className="text-xl">{moonSign.symbol}</span>
-                  <span className="text-xs font-medium">{moonSign.name}</span>
-                  <span className="text-xs text-muted-foreground">Vedic Moon Sign</span>
+                  <span className="flex min-h-8 items-center justify-center text-xs font-medium">{moonSign.name}</span>
+                  <span className="text-xs text-muted-foreground"><span className="block">Vedic</span>{" "}Moon Sign</span>
                 </motion.div>
                 <motion.div 
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.25, duration: 0.4 }}
-                  className="flex flex-col items-center"
+                  className="flex min-w-0 flex-col items-center"
                 >
                   <span className="text-xl">{sunSign.symbol}</span>
-                  <span className="text-xs font-medium">{sunSign.name}</span>
-                  <span className="text-xs text-muted-foreground">Vedic Sun Sign</span>
+                  <span className="flex min-h-8 items-center justify-center text-xs font-medium">{sunSign.name}</span>
+                  <span className="text-xs text-muted-foreground"><span className="block">Vedic</span>{" "}Sun Sign</span>
                 </motion.div>
                 <motion.div 
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.4, duration: 0.4 }}
-                  className="flex flex-col items-center"
+                  className="flex min-w-0 flex-col items-center"
                 >
                   <span className="text-xl">{ascendant.symbol}</span>
-                  <span className="text-xs font-medium">{ascendant.name}</span>
-                  <span className="text-xs text-muted-foreground">Vedic Ascendant</span>
+                  <span className="flex min-h-8 items-center justify-center text-xs font-medium">{ascendant.name}</span>
+                  <span className="text-xs text-muted-foreground"><span className="block">Vedic</span>{" "}Ascendant</span>
                 </motion.div>
               </motion.div>
             )}

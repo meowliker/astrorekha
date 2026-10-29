@@ -313,7 +313,7 @@ export async function buildCombinedOrderInvoice(txnIds: string[]): Promise<Order
     payment: {
       status: payment.payment_status || "paid",
       type: normalizeType(payment.type),
-      gateway: payment.gateway === "paytm" ? "Paytm" : "PayU",
+      gateway: payment.gateway === "pinelabs" ? "Pine Labs" : payment.gateway === "paytm" ? "Paytm" : "PayU",
       txnId: paymentTxnId,
       paymentId,
       paidAt,

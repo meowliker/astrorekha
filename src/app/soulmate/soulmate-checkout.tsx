@@ -79,8 +79,8 @@ export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
       if (!response.ok) throw new Error(data.error || "Unable to start payment");
       try { sessionStorage.setItem(CHECKOUT_RECOVERY_KEY, JSON.stringify({ answers, planId, receiptUrl: data.receiptUrl, savedAt: Date.now() })); } catch { /* Payment works without browser storage. */ }
       if (data.checkStatus) { window.location.assign(data.receiptUrl); return; }
-      if (data.gateway === "paytm") {
-        trackSoulmate("paytm_redirect", { plan: planId, value: totals.total, once: data.orderId });
+      if (data.gateway === "paytm" || data.gateway === "pinelabs") {
+        trackSoulmate(data.gateway === "pinelabs" ? "pinelabs_redirect" : "paytm_redirect", { plan: planId, value: totals.total, once: data.orderId });
         if (openPaytmCheckout(data)) return;
       }
       if (!["https://secure.payu.in/_payment", "https://test.payu.in/_payment"].includes(data.action)) throw new Error("Invalid payment destination");
