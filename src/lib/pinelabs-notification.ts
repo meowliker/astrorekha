@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "./supabase-admin";
-import { fetchPineLabsOrder, isPineLabsReference, isPineLabsProviderId, pineLabsCallbackOrigin, pineLabsConfig, readPineLabsReturnToken, validatePineLabsOrder, verifyPineLabsWebhook } from "./pinelabs-api";
+import { fetchPineLabsOrder, isPineLabsReference, isPineLabsProviderId, pineLabsCallbackOrigin, pineLabsConfig, readPineLabsReturnToken, validatePineLabsOrder, inspectPineLabsWebhookSignature } from "./pinelabs-api";
 import { reconcilePineLabsOrder } from "./pinelabs-reconciliation";
 import { recordPineLabsRefund } from "./pinelabs-refunds";
 import { receiptCookie, receiptPath } from "./soulmate-payu";
@@ -27,11 +27,22 @@ export async function processPineLabsEvent(event: { event_id: string; event_type
 export async function pineLabsWebhook(request: NextRequest) {
   try {
     const raw = await request.text();
-    if (raw.length > 1000000 || !verifyPineLabsWebhook(raw, request.headers)) return NextResponse.json({ error: "Invalid webhook signature" }, { status: 400 });
+    if (raw.length > 1000000) return NextResponse.json({ error: "Notification too large" }, { status: 400 });
+    const verification = inspectPineLabsWebhookSignature(raw, request.headers);
+    if (!verification.valid) {
+      // Never log signatures, secrets, raw payloads or customer data.
+      console.warn("[pinelabs] Webhook rejected", { reason: verification.reason, bodyBytes: Buffer.byteLength(raw),
+        webhookIdPresent: request.headers.has("webhook-id"), webhookTimestampPresent: request.headers.has("webhook-timestamp"), webhookSignaturePresent: request.headers.has("webhook-signature"),
+        svixIdPresent: request.headers.has("svix-id"), svixTimestampPresent: request.headers.has("svix-timestamp"), svixSignaturePresent: request.headers.has("svix-signature") });
+      return NextResponse.json({ error: "Invalid webhook signature" }, { status: 400 });
+    }
     const payload = JSON.parse(raw);
     if (!["ORDER_PROCESSED", "ORDER_AUTHORIZED", "ORDER_FAILED", "ORDER_CANCELLED", "PAYMENT_FAILED", "REFUND_PROCESSED", "REFUND_FAILED"].includes(payload.event_type)) return NextResponse.json({ ignored: true });
     const providerId = payload.data?.order_id;
-    if (!isPineLabsProviderId(providerId || "")) return NextResponse.json({ error: "Invalid order reference" }, { status: 400 });
+    if (typeof providerId !== "string" || !isPineLabsProviderId(providerId)) {
+      console.warn("[pinelabs] Webhook rejected", { reason: "invalid_order_reference", dataPresent: Boolean(payload.data), orderIdType: typeof providerId });
+      return NextResponse.json({ error: "Invalid order reference" }, { status: 400 });
+    }
     const event = { event_id: request.headers.get("webhook-id")!, event_type: String(payload.event_type), provider_order_id: providerId, payment_mode: pineLabsConfig().mode };
     const db = getSupabaseAdmin({ fresh: true });
     const stored = await db.from("pinelabs_webhook_events").upsert(event, { onConflict: "event_id", ignoreDuplicates: true });
@@ -41,6 +52,7 @@ export async function pineLabsWebhook(request: NextRequest) {
     if (!saved.data.processed_at) {
       try { await processPineLabsEvent(saved.data); } catch { return NextResponse.json({ accepted: true, queued: true }); }
     }
+    console.info("[pinelabs] Webhook processed", { eventId: event.event_id, providerOrderId: providerId, eventType: event.event_type });
     return NextResponse.json({ accepted: true });
   } catch { return NextResponse.json({ error: "Unable to accept notification; retry required" }, { status: 503 }); }
 }

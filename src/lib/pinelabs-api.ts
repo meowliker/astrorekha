@@ -117,14 +117,24 @@ export function readPineLabsReturnToken(token: string | null, now = Date.now()):
   const expected = pineLabsReturnToken(id, issuedAt).split(".")[2];
   return timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(expected, "hex")) ? id : null;
 }
-export function verifyPineLabsWebhook(raw: string, headers: Headers, now = Date.now()) {
+export function inspectPineLabsWebhookSignature(raw: string, headers: Headers, now = Date.now()) {
   // Pine Labs' official WooCommerce plugin uses the API client secret as the
   // merchant webhook key. Its Base64 encode/decode steps preserve these UTF-8
   // bytes; decoding the client secret itself would produce a different key.
   // https://github.com/plural-pinelabs/woocommerce-plugin/blob/main/woocommerce-pinepg-gateway/index.php
   const secret = process.env.PINELABS_CLIENT_SECRET?.trim();
   const id = headers.get("webhook-id"), timestamp = headers.get("webhook-timestamp"), signature = headers.get("webhook-signature");
-  if (!secret || !id || !timestamp || !/^\d+$/.test(timestamp) || !signature || Math.abs(now / 1000 - Number(timestamp)) > 300) return false;
+  if (!secret) return { valid: false, reason: "missing_configuration" } as const;
+  if (!id || !timestamp || !signature) return { valid: false, reason: "missing_headers" } as const;
+  if (!/^\d+$/.test(timestamp) || !Number.isSafeInteger(Number(timestamp))) return { valid: false, reason: "invalid_timestamp" } as const;
+  if (Math.abs(now / 1000 - Number(timestamp)) > 300) return { valid: false, reason: "timestamp_outside_window" } as const;
   const expected = createHmac("sha256", Buffer.from(secret, "utf8")).update(`${id}.${timestamp}.${raw}`).digest();
-  return signature.split(" ").some(part => { const value = part.startsWith("v1,") ? part.slice(3) : part; return /^[A-Za-z0-9+/]{43}=$/.test(value) && equalSignature(value, expected, "base64"); });
+  const candidates = signature.split(" ").map(part => part.startsWith("v1,") ? part.slice(3) : part).filter(value => /^[A-Za-z0-9+/]{43}=$/.test(value));
+  if (!candidates.length) return { valid: false, reason: "unsupported_signature_format" } as const;
+  return candidates.some(value => equalSignature(value, expected, "base64"))
+    ? { valid: true, reason: "verified" } as const
+    : { valid: false, reason: "signature_mismatch" } as const;
+}
+export function verifyPineLabsWebhook(raw: string, headers: Headers, now = Date.now()) {
+  return inspectPineLabsWebhookSignature(raw, headers, now).valid;
 }

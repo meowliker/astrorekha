@@ -68,6 +68,17 @@ test('official Pine Labs webhook example verifies using the client secret withou
   assert.equal(api.pineLabsSigningConfigured(),false);
  } finally {if(previous===undefined)delete process.env.PINELABS_WEBHOOK_SECRET;else process.env.PINELABS_WEBHOOK_SECRET=previous;}
 });
+test('webhook diagnostics distinguish rejection causes without including sensitive input',()=>{
+ const now=Date.now(),timestamp=String(Math.floor(now/1000)),raw='{"customer":"private@example.com"}';
+ const headers=new Headers();
+ assert.equal(api.inspectPineLabsWebhookSignature(raw,headers,now).reason,'missing_headers');
+ headers.set('webhook-id','private-event');headers.set('webhook-timestamp',timestamp);headers.set('webhook-signature','bad');
+ assert.equal(api.inspectPineLabsWebhookSignature(raw,headers,now).reason,'unsupported_signature_format');
+ headers.set('webhook-signature','v1,'+Buffer.alloc(32).toString('base64'));
+ assert.equal(api.inspectPineLabsWebhookSignature(raw,headers,now).reason,'signature_mismatch');
+ assert.equal(api.inspectPineLabsWebhookSignature(raw,headers,now+301000).reason,'timestamp_outside_window');
+ assert.equal(JSON.stringify(api.inspectPineLabsWebhookSignature(raw,headers,now)).includes('private'),false);
+});
 test('checkout uses saved amount and unique reference, persists binding, and never logs credentials',async()=>{
  let requests=0;
  global.fetch=async(url,options)=>{
