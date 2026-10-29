@@ -31,7 +31,9 @@ export async function pineLabsWebhook(request: NextRequest) {
     const verification = inspectPineLabsWebhookSignature(raw, request.headers);
     if (!verification.valid) {
       // Never log signatures, secrets, raw payloads or customer data.
+      const deliveryId = request.headers.get("webhook-id") || request.headers.get("svix-id") || "";
       console.warn("[pinelabs] Webhook rejected", { reason: verification.reason, bodyBytes: Buffer.byteLength(raw),
+        deliveryId: /^[a-zA-Z0-9_-]{1,100}$/.test(deliveryId) ? deliveryId : undefined,
         webhookIdPresent: request.headers.has("webhook-id"), webhookTimestampPresent: request.headers.has("webhook-timestamp"), webhookSignaturePresent: request.headers.has("webhook-signature"),
         svixIdPresent: request.headers.has("svix-id"), svixTimestampPresent: request.headers.has("svix-timestamp"), svixSignaturePresent: request.headers.has("svix-signature") });
       return NextResponse.json({ error: "Invalid webhook signature" }, { status: 400 });
