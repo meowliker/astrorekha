@@ -3,13 +3,13 @@ const Module=require('node:module'),path=require('node:path'),{createHmac}=requi
 require('ts-node').register({transpileOnly:true,compilerOptions:{module:'CommonJS',moduleResolution:'node'}});
 const resolve=Module._resolveFilename;Module._resolveFilename=function(name,parent,...rest){return resolve.call(this,name.startsWith('@/')?path.join(__dirname,'../src',name.slice(2)):name,parent,...rest)};
 const stub=(file,exports)=>{const id=require.resolve(file);require.cache[id]={id,filename:id,loaded:true,exports}};
-let rows,calls,grants,sends,status,failGrant,failStatus,failInbox,concurrentPaid;
+let rows,calls,grants,sends,status,failGrant,failStatus,failInbox,concurrentPaid,remotePatch;
 const db={from(table){let values=null,filters=[];const run=async()=>{const row=[...rows.values()].find(r=>r.table===table&&filters.every(f=>f(r)));if(row&&values)Object.assign(row,values);return {data:row?{...row}:null,error:null}};const q={select(){return q},update(v){values=v;return q},eq(k,v){filters.push(r=>r[k]===v);return q},neq(k,v){filters.push(r=>r[k]!==v);return q},or(){filters.push(r=>!r.gateway_check_until||Date.parse(r.gateway_check_until)<Date.now());return q},maybeSingle:run,single:run,then(ok,bad){return run().then(ok,bad)},upsert:async row=>{if(failInbox)return {error:{message:'offline'}};const id=row.event_id||row.id;if(!rows.has(id))rows.set(id,{...row,table});return {error:null}}};return q}};
 stub('../src/lib/supabase-admin',{getSupabaseAdmin:()=>db});
 const api=require('../src/lib/pinelabs-api');
 const id='pnl'+'a'.repeat(24),sm='sm_'+'b'.repeat(20);
 const remote=ref=>({order_id:'remote-'+ref,merchant_order_reference:ref,merchant_id:'421588',type:'CHARGE',status,order_amount:{value:10000,currency:'INR'},payments:[{id:'txn-'+ref,status:'PROCESSED',payment_amount:{value:10000,currency:'INR'},updated_at:'2026-01-01T10:02:00Z'}]});
-stub('../src/lib/pinelabs-api',{...api,fetchPineLabsOrder:async(ref,mode,provider)=>{calls++;await Promise.resolve();if(failStatus)throw Error('offline');const key=provider?ref.replace(/^remote-/,''):ref;if(concurrentPaid&&rows.has(key))Object.assign(rows.get(key),{payment_status:'paid',fulfilled_at:new Date().toISOString()});return remote(key)}});
+stub('../src/lib/pinelabs-api',{...api,fetchPineLabsOrder:async(ref,mode,provider)=>{calls++;await Promise.resolve();if(failStatus)throw Error('offline');const key=provider?ref.replace(/^remote-/,''):ref;if(concurrentPaid&&rows.has(key))Object.assign(rows.get(key),{payment_status:'paid',fulfilled_at:new Date().toISOString()});return {...remote(key),...remotePatch}}});
 stub('../src/lib/payu-fulfillment',{fulfillPayUPayment:async(payload,options)=>{assert.equal(options.verifiedByPineLabsApi,true);assert.equal(payload.amount,'100.00');if(failGrant)throw Error('DB fail');grants++;Object.assign(rows.get(payload.txnid),{payment_status:'paid',fulfilled_at:new Date().toISOString(),gateway_transaction_id:payload.mihpayid});return {success:true}}});
 stub('../src/lib/soulmate-purchase-tracking',{sendSoulmatePurchase:async()=>{sends++}});
 stub('../src/lib/soulmate-invoice',{confirmSoulmatePurchase:async()=>{sends++}});
@@ -17,7 +17,7 @@ stub('../src/lib/soulmate-payu',{receiptPath:id=>`/soulmate/payment?order=${id}`
 const {reconcilePineLabsOrder}=require('../src/lib/pinelabs-reconciliation');
 const {pineLabsWebhook,pineLabsCallback,processPineLabsEvent}=require('../src/lib/pinelabs-notification');
 const {NextRequest}=require('next/server');
-beforeEach(()=>{rows=new Map();calls=grants=sends=0;status='PROCESSED';failGrant=failStatus=failInbox=concurrentPaid=false;Object.assign(process.env,{PINELABS_CLIENT_ID:'fixture',PINELABS_CLIENT_SECRET:'fixture',PINELABS_MERCHANT_ID:'421588',PINELABS_ENVIRONMENT:'production',PINELABS_CALLBACK_SECRET:'ab'.repeat(32)});delete process.env.PINELABS_CALLBACK_ORIGIN;delete process.env.LOCAL_PAYMENT_GATEWAY});
+beforeEach(()=>{rows=new Map();calls=grants=sends=0;status='PROCESSED';remotePatch={};failGrant=failStatus=failInbox=concurrentPaid=false;Object.assign(process.env,{PINELABS_CLIENT_ID:'fixture',PINELABS_CLIENT_SECRET:'fixture',PINELABS_MERCHANT_ID:'421588',PINELABS_ENVIRONMENT:'production',PINELABS_CALLBACK_SECRET:'ab'.repeat(32)});delete process.env.PINELABS_CALLBACK_ORIGIN;delete process.env.LOCAL_PAYMENT_GATEWAY});
 function seed(ref=id,extra={}){const row={id:ref,table:ref.startsWith('sm_')?'soulmate_orders':'payments',gateway:'pinelabs',amount:10000,currency:'INR',payment_mode:'live',payment_status:'pending',customer_email:'fixture@example.com',delivery_hours:12,...extra};rows.set(ref,row);return row}
 test('simultaneous status and callback reconciliation claims one lease and grants once',async()=>{seed();await Promise.all([reconcilePineLabsOrder(id),reconcilePineLabsOrder(id)]);assert.equal(calls,1);assert.equal(grants,1);await reconcilePineLabsOrder(id);assert.equal(calls,1)});
 test('pending, authorized and failed never unlock; stale failure cannot downgrade paid order',async()=>{
@@ -33,6 +33,53 @@ test('valid browser return reaches recovery page during status outage using save
 test('lost checkout response recovers provider binding through API and callback',async()=>{const row=seed();const response=await pineLabsCallback(callback(id));assert.equal(response.status,303);assert.equal(row.gateway_order_id,'remote-'+id);assert.equal(row.payment_status,'paid');assert.equal(calls,1)});
 function webhook(valid=true,eventId='event-1'){const raw=JSON.stringify({event_type:'ORDER_PROCESSED',data:{order_id:'remote-'+id}}),timestamp=String(Math.floor(Date.now()/1000));const sig=createHmac('sha256',Buffer.from(process.env.PINELABS_CLIENT_SECRET,'utf8')).update(`${eventId}.${timestamp}.${raw}`).digest('base64');return new NextRequest('https://astrorekha.com/api/pinelabs/webhook',{method:'POST',body:raw,headers:{'webhook-id':eventId,'webhook-timestamp':timestamp,'webhook-signature':valid?`v1,${sig}`:'forged'}})}
 test('signed webhook persists before acknowledgement, duplicate delivery grants once',async()=>{seed();assert.equal((await pineLabsWebhook(webhook(false))).status,400);assert.equal(rows.has('event-1'),false);assert.equal((await pineLabsWebhook(webhook())).status,200);assert.ok(rows.get('event-1').processed_at);assert.equal((await pineLabsWebhook(webhook())).status,200);assert.equal(grants,1);assert.equal(calls,1)});
+function mismatchedWebhook(data={},eventType='ORDER_PROCESSED',ref='remote-'+id,eventId='untrusted-id'){
+ const timestamp=String(Math.floor(Date.now()/1000));
+ return new NextRequest('https://astrorekha.com/api/pinelabs/webhook',{method:'POST',body:JSON.stringify({event_type:eventType,data:{order_id:ref,...data}}),headers:{'webhook-id':eventId,'webhook-timestamp':timestamp,'webhook-signature':'v1,'+Buffer.alloc(32).toString('base64')}});
+}
+test('signature mismatch only rechecks a saved order; provider API alone authorizes fulfillment',async()=>{
+ seed(id,{gateway_order_id:'remote-'+id});
+ const response=await pineLabsWebhook(mismatchedWebhook({status:'FAILED',amount:1,merchant_id:'attacker',customer_email:'other@example.com'}));
+ assert.equal(response.status,200);assert.equal((await response.json()).verification,'api');assert.equal(calls,1);assert.equal(grants,1);
+ assert.equal(rows.has('untrusted-id'),false);
+ const audit=rows.get('api-verified:live:'+id);assert.equal(audit.event_type,'API_VERIFIED_PAYMENT');assert.ok(audit.processed_at);
+ await pineLabsWebhook(mismatchedWebhook({},'ORDER_PROCESSED','remote-'+id,'different-untrusted-id'));
+ assert.equal(grants,1);assert.equal(calls,1);assert.equal([...rows.values()].filter(r=>r.table==='pinelabs_webhook_events').length,1);
+});
+test('unverified hints for unknown, other-gateway, other-mode, unbound orders and refunds never query provider',async()=>{
+ for(const extra of [{},{gateway:'paytm',gateway_order_id:'remote-'+id},{payment_mode:'test',gateway_order_id:'remote-'+id}]){
+  seed(id,extra);assert.equal((await pineLabsWebhook(mismatchedWebhook())).status,400);
+ }
+ seed(id,{gateway_order_id:'remote-'+id});
+ assert.equal((await pineLabsWebhook(mismatchedWebhook({},'REFUND_PROCESSED'))).status,400);
+ assert.equal((await pineLabsWebhook(mismatchedWebhook({},'ORDER_PROCESSED','unknown-provider'))).status,400);
+ assert.equal(calls,0);assert.equal(grants,0);
+});
+test('notification success claim cannot override pending, failed or unavailable API; cooldown limits retries',async()=>{
+ for(const providerStatus of ['PENDING','FAILED','AUTHORIZED']){
+  status=providerStatus;seed(id,{gateway_order_id:'remote-'+id});
+  const before=calls;assert.equal((await pineLabsWebhook(mismatchedWebhook({status:'PROCESSED'}))).status,503);
+  assert.equal(calls,before+1);assert.equal(grants,0);
+  await pineLabsWebhook(mismatchedWebhook());assert.equal(calls,before+1);
+ }
+ seed(id,{gateway_order_id:'remote-'+id});failStatus=true;
+ assert.equal((await pineLabsWebhook(mismatchedWebhook())).status,503);assert.equal(grants,0);
+ assert.equal([...rows.values()].some(r=>r.table==='pinelabs_webhook_events'),false);
+});
+test('API fallback rejects merchant, amount, currency, provider binding and transaction evidence mismatches',async()=>{
+ for(const patch of [{merchant_id:'other'},{merchant_order_reference:'other'},{order_id:'other'},{order_amount:{value:1,currency:'INR'}},{order_amount:{value:10000,currency:'USD'}},{payments:[]},{type:'REFUND'}]){
+  seed(id,{gateway_order_id:'remote-'+id});remotePatch=patch;
+  assert.equal((await pineLabsWebhook(mismatchedWebhook())).status,503);assert.equal(grants,0);
+ }
+ assert.equal([...rows.values()].some(r=>r.table==='pinelabs_webhook_events'),false);
+});
+test('API fallback recovers after audit failure and keeps soulmate grants idempotent',async()=>{
+ seed(sm,{gateway_order_id:'remote-'+sm});failInbox=true;
+ assert.equal((await pineLabsWebhook(mismatchedWebhook({},'ORDER_PROCESSED','remote-'+sm))).status,503);
+ assert.equal(sends,2);assert.equal(calls,1);failInbox=false;
+ assert.equal((await pineLabsWebhook(mismatchedWebhook({},'ORDER_PROCESSED','remote-'+sm))).status,200);
+ assert.equal(sends,2);assert.equal(calls,1);assert.ok(rows.get('api-verified:live:'+sm).processed_at);
+});
 test('webhook outage queues durable retry; failure to persist asks provider to retry',async()=>{seed();failStatus=true;let response=await pineLabsWebhook(webhook());assert.equal(response.status,200);assert.equal((await response.json()).queued,true);assert.equal(rows.get('event-1').processed_at,undefined);failStatus=false;await processPineLabsEvent(rows.get('event-1'));assert.equal(grants,1);assert.ok(rows.get('event-1').processed_at);failInbox=true;response=await pineLabsWebhook(webhook(true,'event-2'));assert.equal(response.status,503)});
 test('shared status and checkout ownership route preserve Pine Labs reference and purchase mapping',async()=>{const {GET}=require('../src/app/api/payu/status/route');seed(id,{type:'bundle',bundle_id:'palm-reading',user_id:'fixture-user'});let response=await GET(new NextRequest(`https://astrorekha.com/api/payments/status?txnid=${id}&checkoutEmail=another@example.com`));assert.equal((await response.json()).matchesCheckout,false);assert.equal(calls,0);response=await GET(new NextRequest(`https://astrorekha.com/api/payments/status?txnid=${id}`));const body=await response.json();assert.equal(body.gateway,'pinelabs');assert.equal(body.status,'paid');assert.equal(body.bundleId,'palm-reading');assert.equal(body.userId,'fixture-user');assert.equal(body.amount,100)});
 

@@ -43,6 +43,14 @@ Confirmed report, add-on and chat purchases use existing fulfillment, invoices, 
 
 Signed webhook IDs are persisted before acknowledgement. Temporary failures remain queued for recovery. The cron also checks unresolved orders from the last 14 days, with a bounded work budget and oldest-check-first ordering. Credentials must remain available to reconcile old Pine Labs purchases after switching to another gateway. API health monitoring checks credential acceptance, not whether a bank will accept a payment; alerts require two consecutive scheduled failures.
 
+### API recovery for a notification signature mismatch
+
+Live notifications on 29 October reached the correct endpoint but failed HMAC verification with the dashboard client secret. UTF-8, Base64-decoded, hex-decoded and Base64-text keys, and raw/compact/stringified bodies did not match the actual delivery. Do not claim the sender's signature configuration has been fixed.
+
+A fresh, well-formed signature mismatch may prompt an independent API recheck **only** for a payment whose provider order ID is already bound to exactly one saved Pine Labs order in the current environment. The recheck uses our saved merchant reference, the existing database lease/cooldown, and full merchant/order/amount/currency/transaction validation. Notification fields never authorize fulfillment. Unknown/unbound orders, malformed or missing signatures, expired timestamps, and unverified refund notifications are rejected. Pending/unavailable verification returns a retryable error; paid, fulfilled orders can be acknowledged using their previously API-verified state.
+
+This recovery creates one deterministic `API_VERIFIED_PAYMENT` audit record per order in the private inbox. It does **not** claim the notification was authenticated, and never stores an unverified incoming event ID. Signed deliveries continue to use their original durable inbox path. Signature failures remain logged for Pine Labs support. Refund notifications still require a valid signature; authenticated refund reconciliation remains a separate recovery path.
+
 Refunds made in Pine Labs are verified through its API and recorded once, using a stable refund ID. They do not automatically revoke purchased reports. Refund recovery depends on receiving a signed refund event: subscribe to refund notifications and test one. If a notification was never received, request a redelivery from Pine Labs or use the provider refund order ID with the recovery script below. There is no claim of complete refund discovery from a global refund-list API.
 
 ## Local verification

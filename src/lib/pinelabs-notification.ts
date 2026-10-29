@@ -6,6 +6,41 @@ import { recordPineLabsRefund } from "./pinelabs-refunds";
 import { receiptCookie, receiptPath } from "./soulmate-payu";
 import { diagnosePineLabsWebhook } from "./pinelabs-webhook-diagnostics";
 
+/** A bad signature is never payment evidence. For an already bound checkout,
+ * it may only prompt the same authenticated API reconciliation used by cron.
+ * No event status, amount, customer, transaction ID or event ID is trusted here.
+ */
+async function recheckKnownPineLabsPayment(raw: string) {
+  let payload;
+  try { payload = JSON.parse(raw); } catch { return null; }
+  if (!["ORDER_PROCESSED", "ORDER_AUTHORIZED", "ORDER_FAILED", "ORDER_CANCELLED", "PAYMENT_FAILED"].includes(payload?.event_type)) return null;
+  const providerId = payload?.data?.order_id;
+  if (typeof providerId !== "string" || !isPineLabsProviderId(providerId)) return null;
+  const db = getSupabaseAdmin({ fresh: true }), mode = pineLabsConfig().mode;
+  // Only our immutable saved provider binding can select the order to check.
+  // Never fetch an arbitrary provider order supplied by an unauthenticated caller.
+  const candidates = await Promise.all(["payments", "soulmate_orders"].map(table => db.from(table).select("id")
+    .eq("gateway", "pinelabs").eq("payment_mode", mode).eq("gateway_order_id", providerId).maybeSingle()));
+  if (candidates.some(result => result.error)) throw new Error("Unable to locate saved Pine Labs payment");
+  const known = candidates.flatMap(result => result.data ? [result.data] : []);
+  if (known.length !== 1 || !isPineLabsReference(known[0].id)) return null;
+  // This routine owns the DB lease/cooldown and uses our saved merchant reference
+  // to call Pine Labs. It validates merchant, full amount, INR and transaction.
+  const order = await reconcilePineLabsOrder(known[0].id);
+  if (order.payment_status !== "paid" || (!order.id.startsWith("sm_") && !order.fulfilled_at)) {
+    return NextResponse.json({ error: "Payment verification pending; retry required" }, { status: 503 });
+  }
+  // A deterministic, server-created audit record cannot be flooded with supplied
+  // event IDs. It explicitly records API verification, not a signed webhook.
+  const now = new Date().toISOString();
+  const event = { event_id: `api-verified:${mode}:${order.id}`, event_type: "API_VERIFIED_PAYMENT",
+    provider_order_id: providerId, payment_mode: mode, checked_at: now, processed_at: now };
+  const stored = await db.from("pinelabs_webhook_events").upsert(event, { onConflict: "event_id", ignoreDuplicates: true });
+  if (stored.error) throw new Error("Unable to record Pine Labs API verification");
+  console.info("[pinelabs] Notification resolved by authenticated API", { orderId: order.id, providerOrderId: providerId });
+  return NextResponse.json({ accepted: true, verification: "api" });
+}
+
 export async function processPineLabsEvent(event: { event_id: string; event_type?: string; provider_order_id: string; payment_mode: string }) {
   const db = getSupabaseAdmin({ fresh: true });
   try {
@@ -33,11 +68,15 @@ export async function pineLabsWebhook(request: NextRequest) {
     if (!verification.valid) {
       // Never log signatures, secrets, raw payloads or customer data.
       const deliveryId = request.headers.get("webhook-id") || request.headers.get("svix-id") || "";
-      console.warn("[pinelabs] Webhook rejected", { reason: verification.reason, bodyBytes: Buffer.byteLength(raw),
+      console.warn("[pinelabs] Webhook signature rejected", { reason: verification.reason, bodyBytes: Buffer.byteLength(raw),
         diagnosticMatches: verification.reason === "signature_mismatch" ? diagnosePineLabsWebhook(raw, request.headers) : [],
         deliveryId: /^[a-zA-Z0-9_-]{1,100}$/.test(deliveryId) ? deliveryId : undefined,
         webhookIdPresent: request.headers.has("webhook-id"), webhookTimestampPresent: request.headers.has("webhook-timestamp"), webhookSignaturePresent: request.headers.has("webhook-signature"),
         svixIdPresent: request.headers.has("svix-id"), svixTimestampPresent: request.headers.has("svix-timestamp"), svixSignaturePresent: request.headers.has("svix-signature") });
+      if (verification.reason === "signature_mismatch") {
+        const rechecked = await recheckKnownPineLabsPayment(raw);
+        if (rechecked) return rechecked;
+      }
       return NextResponse.json({ error: "Invalid webhook signature" }, { status: 400 });
     }
     const payload = JSON.parse(raw);
