@@ -1,3 +1,7 @@
+
+import type { NatalPromptData } from "@/lib/astrology-context-types";
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { fetchFromAstroEngine } from "@/lib/astro-client";
@@ -82,7 +86,7 @@ export async function POST(request: NextRequest) {
       const { data: activeUsers } = await supabase.from("users")
         .select("id")
         .in("subscription_status", ["active", "trialing"]);
-      userIds = (activeUsers || []).map((u: any) => u.id);
+      userIds = (activeUsers || []).map((u) => u.id);
     }
 
     console.log(`Generating daily insights for ${userIds.length} users`);
@@ -127,7 +131,7 @@ export async function POST(request: NextRequest) {
           : parseInt(birthMonth);
 
         // Try astro-engine for detailed natal data, but fall back gracefully
-        let natalData: any = null;
+        let natalData: NatalPromptData | null = null;
         try {
           natalData = await fetchFromAstroEngine("/calculate", {
             year: parseInt(birthYear),
@@ -253,8 +257,8 @@ Generate the daily insights JSON now.`;
 
         // Rate limit delay
         await new Promise((r) => setTimeout(r, 500));
-      } catch (err: any) {
-        console.error(`Failed insights for ${userId}:`, err.message);
+      } catch (err) {
+        console.error(`Failed insights for ${userId}:`, getErrorMessage(err));
         await logClaudeUsage({
           feature: "daily_insights",
           operation: "generate",
@@ -276,10 +280,10 @@ Generate the daily insights JSON now.`;
       message: `Generated insights for ${successCount}/${userIds.length} users`,
       results,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Cron generate-daily-insights error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed" },
+      { success: false, error: getErrorMessage(error) || "Failed" },
       { status: 500 }
     );
   }

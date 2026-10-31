@@ -25,16 +25,16 @@ export interface UserContext {
 export interface NatalData {
   success: boolean;
   chart: {
-    birth_data: any;
-    big_three: any;
-    planets: any;
-    houses: any;
-    ascendant: any;
-    midheaven: any;
-    aspects: any[];
-    stelliums: any[];
-    elements: any;
-    modalities: any;
+    birth_data: unknown;
+    big_three: unknown;
+    planets: unknown;
+    houses: unknown;
+    ascendant: unknown;
+    midheaven: unknown;
+    aspects: unknown[];
+    stelliums: unknown[];
+    elements: unknown;
+    modalities: unknown;
   };
   dasha: {
     starting_ruler: string;
@@ -44,25 +44,25 @@ export interface NatalData {
       antardasha: string;
       label: string;
     };
-    mahadashas: any[];
+    mahadashas: unknown[];
   };
-  active_transits: any[];
+  active_transits: unknown[];
 }
 
 export interface PalmData {
-  image_quality: any;
-  hand_identification: any;
-  hand_shape: any;
-  fingers: any;
-  heart_line: any;
-  head_line: any;
-  life_line: any;
-  fate_line: any;
-  minor_lines: any;
-  mounts: any;
-  special_markings: any;
-  bracelet_lines: any;
-  overall_assessment: any;
+  image_quality: unknown;
+  hand_identification: unknown;
+  hand_shape: unknown;
+  fingers: unknown;
+  heart_line: unknown;
+  head_line: unknown;
+  life_line: unknown;
+  fate_line: unknown;
+  minor_lines: unknown;
+  mounts: unknown;
+  special_markings: unknown;
+  bracelet_lines: unknown;
+  overall_assessment: unknown;
 }
 
 /**

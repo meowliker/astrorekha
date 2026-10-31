@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
@@ -18,7 +20,7 @@ export async function GET(request: NextRequest) {
 
     const supabase = getSupabaseAdmin();
 
-    let userData: any = null;
+    let userData: Record<string, unknown> | null = null;
 
     if (userId) {
       const { data } = await supabase.from("users").select("*").eq("id", userId).single();
@@ -46,10 +48,10 @@ export async function GET(request: NextRequest) {
       subscriptionCancelled: userData.subscription_cancelled || false,
       paymentStatus: userData.payment_status || null,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Check trial status error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to check trial status" },
+      { error: getErrorMessage(error) || "Failed to check trial status" },
       { status: 500 }
     );
   }

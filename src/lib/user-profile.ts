@@ -37,7 +37,7 @@ export interface UserProfile {
   // Palm reading data
   palmImageUrl?: string;
   palmImage?: string | null; // Base64 image
-  palmReadingResult?: any;
+  palmReadingResult?: unknown;
   palmReadingDate?: string;
 }
 
@@ -224,7 +224,7 @@ export async function updateUserProfile(updates: Partial<UserProfile>): Promise<
   const userId = generateUserId();
 
   // Convert camelCase keys to snake_case for Supabase
-  const dbUpdates: Record<string, any> = { updated_at: new Date().toISOString() };
+  const dbUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (updates.gender !== undefined) dbUpdates.gender = updates.gender;
   if (updates.birthMonth !== undefined) dbUpdates.birth_month = updates.birthMonth;
   if (updates.birthDay !== undefined) dbUpdates.birth_day = updates.birthDay;
@@ -291,7 +291,7 @@ export async function savePalmImage(imageDataUrl: string): Promise<string> {
 }
 
 // Save palm reading result
-export async function savePalmReadingResult(result: any): Promise<void> {
+export async function savePalmReadingResult(result: unknown): Promise<void> {
   const userId = generateUserId();
   
   await supabase.from("user_profiles").update({

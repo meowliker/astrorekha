@@ -5,7 +5,8 @@ import { SKETCH_BUCKET, refreshSoulmateDeliveryStatuses } from "@/lib/us-soulmat
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
+  const params = await paramsPromise;
   const db = await soulmateAdmin(request);
   if (!db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!validSoulmateId(params.id)) return NextResponse.json({ error: "Invalid order ID" }, { status: 400 });
@@ -46,7 +47,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
+  const params = await paramsPromise;
   const db = await soulmateAdmin(request);
   if (!db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!validSoulmateId(params.id)) return NextResponse.json({ error: "Invalid order ID" }, { status: 400 });

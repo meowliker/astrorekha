@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing } from "@/lib/pricing";
@@ -19,7 +21,7 @@ export async function GET() {
     }
 
     return NextResponse.json({ success: true, pricing: normalizePricing(data.value) });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error fetching pricing:", error);
     // Return default pricing on error
     return NextResponse.json({ success: true, pricing: DEFAULT_PRICING });
@@ -61,10 +63,10 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error updating pricing:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to update pricing" },
+      { success: false, error: getErrorMessage(error) || "Failed to update pricing" },
       { status: 500 }
     );
   }

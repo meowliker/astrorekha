@@ -1,3 +1,6 @@
+
+interface KieImage { url?: string; b64_json?: string }
+interface KieResponsePayload { image_url?: string; url?: string; output_url?: string; resultJson?: string; resultUrls?: string[]; images?: Array<string | KieImage>; data?: KieResponsePayload | KieImage[]; message?: unknown; error?: unknown; detail?: unknown; msg?: unknown }
 import type { LayoutBFunnelConfig } from "@/lib/layout-b-funnel";
 
 export type SketchAnswers = Record<string, string>;
@@ -5,13 +8,13 @@ export type SketchAnswers = Record<string, string>;
 export interface SketchGenerationResult {
   imageUrl: string;
   providerJobId?: string | null;
-  raw?: any;
+  raw?: unknown;
 }
 
 export interface KieJobStatusResult {
   state: string;
   imageUrl?: string | null;
-  raw?: any;
+  raw?: unknown;
   failMessage?: string | null;
 }
 
@@ -41,8 +44,9 @@ function parsePositiveInt(value: string | undefined, fallback: number) {
   return Math.floor(parsed);
 }
 
-function extractImageUrl(payload: any): string | null {
+function extractImageUrl(payload: KieResponsePayload | null): string | null {
   if (!payload || typeof payload !== "object") return null;
+  const details = Array.isArray(payload.data) ? undefined : payload.data;
   if (typeof payload.image_url === "string" && payload.image_url) return payload.image_url;
   if (typeof payload.url === "string" && payload.url) return payload.url;
   if (typeof payload.output_url === "string" && payload.output_url) return payload.output_url;
@@ -56,9 +60,9 @@ function extractImageUrl(payload: any): string | null {
       // ignore parse error
     }
   }
-  if (typeof payload?.data?.resultJson === "string") {
+  if (typeof details?.resultJson === "string") {
     try {
-      const parsed = JSON.parse(payload.data.resultJson);
+      const parsed = JSON.parse(details.resultJson);
       if (Array.isArray(parsed?.resultUrls) && typeof parsed.resultUrls[0] === "string") {
         return parsed.resultUrls[0];
       }
@@ -66,8 +70,8 @@ function extractImageUrl(payload: any): string | null {
       // ignore parse error
     }
   }
-  if (Array.isArray(payload?.data?.resultUrls) && typeof payload.data.resultUrls[0] === "string") {
-    return payload.data.resultUrls[0];
+  if (Array.isArray(details?.resultUrls) && typeof details.resultUrls[0] === "string") {
+    return details.resultUrls[0];
   }
   if (Array.isArray(payload.images) && payload.images[0]) {
     const first = payload.images[0];
@@ -84,14 +88,15 @@ function extractImageUrl(payload: any): string | null {
   return null;
 }
 
-function extractProviderErrorMessage(payload: any): string | null {
+function extractProviderErrorMessage(payload: KieResponsePayload | null): string | null {
+  const details = Array.isArray(payload?.data) ? undefined : payload?.data;
   const candidates = [
     payload?.message,
     payload?.error,
     payload?.detail,
     payload?.msg,
-    payload?.data?.message,
-    payload?.data?.error,
+    details?.message,
+    details?.error,
   ];
 
   for (const candidate of candidates) {
@@ -166,7 +171,7 @@ export async function getSoulmateSketchJobStatusFromKie(jobId: string): Promise<
   };
 }
 
-export function buildSoulmateSketchPrompt(answers: SketchAnswers, profile: any) {
+export function buildSoulmateSketchPrompt(answers: SketchAnswers, profile: Record<string, unknown> | null) {
   // Mapping logic adapted from prompts/soulmate_sketch_prompt.txt
   const genderInput = String(answers.attracted_to || "").toLowerCase();
   const ageRange = String(answers.age_group || "25-30");

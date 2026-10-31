@@ -1,8 +1,10 @@
 "use client";
+import type { StoredProfile } from "@/lib/stored-profile-types";
+
 
 import { supabase } from "@/lib/supabase";
 
-export async function resolveStoredUserSession(): Promise<Record<string, any> | null> {
+export async function resolveStoredUserSession(): Promise<StoredProfile | null> {
   if (typeof window === "undefined") return null;
 
   const storedId = (localStorage.getItem("astrorekha_user_id") || "").trim();
@@ -12,7 +14,7 @@ export async function resolveStoredUserSession(): Promise<Record<string, any> | 
     ""
   ).trim().toLowerCase();
 
-  let userRow: Record<string, any> | null = null;
+  let userRow: StoredProfile | null = null;
 
   if (storedEmail) {
     const { data } = await supabase

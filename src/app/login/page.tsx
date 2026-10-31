@@ -1,4 +1,6 @@
 "use client";
+import { getErrorMessage } from "@/lib/error-message";
+
 
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -129,7 +131,7 @@ export default function LoginPage() {
       
       // Redirect to dashboard
       router.push(new URLSearchParams(window.location.search).get("next") === "/witch-archetype" ? "/witch-archetype" : "/reports");
-    } catch (err: any) {
+    } catch (err) {
       console.error("Login error:", err);
       setError("Login failed. Please check your credentials.");
     } finally {
@@ -168,9 +170,9 @@ export default function LoginPage() {
 
       setOtpSent(true);
       setOtpCode(["", "", "", "", "", ""]);
-    } catch (err: any) {
+    } catch (err) {
       console.error("OTP send error:", err);
-      setOtpError(err.message || "Failed to send OTP. Please try again.");
+      setOtpError(getErrorMessage(err) || "Failed to send OTP. Please try again.");
     } finally {
       setOtpLoading(false);
     }
@@ -251,9 +253,9 @@ export default function LoginPage() {
       }
 
       router.push(new URLSearchParams(window.location.search).get("next") === "/witch-archetype" ? "/witch-archetype" : "/reports");
-    } catch (err: any) {
+    } catch (err) {
       console.error("OTP verify error:", err);
-      setOtpError(err.message || "Invalid OTP. Please try again.");
+      setOtpError(getErrorMessage(err) || "Invalid OTP. Please try again.");
       setOtpCode(["", "", "", "", "", ""]);
       otpInputRefs.current[0]?.focus();
     } finally {
@@ -292,9 +294,9 @@ export default function LoginPage() {
       }
 
       setForgotSuccess(true);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Forgot password error:", err);
-      setForgotError(err.message || "Failed to send reset email. Please try again.");
+      setForgotError(getErrorMessage(err) || "Failed to send reset email. Please try again.");
     } finally {
       setForgotLoading(false);
     }

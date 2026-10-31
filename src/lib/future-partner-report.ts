@@ -1,3 +1,7 @@
+
+import type { Message } from "@anthropic-ai/sdk/resources/messages";
+import type { BirthChartData } from "@/lib/birth-chart-data";
+import type { StoredProfile } from "@/lib/stored-profile-types";
 import { anthropic } from "@/lib/anthropic";
 import { logClaudeUsage } from "@/lib/ai-usage-logger";
 import { toPartnerDisplayName } from "@/lib/future-partner-format";
@@ -12,7 +16,7 @@ function sleep(ms: number) {
 }
 
 function isOverloadedError(error: unknown): boolean {
-  const asAny = error as any;
+  const asAny = error as { status?: number; statusCode?: number; response?: { status?: number }; message?: string } | null;
   const status = Number(asAny?.status || asAny?.statusCode || asAny?.response?.status || 0);
   if (status === 429 || status === 529 || status === 503) return true;
 
@@ -56,12 +60,12 @@ function toPlainSign(value: unknown): string {
   return "—";
 }
 
-function extractText(response: any): string {
+function extractText(response: Message): string {
   const firstText = Array.isArray(response?.content)
-    ? response.content.find((chunk: any) => chunk?.type === "text" && typeof chunk?.text === "string")
+    ? response.content.find((chunk) => chunk?.type === "text" && typeof chunk?.text === "string")
     : null;
 
-  return firstText?.text?.trim() || "";
+  return firstText?.type === "text" ? firstText.text.trim() : "";
 }
 
 function stripMarkdownFences(input: string): string {
@@ -77,7 +81,7 @@ function parseReportJson(raw: string): FuturePartnerReportData {
     parseCandidates.push(jsonMatch[0]);
   }
 
-  let parsed: any = null;
+  let parsed: Record<string, unknown> | null = null;
   for (const candidate of parseCandidates) {
     try {
       parsed = JSON.parse(candidate);
@@ -156,9 +160,9 @@ export async function generateFuturePartnerReport({
   chartData,
   usageLogContext,
 }: {
-  user: Record<string, any>;
-  userProfile: Record<string, any> | null;
-  chartData: Record<string, any> | null;
+  user: StoredProfile;
+  userProfile: StoredProfile | null;
+  chartData: BirthChartData | null;
   usageLogContext?: {
     userId?: string | null;
     reportId?: string | null;

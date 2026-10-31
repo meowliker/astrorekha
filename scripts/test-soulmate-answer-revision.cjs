@@ -20,7 +20,8 @@ require.cache[fulfillmentFile] = { id: fulfillmentFile, filename: fulfillmentFil
 
 const { NextRequest } = require('next/server');
 const { PATCH } = require('../src/app/api/admin/soulmate/orders/[id]/route');
-const context = { params: { id: 'sm_aaaaaaaaaaaaaaaaaaaa' } };
+const orderId = 'sm_aaaaaaaaaaaaaaaaaaaa';
+const context = { params: Promise.resolve({ id: orderId }) };
 const answers = {
   name: 'Anay',
   heart: 'I feel like I’ve been waiting forever',
@@ -30,7 +31,7 @@ const answers = {
   birthDate: '1994-06-12',
   ethnicity: 'East / Northeast Indian',
 };
-const request = (value) => new NextRequest('https://example.com/api/admin/soulmate/orders/' + context.params.id, { method: 'PATCH', headers: { authorization: 'Bearer fixture', 'content-type': 'application/json' }, body: JSON.stringify({ answers: value }) });
+const request = (value) => new NextRequest('https://example.com/api/admin/soulmate/orders/' + orderId, { method: 'PATCH', headers: { authorization: 'Bearer fixture', 'content-type': 'application/json' }, body: JSON.stringify({ answers: value }) });
 
 beforeEach(() => { rpcResult = { data: ['old/sketch.png', 'old/report.pdf'], error: null }; called = null; removed = null; });
 
@@ -45,7 +46,7 @@ test('answer revision uses the audited reset RPC and cleans up superseded privat
   const response = await PATCH(request(answers), context);
   assert.equal(response.status, 200);
   assert.equal(called.name, 'revise_soulmate_order_answers');
-  assert.equal(called.params.p_order, context.params.id);
+  assert.equal(called.params.p_order, orderId);
   assert.deepEqual(called.params.p_answers, answers);
   assert.deepEqual(removed, rpcResult.data);
 });

@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     const supabase = getSupabaseAdmin();
 
     // Try exact match, then uppercase, then lowercase
-    let promoData: any = null;
+    let promoData: { active: boolean; expires_at?: string; max_uses?: number; used_count: number; discount?: number; type?: string; coins?: number; plan?: string; unlock_all?: boolean } | null = null;
     let foundCode = "";
 
     for (const variant of [trimmedCode, trimmedCode.toUpperCase(), trimmedCode.toLowerCase()]) {
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
         unlockAll: promoData.unlock_all !== false,
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Promo validation error:", error);
     return NextResponse.json(
       { success: false, error: "Failed to validate promo code" },

@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { fulfillPayUPayment, type PayUCallbackPayload } from "@/lib/payu-fulfillment";
 
@@ -18,10 +20,10 @@ export async function POST(request: NextRequest) {
       alreadyPaid: result.alreadyPaid,
       userId: result.userId,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("PayU verify error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Verification failed" },
+      { success: false, error: getErrorMessage(error) || "Verification failed" },
       { status: 500 }
     );
   }

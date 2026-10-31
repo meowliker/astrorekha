@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import type { SketchAnswers } from "@/lib/soulmate-sketch";
 
-function resolveUserId(request: NextRequest, body: any): string | null {
+function resolveUserId(request: NextRequest, body: { userId?: string }): string | null {
   const cookieValue = request.cookies.get("ar_access")?.value?.trim();
   if (cookieValue && cookieValue !== "1") {
     return cookieValue;
@@ -20,7 +20,7 @@ function resolveUserId(request: NextRequest, body: any): string | null {
   return null;
 }
 
-function normalizeAnswers(raw: any): SketchAnswers {
+function normalizeAnswers(raw: Record<string, unknown> | null | undefined): SketchAnswers {
   if (!raw || typeof raw !== "object") return {};
   const result: SketchAnswers = {};
 

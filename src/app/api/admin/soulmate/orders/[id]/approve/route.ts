@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { soulmateAdmin, validSoulmateId } from "@/lib/soulmate-admin";
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
+  const params = await paramsPromise;
   const db = await soulmateAdmin(request);
   if (!db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!validSoulmateId(params.id)) return new NextResponse(null, { status: 400 });

@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import {
   AURA_COLORS,
@@ -148,9 +150,9 @@ export async function POST(request: NextRequest) {
     let scoredResult;
     try {
       scoredResult = computeAuraResult(answers);
-    } catch (error: any) {
+    } catch (error) {
       return NextResponse.json(
-        { error: "invalid_answers", message: error?.message || "Please answer every question." },
+        { error: "invalid_answers", message: getErrorMessage(error) || "Please answer every question." },
         { status: 400 }
       );
     }

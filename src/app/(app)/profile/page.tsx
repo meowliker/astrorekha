@@ -1,4 +1,6 @@
 "use client";
+import type { StoredProfile } from "@/lib/stored-profile-types";
+
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
@@ -81,8 +83,8 @@ export default function ProfilePage() {
     setIsLoading(true);
     try {
       const userId = localStorage.getItem("astrorekha_user_id");
-      let dbUser: any = null;
-      let profileData: any = null;
+      let dbUser: StoredProfile | null = null;
+      let profileData: StoredProfile | null = null;
       if (userId) {
         const [userResult, profileResult] = await Promise.all([
           supabase.from("users").select("*").eq("id", userId).maybeSingle(),

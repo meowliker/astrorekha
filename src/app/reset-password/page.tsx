@@ -1,4 +1,6 @@
 "use client";
+import { getErrorMessage } from "@/lib/error-message";
+
 
 import { useState, useEffect, Suspense } from "react";
 import { motion } from "framer-motion";
@@ -74,9 +76,9 @@ function ResetPasswordContent() {
       }
 
       setSuccess(true);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Password reset error:", err);
-      setError(err.message || "Failed to reset password. Please try again.");
+      setError(getErrorMessage(err) || "Failed to reset password. Please try again.");
     } finally {
       setIsLoading(false);
     }

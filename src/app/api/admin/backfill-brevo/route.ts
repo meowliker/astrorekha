@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { addContactToList, BREVO_LISTS } from "@/lib/brevo";
@@ -43,8 +45,8 @@ export async function POST(request: NextRequest) {
         
         // Small delay to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (err: any) {
-        errors.push(`${email}: ${err.message || "unknown error"}`);
+      } catch (err) {
+        errors.push(`${email}: ${getErrorMessage(err) || "unknown error"}`);
       }
     }
 
@@ -55,10 +57,10 @@ export async function POST(request: NextRequest) {
       skipped,
       errors: errors.length > 0 ? errors : undefined,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Backfill error:", error);
     return NextResponse.json(
-      { error: error.message || "Backfill failed" },
+      { error: getErrorMessage(error) || "Backfill failed" },
       { status: 500 }
     );
   }

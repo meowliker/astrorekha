@@ -1,3 +1,5 @@
+
+type DailyInsightPayload = { prediction?: string; horoscope?: string; mood?: string; dos: string | string[]; donts: string | string[]; data?: DailyInsightPayload };
 import { NextRequest, NextResponse } from "next/server";
 
 // Divine API Configuration
@@ -138,7 +140,7 @@ export async function GET(request: NextRequest) {
 }
 
 // Extract daily tip from horoscope text
-function extractDailyTip(data: any): string {
+function extractDailyTip(data: DailyInsightPayload): string {
   const prediction = data.prediction || data.horoscope || data.data?.prediction || "";
   
   if (prediction) {
@@ -153,7 +155,7 @@ function extractDailyTip(data: any): string {
 }
 
 // Extract do's from horoscope
-function extractDos(data: any): string[] {
+function extractDos(data: DailyInsightPayload): string[] {
   // Divine API might have specific fields for this
   if (data.dos || data.data?.dos) {
     return Array.isArray(data.dos) ? data.dos : [data.dos];
@@ -175,7 +177,7 @@ function extractDos(data: any): string[] {
 }
 
 // Extract don'ts from horoscope
-function extractDonts(data: any): string[] {
+function extractDonts(data: DailyInsightPayload): string[] {
   // Divine API might have specific fields for this
   if (data.donts || data.data?.donts) {
     return Array.isArray(data.donts) ? data.donts : [data.donts];

@@ -52,7 +52,7 @@ export function LocationInput({ value, onChange, placeholder, className }: Locat
       
       if (data.results) {
         setSuggestions(
-          data.results.map((result: any) => ({
+          data.results.map((result: { name: string; country: string; admin1?: string; latitude: number; longitude: number }) => ({
             name: result.name,
             country: result.country,
             state: result.admin1,

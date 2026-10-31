@@ -1,3 +1,7 @@
+
+import type { BirthChartData } from "@/lib/birth-chart-data";
+
+import type { StoredProfile } from "@/lib/stored-profile-types";
 import { NextRequest, NextResponse } from "next/server";
 import { getBirthDateParts } from "@/lib/birth-details";
 import { buildPastLifeReport } from "@/lib/past-life-report";
@@ -20,7 +24,7 @@ function getSessionUserId(request: NextRequest): string | null {
   return null;
 }
 
-function getBirthDateFromProfile(userProfile: Record<string, any> | null, user: Record<string, any> | null): string | null {
+function getBirthDateFromProfile(userProfile: StoredProfile | null, user: StoredProfile | null): string | null {
   const parts = getBirthDateParts({
     birthMonth: userProfile?.birth_month || user?.birth_month,
     birthDay: userProfile?.birth_day || user?.birth_day,
@@ -30,7 +34,7 @@ function getBirthDateFromProfile(userProfile: Record<string, any> | null, user: 
   return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
 }
 
-function getBirthTimeFromProfile(userProfile: Record<string, any> | null, user: Record<string, any> | null): string | null {
+function getBirthTimeFromProfile(userProfile: StoredProfile | null, user: StoredProfile | null): string | null {
   const knowsBirthTime =
     userProfile?.knows_birth_time !== undefined
       ? !!userProfile.knows_birth_time
@@ -53,7 +57,7 @@ function getBirthTimeFromProfile(userProfile: Record<string, any> | null, user: 
   return `${String(normalizedHour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-function makeBirthChartCacheKey(userProfile: Record<string, any> | null, user: Record<string, any> | null): string | null {
+function makeBirthChartCacheKey(userProfile: StoredProfile | null, user: StoredProfile | null): string | null {
   const birthDate = getBirthDateFromProfile(userProfile, user);
   const birthTime = getBirthTimeFromProfile(userProfile, user);
   const birthPlace = String(userProfile?.birth_place || user?.birth_place || "").trim();
@@ -64,8 +68,8 @@ function makeBirthChartCacheKey(userProfile: Record<string, any> | null, user: R
 }
 
 function hasCompletePastLifeBirthDetails(
-  userProfile: Record<string, any> | null,
-  user: Record<string, any> | null
+  userProfile: StoredProfile | null,
+  user: StoredProfile | null
 ): boolean {
   return !!(
     getBirthDateFromProfile(userProfile, user) &&
@@ -78,9 +82,9 @@ async function getPastLifeChartData(
   request: NextRequest,
   supabase: ReturnType<typeof getSupabaseAdmin>,
   userId: string,
-  userProfile: Record<string, any> | null,
-  user: Record<string, any> | null
-): Promise<Record<string, any> | null> {
+  userProfile: StoredProfile | null,
+  user: StoredProfile | null
+): Promise<BirthChartData | null> {
   const cacheKey = makeBirthChartCacheKey(userProfile, user);
   if (!cacheKey) return null;
 
@@ -91,7 +95,7 @@ async function getPastLifeChartData(
     .maybeSingle();
 
   if (cachedChart?.data) {
-    return cachedChart.data as Record<string, any>;
+    return cachedChart.data as BirthChartData;
   }
 
   const birthDate = getBirthDateFromProfile(userProfile, user);

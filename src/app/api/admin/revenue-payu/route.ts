@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { isSoulmateTransaction } from "@/lib/soulmate-orders";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -136,8 +138,8 @@ async function fetchPayUTransactionsChunk(fromDate: string, toDate: string): Pro
     }
 
     return [];
-  } catch (fetchError: any) {
-    console.error("PayU fetch error for chunk:", fromDate, "-", toDate, fetchError.message);
+  } catch (fetchError) {
+    console.error("PayU fetch error for chunk:", fromDate, "-", toDate, getErrorMessage(fetchError));
     return [];
   }
 }
@@ -150,7 +152,7 @@ async function fetchPayUTransactions(fromDate: string, toDate: string): Promise<
   
   // PayU API has a 7-day limit, so we fetch in chunks
   const MAX_DAYS = 7;
-  let currentStart = new Date(startDate);
+  const currentStart = new Date(startDate);
   
   while (currentStart <= endDate) {
     if (Date.now() < payuRateLimitedUntil) {
@@ -413,10 +415,10 @@ export async function GET(request: NextRequest) {
     let transactions: PayUTransaction[] = [];
     try {
       transactions = (await getPayUTransactions(payuStartDate, payuEndDate)).filter((txn) => !isSoulmateTransaction(txn)) as unknown as PayUTransaction[];
-    } catch (payuError: any) {
+    } catch (payuError) {
       console.error("PayU fetch error:", payuError);
       return NextResponse.json(
-        { error: "Failed to fetch PayU transactions", details: payuError?.message || "unknown error" },
+        { error: "Failed to fetch PayU transactions", details: getErrorMessage(payuError) || "unknown error" },
         { status: 500 }
       );
     }
@@ -432,7 +434,7 @@ export async function GET(request: NextRequest) {
     // (e.g., failed -> captured updates for the same txnid).
     const seenEventKeys = new Set<string>();
     transactions = transactions.filter((txn) => {
-      const eventKey = getPayUEventFingerprint(txn as any);
+      const eventKey = getPayUEventFingerprint(txn);
       if (seenEventKeys.has(eventKey)) return false;
       seenEventKeys.add(eventKey);
       return true;
@@ -445,8 +447,8 @@ export async function GET(request: NextRequest) {
         const txnDate = toPayUDate(txn.addedon);
         if (Number.isNaN(txnDate.getTime())) return null;
         return {
-          id: getPayUPaymentId(txn as any) || txn.txnid,
-          payuId: getPayUPaymentId(txn as any),
+          id: getPayUPaymentId(txn) || txn.txnid,
+          payuId: getPayUPaymentId(txn),
           txnId: txn.txnid,
           amountAbs: financial.amount,
           signedAmount: financial.signedAmount,
@@ -624,10 +626,10 @@ export async function GET(request: NextRequest) {
         "Expires": "0",
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Admin revenue-payu API error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to fetch revenue data" },
+      { error: getErrorMessage(error) || "Failed to fetch revenue data" },
       { status: 500 }
     );
   }

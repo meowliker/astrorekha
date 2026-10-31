@@ -15,7 +15,7 @@ import predictions2026Data from "../../../../data/predictions-2026.json";
 const MONTHS = [
   "january", "february", "march", "april", "may", "june",
   "july", "august", "september", "october", "november", "december"
-];
+] as const;
 
 const MONTH_ICONS: Record<string, string> = {
   january: "❄️",
@@ -35,7 +35,7 @@ const MONTH_ICONS: Record<string, string> = {
 export default function Prediction2026Page() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [prediction, setPrediction] = useState<any>(null);
+  const [prediction, setPrediction] = useState<(typeof predictions2026Data)["aries"]["prediction"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedMonth, setExpandedMonth] = useState<string | null>(null);
   const [zodiacSign, setZodiacSign] = useState<string>("Aries");

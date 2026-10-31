@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import bcrypt from "bcryptjs";
@@ -68,10 +70,10 @@ export async function POST(request: NextRequest) {
       success: true,
       message: "Password reset successfully",
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Reset password error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to reset password" },
+      { success: false, error: getErrorMessage(error) || "Failed to reset password" },
       { status: 500 }
     );
   }

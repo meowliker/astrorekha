@@ -3,7 +3,7 @@
 
 declare global {
   interface Window {
-    fbq: (...args: any[]) => void;
+    fbq: (...args: unknown[]) => void;
   }
 }
 
@@ -28,7 +28,7 @@ function createEventId(eventName: string): string {
  */
 export const trackPixelEvent = (
   eventName: string,
-  params?: Record<string, any>,
+  params?: Record<string, unknown>,
   options: PixelEventOptions = {}
 ) => {
   if (typeof window === "undefined") return;
@@ -53,7 +53,7 @@ export const trackPixelEvent = (
  */
 export const trackCustomEvent = (
   eventName: string,
-  params?: Record<string, any>,
+  params?: Record<string, unknown>,
   options: PixelEventOptions = {}
 ) => {
   if (typeof window === "undefined") return;

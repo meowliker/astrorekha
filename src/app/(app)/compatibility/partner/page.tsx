@@ -1,4 +1,6 @@
 "use client";
+import type { BirthChartData } from "@/lib/birth-chart-data";
+
 
 import { useEffect, useId, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -160,7 +162,7 @@ function formatMoonPercent(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
-function extractPartnerMoonSign(payload: any): string | null {
+function extractPartnerMoonSign(payload: { data?: BirthChartData } | null): string | null {
   return (
     extractStoredSignName(payload?.data?.planets?.Moon?.zodiac_sign) ||
     extractStoredSignName(payload?.data?.kundli?.nakshatra_details?.chandra_rasi?.name) ||

@@ -1,4 +1,11 @@
 "use client";
+import type * as Three from "three";
+import type { Topology, GeometryCollection } from "topojson-specification";
+import type { Geometry, Position } from "geojson";
+type DisposableObject = Three.Object3D & { geometry?: Three.BufferGeometry; material?: Three.Material | Three.Material[] };
+
+import { getErrorMessage } from "@/lib/error-message";
+
 
 import ReportInfoButton from "@/components/ReportInfoButton";
 
@@ -137,8 +144,8 @@ export default function AstrocartographyPage() {
         setServerUnlocked(true);
         setReport(json.report);
         setSelectedLineId(json.report.featuredLines[0]?.id || json.report.lines[0]?.id || "");
-      } catch (err: any) {
-        setError(err?.message || "Unable to generate your Astrocartography.");
+      } catch (err) {
+        setError(getErrorMessage(err) || "Unable to generate your Astrocartography.");
       } finally {
         setGenerating(false);
       }
@@ -187,8 +194,8 @@ export default function AstrocartographyPage() {
         }
 
         await fetchStatus(localUserId);
-      } catch (err: any) {
-        setError(err?.message || "Unable to load your Astrocartography.");
+      } catch (err) {
+        setError(getErrorMessage(err) || "Unable to load your Astrocartography.");
       } finally {
         setLoading(false);
       }
@@ -420,17 +427,17 @@ function AstroGlobe({
   onSelectLine: (lineId: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const rendererRef = useRef<any>(null);
-  const sceneRef = useRef<any>(null);
-  const cameraRef = useRef<any>(null);
-  const globeGroupRef = useRef<any>(null);
-  const linesGroupRef = useRef<any>(null);
-  const markersGroupRef = useRef<any>(null);
-  const raycasterRef = useRef<any>(null);
-  const pointerRef = useRef<any>(null);
+  const rendererRef = useRef<Three.WebGLRenderer | null>(null);
+  const sceneRef = useRef<Three.Scene | null>(null);
+  const cameraRef = useRef<Three.PerspectiveCamera | null>(null);
+  const globeGroupRef = useRef<Three.Group | null>(null);
+  const linesGroupRef = useRef<Three.Group | null>(null);
+  const markersGroupRef = useRef<Three.Group | null>(null);
+  const raycasterRef = useRef<Three.Raycaster | null>(null);
+  const pointerRef = useRef<Three.Vector2 | null>(null);
   const frameRef = useRef<number | null>(null);
   const resizeHandlerRef = useRef<(() => void) | null>(null);
-  const lineTargetsRef = useRef<any[]>([]);
+  const lineTargetsRef = useRef<Three.Object3D[]>([]);
   const onSelectLineRef = useRef(onSelectLine);
   const activePointersRef = useRef(new Map<number, { x: number; y: number }>());
   const dragStateRef = useRef({
@@ -613,7 +620,7 @@ function AstroGlobe({
       disposeGroup(markersGroupRef.current);
       disposeGroup(globeGroupRef.current);
       if (sceneRef.current) {
-        sceneRef.current.traverse((object: any) => {
+        sceneRef.current.traverse((object: DisposableObject) => {
           object.geometry?.dispose?.();
           disposeMaterial(object.material);
         });
@@ -852,7 +859,7 @@ function AstroGlobe({
 
 type GlobePolygon = {
   name: string;
-  points: Array<[number, number]>;
+  points: Position[];
 };
 
 const LAND_POLYGONS: GlobePolygon[] = [
@@ -936,7 +943,7 @@ const MAP_LABELS: Array<{ label: string; lat: number; lng: number; size?: number
   { label: "ATLANTIC", lat: 6, lng: -32, size: 20 },
 ];
 
-function createEarthTexture(THREE: any) {
+function createEarthTexture(THREE: typeof Three) {
   const canvas = document.createElement("canvas");
   canvas.width = 2048;
   canvas.height = 1024;
@@ -969,9 +976,9 @@ function createEarthTexture(THREE: any) {
   }
 
   const countries = feature(
-    worldCountries as any,
-    (worldCountries as any).objects.countries
-  ) as any;
+    worldCountries as unknown as Topology,
+    worldCountries.objects.countries as unknown as GeometryCollection
+  );
 
   const landGradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
   landGradient.addColorStop(0, "#315b5c");
@@ -985,7 +992,7 @@ function createEarthTexture(THREE: any) {
   ctx.fillStyle = landGradient;
   ctx.strokeStyle = "rgba(222, 241, 255, 0.62)";
   ctx.lineWidth = 1.35;
-  countries.features.forEach((country: any) => {
+  countries.features.forEach((country) => {
     drawGeoGeometry(ctx, country.geometry, toX, toY);
     ctx.fill();
     ctx.stroke();
@@ -995,7 +1002,7 @@ function createEarthTexture(THREE: any) {
   ctx.save();
   ctx.globalCompositeOperation = "soft-light";
   ctx.fillStyle = "rgba(255,255,255,0.22)";
-  countries.features.forEach((country: any) => {
+  countries.features.forEach((country) => {
     drawGeoGeometry(ctx, country.geometry, toX, toY);
     ctx.fill();
   });
@@ -1039,11 +1046,11 @@ function createEarthTexture(THREE: any) {
 
 function drawGeoGeometry(
   ctx: CanvasRenderingContext2D,
-  geometry: any,
+  geometry: Geometry | null,
   toX: (lng: number) => number,
   toY: (lat: number) => number
 ) {
-  const drawRing = (ring: Array<[number, number]>) => {
+  const drawRing = (ring: Position[]) => {
     ring.forEach(([lng, lat], index) => {
       const x = toX(lng);
       const y = toY(lat);
@@ -1055,7 +1062,7 @@ function drawGeoGeometry(
   ctx.beginPath();
 
   if (geometry?.type === "Polygon") {
-    geometry.coordinates.forEach((ring: Array<[number, number]>) => {
+    geometry.coordinates.forEach((ring: Position[]) => {
       drawRing(ring);
       ctx.closePath();
     });
@@ -1063,7 +1070,7 @@ function drawGeoGeometry(
   }
 
   if (geometry?.type === "MultiPolygon") {
-    geometry.coordinates.forEach((polygon: Array<Array<[number, number]>>) => {
+    geometry.coordinates.forEach((polygon: Array<Position[]>) => {
       polygon.forEach((ring) => {
         drawRing(ring);
         ctx.closePath();
@@ -1072,7 +1079,7 @@ function drawGeoGeometry(
   }
 }
 
-function createGlobeLabelSprite(THREE: any, label: string, isSelected: boolean) {
+function createGlobeLabelSprite(THREE: typeof Three, label: string, isSelected: boolean) {
   const canvas = document.createElement("canvas");
   canvas.width = 256;
   canvas.height = 84;
@@ -1126,7 +1133,7 @@ function pointerDistance(first: { x: number; y: number }, second: { x: number; y
   return Math.hypot(first.x - second.x, first.y - second.y);
 }
 
-function latLngToVector3(THREE: any, latitude: number, longitude: number, radius: number) {
+function latLngToVector3(THREE: typeof Three, latitude: number, longitude: number, radius: number) {
   const phi = (90 - latitude) * (Math.PI / 180);
   const theta = (longitude + 180) * (Math.PI / 180);
   return new THREE.Vector3(
@@ -1136,7 +1143,7 @@ function latLngToVector3(THREE: any, latitude: number, longitude: number, radius
   );
 }
 
-function disposeMaterial(material: any) {
+function disposeMaterial(material: Three.Material | Three.Material[] | undefined) {
   if (Array.isArray(material)) {
     material.forEach((item) => item?.dispose?.());
     return;
@@ -1144,10 +1151,10 @@ function disposeMaterial(material: any) {
   material?.dispose?.();
 }
 
-function disposeGroup(group: any) {
+function disposeGroup(group: Three.Object3D | null) {
   if (!group) return;
   while (group.children?.length) {
-    const child = group.children[0];
+    const child: DisposableObject = group.children[0];
     group.remove(child);
     disposeGroup(child);
     child.geometry?.dispose?.();

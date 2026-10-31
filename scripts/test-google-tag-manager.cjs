@@ -12,8 +12,8 @@ const load = Module._load;
 Module._load = function (name, ...args) {
   if (name === 'next/navigation') return { usePathname: () => pathname };
   if (name === 'next/script') return { __esModule: true, default: props => React.createElement('script', props) };
-  if (name === './MetaPixel') return { MetaPixel: () => React.createElement('meta', { name: 'existing-meta-pixel' }) };
-  if (name === './Clarity') return { Clarity: () => React.createElement('meta', { name: 'existing-clarity' }) };
+  if (name === './MetaPixel') return { MetaPixel: () => React.createElement('span', { 'data-testid': 'existing-meta-pixel' }) };
+  if (name === './Clarity') return { Clarity: () => React.createElement('span', { 'data-testid': 'existing-clarity' }) };
   return load.call(this, name.startsWith('@/') ? path.join(__dirname, '../src', name.slice(2)) : name, ...args);
 };
 process.env.NEXT_PUBLIC_GA_ID = 'G-EXISTING123';
@@ -27,7 +27,7 @@ test('main routes retain exactly one GA setup and both existing marketing compon
     const html = renderToStaticMarkup(React.createElement(MarketingBoundary));
     assert.equal((html.match(/id="google-tag-manager"/g) || []).length, 1);
     assert.equal((html.match(/id="google-analytics"/g) || []).length, 1);
-    assert.equal((html.match(/gtag\(&#x27;config&#x27;/g) || []).length, 1);
+    assert.equal((html.match(/gtag\('config'/g) || []).length, 1);
     assert.match(html, /existing-meta-pixel/);
     assert.match(html, /existing-clarity/);
     assert.ok(html.startsWith('<noscript><iframe'), 'fallback appears at beginning of body marketing boundary');
@@ -44,7 +44,7 @@ test('preview pages stay excluded; every US route loads GTM once with only US an
     assert.equal((html.match(/id="us-soulmate-ga"/g) || []).length, 1);
     assert.ok(html.startsWith('<noscript><iframe'));
     assert.equal((html.match(/ns\.html\?id=GTM-TDGZTVTD/g) || []).length, 1);
-    assert.match(html, /cookie_prefix:&#x27;us_soulmate&#x27;/);
+    assert.match(html, /cookie_prefix:'us_soulmate'/);
     assert.match(html, /G-USFIXTURE1/);
   }
 });

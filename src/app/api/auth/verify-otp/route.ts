@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { setReportSession } from "@/lib/report-session";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -87,10 +89,10 @@ export async function POST(request: NextRequest) {
         unlockedFeatures: userData.unlocked_features,
       },
     }), userData.id);
-  } catch (error: any) {
+  } catch (error) {
     console.error("Verify OTP error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to verify OTP" },
+      { success: false, error: getErrorMessage(error) || "Failed to verify OTP" },
       { status: 500 }
     );
   }

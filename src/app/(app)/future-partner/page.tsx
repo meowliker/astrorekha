@@ -1,4 +1,6 @@
 "use client";
+import { getErrorMessage } from "@/lib/error-message";
+
 
 import ReportInfoButton from "@/components/ReportInfoButton";
 
@@ -106,9 +108,9 @@ export default function FuturePartnerPage() {
 
         setStatus("complete");
         setReport(nextReport);
-      } catch (err: any) {
+      } catch (err) {
         setStatus("failed");
-        setError(err?.message || "Unable to generate this report right now.");
+        setError(getErrorMessage(err) || "Unable to generate this report right now.");
       } finally {
         setIsGenerating(false);
       }
@@ -135,8 +137,8 @@ export default function FuturePartnerPage() {
         if (currentStatus.status !== "complete") {
           await generateReport(localUserId);
         }
-      } catch (err: any) {
-        setError(err?.message || "Unable to load this report.");
+      } catch (err) {
+        setError(getErrorMessage(err) || "Unable to load this report.");
       } finally {
         setLoading(false);
       }

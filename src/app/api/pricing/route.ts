@@ -18,7 +18,7 @@ export async function GET() {
     }
 
     return NextResponse.json({ success: true, pricing: normalizePricing(data.value) });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error fetching pricing:", error);
     return NextResponse.json({ success: true, pricing: DEFAULT_PRICING });
   }

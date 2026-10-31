@@ -1,3 +1,7 @@
+
+import type { StoredProfile } from "@/lib/stored-profile-types";
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
@@ -26,7 +30,7 @@ export async function GET(request: NextRequest) {
 
     // 1. Look up in users table by email
     let userId: string | null = null;
-    let userData: Record<string, any> | null = null;
+    let userData: StoredProfile | null = null;
 
     const { data: userRow } = await supabase
       .from("users")
@@ -41,7 +45,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. Look up in user_profiles table by email
-    let profileData: Record<string, any> | null = null;
+    let profileData: StoredProfile | null = null;
 
     const { data: profileRow } = await supabase
       .from("user_profiles")
@@ -99,8 +103,8 @@ export async function GET(request: NextRequest) {
       },
       name: userData?.name || "",
     });
-  } catch (error: any) {
-    console.error("[restore-session] Error:", error?.message || error);
+  } catch (error) {
+    console.error("[restore-session] Error:", getErrorMessage(error) || error);
     return NextResponse.json(
       { error: "Failed to restore session" },
       { status: 500 }

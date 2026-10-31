@@ -1,3 +1,5 @@
+
+import type { AbTestConfig } from "@/lib/ab-test-types";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_LAYOUT_B_CONFIG, normalizeLayoutBConfig } from "@/lib/layout-b-funnel";
@@ -16,7 +18,7 @@ function clampPercent(value: number): number {
 }
 
 function getNormalizedVariants(
-  testData: any,
+  testData: AbTestConfig,
 	  isOnboardingLayoutTest: boolean,
 	  isPaywallDefaultPlanTest: boolean,
 	  isPaywallGstTest: boolean
@@ -54,7 +56,7 @@ function getNormalizedVariants(
   };
 }
 
-function getCompletedCosmicBundleTest(testData: any = {}) {
+function getCompletedCosmicBundleTest(testData: AbTestConfig = {}) {
   const now = new Date().toISOString();
   return {
     ...testData,
@@ -73,7 +75,7 @@ function getCompletedCosmicBundleTest(testData: any = {}) {
 
 async function completeCosmicBundleTest(
   supabase: ReturnType<typeof getSupabaseAdmin>,
-  testData: any
+  testData: AbTestConfig
 ) {
   const completedTest = getCompletedCosmicBundleTest(testData);
   const { error } = await supabase.from("ab_tests").upsert(
@@ -227,7 +229,7 @@ export async function GET(request: NextRequest) {
       updated_at: defaultTest.updated_at,
     };
 
-    const pageForVariant = (variant: string, test: any): string => {
+    const pageForVariant = (variant: string, test: AbTestConfig): string => {
       if (isOnboardingLayoutTest) {
         return "bundle-pricing";
       }
@@ -446,8 +448,8 @@ export async function POST(request: NextRequest) {
 
     let nextTrafficSplit: number | null = null;
     if (variants) {
-      const totalWeight = Object.values(variants).reduce(
-        (sum: number, v: any) => sum + (v.weight || 0),
+      const totalWeight = Object.values(variants as NonNullable<AbTestConfig["variants"]>).reduce(
+        (sum, v) => sum + (v.weight || 0),
         0
       );
       
@@ -457,11 +459,11 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      const bWeight = clampPercent(Number((variants as any)?.B?.weight ?? 50));
+      const bWeight = clampPercent(Number((variants as AbTestConfig["variants"])?.B?.weight ?? 50));
       nextTrafficSplit = bWeight / 100;
     }
 
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
 

@@ -79,31 +79,31 @@ export default function AdminPricingPage() {
     }
   };
 
-  const updateBundle = (index: number, field: keyof BundlePlan, value: any) => {
+  const updateBundle = <K extends keyof BundlePlan>(index: number, field: K, value: BundlePlan[K]) => {
     if (!pricing) return;
     const newBundles = [...pricing.bundles];
-    (newBundles[index] as any)[field] = value;
+    newBundles[index][field] = value;
     setPricing({ ...pricing, bundles: newBundles });
   };
 
-  const updateUpsell = (index: number, field: keyof UpsellPlan, value: any) => {
+  const updateUpsell = <K extends keyof UpsellPlan>(index: number, field: K, value: UpsellPlan[K]) => {
     if (!pricing) return;
     const newUpsells = [...pricing.upsells];
-    (newUpsells[index] as any)[field] = value;
+    newUpsells[index][field] = value;
     setPricing({ ...pricing, upsells: newUpsells });
   };
 
-  const updateReport = (index: number, field: keyof ReportPlan, value: any) => {
+  const updateReport = <K extends keyof ReportPlan>(index: number, field: K, value: ReportPlan[K]) => {
     if (!pricing) return;
     const newReports = [...pricing.reports];
-    (newReports[index] as any)[field] = value;
+    newReports[index][field] = value;
     setPricing({ ...pricing, reports: newReports });
   };
 
-  const updateCoinPackage = (index: number, field: keyof CoinPackage, value: any) => {
+  const updateCoinPackage = <K extends keyof CoinPackage>(index: number, field: K, value: CoinPackage[K]) => {
     if (!pricing) return;
     const newPackages = [...pricing.coinPackages];
-    (newPackages[index] as any)[field] = value;
+    newPackages[index][field] = value;
     setPricing({ ...pricing, coinPackages: newPackages });
   };
 
@@ -165,15 +165,15 @@ export default function AdminPricingPage() {
       {/* Tabs */}
       <div className="max-w-4xl mx-auto px-4 py-4">
         <div className="flex gap-2 border-b border-border pb-4">
-          {[
+          {([
             { key: "bundles", label: "Bundle Plans" },
             { key: "upsells", label: "Upsells" },
             { key: "reports", label: "Reports" },
             { key: "coins", label: "Coin Packages" },
-          ].map((tab) => (
+          ] as const).map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key as any)}
+              onClick={() => setActiveTab(tab.key)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === tab.key
                   ? "bg-primary text-primary-foreground"
@@ -272,7 +272,7 @@ export default function AdminPricingPage() {
                       onChange={(e) => updateBundle(index, "discount", e.target.value)}
                       className="w-full mt-1 px-3 py-2 bg-background border border-border rounded-lg"
                     />
-                    <p className="text-xs text-muted-foreground mt-1">e.g. "50% OFF"</p>
+                    <p className="text-xs text-muted-foreground mt-1">e.g. &quot;50% OFF&quot;</p>
                   </div>
                 </div>
 
@@ -395,7 +395,7 @@ export default function AdminPricingPage() {
                       onChange={(e) => updateUpsell(index, "discount", e.target.value)}
                       className="w-full mt-1 px-3 py-2 bg-background border border-border rounded-lg"
                     />
-                    <p className="text-xs text-muted-foreground mt-1">e.g. "50% OFF"</p>
+                    <p className="text-xs text-muted-foreground mt-1">e.g. &quot;50% OFF&quot;</p>
                   </div>
                 </div>
 

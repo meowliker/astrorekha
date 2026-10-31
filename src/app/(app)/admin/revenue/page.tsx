@@ -91,7 +91,7 @@ interface MetaAdMetrics {
   roas: number;
 }
 
-interface MetaAdData extends MetaAdMetrics {}
+type MetaAdData = MetaAdMetrics;
 
 interface MetaAdSetData extends MetaAdMetrics {
   ads: MetaAdData[];
@@ -589,7 +589,7 @@ function formatMetaAccountRuntimeStatus(status: ReturnType<typeof getMetaAccount
   return "Historical";
 }
 
-function mapMetaAccountForAdmin(account: any): MetaAdAccountAdminRow {
+function mapMetaAccountForAdmin(account: Partial<MetaAdAccountAdminRow> & { accountName?: string }): MetaAdAccountAdminRow {
   return {
     accountId: account.accountId || "",
     label: account.label || account.accountName || "",
@@ -742,7 +742,7 @@ export default function AdminRevenuePage() {
           const allTokenAccounts = [...tokenAccounts, ...tokenEnvAccounts];
           setMetaAccountRows((rows) =>
             rows.map((row) => {
-              const match = allTokenAccounts.find((account: any) => account.accountId === row.accountId);
+              const match = allTokenAccounts.find((account: Partial<MetaAdAccountAdminRow> & { accountName?: string }) => account.accountId === row.accountId);
               return match?.accessToken ? { ...row, accessToken: match.accessToken } : row;
             })
           );

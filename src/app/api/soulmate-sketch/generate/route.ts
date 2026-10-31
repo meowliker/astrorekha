@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_LAYOUT_B_CONFIG, normalizeLayoutBConfig } from "@/lib/layout-b-funnel";
@@ -10,7 +12,7 @@ import {
 
 export const maxDuration = 60;
 
-function normalizeAnswers(raw: any): SketchAnswers {
+function normalizeAnswers(raw: Record<string, unknown> | null | undefined): SketchAnswers {
   if (!raw || typeof raw !== "object") return {};
   const normalized: SketchAnswers = {};
 
@@ -159,7 +161,7 @@ export async function POST(request: NextRequest) {
       success: true,
       sketch: completed,
     });
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof KieTimeoutError) {
       const { data: pendingRow } = await supabase
         .from("soulmate_sketches")
@@ -189,17 +191,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const rawMessage = typeof error?.message === "string" ? error.message.trim() : "";
+    const rawMessage = getErrorMessage(error)?.trim() || "";
     const safeMessage =
       rawMessage && rawMessage.toLowerCase() !== "no message available"
         ? rawMessage
         : "Sketch generation failed at provider. Please try again in a minute.";
 
     console.error("[soulmate-sketch/generate] provider error", {
-      name: error?.name,
+      name: error instanceof Error ? error.name : undefined,
       message: rawMessage || null,
-      stack: error?.stack || null,
-      cause: error?.cause || null,
+      stack: error instanceof Error ? error.stack || null : null,
+      cause: error instanceof Error ? error.cause || null : null,
     });
     await supabase
       .from("soulmate_sketches")

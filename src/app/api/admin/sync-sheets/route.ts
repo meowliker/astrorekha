@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -30,10 +32,10 @@ export async function POST(request: NextRequest) {
     }
 
     return await syncSheets();
-  } catch (error: any) {
+  } catch (error) {
     console.error("Sheets sync error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to sync sheets" },
+      { error: getErrorMessage(error) || "Failed to sync sheets" },
       { status: 500 }
     );
   }
@@ -56,10 +58,10 @@ export async function GET(request: NextRequest) {
     }
 
     return await syncSheets();
-  } catch (error: any) {
+  } catch (error) {
     console.error("Sheets sync error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to sync sheets" },
+      { error: getErrorMessage(error) || "Failed to sync sheets" },
       { status: 500 }
     );
   }
@@ -76,7 +78,7 @@ async function syncSheets() {
     .select("*")
     .eq("subscription_status", "no");
 
-  const abandonedLeads = (leadsData || []).map((data: any) => {
+  const abandonedLeads = (leadsData || []).map((data) => {
     return [
       data.email || "",
       data.gender || "",
@@ -130,7 +132,7 @@ async function syncSheets() {
     .select("*")
     .in("subscription_status", ["active", "trialing"]);
   
-  const activeSubscribers = (allUsers || []).map((data: any) => {
+  const activeSubscribers = (allUsers || []).map((data) => {
     return [
       data.email || "",
       data.name || "",

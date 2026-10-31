@@ -221,8 +221,8 @@ export const DEFAULT_LAYOUT_B_CONFIG: LayoutBFunnelConfig = {
   },
 };
 
-export function normalizeLayoutBConfig(raw: any): LayoutBFunnelConfig {
-  const cfg = raw && typeof raw === "object" ? raw : {};
+export function normalizeLayoutBConfig(raw: unknown): LayoutBFunnelConfig {
+  const cfg = raw && typeof raw === "object" ? raw as Partial<LayoutBFunnelConfig> : {};
   const questions = {
     ...DEFAULT_LAYOUT_B_CONFIG.questions,
     ...(cfg.questions || {}),

@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
       { success: false, error: "Horoscope not yet generated. Please try again later." },
       { status: 404 }
     );
-  } catch (error: any) {
+  } catch (error) {
     console.error("Sign horoscope fetch error:", error);
     return NextResponse.json(
       { success: false, error: "Failed to fetch horoscope" },

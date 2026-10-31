@@ -62,7 +62,7 @@ Return this exact JSON structure:
 
 Make each month unique and specific. Include planetary influences, retrogrades, and astrological events relevant to {zodiacSign}. Be mystical yet practical. Ratings should be between 6.0 and 9.5.`;
 
-async function generatePredictionForSign(zodiacSign: string): Promise<any> {
+async function generatePredictionForSign(zodiacSign: string): Promise<Record<string, unknown>> {
   const prompt = PREDICTION_PROMPT.replace(/{zodiacSign}/g, zodiacSign);
 
   const response = await anthropic.messages.create({

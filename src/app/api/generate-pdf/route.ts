@@ -36,17 +36,17 @@ export async function POST(request: NextRequest) {
     let yPosition = 75;
 
     // Helper to extract text from reading section (handles both string and object formats)
-    const getReadingText = (section: any): string => {
+    const getReadingText = (section: unknown): string => {
       if (!section) return "";
       if (typeof section === "string") return section;
-      if (typeof section === "object" && section.description) return section.description;
+      if (typeof section === "object" && "description" in section && typeof section.description === "string" && section.description) return section.description;
       return String(section);
     };
 
     // Helper to get score from reading section
-    const getReadingScore = (section: any): number | null => {
+    const getReadingScore = (section: unknown): number | null => {
       if (!section) return null;
-      if (typeof section === "object" && typeof section.score === "number") return section.score;
+      if (typeof section === "object" && "score" in section && typeof section.score === "number") return section.score;
       return null;
     };
     

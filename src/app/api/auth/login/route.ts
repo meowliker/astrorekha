@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { setReportSession } from "@/lib/report-session";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -68,10 +70,10 @@ export async function POST(request: NextRequest) {
         unlockedFeatures: user.unlocked_features,
       },
     }), user.id);
-  } catch (error: any) {
+  } catch (error) {
     console.error("Login error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to login" },
+      { success: false, error: getErrorMessage(error) || "Failed to login" },
       { status: 500 }
     );
   }

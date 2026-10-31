@@ -1,3 +1,5 @@
+
+import type { AbTestStats } from "@/lib/ab-test-types";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_LAYOUT_B_CONFIG, normalizeLayoutBConfig } from "@/lib/layout-b-funnel";
@@ -84,7 +86,7 @@ async function ensureTestRowExists(supabase: ReturnType<typeof getSupabaseAdmin>
   }
 }
 
-function isRetryableSchemaError(error: any): boolean {
+function isRetryableSchemaError(error: { code?: string; message?: string } | null): boolean {
   const message = String(error?.message || "").toLowerCase();
   return (
     error?.code === "PGRST204" ||
@@ -94,7 +96,7 @@ function isRetryableSchemaError(error: any): boolean {
   );
 }
 
-function isForeignKeyError(error: any): boolean {
+function isForeignKeyError(error: { code?: string; message?: string } | null): boolean {
   const message = String(error?.message || "").toLowerCase();
   return error?.code === "23503" || message.includes("foreign key");
 }
@@ -102,7 +104,8 @@ function isForeignKeyError(error: any): boolean {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    let { testId, variant, eventType, visitorId, userId, metadata } = body;
+    let { testId } = body;
+    const { variant, eventType, visitorId, userId, metadata } = body;
 
     const supabase = getSupabaseAdmin();
     if (!testId) {
@@ -136,7 +139,7 @@ export async function POST(request: NextRequest) {
       created_at: now,
     };
 
-    let eventInsertError: any = null;
+    let eventInsertError: { code?: string; message?: string } | null = null;
     const metadataCandidates: Array<Record<string, unknown>> = [
       { ...baseEventRow, metadata: metadata || {} },
       { ...baseEventRow, event_data: metadata || {} },
@@ -180,7 +183,7 @@ export async function POST(request: NextRequest) {
       if (currentStatsError) throw currentStatsError;
 
       if (currentStats) {
-        const updates: any = { updated_at: now };
+        const updates: Record<string, unknown> = { updated_at: now };
 
         if (eventType === "impression") {
           updates.impressions = (currentStats.impressions || 0) + 1;
@@ -245,7 +248,7 @@ export async function GET(request: NextRequest) {
     const variantA = statsA || defaultStats;
     const variantB = statsB || defaultStats;
 
-    const calculateRates = (stats: any) => {
+    const calculateRates = (stats: AbTestStats) => {
       const impressions = stats.impressions || 0;
       const conversions = stats.conversions || 0;
       const bounces = stats.bounces || 0;

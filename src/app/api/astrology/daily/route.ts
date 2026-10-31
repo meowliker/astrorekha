@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function fetchAPI(endpoint: string, body: any) {
+async function fetchAPI(endpoint: string, body: unknown) {
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     method: "POST",
     headers: {

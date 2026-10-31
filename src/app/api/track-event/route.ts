@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import {
   trackEvent,
@@ -59,8 +61,8 @@ export async function POST(request: NextRequest) {
     await trackEvent(normalizedEmail, event, properties);
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    console.error("[track-event] Error:", error?.message || error);
+  } catch (error) {
+    console.error("[track-event] Error:", getErrorMessage(error) || error);
     return NextResponse.json(
       { error: "Failed to track event" },
       { status: 500 }

@@ -1,3 +1,7 @@
+
+import type { NatalPromptData } from "@/lib/astrology-context-types";
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { fetchFromAstroEngine } from "@/lib/astro-client";
@@ -165,7 +169,7 @@ export async function GET(request: NextRequest) {
       : parseInt(birthMonth);
 
     // 3. Call astro-engine to get natal chart + transits
-    let natalData: any;
+    let natalData: NatalPromptData;
     try {
       natalData = await fetchFromAstroEngine("/calculate", {
         year: parseInt(birthYear),
@@ -246,7 +250,7 @@ Generate the personalized ${periodLabel} horoscope JSON now. Remember: DO NOT st
     }
 
     // 6. Parse the JSON response
-    let horoscopeData: any;
+    let horoscopeData: Record<string, unknown>;
     try {
       // Strip any markdown code fences if present
       let jsonStr = textContent.text.trim();
@@ -284,7 +288,7 @@ Generate the personalized ${periodLabel} horoscope JSON now. Remember: DO NOT st
       period,
       date: cacheTimeKey,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Personalized horoscope error:", error);
     await logClaudeUsage({
       feature: "personalized_horoscope",
@@ -298,7 +302,7 @@ Generate the personalized ${periodLabel} horoscope JSON now. Remember: DO NOT st
       },
     });
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to generate horoscope" },
+      { success: false, error: getErrorMessage(error) || "Failed to generate horoscope" },
       { status: 500 }
     );
   }

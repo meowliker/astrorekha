@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
@@ -68,15 +70,15 @@ export async function GET(request: NextRequest) {
           });
         }
       }
-    } catch (genErr: any) {
-      console.error("On-demand insight generation failed:", genErr?.message || genErr);
+    } catch (genErr) {
+      console.error("On-demand insight generation failed:", getErrorMessage(genErr) || genErr);
     }
 
     return NextResponse.json(
       { success: false, error: "Daily insights not yet available. Please try again later." },
       { status: 404 }
     );
-  } catch (error: any) {
+  } catch (error) {
     console.error("Daily insights fetch error:", error);
     return NextResponse.json(
       { success: false, error: "Failed to fetch daily insights" },

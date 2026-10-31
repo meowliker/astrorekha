@@ -1,4 +1,6 @@
 "use client";
+import type { BirthChartData } from "@/lib/birth-chart-data";
+
 
 import ReportInfoButton from "@/components/ReportInfoButton";
 
@@ -36,7 +38,7 @@ function getDisplayMonth(month: string): string {
   return MONTH_NAMES[monthNumber - 1] || String(month || "January");
 }
 
-function hasRenderableChartData(data: any): boolean {
+function hasRenderableChartData(data: BirthChartData | null): boolean {
   if (!data) return false;
 
   const hasMainChart = typeof data.chart?.output === "string" && data.chart.output.trim().length > 0;
@@ -46,10 +48,10 @@ function hasRenderableChartData(data: any): boolean {
   return hasMainChart || hasNavamsa || hasKundli;
 }
 
-function getAscendantLagna(data: any): string {
+function getAscendantLagna(data: BirthChartData | null): string {
   if (!data) return "";
   const fromPlanetPosition = Array.isArray(data?.planet_positions)
-    ? data.planet_positions.find((p: any) => String(p?.name || "").toLowerCase() === "ascendant")?.rasi?.name
+    ? data.planet_positions.find((p: { name?: string }) => String(p?.name || "").toLowerCase() === "ascendant")?.rasi?.name
     : "";
   return (
     fromPlanetPosition ||
@@ -62,7 +64,7 @@ function getAscendantLagna(data: any): string {
 export default function BirthChartPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [chartData, setChartData] = useState<any>(null);
+  const [chartData, setChartData] = useState<BirthChartData | null>(null);
   const chartType = "vedic"; // Only Vedic charts supported
   const [error, setError] = useState<string | null>(null);
   const [showMissingDataForm, setShowMissingDataForm] = useState(false);
@@ -193,7 +195,7 @@ export default function BirthChartPage() {
       const cachedData = cached?.data;
       const hasAscendantPlanetSource =
         Array.isArray(cachedData?.planet_positions) &&
-        cachedData.planet_positions.some((p: any) => String(p?.name || "").toLowerCase() === "ascendant");
+        cachedData.planet_positions.some((p: { name?: string }) => String(p?.name || "").toLowerCase() === "ascendant");
 
       if (cachedData && hasRenderableChartData(cachedData) && hasAscendantPlanetSource) {
         setChartData(cached.data);
@@ -497,7 +499,7 @@ export default function BirthChartPage() {
                       Yogas in Your Chart
                     </h3>
                     <div className="space-y-2">
-                      {chartData.kundli.yoga_details.map((yoga: any, idx: number) => (
+                      {chartData.kundli.yoga_details.map((yoga, idx) => (
                         <div key={idx} className="bg-white/5 rounded-xl p-3">
                           <p className="text-white font-medium">{yoga.name}</p>
                           <p className="text-white/50 text-sm">{yoga.description}</p>

@@ -1,4 +1,8 @@
 "use client";
+import type { CheckoutWidgetWindow, PayUBoltResponse, RazorpaySuccess } from "@/lib/checkout-widget-types";
+
+import { getErrorCode, getErrorMessage } from "@/lib/error-message";
+
 import { openPaytmCheckout } from "@/lib/payment-checkout-browser";
 
 import ProductOfferTracker from "@/components/ProductOfferTracker";
@@ -145,8 +149,8 @@ export default function ChatPage() {
   const [palmImage, setPalmImage] = useState<string | null>(null);
   const [purchaseError, setPurchaseError] = useState("");
   const [purchasingPackage, setPurchasingPackage] = useState<number | null>(null);
-  const [palmReading, setPalmReading] = useState<any>(null);
-  const [natalChart, setNatalChart] = useState<any>(null);
+  const [palmReading, setPalmReading] = useState<unknown>(null);
+  const [natalChart, setNatalChart] = useState<unknown>(null);
   const [chatLoaded, setChatLoaded] = useState(false);
   const [showLowBalanceBubble, setShowLowBalanceBubble] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -332,7 +336,7 @@ export default function ChatPage() {
           returnTo: "/chat",
         });
         if (openPaytmCheckout(data)) return;
-        const bolt = (window as any).bolt;
+        const bolt = (window as unknown as CheckoutWidgetWindow).bolt;
         bolt.launch({
           key: data.key,
           txnid: data.txnId,
@@ -350,7 +354,7 @@ export default function ChatPage() {
           surl: `${window.location.origin}/api/payu/success`,
           furl: `${window.location.origin}/api/payu/failure`,
         }, {
-          responseHandler: async (response: any) => {
+          responseHandler: async (response: PayUBoltResponse) => {
             if (response.response.txnStatus === "SUCCESS") {
               const verifyRes = await fetch("/api/payu/verify-payment", {
                 method: "POST",
@@ -389,7 +393,7 @@ export default function ChatPage() {
               window.location.href = `/payment/processing?txnid=${encodeURIComponent(data.txnId)}&source=coins`;
             }
           },
-          catchException: (error: any) => {
+          catchException: (error: unknown) => {
             console.error("PayU Bolt error:", error);
             localStorage.removeItem(PENDING_PAYMENT_KEY);
             setPurchaseError("Payment was cancelled. You can try again whenever you're ready.");
@@ -454,7 +458,7 @@ export default function ChatPage() {
           returnTo: "/chat",
         });
         if (openPaytmCheckout(data)) return;
-        const bolt = (window as any).bolt;
+        const bolt = (window as unknown as CheckoutWidgetWindow).bolt;
         bolt.launch({
           key: data.key,
           txnid: data.txnId,
@@ -472,7 +476,7 @@ export default function ChatPage() {
           surl: `${window.location.origin}/api/payu/success`,
           furl: `${window.location.origin}/api/payu/failure`,
         }, {
-          responseHandler: async (response: any) => {
+          responseHandler: async (response: PayUBoltResponse) => {
             if (response.response.txnStatus === "SUCCESS") {
               const verifyRes = await fetch("/api/payu/verify-payment", {
                 method: "POST",
@@ -513,7 +517,7 @@ export default function ChatPage() {
               window.location.href = `/payment/processing?txnid=${encodeURIComponent(data.txnId)}&source=chat_pass`;
             }
           },
-          catchException: (error: any) => {
+          catchException: (error: unknown) => {
             console.error("PayU Bolt error:", error);
             localStorage.removeItem(PENDING_PAYMENT_KEY);
             setPurchaseError("Payment was cancelled. You can try again whenever you're ready.");
@@ -753,10 +757,10 @@ export default function ChatPage() {
           },
           { onConflict: "id" }
         );
-      } catch (err: any) {
+      } catch (err) {
         console.error("[Chat] Failed to save chat:", err);
-        console.error("[Chat] Error code:", err?.code);
-        console.error("[Chat] Error message:", err?.message);
+        console.error("[Chat] Error code:", getErrorCode(err));
+        console.error("[Chat] Error message:", getErrorMessage(err));
       }
     };
 
@@ -1058,7 +1062,7 @@ export default function ChatPage() {
           >
             <div className="bg-[#1A2332] rounded-2xl p-4 flex items-center gap-3 border border-white/10 shadow-lg">
               <div className="flex-1">
-                <p className="text-white font-medium text-sm">You're out of questions</p>
+                <p className="text-white font-medium text-sm">You&apos;re out of questions</p>
                 <p className="text-white/60 text-xs">Add more to continue chatting.</p>
               </div>
               <button

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
@@ -16,7 +16,8 @@ const stageStyle: Record<SoulmateOrderStage, string> = {
   failed: "border-red-400/25 bg-red-400/10 text-red-300",
 };
 
-export default function SoulmateOrderPage({ params }: { params: { id: string } }) {
+export default function SoulmateOrderPage({ params: paramsPromise }: { params: Promise<{ id: string }> }) {
+  const params = use(paramsPromise);
   const router=useRouter();
   const [order,setOrder]=useState<SoulmateOrderView|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState("");
 

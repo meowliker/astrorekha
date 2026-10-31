@@ -50,7 +50,7 @@ export interface DivineCompatibilityRequest {
 async function divineApiRequest<T>(
   baseUrl: string,
   endpoint: string,
-  body: any
+  body: unknown
 ): Promise<T> {
   if (!DIVINE_API_KEY) {
     throw new Error("Divine API key not configured. Please add DIVINE_API_KEY to your environment variables.");

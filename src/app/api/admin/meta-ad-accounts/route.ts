@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import {
@@ -133,10 +135,10 @@ export async function GET(request: NextRequest) {
         ...(!includeAccessTokens ? { accessToken: undefined } : {}),
       })),
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("meta-ad-accounts GET error:", error);
     return jsonNoStore(
-      { success: false, error: error?.message || "Failed to load Meta ad accounts" },
+      { success: false, error: getErrorMessage(error) || "Failed to load Meta ad accounts" },
       { status: 500 }
     );
   }
@@ -175,10 +177,10 @@ export async function PUT(request: NextRequest) {
       success: true,
       config: redactMetaAdAccountsSettings(enrichedConfig),
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("meta-ad-accounts PUT error:", error);
     return jsonNoStore(
-      { success: false, error: error?.message || "Failed to update Meta ad accounts" },
+      { success: false, error: getErrorMessage(error) || "Failed to update Meta ad accounts" },
       { status: 500 }
     );
   }

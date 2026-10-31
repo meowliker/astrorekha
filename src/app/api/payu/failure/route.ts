@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
@@ -35,10 +37,10 @@ export async function POST(request: NextRequest) {
     if (txnid) redirectUrl.searchParams.set("txnid", txnid);
     redirectUrl.searchParams.set("source", "payu_failure");
     return NextResponse.redirect(redirectUrl, { status: 303 });
-  } catch (error: any) {
+  } catch (error) {
     console.error("PayU failure callback error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to process PayU failure callback" },
+      { success: false, error: getErrorMessage(error) || "Failed to process PayU failure callback" },
       { status: 500 }
     );
   }

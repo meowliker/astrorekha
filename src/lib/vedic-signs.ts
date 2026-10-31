@@ -19,7 +19,11 @@ export function signFromLongitude(longitude: number): SignName | null {
   return SIGNS[Math.floor(normalized / 30)];
 }
 
-export function getVedicSignsFromChart(chart: any): {
+export function getVedicSignsFromChart(chart: {
+  planets?: Record<string, { sidereal?: { sign?: unknown } }>;
+  ascendant?: { total_longitude?: unknown };
+  birth_data?: { ayanamsa_lahiri?: unknown };
+} | null | undefined): {
   sun: SignName;
   moon: SignName;
   ascendant: SignName;

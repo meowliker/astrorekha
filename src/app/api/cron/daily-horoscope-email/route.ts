@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { sendTemplateEmail, BREVO_TEMPLATES } from "@/lib/brevo";
@@ -214,7 +216,7 @@ export async function GET(request: NextRequest) {
     // 2. Group users by sun sign — only include users whose local time is 9 AM
     const signGroups: Record<string, Array<{ email: string; docId: string }>> = {};
     let skippedTimezone = 0;
-    let skippedAlreadySent = 0;
+    const skippedAlreadySent = 0;
     const TARGET_HOUR = 9; // Send at 9 AM local time
 
     for (const userData of activeUsers) {
@@ -346,10 +348,10 @@ export async function GET(request: NextRequest) {
       skippedAlreadySent,
       signs: Object.keys(signGroups).length,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("[Cron] daily-horoscope-email error:", error);
     return NextResponse.json(
-      { error: error.message || "Cron job failed" },
+      { error: getErrorMessage(error) || "Cron job failed" },
       { status: 500 }
     );
   }

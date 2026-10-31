@@ -1,4 +1,8 @@
 "use client";
+import type { StoredProfile } from "@/lib/stored-profile-types";
+
+import { getErrorMessage } from "@/lib/error-message";
+
 
 import ReportInfoButton from "@/components/ReportInfoButton";
 
@@ -124,7 +128,7 @@ const defaultBirthFormState: PastLifeBirthFormState = {
   knowsBirthTime: true,
 };
 
-function normalizeBirthFormState(row: Record<string, any> | null | undefined): PastLifeBirthFormState | null {
+function normalizeBirthFormState(row: StoredProfile | null | undefined): PastLifeBirthFormState | null {
   if (!row) return null;
   if (!(row.birth_month || row.birth_day || row.birth_year || row.birth_place)) return null;
 
@@ -371,8 +375,8 @@ export default function PastLifePage() {
         }
 
         await loadStatus(localUserId);
-      } catch (err: any) {
-        setError(err?.message || "Unable to load your Past Life Report.");
+      } catch (err) {
+        setError(getErrorMessage(err) || "Unable to load your Past Life Report.");
       } finally {
         setLoading(false);
       }
@@ -412,8 +416,8 @@ export default function PastLifePage() {
       }
 
       setReport(json.report || null);
-    } catch (err: any) {
-      setError(err?.message || "Unable to generate your Past Life Report.");
+    } catch (err) {
+      setError(getErrorMessage(err) || "Unable to generate your Past Life Report.");
     } finally {
       setGenerating(false);
       setLoading(false);
@@ -762,7 +766,7 @@ function PastLifeResultView({
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(124,58,237,0.26),transparent_40%),linear-gradient(135deg,rgba(168,85,247,0.24),rgba(236,72,153,0.12))]" />
           <div className="relative">
             <p className="text-xs uppercase tracking-wide text-primary/70">Affirmation</p>
-            <p className="mt-3 text-lg font-bold leading-7 text-white">"{report.affirmation}"</p>
+            <p className="mt-3 text-lg font-bold leading-7 text-white">&quot;{report.affirmation}&quot;</p>
           </div>
         </div>
       </>

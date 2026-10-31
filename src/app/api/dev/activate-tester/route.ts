@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
@@ -39,10 +41,10 @@ export async function POST(request: NextRequest) {
     }, { onConflict: "id" });
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Activate tester error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to activate tester" },
+      { error: getErrorMessage(error) || "Failed to activate tester" },
       { status: 500 }
     );
   }

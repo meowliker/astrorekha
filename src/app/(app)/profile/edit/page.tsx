@@ -126,7 +126,7 @@ export default function EditProfilePage() {
     return `${hour}:${String(minute).padStart(2, '0')} ${period}`;
   };
 
-  const handleSaveField = async (field: string, value: any) => {
+  const handleSaveField = async (...[field, value]: ["name" | "birthPlace", string] | ["gender", string] | ["relationship", string] | ["birthDate", { month: string | number; day: string | number; year: string | number }] | ["birthTime", { hour: string | number; minute: string | number; period: string }]) => {
     setIsSaving(true);
     try {
       // Update local store based on field
@@ -136,10 +136,10 @@ export default function EditProfilePage() {
           localStorage.setItem("astrorekha_name", value);
           break;
         case "gender":
-          setGender(value);
+          setGender(value as Parameters<typeof setGender>[0]);
           break;
         case "relationship":
-          setRelationshipStatus(value);
+          setRelationshipStatus(value as Parameters<typeof setRelationshipStatus>[0]);
           break;
         case "birthDate":
           // value is { month, day, year }
@@ -150,7 +150,7 @@ export default function EditProfilePage() {
           break;
         case "birthTime":
           // value is { hour, minute, period }
-          setBirthTime(String(value.hour), String(value.minute), value.period);
+          setBirthTime(String(value.hour), String(value.minute), value.period as "AM" | "PM");
           break;
       }
 
@@ -168,7 +168,7 @@ export default function EditProfilePage() {
         const newBirthPlace = field === "birthPlace" ? value : birthPlace;
         
         // Base update data (snake_case for Supabase)
-        const updateData: any = {
+        const updateData: Record<string, unknown> = {
           name: field === "name" ? value : localName,
           gender: field === "gender" ? value : gender,
           relationship_status: field === "relationship" ? value : relationshipStatus,
@@ -255,7 +255,7 @@ export default function EditProfilePage() {
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`
       );
       const data = await response.json();
-      const suggestions = data.map((item: any) => item.display_name);
+      const suggestions = data.map((item: { display_name: string }) => item.display_name);
       setLocationSuggestions(suggestions);
     } catch (error) {
       console.error("Location search error:", error);

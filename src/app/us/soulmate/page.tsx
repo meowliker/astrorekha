@@ -11,8 +11,8 @@ export const metadata: Metadata = {
     "Put a face to the possibilities of love. Discover a personalized AI soulmate sketch with Astro Rekha.",
 };
 
-export default function SoulmatePage() {
-  const requestHeaders = headers();
+export default async function SoulmatePage() {
+  const requestHeaders = await headers();
   const encodedCity = requestHeaders.get("x-vercel-ip-city");
   const country = requestHeaders.get("x-vercel-ip-country");
   let city: string | null = null;

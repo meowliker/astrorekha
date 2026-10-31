@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       expiry,
       adminName: adminData.name || adminId,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Admin login error:", error);
     return NextResponse.json(
       { error: "Login failed" },

@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { reconcilePaidPaymentsForEmail } from "@/lib/payment-reconciliation";
@@ -23,7 +25,7 @@ export async function GET(request: NextRequest) {
 
     const supabase = getSupabaseAdmin();
 
-    let user: any = null;
+    let user: { id: string; email?: string; password_hash?: string; bundle_purchased?: string; payment_status?: string } | null = null;
 
     if (email) {
       const { data } = await supabase
@@ -53,7 +55,7 @@ export async function GET(request: NextRequest) {
           .in("payment_status", SUCCESS_STATUSES)
           .order("created_at", { ascending: false })
           .limit(20)
-      : Promise.resolve({ data: [] as any[] });
+      : Promise.resolve({ data: [] });
 
     const paidByUserPromise = userId
       ? supabase
@@ -63,7 +65,7 @@ export async function GET(request: NextRequest) {
           .in("payment_status", SUCCESS_STATUSES)
           .order("created_at", { ascending: false })
           .limit(20)
-      : Promise.resolve({ data: [] as any[] });
+      : Promise.resolve({ data: [] });
 
     const pendingByEmailPromise = email
       ? supabase
@@ -72,7 +74,7 @@ export async function GET(request: NextRequest) {
           .eq("customer_email", email)
           .in("payment_status", ["created", "pending"])
           .limit(20)
-      : Promise.resolve({ data: [] as any[] });
+      : Promise.resolve({ data: [] });
 
     const pendingByUserPromise = userId
       ? supabase
@@ -81,25 +83,25 @@ export async function GET(request: NextRequest) {
           .eq("user_id", userId)
           .in("payment_status", ["created", "pending"])
           .limit(20)
-      : Promise.resolve({ data: [] as any[] });
+      : Promise.resolve({ data: [] });
 
     const [{ data: paidByEmail }, { data: paidByUser }, { data: pendingByEmail }, { data: pendingByUser }] =
       await Promise.all([paidByEmailPromise, paidByUserPromise, pendingByEmailPromise, pendingByUserPromise]);
 
-    const paidMap = new Map<string, any>();
-    [...(paidByEmail || []), ...(paidByUser || [])].forEach((row: any) => {
+    const paidMap = new Map<string, { id: string; type?: string; bundle_id?: string; payment_status?: string; user_id?: string; created_at?: string }>();
+    [...(paidByEmail || []), ...(paidByUser || [])].forEach((row) => {
       if (row?.id) paidMap.set(row.id, row);
     });
     const paidPayments = Array.from(paidMap.values());
 
-    const pendingMap = new Map<string, any>();
-    [...(pendingByEmail || []), ...(pendingByUser || [])].forEach((row: any) => {
+    const pendingMap = new Map<string, { id: string; type?: string; bundle_id?: string; payment_status?: string; user_id?: string; created_at?: string }>();
+    [...(pendingByEmail || []), ...(pendingByUser || [])].forEach((row) => {
       if (row?.id) pendingMap.set(row.id, row);
     });
     const pendingPayments = Array.from(pendingMap.values());
 
     const hasPaidPayment = paidPayments.length > 0;
-    const hasPaidBundlePayment = paidPayments.some((payment: any) => {
+    const hasPaidBundlePayment = paidPayments.some((payment) => {
       const type = (payment?.type || "").toLowerCase().trim();
       return BUNDLE_PAYMENT_TYPES.includes(type);
     });
@@ -140,10 +142,10 @@ export async function GET(request: NextRequest) {
       userId: user?.id || null,
       paymentStatus: user?.payment_status || null,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("[payment-state] error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to check payment state" },
+      { success: false, error: getErrorMessage(error) || "Failed to check payment state" },
       { status: 500 }
     );
   }

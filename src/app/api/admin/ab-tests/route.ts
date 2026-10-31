@@ -1,3 +1,5 @@
+
+import type { AbTestConfig, AbTestStats, AbEventMetadata, AbDailyStats } from "@/lib/ab-test-types";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_LAYOUT_B_CONFIG, normalizeLayoutBConfig } from "@/lib/layout-b-funnel";
@@ -172,7 +174,7 @@ function normalizeOnboardingRoute(page: unknown, fallback: string): string {
   return `/onboarding/${raw}`;
 }
 
-function resolveEventRoute(metadata: any, fallback: string): string {
+function resolveEventRoute(metadata: AbEventMetadata | null | undefined, fallback: string): string {
   const payload = metadata?.metadata ?? metadata?.event_data ?? metadata?.data ?? metadata;
   const candidates = [payload?.route, payload?.path, payload?.page];
   for (const candidate of candidates) {
@@ -201,7 +203,7 @@ function canonicalizeTrackedRoute(route: unknown): string {
   return aliases[withoutHash] || withoutHash;
 }
 
-function inferVariantFromUser(user: any): VariantKey {
+function inferVariantFromUser(user: Record<string, unknown> | undefined): VariantKey {
   if (user?.ab_variant === "A" || user?.ab_variant === "B") return user.ab_variant;
   if (user?.onboarding_flow === "flow-b") return "B";
   return "A";
@@ -223,7 +225,7 @@ function isPaywallScopedTestId(testId: string): boolean {
   return isPaywallDefaultPlanTestId(testId) || isPaywallGstTestId(testId) || isPaywallCosmicBundleTestId(testId);
 }
 
-function inferPaymentVariant(row: any, user: any, testId: string): VariantKey | null {
+function inferPaymentVariant(row: Record<string, unknown>, user: Record<string, unknown> | undefined, testId: string): VariantKey | null {
   if (isPaywallGstTestId(testId) || isPaywallCosmicBundleTestId(testId)) {
     if (String(row?.paywall_test_id || "") !== testId) return null;
     if (row?.paywall_variant === "A" || row?.paywall_variant === "B") return row.paywall_variant;
@@ -383,7 +385,7 @@ function parsePayUTxnTimestamp(payuTxnId: unknown): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function resolvePaymentEventAt(row: any): Date | null {
+function resolvePaymentEventAt(row: Record<string, unknown>): Date | null {
   const fromTxn = parsePayUTxnTimestamp(row?.payu_txn_id);
   if (fromTxn) return fromTxn;
 
@@ -395,7 +397,7 @@ function resolvePaymentEventAt(row: any): Date | null {
   return null;
 }
 
-function getTestVariants(row: Record<string, any> | null | undefined, defaults: { pageA: string; pageB: string }) {
+function getTestVariants(row: AbTestConfig | null | undefined, defaults: { pageA: string; pageB: string }) {
   const configuredA = Number(row?.variants?.A?.weight);
   const configuredB = Number(row?.variants?.B?.weight);
 
@@ -414,7 +416,7 @@ function getTestVariants(row: Record<string, any> | null | undefined, defaults: 
   };
 }
 
-function normalizeTestForResponse(row: Record<string, any> | null | undefined, testId: string) {
+function normalizeTestForResponse(row: AbTestConfig | null | undefined, testId: string) {
   const isOnboardingLayoutTest = testId.startsWith("onboarding-layout");
   const isPaywallDefaultPlanTest = isPaywallDefaultPlanTestId(testId);
   const isPaywallGstTest = isPaywallGstTestId(testId);
@@ -648,10 +650,10 @@ export async function GET(request: NextRequest) {
       let assignmentsACount = Number(assignmentsA ?? 0);
       let assignmentsBCount = Number(assignmentsB ?? 0);
 
-      let recentEvents: any[] = [];
-      let dailyBreakdown: any[] = [];
+      let recentEvents: unknown[] = [];
+      let dailyBreakdown: unknown[] = [];
 
-      const calculateRates = (stats: any, assignedCount: number) => {
+      const calculateRates = (stats: AbTestStats, assignedCount: number) => {
         const impressions = Math.max(stats?.impressions || 0, assignedCount || 0);
         const conversions = stats?.conversions || 0;
         // For summary cards, bounce should represent users who did not convert
@@ -838,7 +840,7 @@ export async function GET(request: NextRequest) {
       }
 
       recentEvents = (allEvents || []).slice(0, 50);
-      const dailyData: Record<string, { A: any; B: any }> = {};
+      const dailyData: Record<string, { A: AbDailyStats; B: AbDailyStats }> = {};
       for (const evt of allEvents || []) {
         if (!evt?.created_at) continue;
         const variant = evt?.variant === "B" ? "B" : evt?.variant === "A" ? "A" : null;
@@ -869,26 +871,26 @@ export async function GET(request: NextRequest) {
         .map(([date, data]) => ({ date, ...data }))
         .sort((a, b) => a.date.localeCompare(b.date));
 
-      let paymentRowsQuery = supabase
+      const paymentRowsQuery = supabase
         .from("payments")
         .select("*")
         .not("user_id", "is", null)
         .gte("created_at", dateRangeStartIso);
       const { data: paymentRows } = await paymentRowsQuery.order("created_at", { ascending: false }).limit(50000);
 
-      const successfulPayments = (paymentRows || []).filter((row: any) =>
+      const successfulPayments = (paymentRows || []).filter((row: Record<string, unknown>) =>
         SUCCESS_PAYMENT_STATUSES.has(normalizeStatus(row?.payment_status))
       );
 
       const uniqueUserIds = Array.from(
         new Set(
           successfulPayments
-            .map((row: any) => String(row?.user_id || "").trim())
+            .map((row: Record<string, unknown>) => String(row?.user_id || "").trim())
             .filter(Boolean)
         )
       );
 
-      const usersById = new Map<string, any>();
+      const usersById = new Map<string, Record<string, unknown>>();
       if (uniqueUserIds.length > 0) {
         const { data: usersData } = await supabase
           .from("users")
@@ -1026,8 +1028,8 @@ export async function GET(request: NextRequest) {
       const { data: assignmentRows } = await assignmentRowsQuery.limit(10000);
 
       if (assignmentRows && assignmentRows.length > 0) {
-        assignmentsACount = assignmentRows.filter((row: any) => row?.variant === "A").length;
-        assignmentsBCount = assignmentRows.filter((row: any) => row?.variant === "B").length;
+        assignmentsACount = assignmentRows.filter((row: Record<string, unknown>) => row?.variant === "A").length;
+        assignmentsBCount = assignmentRows.filter((row: Record<string, unknown>) => row?.variant === "B").length;
       }
 
       const assignmentsByVariant: Record<VariantKey, number> = {
@@ -1384,8 +1386,8 @@ export async function PUT(request: NextRequest) {
 
     let nextTrafficSplit: number | null = null;
     if (variants) {
-      const totalWeight = Object.values(variants).reduce(
-        (sum: number, v: any) => sum + (v.weight || 0),
+      const totalWeight = Object.values(variants as NonNullable<AbTestConfig["variants"]>).reduce(
+        (sum, v) => sum + (v.weight || 0),
         0
       );
       
@@ -1396,11 +1398,11 @@ export async function PUT(request: NextRequest) {
         );
       }
 
-      const nextBWeight = clampPercent(Number((variants as any)?.B?.weight ?? 50));
+      const nextBWeight = clampPercent(Number((variants as AbTestConfig["variants"])?.B?.weight ?? 50));
       nextTrafficSplit = nextBWeight / 100;
     }
 
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
 
@@ -1450,7 +1452,7 @@ export async function POST(request: NextRequest) {
     }
 
     const splitFromPayload = variants
-      ? clampPercent(Number((variants as any)?.B?.weight ?? 50)) / 100
+      ? clampPercent(Number((variants as AbTestConfig["variants"])?.B?.weight ?? 50)) / 100
       : 0.5;
     const testData = {
       id: testId,

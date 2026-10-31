@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     }
 
     const activePass = (passRows || [])
-      .map((row: any) => {
+      .map((row) => {
         const startedAt = row.fulfilled_at || row.created_at || null;
         const endsAt = getChatUnlimitedPassEndsAt(startedAt);
         return {

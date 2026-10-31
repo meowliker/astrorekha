@@ -8,8 +8,8 @@ Module._resolveFilename=function(name,parent,...rest){return resolve.call(this,n
 const scope=require('../src/lib/us-soulmate-campaigns');
 const {fetchSoulmateMetaSpend}=require('../src/lib/us-soulmate-meta-spend');
 const {fetchMetaTrackingAccount,fetchMetaTrackingExactHourlySpend}=require('../src/lib/us-soulmate-tracking-meta');
-const credential={accountId:'123456',accessToken:'fixture-token',campaignIds:['111111'],startDate:'2026-10-15',startTime:'11:30',active:true};
-const day='2026-10-15';
+const credential={accountId:'123456',accessToken:'fixture-token',campaignIds:['111111'],startDate:'2026-10-28',startTime:'11:30',active:true};
+const day='2026-10-28';
 function response(data){return Response.json(data)}
 function fixtureFetch(url,options) {
  const u=new URL(url);assert.ok(!options?.method || options.method==='GET','All test calls must be read-only');
@@ -40,7 +40,7 @@ test('tracking totals, Meta purchases, daily spend and hourly spend exclude othe
 });
 test('profit spend is scoped before sums and never includes shared account balances',async()=>{
  global.fetch=fixtureFetch;
- const rows=await fetchSoulmateMetaSpend([credential],day,day,1,Date.parse('2026-10-16T12:00:00Z'));
+ const rows=await fetchSoulmateMetaSpend([credential],day,day,1,Date.parse('2026-10-29T12:00:00Z'));
  assert.equal(rows[0].adsInr,10000);assert.equal(rows[0].adsUsd,10000);
  assert.equal(rows[0].balance,null);assert.equal(rows[0].balanceCapturedAt,null);
  let calls=0;global.fetch=async()=>{calls++;throw new Error('Should not fetch without scope')};
@@ -121,7 +121,7 @@ test('legacy account-wide profit and outdated selections are hidden until recalc
  global.fetch=async()=>{throw new Error('Cached ledger reads must not call external services')};
  const {readSoulmateProfitLedger}=require('../src/lib/us-soulmate-profit-ledger');
  for(const [revision,adScope,stale] of [[3,undefined,true],[2,'selected_campaigns_v1',true],[3,'selected_campaigns_v1',false]]){
-  state.rows=[{date:day,config_revision:revision,synced_at:'2026-10-16T00:00:00Z',data:{date:day,received:4366,adsInr:100,profit:3600,roas:43.66,balance:999,adScope}}];
+  state.rows=[{date:day,config_revision:revision,synced_at:'2026-10-29T00:00:00Z',data:{date:day,received:4366,adsInr:100,profit:3600,roas:43.66,balance:999,adScope}}];
   const result=await readSoulmateProfitLedger(db,day,day);
   assert.equal(result.rows[0].stale,stale);assert.equal(result.rows[0].received,4366);
   assert.equal(result.rows[0].adsInr,stale?null:100);assert.equal(result.rows[0].profit,stale?null:3600);assert.equal(result.rows[0].balance,null);

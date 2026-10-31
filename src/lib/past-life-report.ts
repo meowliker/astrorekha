@@ -1,3 +1,6 @@
+
+import type { BirthChartData } from "@/lib/birth-chart-data";
+import type { StoredProfile } from "@/lib/stored-profile-types";
 import { getBirthDateParts } from "@/lib/birth-details";
 import { getZodiacSign } from "@/lib/astrology-api";
 
@@ -415,12 +418,12 @@ function normalizeZodiacSign(value: unknown): string | null {
   return signs.find((sign) => sign.toLowerCase() === compact) || text;
 }
 
-function getNestedText(source: Record<string, any> | null | undefined, paths: string[][]): string | null {
+function getNestedText(source: Record<string, unknown> | null | undefined, paths: string[][]): string | null {
   if (!source) return null;
   for (const path of paths) {
-    let current: any = source;
+    let current: unknown = source;
     for (const key of path) {
-      current = current?.[key];
+      current = current !== null && typeof current === "object" ? (current as Record<string, unknown>)[key] : undefined;
       if (current === null || current === undefined) break;
     }
     const text = cleanText(current);
@@ -429,14 +432,14 @@ function getNestedText(source: Record<string, any> | null | undefined, paths: st
   return null;
 }
 
-function flattenChartData(chartData: Record<string, any> | null | undefined): Record<string, any> | null {
+function flattenChartData(chartData: BirthChartData | null | undefined): BirthChartData | null {
   if (!chartData) return null;
   return chartData.data && typeof chartData.data === "object"
     ? { ...chartData, ...chartData.data }
     : chartData;
 }
 
-function extractPlanetSignal(chartData: Record<string, any> | null | undefined, planetName: string): PastLifePlanetSignal | null {
+function extractPlanetSignal(chartData: BirthChartData | null | undefined, planetName: string): PastLifePlanetSignal | null {
   const chart = flattenChartData(chartData);
   if (!chart) return null;
 
@@ -446,7 +449,7 @@ function extractPlanetSignal(chartData: Record<string, any> | null | undefined, 
     : Array.isArray(chart.kundli?.planet_position)
       ? chart.kundli.planet_position
       : [];
-  const fromPositions = positions.find((planet: any) => String(planet?.name || "").toLowerCase() === lower);
+  const fromPositions = positions.find((planet) => String(planet?.name || "").toLowerCase() === lower);
   const planets = chart.planets && typeof chart.planets === "object" ? chart.planets : {};
   const fromPlanets = planets[planetName] || planets[lower] || planets[planetName.toUpperCase()];
   const raw = fromPositions || fromPlanets;
@@ -488,17 +491,17 @@ function extractPlanetSignal(chartData: Record<string, any> | null | undefined, 
   };
 }
 
-function extractTwelfthHousePlanets(chartData: Record<string, any> | null | undefined): string[] {
+function extractTwelfthHousePlanets(chartData: BirthChartData | null | undefined): string[] {
   const chart = flattenChartData(chartData);
   const positions = Array.isArray(chart?.planet_positions) ? chart.planet_positions : [];
   return positions
-    .filter((planet: any) => String(planet?.house || planet?.house_number || planet?.position || "") === "12")
-    .map((planet: any) => cleanText(planet?.name))
+    .filter((planet) => String(planet?.house || planet?.house_number || planet?.position || "") === "12")
+    .map((planet) => cleanText(planet?.name))
     .filter((name): name is string => !!name && name !== "Ascendant")
     .slice(0, 4);
 }
 
-function extractMoonNakshatra(chartData: Record<string, any> | null | undefined): string | null {
+function extractMoonNakshatra(chartData: BirthChartData | null | undefined): string | null {
   const chart = flattenChartData(chartData);
   return getNestedText(chart, [
     ["kundli", "nakshatra_details", "nakshatra", "name"],
@@ -507,7 +510,7 @@ function extractMoonNakshatra(chartData: Record<string, any> | null | undefined)
   ]);
 }
 
-function buildChartSignals(chartData: Record<string, any> | null | undefined): PastLifeChartSignals {
+function buildChartSignals(chartData: BirthChartData | null | undefined): PastLifeChartSignals {
   const ketu = extractPlanetSignal(chartData, "Ketu");
   return {
     method: ketu ? "vedic-ketu-chart" : "birth-date-symbolic",
@@ -545,7 +548,7 @@ function cleanSign(value: unknown): string | null {
   return null;
 }
 
-function buildBirthData(userProfile: Record<string, any> | null, user: Record<string, any> | null): PastLifeBirthData | null {
+function buildBirthData(userProfile: StoredProfile | null, user: StoredProfile | null): PastLifeBirthData | null {
   const dateParts = getBirthDateParts({
     birthMonth: userProfile?.birth_month || user?.birth_month,
     birthDay: userProfile?.birth_day || user?.birth_day,
@@ -599,7 +602,7 @@ function getPastLifeBirthTime24(input: { birthHour?: unknown; birthMinute?: unkn
   return `${String(normalizedHour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-export function getPastLifeBirthData(userProfile: Record<string, any> | null, user: Record<string, any> | null) {
+export function getPastLifeBirthData(userProfile: StoredProfile | null, user: StoredProfile | null) {
   return buildBirthData(userProfile, user);
 }
 
@@ -607,9 +610,9 @@ export function buildPastLifeReport(params: {
   userId: string;
   name?: string | null;
   email?: string | null;
-  userProfile?: Record<string, any> | null;
-  user?: Record<string, any> | null;
-  chartData?: Record<string, any> | null;
+  userProfile?: StoredProfile | null;
+  user?: StoredProfile | null;
+  chartData?: BirthChartData | null;
   generatedAt?: string;
 }): PastLifeReport | null {
   const birthData = buildBirthData(params.userProfile || null, params.user || null);

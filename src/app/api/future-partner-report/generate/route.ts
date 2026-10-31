@@ -7,7 +7,7 @@ import { normalizeBirthDetailsSnapshot } from "@/lib/birth-details";
 export const maxDuration = 60;
 
 function getPublicErrorMessage(raw: unknown): string {
-  const message = String((raw as any)?.message || "").toLowerCase();
+  const message = String((raw as { message?: unknown } | null)?.message || "").toLowerCase();
   if (
     message.includes("overloaded_error") ||
     message.includes("overloaded") ||
@@ -37,7 +37,7 @@ function getSessionUserId(request: NextRequest): string | null {
   return null;
 }
 
-function isRecentGeneratingRow(row: any): boolean {
+function isRecentGeneratingRow(row: { status?: string; updated_at?: string; created_at?: string } | null): boolean {
   if (row?.status !== "generating") return false;
 
   const updatedAtMs = Date.parse(String(row?.updated_at || row?.created_at || ""));
@@ -284,7 +284,7 @@ export async function POST(request: NextRequest) {
       report: completed.report_data,
       generated_at: completed.generated_at,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("[future-partner/generate] provider error", error);
 
     await supabase

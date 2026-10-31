@@ -1,4 +1,6 @@
 "use client";
+import type { CheckoutWidgetWindow, PayUBoltResponse, RazorpaySuccess } from "@/lib/checkout-widget-types";
+
 import { openPaytmCheckout } from "@/lib/payment-checkout-browser";
 
 import { isReportAvailableForPurchase } from "@/lib/customer-report-visibility";
@@ -120,7 +122,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
           returnTo: window.location.pathname,
         });
         if (openPaytmCheckout(data)) return;
-        const bolt = (window as any).bolt;
+        const bolt = (window as unknown as CheckoutWidgetWindow).bolt;
         if (!bolt) {
           setError("Payment checkout is still loading. Please try again.");
           setIsProcessing(false);
@@ -144,7 +146,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
           surl: `${window.location.origin}/api/payu/success`,
           furl: `${window.location.origin}/api/payu/failure`,
         }, {
-          responseHandler: async (response: any) => {
+          responseHandler: async (response: PayUBoltResponse) => {
             if (response.response.txnStatus === "SUCCESS") {
               const verifyRes = await fetch("/api/payu/verify-payment", {
                 method: "POST",
@@ -187,7 +189,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
               window.location.href = `/payment/processing?txnid=${encodeURIComponent(data.txnId)}&source=report_popup`;
             }
           },
-          catchException: (error: any) => {
+          catchException: (error: unknown) => {
             console.error("PayU Bolt error:", error);
             localStorage.removeItem(PENDING_PAYMENT_KEY);
             setError("Payment was cancelled. You can try again whenever you're ready.");
@@ -365,7 +367,7 @@ export function AllUpsellsPopup({ isOpen, onClose, onPurchase }: AllUpsellsPopup
           name: "AstroRekha",
           description: "Unlock All Reports",
           order_id: data.orderId,
-          handler: async (res: any) => {
+          handler: async (res: RazorpaySuccess) => {
             await fetch("/api/razorpay/verify-payment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -383,7 +385,7 @@ export function AllUpsellsPopup({ isOpen, onClose, onPurchase }: AllUpsellsPopup
           prefill: { email: localStorage.getItem("astrorekha_email") || "" },
           theme: { color: "#7C3AED" },
         };
-        const rzp = new (window as any).Razorpay(options);
+        const rzp = new (window as unknown as CheckoutWidgetWindow).Razorpay(options);
         rzp.on("payment.failed", () => {
           setError("Payment failed. Please try again.");
           setIsProcessing(false);

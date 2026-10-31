@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { sendEmail } from "@/lib/brevo";
@@ -42,7 +44,7 @@ export async function POST(request: NextRequest) {
       .limit(1)
       .single();
 
-    let userId: string | null = userRow?.id ?? null;
+    const userId: string | null = userRow?.id ?? null;
 
     if (!userId) {
       return NextResponse.json(
@@ -163,10 +165,10 @@ export async function POST(request: NextRequest) {
       message: "OTP sent successfully",
       userId,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Send OTP error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to send OTP" },
+      { success: false, error: getErrorMessage(error) || "Failed to send OTP" },
       { status: 500 }
     );
   }

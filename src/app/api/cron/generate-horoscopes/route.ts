@@ -1,3 +1,7 @@
+
+import type { NatalPromptData } from "@/lib/astrology-context-types";
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { fetchFromAstroEngine } from "@/lib/astro-client";
@@ -103,9 +107,9 @@ Other rules:
 async function generateForSign(
   sign: string,
   period: string,
-  transitsData: any,
-  natalData: any
-): Promise<any> {
+  transitsData: { planets?: unknown },
+  natalData: NatalPromptData
+): Promise<Record<string, unknown>> {
   const periodLabel = period === "weekly" ? "weekly" : period === "monthly" ? "monthly" : period === "tomorrow" ? "tomorrow's" : "today's";
   const timeRef = period === "weekly" ? "this week" : period === "monthly" ? "this month" : period === "tomorrow" ? "tomorrow" : "today";
 
@@ -181,7 +185,7 @@ export async function POST(request: NextRequest) {
     const results: Record<string, Record<string, boolean>> = {};
 
     // Get current transits from astro-engine
-    let currentTransits: any;
+    let currentTransits: { planets?: unknown };
     try {
       currentTransits = await fetchFromAstroEngine("/transits/now", {});
     } catch (err) {
@@ -220,7 +224,7 @@ export async function POST(request: NextRequest) {
         try {
           // Get natal data for this sign's representative birth date
           const birthInfo = SIGN_BIRTH_DATA[sign];
-          let natalData: any;
+          let natalData: NatalPromptData;
           try {
             natalData = await fetchFromAstroEngine("/calculate", {
               year: 2000,
@@ -261,8 +265,8 @@ export async function POST(request: NextRequest) {
 
           // Small delay to avoid rate limiting
           await new Promise((r) => setTimeout(r, 500));
-        } catch (err: any) {
-          console.error(`Failed to generate ${period} horoscope for ${sign}:`, err.message);
+        } catch (err) {
+          console.error(`Failed to generate ${period} horoscope for ${sign}:`, getErrorMessage(err));
           await logClaudeUsage({
             feature: "global_horoscope",
             operation: period,
@@ -285,10 +289,10 @@ export async function POST(request: NextRequest) {
       message: "Horoscopes generated",
       results,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Cron generate-horoscopes error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to generate horoscopes" },
+      { success: false, error: getErrorMessage(error) || "Failed to generate horoscopes" },
       { status: 500 }
     );
   }

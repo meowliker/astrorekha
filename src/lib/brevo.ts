@@ -1,4 +1,4 @@
-import * as SibApiV3Sdk from "@getbrevo/brevo";
+import { BrevoClient, type Brevo } from "@getbrevo/brevo";
 import { recordBrevoSendFailure } from "@/lib/brevo-send-monitoring";
 
 // ── Brevo (Sendinblue) integration ──────────────────────────────────
@@ -12,19 +12,23 @@ const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || "AstroRekha";
 
 // ── API instances ───────────────────────────────────────────────────
 
+function getClient() {
+  // Preserve one send attempt: retry/reconciliation is owned by our workers.
+  return new BrevoClient({ apiKey: BREVO_API_KEY, maxRetries: 0 });
+}
+
 function getContactsApi() {
-  const api = new SibApiV3Sdk.ContactsApi();
-  api.setApiKey(SibApiV3Sdk.ContactsApiApiKeys.apiKey, BREVO_API_KEY);
-  return api;
+  return getClient().contacts;
 }
 
 function getTransactionalApi() {
-  const api = new SibApiV3Sdk.TransactionalEmailsApi();
-  api.setApiKey(
-    SibApiV3Sdk.TransactionalEmailsApiApiKeys.apiKey,
-    BREVO_API_KEY
-  );
-  return api;
+  return getClient().transactionalEmails;
+}
+
+function brevoError(error: unknown) {
+  return error && typeof error === "object"
+    ? error as { statusCode?: number; status?: number; body?: unknown; message?: string }
+    : { message: String(error) };
 }
 
 // ── Brevo List IDs (create these in Brevo Dashboard → Contacts → Lists) ──
@@ -58,7 +62,7 @@ export async function upsertContact(
 
   const api = getContactsApi();
 
-  const createContact = new SibApiV3Sdk.CreateContact();
+  const createContact: Brevo.CreateContactRequest = {};
   createContact.email = email;
   createContact.updateEnabled = true;
   if (attributes) createContact.attributes = attributes;
@@ -66,7 +70,8 @@ export async function upsertContact(
 
   try {
     await api.createContact(createContact);
-  } catch (err: any) {
+  } catch (error: unknown) {
+    const err = brevoError(error);
     // 409 = contact already exists (handled by updateEnabled)
     if (err?.statusCode !== 409 && err?.status !== 409) {
       console.error("[Brevo] upsertContact error:", err?.body || err?.message || err);
@@ -81,12 +86,12 @@ export async function addContactToList(email: string, listId: number) {
   if (!BREVO_API_KEY) return;
 
   const api = getContactsApi();
-  const contactEmails = new SibApiV3Sdk.AddContactToList();
-  contactEmails.emails = [email];
+  const contactEmails = { emails: [email] };
 
   try {
-    await api.addContactToList(listId, contactEmails);
-  } catch (err: any) {
+    await api.addContactToList({ listId, body: contactEmails });
+  } catch (error: unknown) {
+    const err = brevoError(error);
     console.error("[Brevo] addContactToList error:", err?.body || err?.message || err);
   }
 }
@@ -98,12 +103,12 @@ export async function removeContactFromList(email: string, listId: number) {
   if (!BREVO_API_KEY) return;
 
   const api = getContactsApi();
-  const contactEmails = new SibApiV3Sdk.RemoveContactFromList();
-  contactEmails.emails = [email];
+  const contactEmails = { emails: [email] };
 
   try {
-    await api.removeContactFromList(listId, contactEmails);
-  } catch (err: any) {
+    await api.removeContactFromList({ listId, body: contactEmails });
+  } catch (error: unknown) {
+    const err = brevoError(error);
     console.error("[Brevo] removeContactFromList error:", err?.body || err?.message || err);
   }
 }
@@ -144,7 +149,8 @@ export async function trackEvent(
       const text = await response.text();
       console.error("[Brevo] trackEvent error:", response.status, text);
     }
-  } catch (err: any) {
+  } catch (error: unknown) {
+    const err = brevoError(error);
     console.error("[Brevo] trackEvent fetch error:", err?.message || err);
   }
 }
@@ -167,14 +173,15 @@ export async function sendTemplateEmail(
 
   const api = getTransactionalApi();
 
-  const email = new SibApiV3Sdk.SendSmtpEmail();
+  const email: Brevo.SendTransacEmailRequest = {};
   email.to = [{ email: to.email, name: to.name || to.email }];
   email.templateId = templateId;
   if (params) email.params = params;
 
   try {
     await api.sendTransacEmail(email);
-  } catch (err: any) {
+  } catch (error: unknown) {
+    const err = brevoError(error);
     console.error("[Brevo] sendTemplateEmail error:", err?.body || err?.message || err);
     await recordBrevoSendFailure();
   }
@@ -196,7 +203,7 @@ export async function sendEmail(
 
   const api = getTransactionalApi();
 
-  const email = new SibApiV3Sdk.SendSmtpEmail();
+  const email: Brevo.SendTransacEmailRequest = {};
   email.to = [{ email: to.email, name: to.name || to.email }];
   email.subject = subject;
   email.htmlContent = htmlContent;
@@ -205,7 +212,8 @@ export async function sendEmail(
   try {
     await api.sendTransacEmail(email);
     return true;
-  } catch (err: any) {
+  } catch (error: unknown) {
+    const err = brevoError(error);
     console.error("[Brevo] sendEmail error:", err?.body || err?.message || err);
     await recordBrevoSendFailure();
     return false;
@@ -226,16 +234,17 @@ export async function sendEmailWithAttachments(
 
   const api = getTransactionalApi();
 
-  const email = new SibApiV3Sdk.SendSmtpEmail();
+  const email: Brevo.SendTransacEmailRequest = {};
   email.to = [{ email: to.email, name: to.name || to.email }];
   email.subject = subject;
   email.htmlContent = htmlContent;
   email.sender = { email: BREVO_SENDER_EMAIL, name: BREVO_SENDER_NAME };
-  (email as any).attachment = attachments;
+  email.attachment = attachments;
 
   try {
     await api.sendTransacEmail(email);
-  } catch (err: any) {
+  } catch (error: unknown) {
+    const err = brevoError(error);
     console.error("[Brevo] sendEmailWithAttachments error:", err?.body || err?.message || err);
     await recordBrevoSendFailure();
   }

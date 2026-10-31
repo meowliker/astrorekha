@@ -1,7 +1,11 @@
+
+import type { Message } from "@anthropic-ai/sdk/resources/messages";
+import type { BirthChartData } from "@/lib/birth-chart-data";
+import type { StoredProfile } from "@/lib/stored-profile-types";
 import { anthropic } from "@/lib/anthropic";
 import { logClaudeUsage } from "@/lib/ai-usage-logger";
 
-type AnyRecord = Record<string, any>;
+type AnyRecord = Record<string, unknown>;
 
 type ReportSections = {
   ascendant_nature: string;
@@ -56,7 +60,7 @@ function isObject(value: unknown): value is AnyRecord {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-function pickPlanet(chartData: AnyRecord, planetName: string): AnyRecord {
+function pickPlanet(chartData: BirthChartData, planetName: string): AnyRecord {
   const lower = planetName.toLowerCase();
   const planets = isObject(chartData?.planets) ? chartData.planets : {};
   const kundliPlanets = isObject(chartData?.kundli?.planetary_positions)
@@ -72,13 +76,13 @@ function pickPlanet(chartData: AnyRecord, planetName: string): AnyRecord {
   if (isObject(fromRoot)) return fromRoot;
 
   const sign =
-    (isObject(fromKundli) && (fromKundli.sign || fromKundli.rasi)) ||
+    (isObject(fromKundli) && ((fromKundli as AnyRecord).sign || (fromKundli as AnyRecord).rasi)) ||
     chartData[`${lower}_sign`] ||
     chartData[`${lower}Sign`] ||
     (typeof fromRoot === "string" ? fromRoot : "—");
 
   const house =
-    (isObject(fromKundli) && (fromKundli.house || fromKundli.bhava)) ||
+    (isObject(fromKundli) && ((fromKundli as AnyRecord).house || (fromKundli as AnyRecord).bhava)) ||
     chartData[`${lower}_house`] ||
     chartData[`${lower}House`] ||
     "—";
@@ -86,7 +90,7 @@ function pickPlanet(chartData: AnyRecord, planetName: string): AnyRecord {
   return { sign: sign || "—", house: house || "—" };
 }
 
-function getHouseField(chartData: AnyRecord, key: string): string {
+function getHouseField(chartData: BirthChartData, key: string): unknown {
   const houses = isObject(chartData?.houses) ? chartData.houses : {};
   const houseLords = isObject(chartData?.house_lords) ? chartData.house_lords : {};
   const kundli = isObject(chartData?.kundli) ? chartData.kundli : {};
@@ -100,12 +104,12 @@ function getHouseField(chartData: AnyRecord, key: string): string {
   );
 }
 
-function getAnthropicText(response: any): string {
+function getAnthropicText(response: Message): string {
   const firstText = Array.isArray(response?.content)
-    ? response.content.find((chunk: any) => chunk?.type === "text" && typeof chunk?.text === "string")
+    ? response.content.find((chunk) => chunk?.type === "text" && typeof chunk?.text === "string")
     : null;
 
-  return firstText?.text?.trim() || "";
+  return firstText?.type === "text" ? firstText.text.trim() : "";
 }
 
 function getSignLord(sign: string): string {
@@ -116,9 +120,9 @@ function getSignLord(sign: string): string {
   return SIGN_LORD_BY_NAME[key] || "—";
 }
 
-function getAscendantFromPlanetPositions(chartData: AnyRecord): { lagna: string; lagnaLord: string } {
+function getAscendantFromPlanetPositions(chartData: BirthChartData): { lagna: string; lagnaLord: string } {
   const list = Array.isArray(chartData?.planet_positions) ? chartData.planet_positions : [];
-  const ascendant = list.find((item: any) => String(item?.name || "").toLowerCase() === "ascendant");
+  const ascendant = list.find((item) => String(item?.name || "").toLowerCase() === "ascendant");
 
   const lagna = ascendant?.rasi?.name || "";
   const lagnaLord = ascendant?.rasi?.lord?.name || getSignLord(lagna);
@@ -130,9 +134,9 @@ function getAscendantFromPlanetPositions(chartData: AnyRecord): { lagna: string;
 }
 
 export async function generateBirthChartReport(
-  chartData: Record<string, any>,
-  userProfile: Record<string, any>,
-  user: Record<string, any>,
+  chartData: BirthChartData,
+  userProfile: StoredProfile,
+  user: StoredProfile,
   usageLogContext: UsageLogContext = {}
 ): Promise<{ sections: Record<string, string> }> {
   const mergedChart = isObject(chartData?.data) ? { ...chartData, ...chartData.data } : chartData;
@@ -298,7 +302,7 @@ applies. Keep tone warm and practical, not superstitious.`,
 
   const results = await Promise.all(
     sectionEntries.map(async ([key, prompt]) => {
-      let response: any;
+      let response: Message;
 
       try {
         response = await anthropic.messages.create({

@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -105,7 +107,7 @@ function normalizeBounceRate(rawValue: number): number {
   return rawValue <= 1 ? rawValue * 100 : rawValue;
 }
 
-function fromProfitSheetDbRow(row: any): ProfitSheetRow {
+function fromProfitSheetDbRow(row: Record<string, unknown>): ProfitSheetRow {
   return {
     date: String(row.date || ""),
     day: String(row.day || ""),
@@ -126,7 +128,7 @@ function fromProfitSheetDbRow(row: any): ProfitSheetRow {
   };
 }
 
-async function readProfitSheetRows(supabase: any, startDate: string, endDate: string): Promise<ProfitSheetRow[]> {
+async function readProfitSheetRows(supabase: ReturnType<typeof getSupabaseAdmin>, startDate: string, endDate: string): Promise<ProfitSheetRow[]> {
   const { data, error } = await supabase
     .from("profit_sheet")
     .select("*")
@@ -141,7 +143,7 @@ async function readProfitSheetRows(supabase: any, startDate: string, endDate: st
   return (data || []).map(fromProfitSheetDbRow);
 }
 
-async function readPaymentRows(supabase: any, startIso: string, endIso: string): Promise<StoredPaymentRow[]> {
+async function readPaymentRows(supabase: ReturnType<typeof getSupabaseAdmin>, startIso: string, endIso: string): Promise<StoredPaymentRow[]> {
   const rows: StoredPaymentRow[] = [];
   const pageSize = 1000;
 
@@ -683,7 +685,7 @@ async function fetchGoogleAnalyticsData(
           : `Connected to GA4 Data API (${gaPropertyTimeZone}; hourly data converted to IST).`,
       },
     };
-  } catch (error: any) {
+  } catch (error) {
     return {
       routeMetrics: [],
       peakTrafficHour: { label: "N/A", sessions: 0 },
@@ -698,7 +700,7 @@ async function fetchGoogleAnalyticsData(
       sourceStatus: {
         configured: true,
         connected: false,
-        message: `GA connection failed: ${error?.message || "unknown error"}`,
+        message: `GA connection failed: ${getErrorMessage(error) || "unknown error"}`,
       },
     };
   }
@@ -1095,10 +1097,10 @@ export async function GET(request: NextRequest) {
         Expires: "0",
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Admin analytics API error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to fetch analytics data" },
+      { error: getErrorMessage(error) || "Failed to fetch analytics data" },
       { status: 500 }
     );
   }

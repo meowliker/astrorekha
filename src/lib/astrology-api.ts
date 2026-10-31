@@ -38,7 +38,7 @@ interface MatchMakingRequest {
   p2_timezone: number;
 }
 
-async function apiRequest<T>(endpoint: string, body: any): Promise<T> {
+async function apiRequest<T>(endpoint: string, body: unknown): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     method: "POST",
     headers: {

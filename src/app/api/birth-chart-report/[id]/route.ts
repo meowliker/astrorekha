@@ -1,3 +1,6 @@
+
+import type { BirthChartData, ChartPlanet, PanchangPeriod } from "@/lib/birth-chart-data";
+import type { StoredProfile } from "@/lib/stored-profile-types";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { getBirthDateIso, getBirthTime24 } from "@/lib/birth-details";
@@ -117,15 +120,15 @@ function getSignLord(value: string): string {
   return SIGN_LORD_BY_NAME[key] || "—";
 }
 
-function hasAscendantPlanetSource(data: Record<string, any> | null | undefined): boolean {
+function hasAscendantPlanetSource(data: BirthChartData | null | undefined): boolean {
   if (!data) return false;
   return (
     Array.isArray(data?.planet_positions) &&
-    data.planet_positions.some((p: any) => canonicalizePlanetName(safeText(p?.name)) === "Ascendant")
+    data.planet_positions.some((p) => canonicalizePlanetName(safeText(p?.name)) === "Ascendant")
   );
 }
 
-function hasPanchangSource(data: Record<string, any> | null | undefined): boolean {
+function hasPanchangSource(data: BirthChartData | null | undefined): boolean {
   return !!data?.panchang && typeof data.panchang === "object";
 }
 
@@ -168,7 +171,7 @@ function to24HourTime(hour: string, minute: string, period: string): string {
   return `${String(h).padStart(2, "0")}:${m}`;
 }
 
-function makeBirthChartCacheKey(userProfile: Record<string, any> | null, user: Record<string, any> | null): string | null {
+function makeBirthChartCacheKey(userProfile: StoredProfile | null, user: StoredProfile | null): string | null {
   const monthRaw = userProfile?.birth_month || user?.birth_month || "";
   const dayRaw = userProfile?.birth_day || user?.birth_day || "";
   const yearRaw = userProfile?.birth_year || user?.birth_year || "";
@@ -203,7 +206,7 @@ function makeBirthChartCacheKey(userProfile: Record<string, any> | null, user: R
   return `${base}_vedic`;
 }
 
-function getBirthDateFromProfile(userProfile: Record<string, any> | null, user: Record<string, any> | null): string | null {
+function getBirthDateFromProfile(userProfile: StoredProfile | null, user: StoredProfile | null): string | null {
   const monthRaw = userProfile?.birth_month || user?.birth_month || "";
   const dayRaw = userProfile?.birth_day || user?.birth_day || "";
   const yearRaw = userProfile?.birth_year || user?.birth_year || "";
@@ -216,7 +219,7 @@ function getBirthDateFromProfile(userProfile: Record<string, any> | null, user: 
   });
 }
 
-function getBirthTimeFromProfile(userProfile: Record<string, any> | null, user: Record<string, any> | null): string | null {
+function getBirthTimeFromProfile(userProfile: StoredProfile | null, user: StoredProfile | null): string | null {
   const knowsBirthTime =
     userProfile?.knows_birth_time !== undefined
       ? !!userProfile.knows_birth_time
@@ -236,10 +239,10 @@ async function hydrateBirthChartFromApi(
   request: NextRequest,
   supabaseAdmin: ReturnType<typeof getSupabaseAdmin>,
   reportId: string,
-  userProfile: Record<string, any> | null,
-  user: Record<string, any> | null,
+  userProfile: StoredProfile | null,
+  user: StoredProfile | null,
   cacheKey: string
-): Promise<Record<string, any> | null> {
+): Promise<BirthChartData | null> {
   const birthDate = getBirthDateFromProfile(userProfile, user);
   if (!birthDate) return null;
 
@@ -346,7 +349,7 @@ function normalizePlanetAndSign(planetRaw: string, signRaw: string): { planet: s
     .replace(/\s+/g, " ")
     .trim();
   const incomingSign = String(signRaw || "").trim();
-  let sign = incomingSign || "—";
+  const sign = incomingSign || "—";
 
   // If sign is already known, still strip it from a packed planet token like
   // "AscendantCancer" so columns remain visually clean and separated.
@@ -391,7 +394,7 @@ function normalizePlanetAndSign(planetRaw: string, signRaw: string): { planet: s
   return { planet, sign };
 }
 
-function formatBirthDate(userProfile: Record<string, any> | null): string {
+function formatBirthDate(userProfile: StoredProfile | null): string {
   const month = safeText(userProfile?.birth_month);
   const day = safeText(userProfile?.birth_day);
   const year = safeText(userProfile?.birth_year);
@@ -400,7 +403,7 @@ function formatBirthDate(userProfile: Record<string, any> | null): string {
   return `${day} ${month}, ${year}`;
 }
 
-function formatBirthTime(userProfile: Record<string, any> | null, birthData: Record<string, any>): string {
+function formatBirthTime(userProfile: StoredProfile | null, birthData: BirthChartData): string {
   const fromBirthData = safeText(birthData?.birthDetails?.time);
   if (fromBirthData !== "—") return fromBirthData;
 
@@ -427,7 +430,7 @@ function timezoneToOffset(timezone: unknown): string {
   return `${sign}${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
-function getBirthDateTime(birthData: Record<string, any>): Date | null {
+function getBirthDateTime(birthData: BirthChartData): Date | null {
   const date = safeText(birthData?.birthDetails?.date);
   const time = safeText(birthData?.birthDetails?.time);
   const tz = timezoneToOffset(birthData?.birthDetails?.timezone);
@@ -492,12 +495,12 @@ function getAvailablePlanetaryColumns(rows: PlanetRow[]): PlanetaryColumnKey[] {
   return columns.filter((column) => rows.some((row) => safeText(row[column]) !== "—"));
 }
 
-function buildPlanetaryRows(birthData: Record<string, any>, natalChart: Record<string, any> | null): PlanetRow[] {
+function buildPlanetaryRows(birthData: BirthChartData, natalChart: BirthChartData | null): PlanetRow[] {
   const rows: PlanetRow[] = [];
 
   const natalPlanets = natalChart?.chart?.planets;
   if (natalPlanets && typeof natalPlanets === "object") {
-    for (const [planet, raw] of Object.entries(natalPlanets as Record<string, any>)) {
+    for (const [planet, raw] of Object.entries(natalPlanets)) {
       const data = raw || {};
       const signValue = safeText(data?.tropical?.sign || data?.sign || data?.rasi);
       const normalized = normalizePlanetAndSign(planet, signValue);
@@ -516,7 +519,7 @@ function buildPlanetaryRows(birthData: Record<string, any>, natalChart: Record<s
   if (rows.length === 0) {
     const prokeralaPlanetPositions = birthData?.planet_positions;
     if (Array.isArray(prokeralaPlanetPositions)) {
-      for (const raw of prokeralaPlanetPositions as Array<Record<string, any>>) {
+      for (const raw of prokeralaPlanetPositions as Array<ChartPlanet>) {
         const canonicalPlanet = canonicalizePlanetName(raw?.name || "");
         if (!canonicalPlanet) continue;
         rows.push({
@@ -533,7 +536,7 @@ function buildPlanetaryRows(birthData: Record<string, any>, natalChart: Record<s
   if (rows.length === 0) {
     const fallbackPlanets = birthData?.planets;
     if (fallbackPlanets && typeof fallbackPlanets === "object") {
-      for (const [planet, raw] of Object.entries(fallbackPlanets as Record<string, any>)) {
+      for (const [planet, raw] of Object.entries(fallbackPlanets)) {
         const data = raw || {};
         const signValue = safeText(data?.zodiac_sign || data?.sign);
         const normalized = normalizePlanetAndSign(planet, signValue);
@@ -561,7 +564,7 @@ function buildPlanetaryRows(birthData: Record<string, any>, natalChart: Record<s
 
 export async function GET(
   request: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   const userId = getSessionUserId(request);
 
@@ -569,7 +572,7 @@ export async function GET(
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const reportId = context.params.id;
+  const reportId = (await context.params).id;
 
   if (!reportId) {
     return NextResponse.json({ error: "report_not_found" }, { status: 404 });
@@ -611,14 +614,14 @@ export async function GET(
     .eq("id", userId)
     .maybeSingle();
 
-  let birthChartData: Record<string, any> = {};
+  let birthChartData: BirthChartData = {};
   if (report.birth_chart_id && typeof report.birth_chart_id === "string") {
     const { data: birthChart } = await supabaseAdmin
       .from("birth_charts")
       .select("data")
       .eq("id", report.birth_chart_id)
       .maybeSingle();
-    birthChartData = (birthChart?.data as Record<string, any>) || {};
+    birthChartData = (birthChart?.data as BirthChartData) || {};
   }
 
   if (
@@ -628,8 +631,8 @@ export async function GET(
     !hasPanchangSource(birthChartData)
   ) {
     const fallbackCacheKey = makeBirthChartCacheKey(
-      (userProfile as Record<string, any> | null) || null,
-      (user as Record<string, any> | null) || null
+      (userProfile as StoredProfile | null) || null,
+      (user as StoredProfile | null) || null
     );
 
     if (fallbackCacheKey) {
@@ -640,7 +643,7 @@ export async function GET(
         .maybeSingle();
 
       if (fallbackBirthChart?.data) {
-        birthChartData = fallbackBirthChart.data as Record<string, any>;
+        birthChartData = fallbackBirthChart.data as BirthChartData;
       }
     }
   }
@@ -655,16 +658,16 @@ export async function GET(
     (userProfile || user)
   ) {
     const fallbackCacheKey = makeBirthChartCacheKey(
-      (userProfile as Record<string, any> | null) || null,
-      (user as Record<string, any> | null) || null
+      (userProfile as StoredProfile | null) || null,
+      (user as StoredProfile | null) || null
     );
     if (fallbackCacheKey) {
       const hydrated = await hydrateBirthChartFromApi(
         request,
         supabaseAdmin,
         reportId,
-        (userProfile as Record<string, any> | null) || null,
-        (user as Record<string, any> | null) || null,
+        (userProfile as StoredProfile | null) || null,
+        (user as StoredProfile | null) || null,
         fallbackCacheKey
       );
       if (hydrated) {
@@ -678,24 +681,24 @@ export async function GET(
   const nakshatraDetails = kundli?.nakshatra_details || {};
   const currentDasha = natalChart?.dasha?.current_period;
   const birthAt = getBirthDateTime(birthChartData);
-  const activeTithi = pickByBirthTime<Record<string, any>>(
+  const activeTithi = pickByBirthTime<PanchangPeriod>(
     Array.isArray(panchang?.tithi) ? panchang.tithi : undefined,
     birthAt
   );
-  const activeKaran = pickByBirthTime<Record<string, any>>(
+  const activeKaran = pickByBirthTime<PanchangPeriod>(
     Array.isArray(panchang?.karana) ? panchang.karana : undefined,
     birthAt
   );
-  const activeYoga = pickByBirthTime<Record<string, any>>(
+  const activeYoga = pickByBirthTime<PanchangPeriod>(
     Array.isArray(panchang?.yoga) ? panchang.yoga : undefined,
     birthAt
   );
-  const activeNakshatra = pickByBirthTime<Record<string, any>>(
+  const activeNakshatra = pickByBirthTime<PanchangPeriod>(
     Array.isArray(panchang?.nakshatra) ? panchang.nakshatra : undefined,
     birthAt
   );
   const prokeralaPlanetPositions = Array.isArray(birthChartData?.planet_positions)
-    ? (birthChartData.planet_positions as Array<Record<string, any>>)
+    ? (birthChartData.planet_positions as Array<ChartPlanet>)
     : [];
   const ascendantFromPlanetPosition = prokeralaPlanetPositions.find(
     (p) => canonicalizePlanetName(safeText(p?.name)) === "Ascendant"
@@ -717,8 +720,8 @@ export async function GET(
   const basicDetails = [
     { label: "Name", value: safeText(user?.name || userProfile?.name) },
     { label: "Sex", value: toTitleCase(safeText(userProfile?.gender || user?.gender)) },
-    { label: "Date of Birth", value: formatBirthDate(userProfile as Record<string, any> | null) },
-    { label: "Time of Birth", value: formatBirthTime(userProfile as Record<string, any> | null, birthChartData) },
+    { label: "Date of Birth", value: formatBirthDate(userProfile as StoredProfile | null) },
+    { label: "Time of Birth", value: formatBirthTime(userProfile as StoredProfile | null, birthChartData) },
     { label: "Day of Birth", value: safeText(panchang?.vaara) },
     { label: "Place of Birth", value: safeText(userProfile?.birth_place || birthChartData?.birthDetails?.place) },
     { label: "Timezone", value: safeText(user?.timezone || birthChartData?.birthDetails?.timezone) },
@@ -771,7 +774,7 @@ export async function GET(
     },
   ];
 
-  const planetaryPositions = buildPlanetaryRows(birthChartData, natalChart as Record<string, any> | null);
+  const planetaryPositions = buildPlanetaryRows(birthChartData, natalChart as BirthChartData | null);
   const planetaryColumns = getAvailablePlanetaryColumns(planetaryPositions);
   const chartSvgs = {
     lagna_chart_svg: safeText(birthChartData?.chart?.output) !== "—" ? birthChartData?.chart?.output : null,

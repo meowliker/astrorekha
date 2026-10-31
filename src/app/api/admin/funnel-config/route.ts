@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_LAYOUT_B_CONFIG, normalizeLayoutBConfig } from "@/lib/layout-b-funnel";
@@ -15,7 +17,7 @@ async function loadConfig() {
   return normalizeLayoutBConfig(data?.value);
 }
 
-async function saveConfig(config: any) {
+async function saveConfig(config: ReturnType<typeof normalizeLayoutBConfig>) {
   const supabase = getSupabaseAdmin();
   const normalized = normalizeLayoutBConfig(config);
 
@@ -46,10 +48,10 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const config = await saveConfig(body?.config ?? body ?? DEFAULT_LAYOUT_B_CONFIG);
     return NextResponse.json({ success: true, config });
-  } catch (error: any) {
+  } catch (error) {
     console.error("funnel-config PUT error:", error);
     return NextResponse.json(
-      { success: false, error: error?.message || "Failed to update funnel config" },
+      { success: false, error: getErrorMessage(error) || "Failed to update funnel config" },
       { status: 500 }
     );
   }

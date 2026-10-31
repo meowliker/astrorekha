@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { soulmateAdmin, validSoulmateId } from "@/lib/soulmate-admin";
 import { SKETCH_BUCKET } from "@/lib/soulmate-fulfillment";
 export const dynamic = "force-dynamic";
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
+  const params = await paramsPromise;
   const db = await soulmateAdmin(request);
   if (!db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!validSoulmateId(params.id)) return new NextResponse(null, { status: 400 });
@@ -15,7 +16,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }));
   return NextResponse.json({ assets }, { headers: { "Cache-Control": "no-store" } });
 }
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
+  const params = await paramsPromise;
   const db = await soulmateAdmin(request);
   if (!db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!validSoulmateId(params.id)) return new NextResponse(null, { status: 400 });

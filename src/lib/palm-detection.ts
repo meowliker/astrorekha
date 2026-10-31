@@ -45,7 +45,7 @@ export async function detectHandLandmarks(imageElement: HTMLImageElement | HTMLV
 }
 
 // Extract fingertip positions (landmarks 4, 8, 12, 16, 20)
-export function extractFingertips(landmarks: any[]) {
+export function extractFingertips(landmarks: Array<{ x: number; y: number; z: number }>) {
   const fingertipIndices = [4, 8, 12, 16, 20]; // Thumb, Index, Middle, Ring, Pinky
   
   return fingertipIndices.map((index) => ({
@@ -78,7 +78,7 @@ function elementToCanvas(el: HTMLImageElement | HTMLVideoElement | HTMLCanvasEle
   return canvas;
 }
 
-function extractPalmROI(landmarks: any[], imageWidth: number, imageHeight: number) {
+function extractPalmROI(landmarks: Array<{ x: number; y: number; z: number }>, imageWidth: number, imageHeight: number) {
   const wrist = landmarks[0];
   const indexBase = landmarks[5];
   const middleBase = landmarks[9];
@@ -122,7 +122,7 @@ function extractPalmImage(sourceCanvas: HTMLCanvasElement, roi: { topLeft: { x: 
 // - Head Line: Starts near thumb/index junction, goes across center of palm
 // - Life Line: Starts between thumb and index, curves around thumb base toward wrist
 // - Fate Line: Vertical line from wrist up toward middle finger
-export function calculatePalmLines(landmarks: any[]) {
+export function calculatePalmLines(landmarks: Array<{ x: number; y: number; z: number }>) {
   // Key landmark indices:
   // 0 = wrist, 1-4 = thumb, 5-8 = index, 9-12 = middle, 13-16 = ring, 17-20 = pinky
   // Base of fingers: 5 (index), 9 (middle), 13 (ring), 17 (pinky)
@@ -204,7 +204,7 @@ export function calculatePalmLines(landmarks: any[]) {
 }
 
 // Analyze palm reading from landmarks
-export function analyzePalmReading(landmarks: any[]) {
+export function analyzePalmReading(landmarks: Array<{ x: number; y: number; z: number }>) {
   const lines = calculatePalmLines(landmarks);
   
   // Calculate line lengths and characteristics

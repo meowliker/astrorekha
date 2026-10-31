@@ -30,7 +30,7 @@ test('US pages load only dedicated tracking properties', () => {
   for (pathname of ['/us/soulmate','/us/soulmate/checkout','/us/soulmate/payment']) {
     const html = render(React.createElement(MarketingBoundary));
     assert.doesNotMatch(html, /existing-/);
-    assert.match(html, /trackSingle/); assert.match(html, /G-USFIXTURE/); assert.match(html, /cookie_prefix:&#x27;us_soulmate&#x27;/);
+    assert.match(html, /trackSingle/); assert.match(html, /G-USFIXTURE/); assert.match(html, /cookie_prefix:'us_soulmate'/);
   }
 });
 test('both checkout packages render with valid original artwork and approved USD prices and tax', () => {

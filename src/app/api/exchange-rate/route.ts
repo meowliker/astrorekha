@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -57,13 +59,13 @@ export async function GET() {
       cached: false,
       timestamp: cachedRate.timestamp,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Exchange rate fetch error:", error);
     return NextResponse.json({
       rate: 93.32, // Fallback rate
       cached: false,
       fallback: true,
-      error: error.message,
+      error: getErrorMessage(error),
     });
   }
 }

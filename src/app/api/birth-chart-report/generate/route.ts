@@ -5,7 +5,7 @@ import { getBirthDateIso, getBirthTime24 } from "@/lib/birth-details";
 
 export const maxDuration = 60;
 
-type AnyRecord = Record<string, any>;
+type AnyRecord = Record<string, unknown>;
 
 function getMonthNumber(month: string): number {
   const monthMap: Record<string, number> = {

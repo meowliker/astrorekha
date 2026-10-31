@@ -163,7 +163,7 @@ interface TestDetails {
     A: { impressions: number; conversions: number; bounces: number; revenue: number };
     B: { impressions: number; conversions: number; bounces: number; revenue: number };
   }>;
-  recentEvents: Array<any>;
+  recentEvents: unknown[];
   routeStats?: { A: RouteStatsRow[]; B: RouteStatsRow[] };
   orderedFunnelFlow?: { A: FunnelFlowStepRow[]; B: FunnelFlowStepRow[] };
   bundlePurchases?: PurchaseDetailRow[];

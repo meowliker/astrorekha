@@ -666,7 +666,7 @@ function BundleUpsellContent() {
             ))}
           </div>
           <p className="text-sm text-muted-foreground italic">
-            "The compatibility report explained our chemistry so clearly, and the 2026 predictions helped me prepare for a major career change right on time."
+            &quot;The compatibility report explained our chemistry so clearly, and the 2026 predictions helped me prepare for a major career change right on time.&quot;
           </p>
           <p className="text-xs text-muted-foreground mt-2">— Sarah M., verified buyer</p>
         </motion.div>

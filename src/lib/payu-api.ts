@@ -10,6 +10,7 @@ export interface PayUTransaction {
   id?: string;
   txnid: string;
   amount: string;
+  amt?: string | number;
   status: string;
   mode: string;
   email: string;
@@ -84,7 +85,7 @@ export async function verifyPayUTransaction(txnid: string): Promise<VerifiedPayU
 interface PayUTransactionResponse {
   status: number;
   msg: string;
-  Transaction_details: PayUTransaction[];
+  Transaction_details: PayUTransaction[] | Record<string, PayUTransaction>;
 }
 
 interface PayURefundRecord {
@@ -189,7 +190,7 @@ function parseRefundDetails(data: PayURefundResponse): PayURefundRecord[] {
 }
 
 export function getPayUPaymentId(txn: Partial<PayUTransaction>): string {
-  const value = (txn as any)?.mihpayid ?? (txn as any)?.id ?? "";
+  const value = txn?.mihpayid ?? txn?.id ?? "";
   return String(value || "").trim();
 }
 
@@ -201,13 +202,13 @@ export function getPayUEventFingerprint(txn: Partial<PayUTransaction>): string {
   return [
     normalizeToken(txn?.txnid),
     normalizeToken(getPayUPaymentId(txn)),
-    normalizeToken((txn as any)?.status),
-    normalizeAmountToken((txn as any)?.amount),
-    normalizeAmountToken((txn as any)?.amt),
-    normalizeAmountToken((txn as any)?.transaction_fee),
-    normalizeToken((txn as any)?.field9),
-    normalizeToken((txn as any)?.error_Message),
-    normalizeToken((txn as any)?.unmappedstatus),
+    normalizeToken(txn?.status),
+    normalizeAmountToken(txn?.amount),
+    normalizeAmountToken(txn?.amt),
+    normalizeAmountToken(txn?.transaction_fee),
+    normalizeToken(txn?.field9),
+    normalizeToken(txn?.error_Message),
+    normalizeToken(txn?.unmappedstatus),
   ].join("|");
 }
 
@@ -352,7 +353,7 @@ async function fetchPayUTransactionsChunk(
       if (data.status === 1 && data.Transaction_details) {
         const details = Array.isArray(data.Transaction_details)
           ? data.Transaction_details
-          : Object.values(data.Transaction_details as any);
+          : Object.values(data.Transaction_details);
         const rows = details as PayUTransaction[];
         payuChunkCache.set(chunkKey, { ts: Date.now(), data: rows });
         return rows;

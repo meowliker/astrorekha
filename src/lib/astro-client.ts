@@ -1,6 +1,6 @@
 const ASTRO_ENGINE_URL = process.env.ASTRO_ENGINE_URL || 'http://localhost:8000';
 
-export async function fetchFromAstroEngine(endpoint: string, data: any, timeoutMs = 8000) {
+export async function fetchFromAstroEngine(endpoint: string, data: unknown, timeoutMs = 8000) {
   const url = `${ASTRO_ENGINE_URL}${endpoint}`;
   
   const controller = new AbortController();
@@ -36,10 +36,10 @@ export async function calculateNatalChart(birthData: {
   return fetchFromAstroEngine('/calculate', birthData);
 }
 
-export async function calculateDasha(birthData: any) {
+export async function calculateDasha(birthData: unknown) {
   return fetchFromAstroEngine('/dasha', birthData);
 }
 
-export async function calculateTransits(data: any) {
+export async function calculateTransits(data: unknown) {
   return fetchFromAstroEngine('/transits', data);
 }

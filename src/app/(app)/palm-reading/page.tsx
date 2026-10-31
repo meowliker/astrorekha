@@ -1,4 +1,6 @@
 "use client";
+import type { PalmReadingData } from "@/lib/palm-reading-data";
+
 
 import ReportInfoButton from "@/components/ReportInfoButton";
 
@@ -28,7 +30,7 @@ export default function PalmReadingPage() {
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState(0);
-  const [reading, setReading] = useState<any>(null);
+  const [reading, setReading] = useState<PalmReadingData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("ageTimeline");
   const [expandedCosmic, setExpandedCosmic] = useState(false);
@@ -307,7 +309,7 @@ export default function PalmReadingPage() {
             📅 {t.title || "Life Timeline Predictions"}
           </h3>
           
-          {t.stages?.map((stage: any, idx: number) => (
+          {t.stages?.map((stage, idx) => (
             <div key={idx} className="mb-4 last:mb-0">
               <div className="flex items-center gap-3 mb-2">
                 <span className="px-3 py-1 bg-black/30 rounded-full text-xs font-bold text-white border border-white/10">
@@ -394,7 +396,7 @@ export default function PalmReadingPage() {
             👑 {t.title || "Palm Mounts Analysis"}
           </h3>
           
-          {t.mounts?.map((mount: any, idx: number) => (
+          {t.mounts?.map((mount, idx) => (
             <div key={idx} className="mb-4 last:mb-0">
               <h4 className="text-white font-bold text-sm mb-1">✦ {mount.name}</h4>
               <p className="text-white/70 text-sm">{mount.description}</p>

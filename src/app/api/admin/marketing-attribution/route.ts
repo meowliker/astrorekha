@@ -1,3 +1,15 @@
+
+import type { MetaReportingRow } from "@/lib/meta-api-types";
+type ProductTotals = { orders: number; revenueInr: number };
+type ProductSummary = ProductTotals & { key: string; label: string; productType: string; productId: string | null; estimatedGstInr: number; estimatedProfitBeforeAdSpendInr: number };
+type CampaignSummary = ProductTotals & {
+ key: string; utmCampaign: string | null; utmContent: string | null;
+ metaCampaignId: string | null; metaAdsetId: string | null; metaAdId: string | null;
+ campaignName?: string | null; adsetName?: string | null; adName?: string | null;
+ adSpendInr: number; impressions: number; clicks: number; cpcInr: number; cpaInr: number; cpmInr: number; ctr: number;
+ budgetInr: number | null; metaPurchases: number | null; estimatedProfitAfterAdSpendInr: number; roas?: number | null;
+ products: Record<string, ProductTotals> | Array<ProductTotals & { label: string }>;
+};
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import {
@@ -181,7 +193,7 @@ async function fetchUsdInrRate(): Promise<number> {
   }
 }
 
-async function fetchMetaSpend(supabase: any, startDate: string, endDate: string): Promise<{
+async function fetchMetaSpend(supabase: ReturnType<typeof getSupabaseAdmin>, startDate: string, endDate: string): Promise<{
   configured: boolean;
   adSpend: Map<string, SpendMetrics>;
   adsetSpend: Map<string, SpendMetrics>;
@@ -215,7 +227,7 @@ async function fetchMetaSpend(supabase: any, startDate: string, endDate: string)
         while (nextUrl && pageCount < 20) {
           pageCount += 1;
           const response: Response = await fetch(nextUrl, { cache: "no-store" });
-          const data: { data?: any[]; paging?: { next?: string } } = await response.json();
+          const data: { data?: MetaReportingRow[]; paging?: { next?: string } } = await response.json();
 
           for (const item of data?.data || []) {
             const spend = Number(item.spend || 0) * multiplier;
@@ -348,7 +360,7 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    const productMap = new Map<string, any>();
+    const productMap = new Map<string, ProductSummary>();
     paidPayments.forEach((payment) => {
       const key = productKey(payment);
       const current =
@@ -362,7 +374,7 @@ export async function GET(request: NextRequest) {
           revenueInr: 0,
           estimatedGstInr: 0,
           estimatedProfitBeforeAdSpendInr: 0,
-        }).get(key);
+        }).get(key)!;
       const revenue = toInrFromPaise(payment.amount);
       current.orders += 1;
       current.revenueInr += revenue;
@@ -370,7 +382,7 @@ export async function GET(request: NextRequest) {
       current.estimatedProfitBeforeAdSpendInr += revenue * 0.95;
     });
 
-    const campaignMap = new Map<string, any>();
+    const campaignMap = new Map<string, CampaignSummary>();
     paidPayments.forEach((payment) => {
       const key = campaignKey(payment);
       const current =
@@ -395,15 +407,15 @@ export async function GET(request: NextRequest) {
           metaPurchases: null,
           estimatedProfitAfterAdSpendInr: 0,
           products: {} as Record<string, { orders: number; revenueInr: number }>,
-        }).get(key);
+        }).get(key)!;
 
       const revenue = toInrFromPaise(payment.amount);
       const product = labelProduct(payment);
       current.orders += 1;
       current.revenueInr += revenue;
-      current.products[product] ||= { orders: 0, revenueInr: 0 };
-      current.products[product].orders += 1;
-      current.products[product].revenueInr += revenue;
+      (current.products as Record<string, ProductTotals>)[product] ||= { orders: 0, revenueInr: 0 };
+      (current.products as Record<string, ProductTotals>)[product].orders += 1;
+      (current.products as Record<string, ProductTotals>)[product].revenueInr += revenue;
 
       const spendMetrics = findSpend(payment, spend);
       if (spendMetrics) {
@@ -429,7 +441,7 @@ export async function GET(request: NextRequest) {
       campaign.estimatedProfitAfterAdSpendInr = Number((campaign.revenueInr * 0.95 - campaign.adSpendInr).toFixed(2));
       campaign.roas = campaign.adSpendInr > 0 ? Number((campaign.revenueInr / campaign.adSpendInr).toFixed(2)) : null;
       campaign.revenueInr = Number(campaign.revenueInr.toFixed(2));
-      campaign.products = Object.entries(campaign.products).map(([label, value]: [string, any]) => ({
+      campaign.products = Object.entries(campaign.products as Record<string, ProductTotals>).map(([label, value]) => ({
         label,
         orders: value.orders,
         revenueInr: Number(value.revenueInr.toFixed(2)),

@@ -1,3 +1,7 @@
+
+import type { MetaActionValue, MetaReportingRow, MetaReportingResponse } from "@/lib/meta-api-types";
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import crypto from "crypto";
@@ -76,7 +80,7 @@ async function fetchPayUTransactions(fromDate: string, toDate: string): Promise<
         ? data.Transaction_details 
         : Object.values(data.Transaction_details);
       
-      const financialTxns = allTxns.filter((txn: any) => {
+      const financialTxns = allTxns.filter((txn: Record<string, unknown>) => {
         const financial = classifyPayUEvent(txn as Record<string, unknown>);
         return financial.kind !== "ignore";
       });
@@ -459,7 +463,7 @@ function normalizeAdAccountId(value: string): string {
   return value.replace(/^act_/i, "").trim();
 }
 
-async function fetchMetaJson(url: string): Promise<any> {
+async function fetchMetaJson(url: string): Promise<MetaReportingResponse> {
   const response = await fetch(url);
   const payload = await response.json().catch(() => null);
   if (!response.ok || payload?.error) {
@@ -469,8 +473,8 @@ async function fetchMetaJson(url: string): Promise<any> {
   return payload;
 }
 
-async function fetchAllMetaPages(initialUrl: string, maxPages: number = 20): Promise<any[]> {
-  const rows: any[] = [];
+async function fetchAllMetaPages(initialUrl: string, maxPages: number = 20): Promise<MetaReportingRow[]> {
+  const rows: MetaReportingRow[] = [];
   let nextUrl: string | null = initialUrl;
   let pageCount = 0;
 
@@ -486,15 +490,15 @@ async function fetchAllMetaPages(initialUrl: string, maxPages: number = 20): Pro
   return rows;
 }
 
-function getActionMetricValue(collection: any[], actionTypes: string[]): number {
+function getActionMetricValue(collection: MetaActionValue[], actionTypes: string[]): number {
   for (const actionType of actionTypes) {
-    const hit = collection.find((row: any) => row?.action_type === actionType);
+    const hit = collection.find((row) => row?.action_type === actionType);
     if (hit) return parseMetricNumber(hit.value);
   }
   return 0;
 }
 
-function getRoasValue(insight: any): number {
+function getRoasValue(insight: MetaReportingRow): number {
   const roasSources = [insight?.website_purchase_roas, insight?.purchase_roas];
   for (const source of roasSources) {
     if (!source) continue;
@@ -633,7 +637,7 @@ function getClippedAccountWindow(
   };
 }
 
-function parseHourlyInsightStartMillis(row: any, timezoneOffsetHours: unknown): number | null {
+function parseHourlyInsightStartMillis(row: MetaReportingRow, timezoneOffsetHours: unknown): number | null {
   const date = String(row?.date_start || "").trim();
   const hourRange = String(row?.hourly_stats_aggregated_by_advertiser_time_zone || "").trim();
   const match = hourRange.match(/^(\d{2}):(\d{2}):\d{2}/);
@@ -644,7 +648,7 @@ function parseHourlyInsightStartMillis(row: any, timezoneOffsetHours: unknown): 
   return Number.isFinite(millis) ? millis : null;
 }
 
-function getHourlyOverlapRatio(row: any, accountWindow: ClippedAccountWindow, timezoneOffsetHours: unknown): number {
+function getHourlyOverlapRatio(row: MetaReportingRow, accountWindow: ClippedAccountWindow, timezoneOffsetHours: unknown): number {
   const rowStart = parseHourlyInsightStartMillis(row, timezoneOffsetHours);
   if (rowStart === null) return 1;
   const rowEnd = rowStart + 60 * 60 * 1000;
@@ -676,7 +680,7 @@ function buildMetricsFromTotals(totals: {
 }
 
 function aggregateInsightRows(
-  rows: any[],
+  rows: MetaReportingRow[],
   accountWindow: ClippedAccountWindow,
   timezoneOffsetHours: unknown
 ): ReturnType<typeof buildMetricsFromTotals> {
@@ -941,29 +945,29 @@ export async function GET(request: NextRequest) {
             fetchAllMetaPages(adsUrl),
           ]);
 
-          const campaignInsightsMap = new Map();
-          campaignInsightsData.forEach((c: any) => {
+          const campaignInsightsMap = new Map<string, MetaReportingRow[]>();
+          campaignInsightsData.forEach((c: MetaReportingRow) => {
             const rows = campaignInsightsMap.get(c.campaign_id) || [];
             rows.push(c);
             campaignInsightsMap.set(c.campaign_id, rows);
           });
 
-          const adsetInsightsMap = new Map();
-          adsetInsightsData.forEach((a: any) => {
+          const adsetInsightsMap = new Map<string, MetaReportingRow[]>();
+          adsetInsightsData.forEach((a: MetaReportingRow) => {
             const rows = adsetInsightsMap.get(a.adset_id) || [];
             rows.push(a);
             adsetInsightsMap.set(a.adset_id, rows);
           });
 
-          const adInsightsMap = new Map();
-          adInsightsData.forEach((a: any) => {
+          const adInsightsMap = new Map<string, MetaReportingRow[]>();
+          adInsightsData.forEach((a: MetaReportingRow) => {
             const rows = adInsightsMap.get(a.ad_id) || [];
             rows.push(a);
             adInsightsMap.set(a.ad_id, rows);
           });
 
-          const adsetsByCampaign = new Map<string, any[]>();
-          adsetsData.forEach((adset: any) => {
+          const adsetsByCampaign = new Map<string, MetaReportingRow[]>();
+          adsetsData.forEach((adset: MetaReportingRow) => {
             const campaignId = adset.campaign_id;
             if (!adsetsByCampaign.has(campaignId)) {
               adsetsByCampaign.set(campaignId, []);
@@ -971,8 +975,8 @@ export async function GET(request: NextRequest) {
             adsetsByCampaign.get(campaignId)!.push(adset);
           });
 
-          const adsByAdset = new Map<string, any[]>();
-          adsData.forEach((ad: any) => {
+          const adsByAdset = new Map<string, MetaReportingRow[]>();
+          adsData.forEach((ad: MetaReportingRow) => {
             const adsetId = ad.adset_id;
             if (!adsByAdset.has(adsetId)) {
               adsByAdset.set(adsetId, []);
@@ -980,7 +984,7 @@ export async function GET(request: NextRequest) {
             adsByAdset.get(adsetId)!.push(ad);
           });
 
-          const campaigns: CampaignData[] = campaignsData.map((campaign: any) => {
+          const campaigns: CampaignData[] = campaignsData.map((campaign: MetaReportingRow) => {
             const metrics = aggregateInsightRows(
               campaignInsightsMap.get(campaign.id) || [],
               accountWindow,
@@ -991,7 +995,7 @@ export async function GET(request: NextRequest) {
               : (campaign.lifetime_budget ? parseFloat(campaign.lifetime_budget) / 100 : null);
 
             const campaignAdsets = adsetsByCampaign.get(campaign.id) || [];
-            const adsets: AdSetData[] = campaignAdsets.map((adset: any) => {
+            const adsets: AdSetData[] = campaignAdsets.map((adset: MetaReportingRow) => {
               const adsetMetrics = aggregateInsightRows(
                 adsetInsightsMap.get(adset.id) || [],
                 accountWindow,
@@ -1002,7 +1006,7 @@ export async function GET(request: NextRequest) {
                 : (adset.lifetime_budget ? parseFloat(adset.lifetime_budget) / 100 : null);
 
               const adsetAds = adsByAdset.get(adset.id) || [];
-              const ads: AdMetrics[] = adsetAds.map((ad: any) => {
+              const ads: AdMetrics[] = adsetAds.map((ad: MetaReportingRow) => {
                 const adMetrics = aggregateInsightRows(
                   adInsightsMap.get(ad.id) || [],
                   accountWindow,
@@ -1048,8 +1052,8 @@ export async function GET(request: NextRequest) {
             };
           });
 
-          const knownCampaignIds = new Set(campaignsData.map((campaign: any) => String(campaign.id)));
-          campaignInsightsMap.forEach((campaignInsightRows: any[], campaignIdValue: string) => {
+          const knownCampaignIds = new Set(campaignsData.map((campaign: MetaReportingRow) => String(campaign.id)));
+          campaignInsightsMap.forEach((campaignInsightRows: MetaReportingRow[], campaignIdValue: string) => {
             const campaignId = String(campaignIdValue || "");
             if (!campaignId || knownCampaignIds.has(campaignId)) return;
 
@@ -1326,10 +1330,10 @@ export async function GET(request: NextRequest) {
         roas: mergedTotals.roas,
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Meta Ads Breakdown API error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to fetch Meta Ads breakdown" },
+      { error: getErrorMessage(error) || "Failed to fetch Meta Ads breakdown" },
       { status: 500 }
     );
   }

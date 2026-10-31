@@ -31,7 +31,7 @@ async function fetchTemplateReport({
   row,
 }: {
   supabase: ReturnType<typeof getSupabaseAdmin>;
-  row: Record<string, any>;
+  row: Record<string, unknown> & { generated_at?: string };
 }): Promise<AuraReportResult | null> {
   const legacyResult = toPublicReportResult(row.result_data);
   const primaryColor = (row.primary_color || legacyResult?.primaryColor || null) as AuraColor | null;

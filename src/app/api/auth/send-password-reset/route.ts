@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { sendEmail } from "@/lib/brevo";
@@ -189,10 +191,10 @@ export async function POST(request: NextRequest) {
       success: true,
       message: "Password reset email sent successfully",
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Send password reset error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to send password reset email" },
+      { success: false, error: getErrorMessage(error) || "Failed to send password reset email" },
       { status: 500 }
     );
   }

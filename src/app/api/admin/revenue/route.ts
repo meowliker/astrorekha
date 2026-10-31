@@ -1,3 +1,7 @@
+
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -68,7 +72,7 @@ function addDaysToIsoDate(isoDate: string, days: number): string {
   return d.toISOString().split("T")[0];
 }
 
-function fromProfitSheetDbRow(row: any): ProfitSheetRow {
+function fromProfitSheetDbRow(row: Record<string, unknown>): ProfitSheetRow {
   return {
     date: String(row.date || ""),
     day: String(row.day || ""),
@@ -89,7 +93,7 @@ function fromProfitSheetDbRow(row: any): ProfitSheetRow {
   };
 }
 
-async function readProfitSheetRows(supabase: any, startDate: string, endDate: string): Promise<ProfitSheetRow[]> {
+async function readProfitSheetRows(supabase: SupabaseClient, startDate: string, endDate: string): Promise<ProfitSheetRow[]> {
   const { data, error } = await supabase
     .from("profit_sheet")
     .select("*")
@@ -138,7 +142,7 @@ function filterProfitRows(rows: ProfitSheetRow[], startDate: string, endDate: st
   return rows.filter((row) => row.date >= startDate && row.date <= endDate);
 }
 
-function getPaymentUserKey(payment: any): string {
+function getPaymentUserKey(payment: Record<string, unknown>): string {
   return String(payment?.userId || payment?.user_id || payment?.customerEmail || payment?.customer_email || "")
     .trim()
     .toLowerCase();
@@ -152,7 +156,7 @@ function parseUpsellItems(value: unknown): string[] {
     .map((item) => UPSELL_LABELS[item] || item.replace(/-/g, " "));
 }
 
-function buildUpsellAttachmentSummary(sales: any[]) {
+function buildUpsellAttachmentSummary(sales: Record<string, unknown>[]) {
   const bundleBuyerKeys = new Set<string>();
   const upsellsByBuyer = new Map<string, { items: Set<string>; revenue: number; itemRevenue: Map<string, number> }>();
 
@@ -308,7 +312,7 @@ export async function GET(request: NextRequest) {
       console.error("Payments fetch error:", paymentsError);
     }
 
-    const payments: any[] = (allPaymentsRaw || []).map((p: any) => ({
+    const payments = (allPaymentsRaw || []).map((p) => ({
       id: p.id,
       ...p,
       createdAt: p.created_at,
@@ -371,19 +375,19 @@ export async function GET(request: NextRequest) {
     const chatPassEvents = chatPassEventsRaw || [];
     const uniqueShownKeys = new Set(
       chatPassEvents
-        .filter((event: any) => event.event_name === CHAT_UNLIMITED_OFFER_EVENT_NAMES.shown)
-        .map((event: any) =>
+        .filter((event) => event.event_name === CHAT_UNLIMITED_OFFER_EVENT_NAMES.shown)
+        .map((event) =>
           String(event.user_id || event.email || event.visitor_id || "")
             .trim()
             .toLowerCase()
         )
         .filter(Boolean)
     );
-    const chatPassShown = chatPassEvents.filter((event: any) => event.event_name === CHAT_UNLIMITED_OFFER_EVENT_NAMES.shown).length;
+    const chatPassShown = chatPassEvents.filter((event) => event.event_name === CHAT_UNLIMITED_OFFER_EVENT_NAMES.shown).length;
     const chatPassCheckoutStarted = chatPassEvents.filter(
-      (event: any) => event.event_name === CHAT_UNLIMITED_OFFER_EVENT_NAMES.checkoutStarted
+      (event) => event.event_name === CHAT_UNLIMITED_OFFER_EVENT_NAMES.checkoutStarted
     ).length;
-    const chatPassDismissed = chatPassEvents.filter((event: any) => event.event_name === CHAT_UNLIMITED_OFFER_EVENT_NAMES.dismissed).length;
+    const chatPassDismissed = chatPassEvents.filter((event) => event.event_name === CHAT_UNLIMITED_OFFER_EVENT_NAMES.dismissed).length;
     const chatPassPurchases = chatPassSales.length;
     const chatPassRevenue = chatPassSales.reduce((sum, payment) => sum + payment.amountInrAbs, 0);
 
@@ -518,7 +522,7 @@ export async function GET(request: NextRequest) {
     // Custom date range
     let customDateRevenue: number | null = null;
     let customDatePaymentCount: number | null = null;
-    let customDateTransactions: any[] = [];
+    let customDateTransactions: unknown[] = [];
 
     if (startDateParam) {
       const customEndDate = endDateParam || startDateParam;
@@ -544,8 +548,8 @@ export async function GET(request: NextRequest) {
           id: p.id,
           date: p.createdAt,
           userId: p.userId,
-          userEmail: (ud as any).email || p.customerEmail || "Unknown",
-          userName: (ud as any).name || "Unknown",
+          userEmail: ud.email || p.customerEmail || "Unknown",
+          userName: ud.name || "Unknown",
           amount: p.signedAmountInr,
           bundleId: p.bundle_id,
           type: p.type,
@@ -617,10 +621,10 @@ export async function GET(request: NextRequest) {
         "Expires": "0",
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Admin revenue API error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to fetch revenue data" },
+      { error: getErrorMessage(error) || "Failed to fetch revenue data" },
       { status: 500 }
     );
   }

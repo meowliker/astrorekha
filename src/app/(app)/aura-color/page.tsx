@@ -1,4 +1,6 @@
 "use client";
+import { getErrorMessage } from "@/lib/error-message";
+
 
 import ReportInfoButton from "@/components/ReportInfoButton";
 
@@ -123,8 +125,8 @@ export default function AuraColorPage() {
         }
 
         await fetchStatus(localUserId);
-      } catch (err: any) {
-        setError(err?.message || "Unable to load your aura color quiz.");
+      } catch (err) {
+        setError(getErrorMessage(err) || "Unable to load your aura color quiz.");
       } finally {
         setLoading(false);
       }
@@ -159,8 +161,8 @@ export default function AuraColorPage() {
       }
 
       setResult(json.result ? normalizeAuraReportResult(json.result) : null);
-    } catch (err: any) {
-      setError(err?.message || "Unable to save your aura color quiz.");
+    } catch (err) {
+      setError(getErrorMessage(err) || "Unable to save your aura color quiz.");
     } finally {
       setIsSubmitting(false);
       setIsAdvancing(false);
@@ -468,7 +470,7 @@ function AuraResultView({ result }: { result: AuraReportResult }) {
           <div className="relative">
             <p className="text-xs uppercase tracking-wide text-fuchsia-200/70">Affirmation</p>
             <p className="mt-3 text-lg font-bold leading-7 text-pink-50">
-              "{completeResult.affirmation}"
+              &quot;{completeResult.affirmation}&quot;
             </p>
           </div>
         </div>

@@ -1,3 +1,5 @@
+
+import type { ChatReadingContext } from "@/lib/astrology-context-types";
 import { anthropic } from "@/lib/anthropic";
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
@@ -44,7 +46,7 @@ function loadPrompt(filename: string): string {
 }
 
 // Build structured user context from palm + chart data so Claude can cite specific data points
-function buildUserContext(userProfile: any, palmReading: any): string {
+function buildUserContext(userProfile: UserProfile | null | undefined, palmReading: ChatReadingContext | null | undefined): string {
   // Handle cases where data might be missing
   const chart = palmReading?.natal_chart || palmReading?.chart || {};
   const dasha = palmReading?.dasha_data || palmReading?.dasha || {};
@@ -76,7 +78,7 @@ function buildUserContext(userProfile: any, palmReading: any): string {
   // Planets
   if (chart.planets && typeof chart.planets === "object") {
     context += `\nPlanets:\n`;
-    for (const [name, data] of Object.entries(chart.planets) as [string, any][]) {
+    for (const [name, data] of Object.entries(chart.planets)) {
       const tropical = data.tropical || {};
       context += `- ${name}: ${tropical.formatted || data.formatted || ""} (House ${data.house_western || data.house || "unknown"}, ${data.retrograde ? "RETROGRADE" : "direct"}, Dignity: ${data.dignity || "neutral"})\n`;
     }
@@ -85,7 +87,7 @@ function buildUserContext(userProfile: any, palmReading: any): string {
   // Key Aspects
   if (chart.aspects && Array.isArray(chart.aspects)) {
     context += `\nKey Aspects:\n`;
-    chart.aspects.slice(0, 15).forEach((a: any) => {
+    chart.aspects.slice(0, 15).forEach((a) => {
       context += `- ${a.planet1} ${a.aspect} ${a.planet2} (orb: ${a.orb}°, ${a.harmony})\n`;
     });
   }
@@ -93,8 +95,8 @@ function buildUserContext(userProfile: any, palmReading: any): string {
   // Houses
   if (chart.houses && typeof chart.houses === "object") {
     context += `\nHouses:\n`;
-    for (const [num, data] of Object.entries(chart.houses) as [string, any][]) {
-      const sign = data.sign?.formatted || data.sign || "unknown";
+    for (const [num, data] of Object.entries(chart.houses)) {
+      const sign = (typeof data.sign === "object" ? data.sign?.formatted : undefined) || data.sign || "unknown";
       context += `- House ${num}: ${sign}\n`;
     }
   }
@@ -111,10 +113,10 @@ function buildUserContext(userProfile: any, palmReading: any): string {
 
     if (dasha.mahadashas && Array.isArray(dasha.mahadashas)) {
       context += `Mahadasha periods:\n`;
-      dasha.mahadashas.slice(0, 5).forEach((md: any) => {
+      dasha.mahadashas.slice(0, 5).forEach((md) => {
         context += `- ${md.ruler}: ${md.start_date} to ${md.end_date} (ages ${md.age_start}-${md.age_end})\n`;
         if (md.sub_periods && Array.isArray(md.sub_periods)) {
-          context += `  Sub-periods: ${md.sub_periods.map((sp: any) => `${sp.label} (${sp.start_date} to ${sp.end_date})`).join(", ")}\n`;
+          context += `  Sub-periods: ${md.sub_periods.map((sp) => `${sp.label} (${sp.start_date} to ${sp.end_date})`).join(", ")}\n`;
         }
       });
     }
@@ -123,7 +125,7 @@ function buildUserContext(userProfile: any, palmReading: any): string {
   // Active Transits
   if (transits && Array.isArray(transits) && transits.length > 0) {
     context += `\n=== ACTIVE TRANSITS (TODAY) ===\n`;
-    transits.slice(0, 10).forEach((t: any) => {
+    transits.slice(0, 10).forEach((t) => {
       context += `- ${t.transit_planet} in ${t.transit_sign} ${t.aspect} natal ${t.natal_planet} in ${t.natal_sign} (House ${t.natal_house}, orb: ${t.orb}°) [${t.significance}]\n`;
     });
   }
@@ -194,7 +196,7 @@ function buildUserContext(userProfile: any, palmReading: any): string {
   // Mounts
   if (palm.mounts && typeof palm.mounts === "object") {
     context += `\nMounts:\n`;
-    for (const [name, data] of Object.entries(palm.mounts) as [string, any][]) {
+    for (const [name, data] of Object.entries(palm.mounts)) {
       if (name !== "confidence") {
         context += `- ${name}: ${data.prominence || data || "unknown"}\n`;
       }
@@ -240,8 +242,9 @@ interface UserProfile {
   sunSign?: string;
   moonSign?: string;
   ascendantSign?: string;
+  risingSign?: string;
   hasPalmImage?: boolean;
-  palmReading?: any;
+  palmReading?: ChatReadingContext;
 }
 
 function isCareerIntent(text: string): boolean {
@@ -510,7 +513,7 @@ If the user's question is about job/career/profession:
     const messages: { role: "user" | "assistant"; content: string }[] = [];
 
     if (context?.previousMessages && Array.isArray(context.previousMessages)) {
-      context.previousMessages.slice(-20).forEach((m: any) => {
+      context.previousMessages.slice(-20).forEach((m: { role?: string; content?: string }) => {
         if (m.role && m.content && !(m.role === "assistant" && hasIncorrectProductClaim(m.content))) {
           messages.push({
             role: m.role as "user" | "assistant",

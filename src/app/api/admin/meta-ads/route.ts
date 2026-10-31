@@ -1,3 +1,7 @@
+
+import type { MetaActionValue, MetaReportingRow, MetaReportingResponse } from "@/lib/meta-api-types";
+
+import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { getMetaAccountCredentialsForRange, getMetaAccountDateRangeForRequest } from "@/lib/meta-ad-accounts";
@@ -79,15 +83,15 @@ function parseMetricNumber(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function getActionMetricValue(collection: any[], actionTypes: string[]): number {
+function getActionMetricValue(collection: MetaActionValue[], actionTypes: string[]): number {
   for (const actionType of actionTypes) {
-    const hit = collection.find((row: any) => row?.action_type === actionType);
+    const hit = collection.find((row) => row?.action_type === actionType);
     if (hit) return parseMetricNumber(hit.value);
   }
   return 0;
 }
 
-function getRoasValue(insight: any): number {
+function getRoasValue(insight: MetaReportingRow): number {
   const roasSources = [insight?.website_purchase_roas, insight?.purchase_roas];
   for (const source of roasSources) {
     if (!source) continue;
@@ -115,7 +119,7 @@ async function fetchMetaJson(url: string) {
   return data;
 }
 
-function parseAccountMetrics(insight: any): AccountMetrics {
+function parseAccountMetrics(insight: MetaReportingRow): AccountMetrics {
   const actions = insight?.actions || [];
   const costPerAction = insight?.cost_per_action_type || [];
 
@@ -262,7 +266,7 @@ export async function GET(request: NextRequest) {
         const accountInsights = insightsData?.data?.[0] || {};
         const metrics = parseAccountMetrics(accountInsights);
 
-        const campaigns = (campaignsData?.data || []).map((c: any) => {
+        const campaigns = (campaignsData?.data || []).map((c: MetaReportingRow) => {
           const cActions = c.actions || [];
           const cCostPerAction = c.cost_per_action_type || [];
           return {
@@ -286,7 +290,7 @@ export async function GET(request: NextRequest) {
           };
         });
 
-        const dailyBreakdown = (dailyData?.data || []).map((d: any) => {
+        const dailyBreakdown = (dailyData?.data || []).map((d: MetaReportingRow) => {
           const dActions = d.actions || [];
           return {
             date: d.date_start,
@@ -298,7 +302,7 @@ export async function GET(request: NextRequest) {
           };
         });
 
-        const activeCampaigns = (activeCampaignsData?.data || []).map((c: any) => ({
+        const activeCampaigns = (activeCampaignsData?.data || []).map((c: MetaReportingRow) => ({
           name: c.name,
           status: c.status,
           objective: c.objective,
@@ -384,10 +388,10 @@ export async function GET(request: NextRequest) {
       activeCampaigns,
       activeCampaignCount: activeCampaigns.length,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Meta Ads API error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to fetch Meta Ads data" },
+      { error: getErrorMessage(error) || "Failed to fetch Meta Ads data" },
       { status: 500 }
     );
   }

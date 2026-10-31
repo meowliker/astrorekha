@@ -6,7 +6,8 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function CheckoutPage({ searchParams }: { searchParams: { plan?: string } }) {
+export default async function CheckoutPage({ searchParams: searchParamsPromise }: { searchParams: Promise<{ plan?: string }> }) {
+  const searchParams = await searchParamsPromise;
   const planId = searchParams.plan === "express" ? "express" : "standard";
   return <SoulmateCheckout key={planId} planId={planId} />;
 }

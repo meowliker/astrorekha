@@ -1,3 +1,5 @@
+
+import { getErrorMessage } from "@/lib/error-message";
 import { isSoulmateTransaction } from "@/lib/soulmate-orders";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -169,7 +171,7 @@ export async function POST(request: NextRequest) {
     }
 
     const payuTxns = await getPayUTransactions(fromDate, toDate);
-    const payuByTxn = new Map<string, any>();
+    const payuByTxn = new Map<string, Awaited<ReturnType<typeof getPayUTransactions>>[number]>();
     for (const txn of payuTxns || []) {
       if (txn?.txnid) payuByTxn.set(String(txn.txnid), txn);
     }
@@ -268,9 +270,9 @@ export async function POST(request: NextRequest) {
             });
           }
         }
-      } catch (error: any) {
+      } catch (error) {
         errors += 1;
-        sampleResults.push({ userId: user.id, txnid, action: "exception", error: error?.message || String(error) });
+        sampleResults.push({ userId: user.id, txnid, action: "exception", error: getErrorMessage(error) || String(error) });
       }
     }
 
@@ -291,8 +293,8 @@ export async function POST(request: NextRequest) {
         "payments.created_at is synced from PayU addedon (IST) when available, so 11:30 IST business-day reporting remains consistent.",
       sampleResults: sampleResults.slice(0, 200),
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Backfill payments error:", error);
-    return NextResponse.json({ error: error.message || "Backfill failed" }, { status: 500 });
+    return NextResponse.json({ error: getErrorMessage(error) || "Backfill failed" }, { status: 500 });
   }
 }

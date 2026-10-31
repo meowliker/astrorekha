@@ -10,7 +10,7 @@ import { getBirthDateParts, getBirthTime24 } from "@/lib/birth-details";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-type AnyRecord = Record<string, any>;
+type AnyRecord = Record<string, unknown>;
 
 const CITY_COORDINATES: Record<string, { latitude: number; longitude: number; timezone: number }> = {
   "new delhi": { latitude: 28.6139, longitude: 77.209, timezone: 5.5 },

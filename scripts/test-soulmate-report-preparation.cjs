@@ -17,7 +17,7 @@ const prose = 'You may imagine a warm and steady connection that grows through m
 const draft = () => ({ sections: DESCRIPTION_TITLES.map(title => ({ title, paragraphs: [prose, prose] })), closing: prose });
 const timelineDraft = () => ({ sections: TIMELINE_TITLES.map(title => ({ title, paragraphs: [prose, prose] })), closing: prose });
 // Tiny valid PNG is enough for format/one-page checks; visual review uses a full drawing separately.
-const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWP4//8/AAX+Av5Y8msOAAAAAElFTkSuQmCC', 'base64');
 function harness(value = order()) {
   let current = value, saved;
   const calls = [], files = [];
