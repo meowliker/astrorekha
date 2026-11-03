@@ -335,6 +335,8 @@
                 padding: 10px;
             }
         }
+        a { color: #fb718c; }
+        a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -343,7 +345,7 @@
             <div class="logo">🖐️✨</div>
             <h1>Privacy Policy</h1>
             <p class="subtitle">AstroRekha Web Application</p>
-            <span class="effective-date">Updated January 2026</span>
+            <span class="effective-date">Updated 3 November 2026</span>
         </header>
         
         <div class="intro">
@@ -354,10 +356,10 @@
             <div class="warning">
                 <p><strong>BY USING THE SERVICE, YOU PROMISE US THAT:</strong></p>
                 <p>(I) You have read, understand, and agree to this Privacy Policy, and</p>
-                <p>(II) You are over 16 years of age (or have had your parent or guardian read and agree to this Privacy Policy for you).</p>
+                <p>(II) You are at least 18 years of age.</p>
             </div>
             
-            <p>If any questions remain unanswered, please contact us at <a href="mailto:team.astrorekha@gmail.com" target="_blank">team.astrorekha@gmail.com</a></p>
+            <p>If any questions remain unanswered, please contact us at <a href="mailto:team.astrorekha@gmail.com">team.astrorekha@gmail.com</a></p>
         </div>
         
         <nav class="toc">
@@ -391,7 +393,7 @@
                 </tr>
                 <tr>
                     <td><strong>Authentication Data</strong></td>
-                    <td>Apple ID, Google ID, or email credentials used for sign-in</td>
+                    <td>Account email and the authentication/session information used to sign in</td>
                 </tr>
                 <tr>
                     <td><strong>Location Data</strong></td>
@@ -399,7 +401,7 @@
                 </tr>
                 <tr>
                     <td><strong>Onboarding Data</strong></td>
-                    <td>Preferences, goals, and interests related to palmistry readings</td>
+                    <td>Birth date, birth time and birthplace when provided; preferences, quiz answers and interests used for the selected reading or sketch</td>
                 </tr>
                 <tr>
                     <td><strong>Palm Image Data</strong></td>
@@ -419,7 +421,7 @@
                 </tr>
                 <tr>
                     <td><strong>Identity Data</strong></td>
-                    <td>IP address; device identifiers; Firebase ID</td>
+                    <td>IP address; browser, session and advertising identifiers</td>
                 </tr>
                 <tr>
                     <td><strong>Usage Data</strong></td>
@@ -438,7 +440,7 @@
                     <th>Legal Basis</th>
                 </tr>
                 <tr>
-                    <td>Provide palm analysis, AI readings with Elysia, life timeline, wealth insights, love readings</td>
+                    <td>Provide palm analysis, birth-chart and self-discovery reports, AI chat, AI-generated soulmate sketches and associated written readings</td>
                     <td>Contract</td>
                 </tr>
                 <tr>
@@ -468,6 +470,7 @@
             <h2>2. Palm Image Data and AI Processing</h2>
             <p>AstroRekha uses artificial intelligence to analyze palm images you upload. This section explains how we handle this sensitive data.</p>
             
+            <p>For standalone soulmate sketches, we also process your chat answers, birth date and portrait preferences to create AI-generated artwork and any purchased written content. The chat is automated.</p>
             <h3>What We Collect</h3>
             <ul>
                 <li>Photographs of your palm(s) that you voluntarily upload for analysis</li>
@@ -495,7 +498,7 @@
             <ul>
                 <li>Palm images and associated readings are stored to maintain your reading history</li>
                 <li>You may request deletion of your palm images and readings at any time</li>
-                <li>Upon account deletion, all palm images and readings are permanently removed</li>
+                <li>Deletion requests are reviewed and processed subject to applicable retention obligations and backup schedules</li>
             </ul>
         </section>
         
@@ -507,9 +510,10 @@
             <ul>
                 <li><strong>Essential Cookies:</strong> Required for basic Service functionality</li>
                 <li><strong>Functionality Cookies:</strong> Remember your preferences and settings</li>
-                <li><strong>Analytics Cookies:</strong> Help us understand how users interact with our Service (aggregated and anonymous)</li>
+                <li><strong>Analytics Cookies:</strong> Help us understand page visits, interactions and purchases using browser/session identifiers; these are not necessarily anonymous</li>
             </ul>
             
+            <p><strong>Advertising measurement:</strong> Google Analytics, Google Tag Manager, Google Ads and Meta tools measure visits, campaign referrals and purchases. Purchase matching may use email or phone transformed into hashes, click identifiers, order reference, value and currency. Hashing does not make data anonymous. Marketing event data is separate from the content of your palm images and reading answers.</p>
             <h3>Your Choices</h3>
             <p>You can manage cookie preferences through your browser settings. Most browsers allow you to block or delete cookies through their privacy settings.</p>
         </section>
@@ -519,32 +523,7 @@
             <p>We may share your information with third-party companies to perform certain services. We undertake not to disclose or transfer your Personal Data to any third parties except those mentioned below without your individual consent.</p>
             
             <h3>Service Providers</h3>
-            <table>
-                <tr>
-                    <th>Provider</th>
-                    <th>Purpose</th>
-                </tr>
-                <tr>
-                    <td><strong>Supabase</strong></td>
-                    <td>Backend services, database hosting, user authentication</td>
-                </tr>
-                <tr>
-                    <td><strong>Superwall</strong></td>
-                    <td>Checkout flow and paywall experience services</td>
-                </tr>
-                <tr>
-                    <td><strong>Apple, Inc.</strong></td>
-                    <td>Authentication (Sign in with Apple), payment processing</td>
-                </tr>
-                <tr>
-                    <td><strong>Google LLC</strong></td>
-                    <td>Authentication (Google Sign-In), analytics</td>
-                </tr>
-                <tr>
-                    <td><strong>OpenAI / Anthropic</strong></td>
-                    <td>AI-powered palm analysis and conversational features</td>
-                </tr>
-            </table>
+<table><tr><th>Provider</th><th>Purpose</th></tr><tr><td><strong>Supabase</strong></td><td>Database, account and order records and stored reports</td></tr><tr><td><strong>Vercel / Cloudflare</strong></td><td>Website hosting, delivery, infrastructure and stored assets</td></tr><tr><td><strong>PayU / Paytm / Pine Labs / Stripe</strong></td><td>Payment processing and verification for the gateway used by your order</td></tr><tr><td><strong>Google / Meta / Microsoft Clarity</strong></td><td>Analytics, advertising measurement, campaign attribution and website usage analysis</td></tr><tr><td><strong>OpenAI / Anthropic / Kie.ai</strong></td><td>AI-powered analysis, written content and image generation</td></tr><tr><td><strong>Prokerala / AstrologyAPI / Free Astrology API</strong></td><td>Astrological calculations used by the selected report</td></tr><tr><td><strong>Brevo / AiSensy</strong></td><td>Email and WhatsApp order notifications, delivery and communications where used</td></tr></table>
             
             <div class="highlight-box">
                 <p><strong>Payment Processing:</strong> We do not store or collect your payment card details. Payment information is provided directly to our payment processors who handle transactions securely.</p>
@@ -553,8 +532,8 @@
         
         <section id="section5">
             <h2>5. Term of Storage of Personal Data</h2>
-            <p>We retain all Personal Data for as long as you use the Services and for <strong>24 months</strong> after you stop using them.</p>
-            <p>If you do not use the Services for 24 continuous months, we will erase your Personal Data from our database and request the same erasure from any third party to whom your Personal Data may have been transferred.</p>
+            <p>We retain account, report and order information as needed to provide purchased services, handle support requests and meet applicable accounting and legal obligations.</p>
+            <p>You can request deletion through our support email. Some payment, security and legal records may need to be retained; backups and service-provider retention may have different deletion schedules.</p>
             
             <h3>Security Measures</h3>
             <ul>
@@ -585,16 +564,16 @@
                 <li><strong>Right to Complain:</strong> Contact your local data protection authority</li>
             </ol>
             
-            <p>To exercise any of these rights, please contact us at <a href="mailto:team.astrorekha@gmail.com" target="_blank">team.astrorekha@gmail.com</a></p>
+            <p>To exercise any of these rights, please contact us at <a href="mailto:team.astrorekha@gmail.com">team.astrorekha@gmail.com</a></p>
         </section>
         
         <section id="section7">
             <h2>7. Age Limitations</h2>
-            <p>The Service is intended for adults and has a minimum age requirement of <strong>16 years</strong>.</p>
+            <p>The Service is intended for adults and has a minimum age requirement of <strong>18 years</strong>.</p>
             <p>In accordance with the Children's Online Privacy Protection Act (COPPA), we do not knowingly collect personally identifiable information from users known to be under 13 years of age.</p>
             
             <div class="highlight-box">
-                <p>If you believe we have information from or about anyone under 13 years of age, please notify us at <a href="mailto:team.astrorekha@gmail.com" target="_blank">team.astrorekha@gmail.com</a> with "COPPA Concern" in the subject line.</p>
+                <p>If you believe we have information from or about anyone under 13 years of age, please notify us at <a href="mailto:team.astrorekha@gmail.com">team.astrorekha@gmail.com</a> with "COPPA Concern" in the subject line.</p>
             </div>
         </section>
         
@@ -608,13 +587,20 @@
             <div class="contact-box">
                 <h2>9. Contact Information</h2>
                 <p><strong>Data Controller:</strong> Visionary Era</p>
-                <p><strong>Email:</strong> <a href="mailto:team.astrorekha@gmail.com" target="_blank">team.astrorekha@gmail.com</a></p>
+                <p><strong>Email:</strong> <a href="mailto:team.astrorekha@gmail.com">team.astrorekha@gmail.com</a></p>
                 <p style="margin-top: 20px; font-size: 0.9rem;">For privacy-related inquiries, please include "Privacy" in your email subject line for faster processing.</p>
             </div>
         </section>
         
-        <footer class="footer">
-            <p>Last Updated: 27 October 2026</p>
+        <section aria-label="Business contact details">
+<h2>Business contact details</h2>
+<p>AstroRekha is operated by <strong>Visionary Era</strong>.</p>
+<p><strong>Address:</strong> IRIS-47, Chouhan Housing, Chouhan Green Valley, Bhilai – 490020, India</p>
+<p><strong>Phone:</strong> <a href="tel:+917828991668">+91 7828991668</a></p>
+<p><strong>Email:</strong> <a href="mailto:team.astrorekha@gmail.com">team.astrorekha@gmail.com</a></p>
+</section>
+<footer class="footer">
+            <p>Last Updated: 3 November 2026</p>
             <p>© 2026 Visionary Era. All rights reserved.</p>
         </footer>
     </div>
