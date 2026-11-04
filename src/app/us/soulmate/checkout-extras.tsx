@@ -1,3 +1,6 @@
+"use client";
+import { useSoulmateDiscover } from "@/components/soulmate-discover/Experience";
+import { DiscoverCheckoutExtras, DiscoverCheckoutStory, DiscoverCheckoutTrust } from "@/components/soulmate-discover/Presentation";
 import Image from "next/image";
 import { ArrowDown, ArrowRight, Download, ShieldCheck } from "lucide-react";
 import { soulmateAssetUrl } from "@/lib/us-soulmate-assets";
@@ -16,6 +19,8 @@ function checkoutImageUrl(filename: string) {
 }
 
 export function CheckoutExtras({ planId, selected, onChange, disabled }: { planId: DeliveryId; selected: AddOnId[]; onChange: (value: AddOnId[]) => void; disabled: boolean }) {
+  const discover = useSoulmateDiscover();
+  if (discover) return <DiscoverCheckoutExtras catalog={addOnsForPlan(planId)} selected={selected} onChange={onChange} disabled={disabled} />;
   return <section className={styles.recommended} aria-labelledby="recommended-title">
     <h2 id="recommended-title">Recommended for You</h2>
     <div className={styles.addOnList}>
@@ -42,6 +47,8 @@ export function CheckoutExtras({ planId, selected, onChange, disabled }: { planI
 }
 
 export function CheckoutStory() {
+  const discover = useSoulmateDiscover();
+  if (discover) return <DiscoverCheckoutStory />;
   return <div className={styles.story}>
     <ArrowDown className={styles.storyArrow} size={50} strokeWidth={3.5} aria-hidden="true" />
     <Image className={styles.customerStoryImage} src={soulmateAssetUrl("/soulmate/stories/astrorekha-clean-5.png")} width={1586} height={992} alt="A soulmate sketch beside a couple’s photo." unoptimized />
@@ -50,6 +57,8 @@ export function CheckoutStory() {
 }
 
 export function CheckoutReviews() {
+  const discover = useSoulmateDiscover();
+  if (discover) return <DiscoverCheckoutTrust />;
   return <section className={styles.checkoutReviews} aria-label="Customer reviews">
     <div className={styles.checkoutTrust}><ShieldCheck size={27} aria-hidden="true" /><span><strong>Secure payment with Stripe</strong><small>Your payment details are entered securely on Stripe.</small></span></div>
     <div className={styles.reviewImageFrame}><Image className={styles.customerReviewsImage} src={checkoutImageUrl("customer-reviews.png")} width={1360} height={540} alt="Reviews: 4.5 stars, 25,287 total. 5-star: 85%; 4-star: 6%; 3-star: 2%; 2-star: 1%; 1-star: 6%." unoptimized /></div>

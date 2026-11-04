@@ -2,18 +2,23 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { useRouter } from "next/navigation";
+import { useOnboardingRouter as useRouter } from "@/components/onboarding/OnboardingExperience";
 import { Menu } from "lucide-react";
 import { OnboardingSidebar } from "@/components/OnboardingSidebar";
 import Image from "next/image";
-import { ASTROREKHA_ASSETS } from "@/lib/assets";
+import Link from "next/link";
+import { useGoogleAdsExperience, useOnboardingAssets } from "@/components/onboarding/OnboardingExperience";
+import { GoogleAdsBusinessFooter } from "@/components/onboarding/GoogleAdsBusinessFooter";
 import { captureAttributionFromPage } from "@/lib/attribution-client";
 
 export default function WelcomePage() {
   const router = useRouter();
+  const googleAds = useGoogleAdsExperience();
+  const assets = useOnboardingAssets();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [isResolvingVariant, setIsResolvingVariant] = useState(true);
+  const [isResolvingVariant, setIsResolvingVariant] = useState(!googleAds);
+  const [resumeHref, setResumeHref] = useState<string | null>(null);
 
   const seedSingleFunnel = () => {
     try {
@@ -29,6 +34,15 @@ export default function WelcomePage() {
     let cancelled = false;
 
     const resolveEntry = async () => {
+      if (googleAds) {
+        seedSingleFunnel();
+        captureAttributionFromPage();
+        try {
+          if (localStorage.getItem("astrorekha_registration_completed") === "true") setResumeHref("/dashboard");
+          else if (localStorage.getItem("astrorekha_payment_completed") === "true") setResumeHref("/onboarding/bundle-upsell");
+        } catch { /* The public entry still works with blocked browser storage. */ }
+        return;
+      }
       const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
       const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
       seedSingleFunnel();
@@ -53,7 +67,7 @@ export default function WelcomePage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, googleAds]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -255,6 +269,7 @@ export default function WelcomePage() {
         <header className="flex items-center justify-end px-4 py-4">
           <button
             onClick={() => setSidebarOpen(true)}
+            aria-label="Open menu"
             className="p-2 -mr-2 text-white/70 hover:text-white transition-colors"
           >
             <Menu className="w-5 h-5" />
@@ -264,7 +279,7 @@ export default function WelcomePage() {
         <div className="flex-1 flex flex-col items-center justify-center px-6">
         {/* Logo and App Name */}
         <motion.div
-          initial={{ opacity: 0, y: -30 }}
+          initial={googleAds ? false : { opacity: 0, y: -30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
           className="flex flex-col items-center mb-16"
@@ -274,7 +289,7 @@ export default function WelcomePage() {
             <div className="absolute inset-0 blur-2xl bg-primary/30 rounded-full scale-150" />
             <div className="relative w-28 h-28 ">
               <Image
-                src={ASTROREKHA_ASSETS.logo}
+                src={assets.logo}
                 alt="AstroRekha"
                 width={112}
                 height={112}
@@ -286,7 +301,7 @@ export default function WelcomePage() {
 
           {/* App Name */}
           <motion.h1
-            initial={{ opacity: 0 }}
+            initial={googleAds ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.3, duration: 0.6 }}
             className="text-4xl font-bold text-white tracking-wide"
@@ -294,31 +309,32 @@ export default function WelcomePage() {
             AstroRekha
           </motion.h1>
           <motion.p
-            initial={{ opacity: 0 }}
+            initial={googleAds ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.5, duration: 0.6 }}
             className="text-white/60 text-sm mt-2 text-center"
           >
-            Discover your cosmic destiny
+            {googleAds ? "Personalized AI palm reading and birth-chart insights" : "Discover your cosmic destiny"}
           </motion.p>
+          {googleAds && <p className="text-white/60 text-sm mt-4 text-center max-w-xs leading-relaxed">
+            AI-generated digital reports for personal reflection. Complete the steps, then choose a one-time paid bundle. Outcomes are not guaranteed.
+          </p>}
         </motion.div>
 
         {/* Buttons */}
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
+          initial={googleAds ? false : { opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.7, duration: 0.6 }}
           className="w-full space-y-4"
         >
           {/* Begin Journey Button */}
-          <button
-            onClick={() => {
-              router.push("/onboarding");
-            }}
-            className="w-full py-4 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-500 text-white font-semibold text-lg rounded-2xl transition-all duration-300 shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.98]"
-          >
+          {googleAds ? <Link href="/discover/onboarding" className="block text-center w-full py-4 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-500 text-white font-semibold text-lg rounded-2xl transition-all duration-300 shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.98]">
             Begin Your Journey
-          </button>
+          </Link> : <button onClick={() => router.push("/onboarding")} className="w-full py-4 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-500 text-white font-semibold text-lg rounded-2xl transition-all duration-300 shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.98]">
+            Begin Your Journey
+          </button>}
+          {googleAds && resumeHref && <a href={resumeHref} className="block text-center text-sm text-white/70 underline">Continue to your account</a>}
 
           {/* Login Link */}
           <div className="text-center pt-4">
@@ -336,18 +352,19 @@ export default function WelcomePage() {
 
         {/* Bottom decorative element */}
         <motion.div
-          initial={{ opacity: 0 }}
+          initial={googleAds ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 1, duration: 0.8 }}
           className="pb-8 flex items-center justify-center gap-2 text-white/30 text-xs"
         >
           <span>✦</span>
-          <span>Your stars await</span>
+          <span>{googleAds ? "Explore your reading" : "Your stars await"}</span>
           <span>✦</span>
         </motion.div>
         </div>
       </div>
     </div>
+    {googleAds && <div className="bg-[#0A0E1A]"><div className="mx-auto w-full max-w-md"><GoogleAdsBusinessFooter /></div></div>}
     <OnboardingSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
     </>
   );

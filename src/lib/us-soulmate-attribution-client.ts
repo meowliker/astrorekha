@@ -59,7 +59,7 @@ export function captureSoulmateAttributionFromPage(): PaymentAttributionPayload 
   const params = url.searchParams;
   // A new tagged arrival replaces the previous campaign as a unit, so an old ad
   // ID cannot silently take precedence over a new campaign name.
-  const taggedArrival = [...params.keys()].some((key) => /^(utm_|meta_|campaign_id|adset_id|ad_id|fbclid|gclid)/.test(key));
+  const taggedArrival = [...params.keys()].some((key) => /^(utm_|meta_|campaign_id|adset_id|ad_id|fbclid|gclid|gbraid|wbraid)/.test(key));
   const existing = taggedArrival ? {} : readStoredAttribution();
 
   const fbclid = getParamValue(params, ["fbclid"]);

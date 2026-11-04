@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
 import { fadeUp } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
-import { useRouter } from "next/navigation";
+import { useOnboardingRouter as useRouter } from "@/components/onboarding/OnboardingExperience";
 import { Shield } from "lucide-react";
 import { useHaptic } from "@/hooks/useHaptic";
 import { pixelEvents } from "@/lib/pixel-events";
@@ -15,6 +15,7 @@ import { normalizeIndianWhatsappNumber } from "@/lib/whatsapp";
 
 import { preparePayUCheckoutEmail } from "@/lib/payu-checkout-recovery";
 import { useUserStore } from "@/lib/user-store";
+import { useGoogleAdsExperience } from "@/components/onboarding/OnboardingExperience";
 
 // Fixed stats to avoid hydration mismatch (server vs client random values)
 const READING_STATS = [
@@ -26,6 +27,7 @@ const READING_STATS = [
 
 export default function Step15Page() {
   const router = useRouter();
+  const googleAds = useGoogleAdsExperience();
   const submittingRef = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [email, setEmail] = useState("");
@@ -220,7 +222,7 @@ export default function Step15Page() {
           className="text-xl md:text-2xl font-bold text-center mb-4 leading-tight"
           style={{ fontFamily: "var(--font-philosopher, serif)" }}
         >
-          Your palm reading report is ready
+          {googleAds ? "Your palm photo is ready" : "Your palm reading report is ready"}
         </motion.h1>
 
         {/* Overview Card */}
@@ -252,7 +254,10 @@ export default function Step15Page() {
 
             {/* Stats */}
             <div className="flex-1 space-y-2.5">
-              {readingStats.map((stat, index) => (
+              {googleAds ? <div className="space-y-2 text-xs text-muted-foreground">
+                <p className="font-medium text-foreground">Your reading can explore</p>
+                <p>Relationships and emotions</p><p>Personal strengths</p><p>Life patterns and career interests</p>
+              </div> : readingStats.map((stat, index) => (
                 <div key={stat.label} className="space-y-1">
                   <div className="flex justify-between text-xs">
                     <span className="text-muted-foreground">{stat.label}</span>
@@ -275,10 +280,10 @@ export default function Step15Page() {
           {/* Reading descriptions */}
           <div className="space-y-2.5 text-sm leading-relaxed text-muted-foreground">
             <p>
-              Your <span className="text-[#EF6B6B] font-medium">Heart Line</span> shows that you are very passionate and freely express your thoughts and feelings.
+              {googleAds ? <>Your <span className="text-[#EF6B6B] font-medium">Heart Line</span> is explored through traditional palmistry themes around emotions and relationships.</> : <>Your <span className="text-[#EF6B6B] font-medium">Heart Line</span> shows that you are very passionate and freely express your thoughts and feelings.</>}
             </p>
             <p>
-              Your <span className="text-[#4ECDC4] font-medium">Life Line</span> means positive changes or recovery from illness in your future and overall completion of your life goals.
+              {googleAds ? <>Your <span className="text-[#4ECDC4] font-medium">Life Line</span> is interpreted for personal reflection. The reading does not diagnose health conditions or predict recovery.</> : <>Your <span className="text-[#4ECDC4] font-medium">Life Line</span> means positive changes or recovery from illness in your future and overall completion of your life goals.</>}
             </p>
           </div>
         </motion.div>
@@ -291,7 +296,7 @@ export default function Step15Page() {
           className="w-full max-w-sm"
         >
           <h2 className="text-base font-semibold text-center mb-3 leading-snug">
-            Sign up to understand yourself better with AstroRekha
+            {googleAds ? "Add your contact details to view reading bundles" : "Sign up to understand yourself better with AstroRekha"}
           </h2>
 
           <input

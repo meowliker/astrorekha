@@ -7,6 +7,7 @@ import { watchPayUPayment, type PayUStatus } from "@/lib/payu-checkout-recovery"
 import { useUserStore } from "@/lib/user-store";
 import { pixelEvents } from "@/lib/pixel-events";
 import { Button } from "@/components/ui/button";
+import { discoverBundleRetryPath } from "@/lib/discover-bundle-checkout";
 
 type PendingPayment = {
   txnid: string;
@@ -14,6 +15,7 @@ type PendingPayment = {
   bundleId?: string;
   returnTo?: string;
   createdAt?: string;
+  checkoutPath?: string;
 };
 
 type PaymentStatusResponse = PayUStatus;
@@ -178,7 +180,7 @@ function PaymentProcessingContent() {
             <Button onClick={() => setRetryKey((value) => value + 1)} className="w-full">
               Check Again
             </Button>
-            {isFailed && <Button variant="outline" onClick={() => router.replace("/onboarding/bundle-pricing")} className="w-full">
+            {isFailed && <Button variant="outline" onClick={() => router.replace(discoverBundleRetryPath(txnid, storedPending))} className="w-full">
               Back to Checkout
             </Button>}
           </div>

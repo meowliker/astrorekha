@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { DEFAULT_LAYOUT_B_CONFIG } from "@/lib/layout-b-funnel";
+import { GOOGLE_ADS_PAYWALL, isGoogleAdsFunnelPath } from "@/lib/google-ads-funnel";
 import {
   getABTestId,
   getABVariant,
@@ -15,6 +16,7 @@ const DEFAULT_TEST_ID = DEFAULT_LAYOUT_B_CONFIG.testId;
 const SKIP_ROUTES = new Set<string>([
   "/onboarding/bundle-pricing",
   "/onboarding/bundle-pricing-b",
+  GOOGLE_ADS_PAYWALL,
 ]);
 
 export default function ABRouteImpressionTracker() {
@@ -22,7 +24,7 @@ export default function ABRouteImpressionTracker() {
 
   useEffect(() => {
     const route = typeof pathname === "string" ? pathname.trim() : "";
-    if (!route.startsWith("/onboarding/") && route !== "/onboarding") return;
+    if (!route.startsWith("/onboarding/") && route !== "/onboarding" && !isGoogleAdsFunnelPath(route)) return;
     if (SKIP_ROUTES.has(route)) return;
 
     const variant = getABVariant("A");

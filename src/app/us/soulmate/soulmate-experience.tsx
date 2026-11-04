@@ -1,4 +1,7 @@
 "use client";
+import { discoverEntry, discoverMessages, useSoulmateDiscover } from "@/components/soulmate-discover/Experience";
+import { DiscoverSoulmateLanding, DiscoverSoulmateOffer, DiscoverZodiacCard } from "@/components/soulmate-discover/Presentation";
+import { SoulmateBusinessFooter } from "@/components/soulmate-discover/BusinessFooter";
 import { startSoulmateSession, saveDraft, flushDraft } from "./session-save";
 
 import { trackSoulmate } from "@/lib/us-soulmate-tracking";
@@ -206,6 +209,8 @@ function SketchOffer({ onSelect }: { onSelect: (plan: DeliveryId) => void }) {
 }
 
 export function SoulmateExperience({ visitorLocation }: { visitorLocation: string | null }) {
+  const discover = useSoulmateDiscover();
+  const entryPath = discover ? discoverEntry(discover) : "/us/soulmate";
   const [started, setStarted] = useState(false);
   const [opening, setOpening] = useState(false);
   const [offerReady, setOfferReady] = useState(false);
@@ -217,7 +222,10 @@ export function SoulmateExperience({ visitorLocation }: { visitorLocation: strin
   const offerStart = useRef<HTMLDivElement>(null);
   const followsChat = useRef(true);
   const submitting = useRef(false);
-  const messages = useMemo(() => conversation(answers, visitorLocation), [answers, visitorLocation]);
+  const messages = useMemo(() => {
+    const result = conversation(answers, discover ? null : visitorLocation);
+    return discover ? discoverMessages(result) : result;
+  }, [answers, visitorLocation, discover]);
   const step = steps.find((key) => !answers[key]);
   const typing = revealed < messages.length;
   const finished = !step && !typing && offerReady;
@@ -238,11 +246,11 @@ export function SoulmateExperience({ visitorLocation }: { visitorLocation: strin
           setOfferReady(true);
         }
       } catch { /* A missing recovery record returns to the landing page. */ }
-      window.history.replaceState(null, "", "/us/soulmate");
+      window.history.replaceState(null, "", entryPath);
     }
     // Discard old persisted sessions. A reload always starts at the landing page.
     try { sessionStorage.removeItem("astrorekha-us-soulmate-chat-v1"); } catch { /* Storage may be unavailable. */ }
-  }, [visitorLocation]);
+  }, [visitorLocation, entryPath]);
 
   useEffect(() => {
     if (!opening) return;
@@ -315,30 +323,30 @@ export function SoulmateExperience({ visitorLocation }: { visitorLocation: strin
   function selectPlan(planId: DeliveryId) {
     prepareCheckout(answers, planId);
     trackSoulmate("add_to_cart", { plan: planId, value: deliveryPlans.find((plan) => plan.id === planId)!.price, once: "selected-plan" });
-    router.push(`/us/soulmate/checkout?plan=${planId}`);
+    router.push(`${entryPath}/checkout?plan=${planId}`);
   }
 
-  if (!started) return <SoulmateLanding visitorLocation={visitorLocation} onStart={start} />;
+  if (!started) return discover ? <DiscoverSoulmateLanding onStart={start} /> : <SoulmateLanding visitorLocation={visitorLocation} onStart={start} />;
 
   return <div className={`${styles.page} ${!finished && !opening ? styles.chatPage : styles.offerPage}`}>
     {opening ? <main className={styles.opening} role="status"><div className={styles.openingPortrait}><Image src="/soulmate/astrorekha-artist.png" width={112} height={112} alt="Astro Rekha" /></div><h1>Astro Rekha</h1><p>Opening your personal sketch session…</p><div className={styles.typing} aria-hidden="true"><i /><i /><i /></div></main> : <>
-      <header className={styles.header}><div className={styles.headerInner}><button type="button" className={styles.back} aria-label="Back to landing page" onClick={() => { setStarted(false); window.scrollTo(0, 0); }}><ArrowLeft size={20} /></button><div className={styles.avatar}><Image src="/soulmate/astrorekha-artist.png" width={46} height={46} alt="" /><span /></div><div className={styles.headerName}><strong>Astro Rekha</strong><span>Soulmate sketch artist</span></div><span className={styles.online}>Online</span></div></header>
+      <header className={styles.header}><div className={styles.headerInner}><button type="button" className={styles.back} aria-label="Back to landing page" onClick={() => { setStarted(false); window.scrollTo(0, 0); }}><ArrowLeft size={20} /></button><div className={styles.avatar}><Image src="/soulmate/astrorekha-artist.png" width={46} height={46} alt="" />{!discover && <span />}</div><div className={styles.headerName}><strong>Astro Rekha</strong><span>{discover ? "Automated AI sketch guide" : "Soulmate sketch artist"}</span></div>{!discover && <span className={styles.online}>Online</span>}</div></header>
       <main className={`${styles.main} ${!finished ? styles.chatMain : ""}`}>
         <div ref={chatScroll} className={styles.chatMessages} onScroll={(event) => { const container = event.currentTarget; followsChat.current = container.scrollHeight - container.scrollTop - container.clientHeight < 180; }}>
         <div className={styles.transcript} role="log" aria-label="Your conversation with Astro Rekha" aria-live="polite" aria-relevant="additions">
           {messages.slice(0, revealed).map((message) => <div key={message.id} className={`${styles.message} ${message.role === "visitor" ? styles.visitor : styles.artist}`}>
-            {message.zodiac && answers.birthDate ? <ZodiacCard birthDate={answers.birthDate} reducedMotion={reducedMotion} /> : <p>{message.text}</p>}
+            {message.zodiac && answers.birthDate ? (discover ? <DiscoverZodiacCard name={getZodiac(answers.birthDate).name} /> : <ZodiacCard birthDate={answers.birthDate} reducedMotion={reducedMotion} />) : <p>{message.text}</p>}
           </div>)}
         </div>
-        {typing && <div className={`${styles.message} ${styles.artist} ${styles.typingMessage}`} role="status" aria-label="Astro Rekha is typing"><div className={styles.typing} aria-hidden="true"><i /><i /><i /></div></div>}
+        {typing && <div className={`${styles.message} ${styles.artist} ${styles.typingMessage}`} role="status" aria-label={discover ? "AI guide is preparing the next prompt" : "Astro Rekha is typing"}><div className={styles.typing} aria-hidden="true"><i /><i /><i /></div></div>}
         <div className={styles.chatEnd} />
         </div>
         {!finished && <div className={styles.answerDock}>
           {!typing && step ? <AnswerInput key={step} step={step} selectedPreference={answers.preferenceSelection} onAnswer={answer} /> : <div className={styles.composer}><input disabled aria-label="Reply" placeholder={typing ? "" : "Your sketch options are coming up…"} /><button type="button" disabled aria-label="Send answer"><Send size={18} /></button></div>}
         </div>}
-        {finished && <div ref={offerStart} className={styles.offerStart}><SketchOffer onSelect={selectPlan} /></div>}
+        {finished && <div ref={offerStart} className={styles.offerStart}>{discover ? <DiscoverSoulmateOffer onSelect={selectPlan} /> : <SketchOffer onSelect={selectPlan} />}</div>}
       </main>
-      <footer className={styles.footer}><nav aria-label="Legal and contact"><a href="/Terms/privacy-policy.html">Privacy</a><a href="/Terms/terms-of-service.html">Terms</a><a href="/Terms/money-back-policy.html">Refunds</a><a href="/Terms/contact-us.html">Contact</a></nav><p>For entertainment and self-reflection. Results and experiences vary.</p><p>© {new Date().getFullYear()} Astro Rekha. All rights reserved.</p></footer>
+      {discover ? <SoulmateBusinessFooter /> : <footer className={styles.footer}><nav aria-label="Legal and contact"><a href="/Terms/privacy-policy.html">Privacy</a><a href="/Terms/terms-of-service.html">Terms</a><a href="/Terms/money-back-policy.html">Refunds</a><a href="/Terms/contact-us.html">Contact</a></nav><p>For entertainment and self-reflection. Results and experiences vary.</p><p>© {new Date().getFullYear()} Astro Rekha. All rights reserved.</p></footer>}
     </>}
   </div>;
 }

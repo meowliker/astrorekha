@@ -23,7 +23,7 @@ const { GoogleAnalytics } = require('../src/components/GoogleAnalytics');
 const { MarketingBoundary } = require('../src/components/MarketingBoundary');
 
 test('main routes retain exactly one GA setup and both existing marketing components', () => {
-  for (pathname of ['/', '/onboarding/bundle-pricing', '/soulmate', '/payment/processing']) {
+  for (pathname of ['/', '/onboarding/bundle-pricing', '/soulmate', '/payment/processing', '/discover', '/discover/onboarding/step-15', '/discover/onboarding/bundle-pricing', '/soulmate/discover', '/soulmate/discover/checkout']) {
     const html = renderToStaticMarkup(React.createElement(MarketingBoundary));
     assert.equal((html.match(/id="google-tag-manager"/g) || []).length, 1);
     assert.equal((html.match(/id="google-analytics"/g) || []).length, 1);
@@ -37,7 +37,7 @@ test('main routes retain exactly one GA setup and both existing marketing compon
 
 test('preview pages stay excluded; every US route loads GTM once with only US analytics', () => {
   for (pathname of ['/page-previews', '/page-previews/witch-archetype']) assert.equal(renderToStaticMarkup(React.createElement(MarketingBoundary)), '');
-  for (pathname of ['/us/soulmate', '/us/soulmate/checkout', '/us/soulmate/payment']) {
+  for (pathname of ['/us/soulmate', '/us/soulmate/checkout', '/us/soulmate/payment', '/us/soulmate/discover', '/us/soulmate/discover/checkout']) {
     const html = renderToStaticMarkup(React.createElement(MarketingBoundary));
     assert.doesNotMatch(html, /G-EXISTING123|existing-meta-pixel|existing-clarity/);
     assert.equal((html.match(/id="google-tag-manager"/g) || []).length, 1);

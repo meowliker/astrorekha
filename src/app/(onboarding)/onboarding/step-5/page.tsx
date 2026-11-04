@@ -7,8 +7,9 @@ import { OnboardingHeader, ProgressBar } from "@/components/onboarding/Onboardin
 import { Button } from "@/components/ui/button";
 import { ZodiacWheel } from "@/components/onboarding/ZodiacWheel";
 import { useOnboardingStore } from "@/lib/onboarding-store";
-import { useRouter } from "next/navigation";
+import { useOnboardingRouter as useRouter } from "@/components/onboarding/OnboardingExperience";
 import { useHaptic } from "@/hooks/useHaptic";
+import { useGoogleAdsExperience } from "@/components/onboarding/OnboardingExperience";
 
 const insightTags = [
   { icon: "✨", label: "Your challenges" },
@@ -19,6 +20,7 @@ const insightTags = [
 
 export default function Step5Page() {
   const router = useRouter();
+  const googleAds = useGoogleAdsExperience();
   const [phase, setPhase] = useState<"loading" | "results">("loading");
   const [visibleTags, setVisibleTags] = useState(0);
   
@@ -130,7 +132,7 @@ export default function Step5Page() {
               className="relative bg-card border border-border rounded-2xl px-6 py-4 mb-4 max-w-sm"
             >
               <p className="text-center text-sm">
-                Your chart shows a <span className="text-primary font-medium">rare spark</span> — let&apos;s discover your best match
+                {googleAds ? "These signs are calculated from the birth details you provided. Continue to personalize your reading." : <>Your chart shows a <span className="text-primary font-medium">rare spark</span> — let&apos;s discover your best match</>}
               </p>
               <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-card border-r border-b border-border rotate-45" />
             </motion.div>

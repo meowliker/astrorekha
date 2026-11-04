@@ -6,11 +6,13 @@ import { fadeUp, staggerContainer, staggerItem } from "@/lib/motion";
 import { OnboardingHeader, ProgressBar } from "@/components/onboarding/OnboardingHeader";
 import { Button } from "@/components/ui/button";
 import { ForecastSphere } from "@/components/onboarding/ForecastSphere";
-import { useRouter } from "next/navigation";
+import { useOnboardingRouter as useRouter } from "@/components/onboarding/OnboardingExperience";
 import { useHaptic } from "@/hooks/useHaptic";
+import { useGoogleAdsExperience } from "@/components/onboarding/OnboardingExperience";
 
 export default function Step6Page() {
   const router = useRouter();
+  const googleAds = useGoogleAdsExperience();
   const [showButton, setShowButton] = useState(false);
 
   useEffect(() => {
@@ -44,11 +46,11 @@ export default function Step6Page() {
           animate={{ opacity: 1, y: 0 }}
           className="text-xl md:text-2xl font-bold text-center mb-8"
         >
-          Forecast accuracy
+          {googleAds ? "Your progress" : "Forecast accuracy"}
         </motion.h1>
 
         <div className="mb-8">
-          <ForecastSphere targetPercentage={34} duration={3} size={180} />
+          <ForecastSphere targetPercentage={googleAds ? Math.round(6 / 14 * 100) : 34} duration={3} size={180} />
         </div>
 
         <motion.div
@@ -58,7 +60,7 @@ export default function Step6Page() {
           className="relative bg-card border border-border rounded-2xl px-6 py-4 max-w-sm"
         >
           <p className="text-center text-sm">
-            The cosmic energy is building up! Share a bit more to reveal what&apos;s driving you
+            {googleAds ? "Your birth details are saved in this journey. Share your interests to personalize the reading." : "The cosmic energy is building up! Share a bit more to reveal what's driving you"}
           </p>
           <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-card border-r border-b border-border rotate-45" />
         </motion.div>

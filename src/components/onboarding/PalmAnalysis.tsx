@@ -3,6 +3,7 @@
 import { useRef, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { detectPalmFeatures as detectPalmFeaturesFromImage } from "@/lib/palm-detection";
+import { useGoogleAdsExperience } from "@/components/onboarding/OnboardingExperience";
 
 interface PalmAnalysisProps {
   imageData: string;
@@ -10,6 +11,7 @@ interface PalmAnalysisProps {
 }
 
 export function PalmAnalysis({ imageData, onComplete }: PalmAnalysisProps) {
+  const googleAds = useGoogleAdsExperience();
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [progress, setProgress] = useState(0);
@@ -199,7 +201,7 @@ export function PalmAnalysis({ imageData, onComplete }: PalmAnalysisProps) {
         </div>
 
         <p className="text-muted-foreground text-center text-sm mt-3">
-          {statusText}
+          {googleAds ? (progress < 100 ? "Preparing your palm preview…" : "Your palm preview is ready") : statusText}
         </p>
       </div>
     </div>

@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { fadeUp } from "@/lib/motion";
-import { useRouter } from "next/navigation";
+import { useOnboardingRouter as useRouter } from "@/components/onboarding/OnboardingExperience";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { OnboardingHeader, ProgressBar } from "@/components/onboarding/OnboardingHeader";
 import { Button } from "@/components/ui/button";

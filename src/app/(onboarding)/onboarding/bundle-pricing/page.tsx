@@ -22,6 +22,10 @@ import { normalizeIndianWhatsappNumber, toPayUPhoneNumber } from "@/lib/whatsapp
 import { preparePayUCheckoutEmail, readPendingPayU, watchPayUPayment } from "@/lib/payu-checkout-recovery";
 import { useOnboardingStore } from "@/lib/onboarding-store";
 import { ASTROREKHA_ASSETS } from "@/lib/assets";
+import { useGoogleAdsExperience } from "@/components/onboarding/OnboardingExperience";
+import { DiscoverBundlePaywall } from "@/components/onboarding/DiscoverBundlePaywall";
+import { GOOGLE_ADS_PAYWALL } from "@/lib/google-ads-funnel";
+import { rememberDiscoverBundleCheckout } from "@/lib/discover-bundle-checkout";
 type LayoutVariant = "A" | "B";
 
 const COSMIC_BUNDLE_ID = "palm-birth-sketch-aura-astro";
@@ -65,9 +69,11 @@ function savePendingPayUPayment(payment: {
     PENDING_PAYMENT_KEY,
     JSON.stringify({
       ...payment,
+      ...(window.location.pathname === GOOGLE_ADS_PAYWALL ? { checkoutPath: GOOGLE_ADS_PAYWALL } : {}),
       createdAt: new Date().toISOString(),
     })
   );
+  rememberDiscoverBundleCheckout(payment.txnid);
 }
 
 // Generate random stats with some variation for authenticity
@@ -134,6 +140,7 @@ const scrollingEmails = [
 
 export default function BundlePricingPage() {
   const router = useRouter();
+  const googleAds = useGoogleAdsExperience();
   const { pricing } = usePricing();
   const allBundlePlans = pricing.bundles;
   
@@ -228,9 +235,11 @@ export default function BundlePricingPage() {
     if (savedImage) {
       setPalmImage(savedImage);
     }
-    setReadingStats(generateRandomStats());
-    setCompatibilityStats(generateCompatibilityStats());
-  }, []);
+    if (!googleAds) {
+      setReadingStats(generateRandomStats());
+      setCompatibilityStats(generateCompatibilityStats());
+    }
+  }, [googleAds]);
 
   useEffect(() => {
     if (!paywallAssignmentReady || bundlePlans.length === 0) return;
@@ -609,6 +618,20 @@ export default function BundlePricingPage() {
       setIsRedeemingCoupon(false);
     }
   };
+
+  if (googleAds) return <>
+    <DiscoverBundlePaywall
+      plans={bundlePlans} selectedPlan={selectedPlan} isPlanSelectionReady={isPlanSelectionReady}
+      onSelect={id => { hasUserTouchedPlanSelectionRef.current = true; setSelectedPlan(id); }}
+      onPurchase={handlePurchase} onViewPlans={scrollToPayment} palmImage={croppedPalmImage || palmImage}
+      agreedToTerms={agreedToTerms} onTermsChange={setAgreedToTerms}
+      isProcessing={isProcessing} isCheckingCheckout={isCheckingCheckout} isRedeemingCoupon={isRedeemingCoupon}
+      paymentError={paymentError} pendingTxnId={pendingTxnId}
+      coupon={{ visible: showCouponInput, value: couponCode, onShow: () => setShowCouponInput(true), onChange: setCouponCode, onApply: handleCouponUnlock }}
+      sections={{ payment: paymentSectionRef, cards: pricingCardsRef, cta: checkoutCtaRef, details: testimonialSectionRef, about: birthChartSectionRef }}
+      sticky={{ payment: showPaymentStickyCTA, content: showStickyCTA }}
+    />
+  </>;
 
   return (
     <motion.div

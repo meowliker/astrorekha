@@ -6,11 +6,13 @@ import { fadeUp } from "@/lib/motion";
 import { OnboardingHeader, ProgressBar } from "@/components/onboarding/OnboardingHeader";
 import { Button } from "@/components/ui/button";
 import { ForecastSphere } from "@/components/onboarding/ForecastSphere";
-import { useRouter } from "next/navigation";
+import { useOnboardingRouter as useRouter } from "@/components/onboarding/OnboardingExperience";
 import { useHaptic } from "@/hooks/useHaptic";
+import { useGoogleAdsExperience } from "@/components/onboarding/OnboardingExperience";
 
 export default function Step12Page() {
   const router = useRouter();
+  const googleAds = useGoogleAdsExperience();
   const [showContent, setShowContent] = useState(false);
   const [showButton, setShowButton] = useState(false);
 
@@ -45,11 +47,11 @@ export default function Step12Page() {
           animate={{ opacity: 1, y: 0 }}
           className="text-xl md:text-2xl font-bold text-center mb-8"
         >
-          Forecast accuracy
+          {googleAds ? "Your progress" : "Forecast accuracy"}
         </motion.h1>
 
         <div className="mb-8">
-          <ForecastSphere targetPercentage={67} startPercentage={34} duration={2.5} size={180} />
+          <ForecastSphere targetPercentage={googleAds ? Math.round(12 / 14 * 100) : 67} startPercentage={googleAds ? Math.round(6 / 14 * 100) : 34} duration={2.5} size={180} />
         </div>
 
         {showContent && (
@@ -61,7 +63,7 @@ export default function Step12Page() {
               className="relative bg-card border border-border rounded-2xl px-6 py-4 max-w-sm"
             >
               <p className="text-center text-sm">
-                You&apos;re close to a big reveal! Confirm one last thing — and see your full story
+                {googleAds ? "Next, add a clear palm photo so your reading can include palm-line interpretations." : "You're close to a big reveal! Confirm one last thing — and see your full story"}
               </p>
               <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-card border-r border-b border-border rotate-45" />
             </motion.div>

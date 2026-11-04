@@ -1,5 +1,5 @@
 import { AlertCircle, Clock3, X } from "lucide-react";
-import Link from "next/link";
+import { SoulmateRetryLink } from "@/components/soulmate-discover/RetryLink";
 import styles from "./order-confirmation.module.css";
 
 type Props = { kind: "failed" | "unverified" | "pending"; orderId?: string; checking?: boolean; onRetry?: () => void };
@@ -15,7 +15,7 @@ export function SoulmatePaymentProblem({ kind, orderId, checking = false, onRetr
       <p className={styles.message}>{failed ? "Your payment wasn’t completed. If money has been deducted, please contact us before trying again." : pending ? "We’re checking your payment securely with Stripe. Please wait before making another payment." : "If money has been deducted, please contact us. Please don’t pay again until we’ve checked your order."}</p>
       {orderId && <p className={styles.reference}>Order reference: <span>{orderId}</span></p>}
       {onRetry && <button className={styles.action} disabled={checking} onClick={onRetry}>{checking ? "Checking payment…" : "Check payment status"}</button>}
-      {failed && <Link className={styles.backLink} href="/us/soulmate?checkout=retry">Return to checkout</Link>}
+      {failed && <SoulmateRetryLink className={styles.backLink} orderId={orderId} fallback="/us/soulmate?checkout=retry" />}
       <div className={styles.support}>
         <p>{orderId ? "For help, email us with your order reference." : "For help, email us with your payment details."}</p>
         <a href="mailto:team.astrorekha@gmail.com">team.astrorekha@gmail.com</a>

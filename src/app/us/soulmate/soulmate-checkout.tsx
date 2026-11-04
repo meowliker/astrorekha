@@ -1,4 +1,7 @@
 "use client";
+import { discoverEntry, useSoulmateDiscover } from "@/components/soulmate-discover/Experience";
+import { discoverAddOnName } from "@/components/soulmate-discover/Presentation";
+import { SoulmateBusinessFooter } from "@/components/soulmate-discover/BusinessFooter";
 import { trackSoulmate } from "@/lib/us-soulmate-tracking";
 import { trackSoulmateEmail } from "@/lib/us-soulmate-ads-events";
 import Link from "next/link";
@@ -15,6 +18,8 @@ import styles from "./soulmate-checkout.module.css";
 // Keep existing receipt/retry consumers compatible.
 export { CHECKOUT_ATTEMPT_KEY, CHECKOUT_RECOVERY_KEY } from "./checkout-state";
 export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
+  const discover = useSoulmateDiscover();
+  const entryPath = discover ? discoverEntry(discover) : "/us/soulmate";
   const submitting = useRef(false);
   const [answers, setAnswers] = useState<Answers>({});
   const [email, setEmail] = useState("");
@@ -97,24 +102,24 @@ export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
   return <main className={styles.page}>
     <div className={styles.shell}>
       <nav className={styles.navigation} aria-label="Checkout navigation">
-        <Link href="/us/soulmate?checkout=back" aria-disabled={busy} onClick={(event) => { if (busy) event.preventDefault(); }}><ArrowLeft size={15} /> Back to your sketch</Link>
+        <Link href={`${entryPath}?checkout=back`} aria-disabled={busy} onClick={(event) => { if (busy) event.preventDefault(); }}><ArrowLeft size={15} /> Back to your sketch</Link>
         <span><LockKeyhole size={13} /> Secure checkout</span>
       </nav>
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
           <p className={styles.brand}>Astro Rekha <span>· Soulmate sketches</span></p>
-          <h1>I will draw your soulmate</h1>
-          <p className={styles.headline}>You’re seconds away from revealing<br className={styles.desktopBreak} /> <span>your soulmate’s face</span></p>
+          <h1>{discover ? "Your personalized AI sketch" : "I will draw your soulmate"}</h1>
+          <p className={styles.headline}>{discover ? "AI-generated artwork for personal reflection." : <>You’re seconds away from revealing<br className={styles.desktopBreak} /> <span>your soulmate’s face</span></>}</p>
         </div>
         <div className={styles.artist}>
-          <SoulmateImage src="/soulmate/astrorekha-artist.png" width={230} height={250} alt="Astro Rekha, soulmate sketch artist" priority />
-          <div><strong>Astro Rekha</strong><span>Your soulmate sketch artist</span></div>
+          <SoulmateImage src="/soulmate/astrorekha-artist.png" width={230} height={250} alt={discover ? "Illustrated AI guide for AstroRekha" : "Astro Rekha, soulmate sketch artist"} priority />
+          <div><strong>Astro Rekha</strong><span>{discover ? "Automated AI sketch guide" : "Your soulmate sketch artist"}</span></div>
         </div>
       </header>
       <div className={styles.assurances}>
         <span><ShieldCheck aria-hidden="true" /> Secure order</span>
         <span><Mail aria-hidden="true" /> Email delivery</span>
-        <span><HandCoins aria-hidden="true" /> Best Price Guaranteed</span>
+        <span><HandCoins aria-hidden="true" /> {discover ? "One-time payment" : "Best Price Guaranteed"}</span>
       </div>
       <div className={styles.secureBanner}><LockKeyhole size={16} aria-hidden="true" /> Secure Checkout</div>
 
@@ -141,11 +146,11 @@ export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
           <CheckoutStory />
           <section className={styles.summary} aria-labelledby="cart-title">
             <h2 id="cart-title">Cart Summary</h2>
-            <h3>{plan.checkoutTitle}</h3>
+            <h3>{discover ? plan.name : plan.checkoutTitle}</h3>
             <p className={styles.digital}><Download size={15} aria-hidden="true" /> Digital product</p>
             <dl aria-live="polite" aria-atomic="true">
               <div><dt>{plan.name}</dt><dd>{formatRupees(price.base)}</dd></div>
-              {catalog.filter((item) => selectedAddOns.includes(item.id)).map((item) => <div key={item.id}><dt>{item.title}</dt><dd>{item.price === null ? "To be confirmed" : formatRupees(item.price)}</dd></div>)}
+              {catalog.filter((item) => selectedAddOns.includes(item.id)).map((item) => <div key={item.id}><dt>{discover ? discoverAddOnName(item.id) : item.title}</dt><dd>{item.price === null ? "To be confirmed" : formatRupees(item.price)}</dd></div>)}
               <div className={styles.subtotal}><dt>Subtotal</dt><dd>{totals ? formatRupees(totals.subtotal) : "To be confirmed"}</dd></div>
               {quote && <div className={styles.discount}><dt>Discount ({quote.code})</dt><dd>−{formatRupees(quote.discount / 100)}</dd></div>}
               <div><dt>Tax</dt><dd>{totals ? formatRupees(quote ? quote.tax / 100 : totals.tax) : "To be confirmed"}</dd></div>
@@ -161,7 +166,7 @@ export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
             </div>
             <CheckoutExtras planId={planId} selected={selectedAddOns} onChange={(value) => { setAddOns(value); setPromotion(null); setPromoError(""); }} disabled={busy} />
             <p className={styles.checkoutTerms}>By clicking Pay Now, you agree to our <a href="/Terms/terms-of-service.html">Terms of Sale</a>.</p>
-            {ready && !hasAnswers && <p className={styles.sessionNotice}>Complete your <Link href="/us/soulmate">sketch preferences</Link> before making a payment.</p>}
+            {ready && !hasAnswers && <p className={styles.sessionNotice}>Complete your <Link href={entryPath}>sketch preferences</Link> before making a payment.</p>}
             {error && <p className={styles.error} role="alert">{error}</p>}
             <button type="submit" className={styles.payButton} disabled={!ready || !hasAnswers || !validEmail || !totals || !paymentReady || busy}><LockKeyhole size={17} />{loading ? "Processing payment…" : (totals ? `Pay Now · ${formatRupees(displayTotal!)}` : "US pricing coming soon")}<ArrowRight size={18} /></button>
             <p className={styles.smallPrint}>One-time payment. No subscription.</p>
@@ -169,7 +174,7 @@ export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
           </section>
         </aside>
       </form>
-      <footer className={styles.footer}><span>© {new Date().getFullYear()} Astro Rekha</span><nav aria-label="Checkout policies"><a href="/Terms/privacy-policy.html">Privacy</a><a href="/Terms/terms-of-service.html">Terms</a><a href="/Terms/money-back-policy.html">Refunds</a><a href="/Terms/contact-us.html">Contact</a></nav></footer>
+      {discover ? <SoulmateBusinessFooter light /> : <footer className={styles.footer}><span>© {new Date().getFullYear()} Astro Rekha</span><nav aria-label="Checkout policies"><a href="/Terms/privacy-policy.html">Privacy</a><a href="/Terms/terms-of-service.html">Terms</a><a href="/Terms/money-back-policy.html">Refunds</a><a href="/Terms/contact-us.html">Contact</a></nav></footer>}
     </div>
   </main>;
 }

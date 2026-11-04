@@ -6,9 +6,9 @@ import { fadeUp } from "@/lib/motion";
 import { OnboardingHeader, ProgressBar } from "@/components/onboarding/OnboardingHeader";
 import { Button } from "@/components/ui/button";
 import { PalmAnalysis } from "@/components/onboarding/PalmAnalysis";
-import { ASTROREKHA_ASSETS } from "@/lib/assets";
+import { useGoogleAdsExperience, useOnboardingAssets } from "@/components/onboarding/OnboardingExperience";
 import { detectPalmFeatures as detectPalmFeaturesFromImage } from "@/lib/palm-detection";
-import { useRouter } from "next/navigation";
+import { useOnboardingRouter as useRouter } from "@/components/onboarding/OnboardingExperience";
 import Image from "next/image";
 import { Flashlight, FlashlightOff } from "lucide-react";
 
@@ -25,6 +25,8 @@ const fakeEmails = [
 
 export default function Step13Page() {
   const router = useRouter();
+  const googleAds = useGoogleAdsExperience();
+  const assets = useOnboardingAssets();
   const [pageState, setPageState] = useState<PageState>("intro");
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -56,11 +58,12 @@ export default function Step13Page() {
 
   // Rotate emails
   useEffect(() => {
+    if (googleAds) return;
     const interval = setInterval(() => {
       setCurrentEmailIndex((prev) => (prev + 1) % fakeEmails.length);
     }, 3000);
     return () => clearInterval(interval);
-  }, []);
+  }, [googleAds]);
 
   // Start camera when entering camera state
   useEffect(() => {
@@ -262,7 +265,7 @@ export default function Step13Page() {
               >
                 <div className="w-[240px] h-[240px] rounded-2xl overflow-hidden bg-black/20">
                   <video
-                    src={ASTROREKHA_ASSETS.palmScanner}
+                    src={assets.palmScanner}
                     autoPlay
                     loop
                     muted
@@ -281,7 +284,7 @@ export default function Step13Page() {
                 transition={{ delay: 0.4 }}
                 className="text-muted-foreground text-center text-xs"
               >
-                These readings are AI-generated spiritual insights and should not be taken as 100% accurate
+                {googleAds ? "AI-generated interpretations for personal reflection. Outcomes are not guaranteed." : "These readings are AI-generated spiritual insights and should not be taken as 100% accurate"}
               </motion.p>
 
               <motion.p
@@ -290,10 +293,10 @@ export default function Step13Page() {
                 transition={{ delay: 0.5 }}
                 className="text-muted-foreground text-center text-xs"
               >
-                Privacy is a priority for us. We only process non-identifiable data to ensure anonymity
+                {googleAds ? <>Your palm photo and details are used to prepare your reading. See our <a href="/Terms/privacy-policy.html" className="underline">Privacy Policy</a>.</> : "Privacy is a priority for us. We only process non-identifiable data to ensure anonymity"}
               </motion.p>
 
-              <motion.div
+              {!googleAds && <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.6 }}
@@ -317,7 +320,7 @@ export default function Step13Page() {
                   </AnimatePresence>
                 </div>
                 <span className="text-muted-foreground text-xs">just got predictions</span>
-              </motion.div>
+              </motion.div>}
             </div>
           </div>
 
@@ -368,7 +371,7 @@ export default function Step13Page() {
             {/* Hand outline overlay */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <Image
-                src={ASTROREKHA_ASSETS.palmOutline}
+                src={assets.palmOutline}
                 alt="Palm outline"
                 width={380}
                 height={470}

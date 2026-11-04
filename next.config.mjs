@@ -1,5 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  async redirects() {
+    return [
+      { source: "/google-ads", destination: "/discover", permanent: true },
+      { source: "/google-ads/onboarding/:path*", destination: "/discover/onboarding/:path*", permanent: true },
+    ];
+  },
   eslint: {
     ignoreDuringBuilds: true,
   },

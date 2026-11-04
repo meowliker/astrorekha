@@ -1,4 +1,5 @@
 "use client";
+import { rememberDiscoverCheckout } from "@/lib/soulmate-discover-checkout";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { readSoulmateGaIdentity } from "@/lib/us-soulmate-ga-client";
 import { soulmateTrackingContext, trackSoulmate } from "@/lib/us-soulmate-tracking";
@@ -31,6 +32,7 @@ export async function prepareCheckout(signature: string, email: string, signal?:
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Unable to prepare your payment. Please try again.");
   const receiptUrl = checkedReceiptPath(data.receiptUrl);
+  rememberDiscoverCheckout(receiptUrl);
   const orderId = new URL(receiptUrl, window.location.origin).searchParams.get("order")!;
   try { sessionStorage.setItem(CHECKOUT_RECOVERY_KEY, JSON.stringify({ answers: details.answers, planId: details.planId, receiptUrl, savedAt: Date.now() })); } catch { /* Receipt also uses its secure cookie. */ }
   return { data, receiptUrl, orderId, details };

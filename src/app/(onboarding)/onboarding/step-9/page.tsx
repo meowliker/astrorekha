@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { OnboardingHeader, ProgressBar } from "@/components/onboarding/OnboardingHeader";
 import { useOnboardingStore, ColorPreference } from "@/lib/onboarding-store";
-import { useRouter } from "next/navigation";
+import { useOnboardingRouter as useRouter } from "@/components/onboarding/OnboardingExperience";
 import { cn } from "@/lib/utils";
 
 const colorOptions: { value: ColorPreference; label: string; color: string }[] = [

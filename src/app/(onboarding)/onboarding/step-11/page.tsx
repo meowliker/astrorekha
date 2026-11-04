@@ -6,7 +6,8 @@ import { fadeUp } from "@/lib/motion";
 import { OnboardingHeader, ProgressBar } from "@/components/onboarding/OnboardingHeader";
 import { Button } from "@/components/ui/button";
 import { useOnboardingStore } from "@/lib/onboarding-store";
-import { useRouter } from "next/navigation";
+import { useOnboardingRouter as useRouter } from "@/components/onboarding/OnboardingExperience";
+import { useGoogleAdsExperience } from "@/components/onboarding/OnboardingExperience";
 import { useHaptic } from "@/hooks/useHaptic";
 
 const goalLabels: Record<string, string> = {
@@ -48,6 +49,7 @@ const elementLabels: Record<string, string> = {
 
 export default function Step11Page() {
   const router = useRouter();
+  const googleAds = useGoogleAdsExperience();
   const [phase, setPhase] = useState(0);
   
   const {
@@ -150,7 +152,7 @@ export default function Step11Page() {
               className="relative bg-card border border-border rounded-2xl px-6 py-4 mb-4 max-w-sm"
             >
               <p className="text-center text-sm">
-                Your chart shows a <span className="text-primary font-medium">rare spark</span> — let&apos;s uncover how you can use this power!
+                {googleAds ? "Here is a summary of your birth-chart details and the preferences you shared." : <>Your chart shows a <span className="text-primary font-medium">rare spark</span> — let&apos;s uncover how you can use this power!</>}
               </p>
               <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-card border-r border-b border-border rotate-45" />
             </motion.div>

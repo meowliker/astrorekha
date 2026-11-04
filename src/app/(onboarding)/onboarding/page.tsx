@@ -3,13 +3,13 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { staggerContainer, staggerItem } from "@/lib/motion";
-import { useRouter } from "next/navigation";
+import { useOnboardingRouter as useRouter } from "@/components/onboarding/OnboardingExperience";
 import { useOnboardingStore, Gender } from "@/lib/onboarding-store";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { Menu } from "lucide-react";
 import { OnboardingSidebar } from "@/components/OnboardingSidebar";
-import { ASTROREKHA_ASSETS } from "@/lib/assets";
+import { useGoogleAdsExperience, useOnboardingAssets } from "@/components/onboarding/OnboardingExperience";
 import { pixelEvents } from "@/lib/pixel-events";
 import { track } from "@/lib/analytics";
 
@@ -21,11 +21,20 @@ const genderOptions: { value: Gender; label: string; icon: string }[] = [
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const googleAds = useGoogleAdsExperience();
+  const assets = useOnboardingAssets();
   const { gender, setGender } = useOnboardingStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Route protection: Check user status and redirect accordingly
   useEffect(() => {
+    if (googleAds) {
+      try {
+        localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
+        localStorage.setItem("astrorekha_layout_variant", "A");
+      } catch { /* Public questions remain available if storage is blocked. */ }
+      return;
+    }
     const hasCompletedPayment = localStorage.getItem("astrorekha_payment_completed") === "true";
     const hasCompletedRegistration = localStorage.getItem("astrorekha_registration_completed") === "true";
     localStorage.setItem("astrorekha_onboarding_flow", "flow-a");
@@ -38,7 +47,7 @@ export default function OnboardingPage() {
       router.replace("/onboarding/bundle-upsell");
       return;
     }
-  }, [router]);
+  }, [router, googleAds]);
 
   const handleGenderSelect = (selectedGender: Gender) => {
     track("quiz_start", { quiz_id: "onboarding" });
@@ -67,7 +76,7 @@ export default function OnboardingPage() {
       <div className="flex-1 flex flex-col items-center px-6">
         <motion.div variants={staggerItem} className="flex flex-col items-center gap-2 mb-6">
           <Image
-            src={ASTROREKHA_ASSETS.logo}
+            src={assets.logo}
             alt="AstroRekha"
             width={48}
             height={48}
@@ -84,17 +93,14 @@ export default function OnboardingPage() {
           variants={staggerItem}
           className="text-2xl md:text-3xl font-bold text-center mb-2"
         >
-          Personalized palm reading with
-          <br />
-          powerful predictions
+          {googleAds ? <>Personalized palm reading<br />with AI-generated insights</> : <>Personalized palm reading with<br />powerful predictions</>}
         </motion.h1>
 
         <motion.p
           variants={staggerItem}
           className="text-muted-foreground text-center text-sm max-w-sm mb-12"
         >
-          Complete a 1-minute quiz to get a personalized prediction. The result
-          is not guaranteed and may vary from case to case.
+          {googleAds ? "Answer a few questions and add your palm photo. Explore digital readings for personal reflection, then choose a paid bundle." : "Complete a 1-minute quiz to get a personalized prediction. The result is not guaranteed and may vary from case to case."}
         </motion.p>
 
         <motion.p

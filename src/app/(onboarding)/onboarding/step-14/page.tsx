@@ -6,10 +6,13 @@ import { OnboardingHeader, ProgressBar } from "@/components/onboarding/Onboardin
 import { ForecastSphere } from "@/components/onboarding/ForecastSphere";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useOnboardingRouter as useRouter } from "@/components/onboarding/OnboardingExperience";
+import { useGoogleAdsExperience } from "@/components/onboarding/OnboardingExperience";
+import { onboardingDestination } from "@/lib/google-ads-funnel";
 
 export default function Step14Page() {
   const router = useRouter();
+  const googleAds = useGoogleAdsExperience();
 
   const handleBack = () => {
     router.push("/onboarding/step-13");
@@ -31,7 +34,7 @@ export default function Step14Page() {
           animate={{ opacity: 1, y: 0 }}
           className="text-xl md:text-2xl font-bold text-center mb-6"
         >
-          Forecast accuracy
+          {googleAds ? "Your progress" : "Forecast accuracy"}
         </motion.h1>
 
         <motion.div
@@ -40,7 +43,7 @@ export default function Step14Page() {
           transition={{ delay: 0.2 }}
           className="mb-8"
         >
-          <ForecastSphere targetPercentage={100} startPercentage={68} duration={2.5} size={180} />
+          <ForecastSphere targetPercentage={100} startPercentage={googleAds ? Math.round(12 / 14 * 100) : 68} duration={2.5} size={180} />
         </motion.div>
 
         {/* Speech bubble */}
@@ -51,7 +54,7 @@ export default function Step14Page() {
           className="relative bg-card border border-border rounded-2xl px-6 py-4 max-w-sm mb-2"
         >
           <p className="text-center text-sm">
-            Maximum accuracy reached! Let&apos;s reveal your powerful prediction!
+            {googleAds ? "Your details and palm photo are ready. Continue to view the available reading bundles." : "Maximum accuracy reached! Let's reveal your powerful prediction!"}
           </p>
           {/* Speech bubble pointer */}
           <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-card border-r border-b border-border rotate-45" />
@@ -69,9 +72,9 @@ export default function Step14Page() {
       </div>
 
       <div className="onboarding-cta">
-        <Link href="/onboarding/step-15">
+        <Link href={onboardingDestination("/onboarding/step-15", googleAds)}>
           <Button className="w-full h-14 text-lg font-semibold" size="lg">
-            Get the Results!
+            {googleAds ? "Continue to Your Reading" : "Get the Results!"}
           </Button>
         </Link>
       </div>

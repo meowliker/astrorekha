@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { ArrowLeft, Menu } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useOnboardingRouter as useRouter } from "@/components/onboarding/OnboardingExperience";
 import Image from "next/image";
 import { OnboardingSidebar } from "@/components/OnboardingSidebar";
-import { ASTROREKHA_ASSETS } from "@/lib/assets";
+import { useOnboardingAssets } from "@/components/onboarding/OnboardingExperience";
 
 interface OnboardingHeaderProps {
   showBack?: boolean;
@@ -23,6 +23,7 @@ export function OnboardingHeader({
   onBack,
 }: OnboardingHeaderProps) {
   const router = useRouter();
+  const assets = useOnboardingAssets();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleBack = () => {
@@ -49,7 +50,7 @@ export function OnboardingHeader({
 
         <div className="flex items-center gap-2">
           <Image
-            src={ASTROREKHA_ASSETS.logo}
+            src={assets.logo}
             alt="AstroRekha"
             width={28}
             height={28}

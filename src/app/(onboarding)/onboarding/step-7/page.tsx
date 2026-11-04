@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { fadeUp, staggerContainer, staggerItem } from "@/lib/motion";
 import { OnboardingHeader, ProgressBar } from "@/components/onboarding/OnboardingHeader";
 import { useOnboardingStore, RelationshipStatus } from "@/lib/onboarding-store";
-import { useRouter } from "next/navigation";
+import { useOnboardingRouter as useRouter } from "@/components/onboarding/OnboardingExperience";
 import { cn } from "@/lib/utils";
 
 const relationshipOptions: { value: RelationshipStatus; label: string; emoji: string }[] = [
