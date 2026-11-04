@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
     const [hours, minutes] = (birthTime || "12:00").split(":").map(Number);
 
     // Format datetime for Prokerala API (ISO 8601 format)
-    const datetime = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${String(hours || 12).padStart(2, '0')}:${String(minutes || 0).padStart(2, '0')}:00${formatTimezoneOffset(Number(timezone))}`;
+    const datetime = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${String(Number.isFinite(hours) ? hours : 12).padStart(2, '0')}:${String(minutes || 0).padStart(2, '0')}:00${formatTimezoneOffset(Number(timezone))}`;
 
     const coordinates = `${latitude || 28.6139},${longitude || 77.209}`;
     const isWestern = chartType === "western";

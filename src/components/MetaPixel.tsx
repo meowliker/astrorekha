@@ -4,6 +4,7 @@ import Script from "next/script";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, Suspense } from "react";
 import { captureMarketingAttribution, trackMarketingEvent } from "@/lib/marketing-events-client";
+import { trackPixelEvent } from "@/lib/pixel-events";
 
 const PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID;
 
@@ -27,9 +28,8 @@ function PageViewTracker() {
       },
     });
 
-    // Track page view on route change
-    const fbq = (window as Window & { fbq?: (...args: string[]) => void }).fbq;
-    fbq?.("track", "PageView");
+    // Own the initial view and each SPA navigation once, including SDK startup races.
+    if (PIXEL_ID) trackPixelEvent("PageView");
   }, [pathname, search]);
 
   return null;
@@ -49,8 +49,8 @@ export const MetaPixel = () => {
           t.src=v;s=b.getElementsByTagName(e)[0];
           s.parentNode.insertBefore(t,s)}(window, document,'script',
           'https://connect.facebook.net/en_US/fbevents.js');
+          fbq.disablePushState=true;
           fbq('init', '${PIXEL_ID}');
-          fbq('track', 'PageView');
         `}
         </Script>
       ) : null}
