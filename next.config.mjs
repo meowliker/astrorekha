@@ -1,5 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  async headers() {
+    return ["/partner-analytics", "/admin/analytics-access"].map(source => ({
+      source,
+      headers: [
+        { key: "X-Frame-Options", value: "DENY" },
+        { key: "Referrer-Policy", value: "no-referrer" },
+      ],
+    }));
+  },
   async redirects() {
     return [
       { source: "/google-ads", destination: "/discover", permanent: true },

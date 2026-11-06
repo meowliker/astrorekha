@@ -1,10 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Cormorant_Garamond } from "next/font/google";
-import Script from "next/script";
 import "./globals.css";
-import { MarketingBoundary } from "@/components/MarketingBoundary";
-import { Analytics } from "@vercel/analytics/react";
-import { SpeedInsights } from "@vercel/speed-insights/next";
+import { AppTelemetry } from "@/components/AppTelemetry";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -32,10 +29,7 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${cormorant.variable} font-sans antialiased min-h-screen`}
       >
-        <MarketingBoundary />
-        {children}
-        <Analytics />
-        <SpeedInsights />
+        <AppTelemetry>{children}</AppTelemetry>
       </body>
     </html>
   );

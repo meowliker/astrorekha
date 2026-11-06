@@ -59,6 +59,15 @@ const adminOptions: AdminOption[] = [
     bgColor: "bg-rose-500/20",
   },
   {
+    id: "analytics-access",
+    title: "Analytics Access",
+    description: "Create read-only viewer accounts and control which analytics they can see",
+    icon: ChartNoAxesCombined,
+    href: "/admin/analytics-access",
+    color: "text-indigo-400",
+    bgColor: "bg-indigo-500/20",
+  },
+  {
     id: "system-status",
     title: "System Status",
     description: "Service health, monitoring history, and alert destinations",
