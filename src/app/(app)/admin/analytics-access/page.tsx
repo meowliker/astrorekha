@@ -6,7 +6,7 @@ import type { ViewerAccount, ViewerPermissions } from "@/lib/partner-analytics-a
 
 const endpoint = "/api/admin/analytics-access";
 const accessLabels: Record<keyof ViewerPermissions, string> = {
-  traffic: "Sessions", purchases: "Purchase counts", revenue: "Purchase revenue", channels: "Channel breakdown",
+  traffic: "Sessions", purchases: "Purchase counts", revenue: "Purchase revenue", channels: "Acquisition and tracking breakdowns",
 };
 const accessKeys = Object.keys(accessLabels) as (keyof ViewerPermissions)[];
 const input = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm";
@@ -25,7 +25,7 @@ function PermissionFields({ viewer }: { viewer?: ViewerPermissions }) {
         <input type="checkbox" name={key} defaultChecked={viewer?.[key]} />{accessLabels[key]}
       </label>)}
     </div>
-    <p className="mt-2 text-xs text-muted-foreground">The channel breakdown uses the metrics selected above.</p>
+    <p className="mt-2 text-xs text-muted-foreground">Breakdowns include Meta Ads, daily activity and selected public landing pages, using the metrics above. Tracking event totals require Sessions access.</p>
   </fieldset>;
 }
 

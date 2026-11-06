@@ -4,7 +4,7 @@ import { Calendar, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { istDate, shiftDate } from "@/lib/revenue-dashboard";
 import styles from "./revenue.module.css";
 type Range = { start: string; end: string };
-const minimum = "2026-03-13";
+const revenueMinimum = "2026-03-13";
 const monthStart = (date: string, offset = 0) =>
   new Date(
     Date.UTC(
@@ -25,14 +25,33 @@ const label = (date: string) =>
 export default function RevenueDateRange({
   value,
   onChange,
+  settings,
 }: {
   value: Range;
   onChange: (range: Range) => void;
+  settings?: {
+    today: string;
+    minimum: string;
+    timeZone: string;
+    presets: { label: string; range: Range }[];
+    validate: (range: Range) => boolean;
+  };
 }) {
-  const today = istDate(new Date());
+  const today = settings?.today ?? istDate(new Date());
+  const minimum = settings?.minimum ?? revenueMinimum;
+  const presets = settings?.presets ?? [
+    { label: "Today", range: { start: today, end: today } },
+    { label: "Yesterday", range: { start: shiftDate(today, -1), end: shiftDate(today, -1) } },
+    ...[7, 30].map(days => ({ label: `${days} days`, range: { start: shiftDate(today, 1 - days), end: today } })),
+    { label: "All time", range: { start: minimum, end: today } },
+  ];
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(value);
   const [month, setMonth] = useState(monthStart(value.end, -1));
+  const appliedRange = { start: draft.start, end: draft.end || draft.start };
+  const valid = settings?.validate(appliedRange) ?? (
+    draft.start >= minimum && draft.start <= today && appliedRange.end >= draft.start && appliedRange.end <= today
+  );
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
@@ -92,7 +111,7 @@ export default function RevenueDateRange({
     close();
   }
   return (
-    <div ref={root} className={styles.calendarRoot}>
+    <div ref={root} className={`${styles.calendarRoot}${settings ? ` ${styles.calendarLight}` : ""}`}>
       <button
         ref={trigger}
         aria-expanded={open}
@@ -122,26 +141,9 @@ export default function RevenueDateRange({
             </button>
           </div>
           <div className={styles.presets}>
-            {[
-              ["Today", 1],
-              ["Yesterday", 0],
-              ["7 days", 7],
-              ["30 days", 30],
-              ["All time", -1],
-            ].map(([name, days]) => (
-              <button
-                key={name}
-                onClick={() =>
-                  apply({
-                    start:
-                      days === -1
-                        ? minimum
-                        : shiftDate(today, days === 0 ? -1 : 1 - Number(days)),
-                    end: days === 0 ? shiftDate(today, -1) : today,
-                  })
-                }
-              >
-                {name}
+            {presets.map(preset => (
+              <button key={preset.label} type="button" onClick={() => apply(preset.range)}>
+                {preset.label}
               </button>
             ))}
           </div>
@@ -153,7 +155,7 @@ export default function RevenueDateRange({
             >
               <ChevronLeft size={16} />
             </button>
-            <span>Choose a start and end date · IST</span>
+            <span>Choose a start and end date · {settings?.timeZone ?? "IST"}</span>
             <button
               aria-label="Next month"
               disabled={monthStart(month, 1) >= monthStart(today)}
@@ -236,18 +238,12 @@ export default function RevenueDateRange({
               {draft.start
                 ? `${label(draft.start)}${draft.end ? ` – ${label(draft.end)}` : " · choose end date"}`
                 : "Choose start date"}
+              {settings && draft.start && draft.end && !valid && " · Choose a range of up to 366 days"}
             </span>
             <button
               className={styles.primary}
-              disabled={
-                !draft.start ||
-                draft.start < minimum ||
-                draft.start > today ||
-                (!!draft.end && (draft.end < draft.start || draft.end > today))
-              }
-              onClick={() =>
-                apply({ start: draft.start, end: draft.end || draft.start })
-              }
+              disabled={!valid}
+              onClick={() => apply(appliedRange)}
             >
               Apply range
             </button>

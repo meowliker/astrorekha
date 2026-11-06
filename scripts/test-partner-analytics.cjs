@@ -12,6 +12,21 @@ Module._resolveFilename = function (name, parent, ...rest) {
   return resolve.call(this, target, parent, ...rest);
 };
 const { NextRequest } = require('next/server');
+const { analyticsDate, analyticsPresets, previousAnalyticsRange, validAnalyticsRange } = require('../src/lib/partner-analytics-period');
+
+test('analytics ranges follow the property calendar and compare inclusive dates', () => {
+  const today = analyticsDate(new Date('2026-11-02T02:00:00Z'), 'America/Chicago');
+  assert.equal(today, '2026-11-01');
+  const presets = Object.fromEntries(analyticsPresets(today).map(({ label, range }) => [label, range]));
+  assert.deepEqual(presets['Last 7 days'], { start: '2026-10-25', end: '2026-10-31' });
+  assert.deepEqual(presets['Last month'], { start: '2026-10-01', end: '2026-10-31' });
+  assert.deepEqual(presets['Last quarter'], { start: '2026-07-01', end: '2026-09-30' });
+  assert.deepEqual(previousAnalyticsRange({ start: '2026-11-01', end: '2026-11-02' }), { start: '2026-10-30', end: '2026-10-31' });
+  assert.ok(validAnalyticsRange({ start: '2024-01-01', end: '2024-12-31' }, today));
+  assert.ok(!validAnalyticsRange({ start: '2024-01-01', end: '2025-01-01' }, today));
+  assert.ok(!validAnalyticsRange({ start: '2026-02-30', end: '2026-03-01' }, today));
+  assert.ok(!validAnalyticsRange({ start: today, end: '2026-11-02' }, today));
+});
 
 // Keep route authentication and authorization real. Adapt only the PostgREST transport.
 function adapter(sql) {
@@ -73,11 +88,11 @@ test('viewer accounts are isolated from admin and server permissions govern each
     const reportModule = require.resolve('../src/lib/partner-analytics-report');
     let queryCount = 0, beforeReply = async () => {};
     require.cache[reportModule] = { id: reportModule, filename: reportModule, loaded: true, exports: {
-      readPartnerAnalytics: async (permissions, days) => {
+      readPartnerAnalytics: async (permissions, range) => {
         queryCount++;
         const values = Object.fromEntries(['traffic', 'purchases', 'revenue'].filter(key => permissions[key]).map(key => [key, 10]));
         await beforeReply();
-        return { days, metrics: Object.keys(values), comparison: [{ label: 'Google Ads', values }],
+        return { range, metrics: Object.keys(values), comparison: [{ label: 'Google Ads', values }],
           channels: permissions.channels ? [{ label: 'Paid Search', values }] : [] };
       },
     } };
@@ -118,6 +133,18 @@ test('viewer accounts are isolated from admin and server permissions govern each
     const data = await view();
     assert.match(data.headers.get('cache-control'), /no-store/);
     assert.deepEqual((await data.json()).report.metrics, ['traffic']);
+    const custom = params => portal.GET(makeRequest(viewerPath + '?' + params, null, { cookie }));
+    const requestedRange = { start: '2026-09-03', end: '2026-10-11' };
+    const selected = await custom(new URLSearchParams(requestedRange));
+    assert.equal(selected.status, 200);
+    const selectedBody = await selected.json();
+    assert.deepEqual(selectedBody.calendar.range, requestedRange);
+    assert.deepEqual(selectedBody.report.range, requestedRange);
+    const beforeInvalid = queryCount;
+    for (const params of ['start=2026-09-01', 'start=2026-09-01&end=2026-09-15&days=7', 'start=2026-09-31&end=2026-10-15', 'start=2024-01-01&end=2025-01-01']) {
+      assert.equal((await custom(params)).status, 400);
+    }
+    assert.equal(queryCount, beforeInvalid);
     const unauthorized = await admin.GET(makeRequest(adminPath, null, { cookie, authorization: 'Bearer ' + cookie.split('=')[1] }));
     assert.equal(unauthorized.status, 401);
     const update = { action: 'update', id: viewer.id, active: true, traffic: true, purchases: true, revenue: false, channels: true };

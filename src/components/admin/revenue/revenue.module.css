@@ -1176,3 +1176,72 @@
     max-width: 100%;
   }
 }
+
+.calendarLight {
+  --muted: #475569;
+  --revenue-accent: #4338ca;
+}
+.calendarLight > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.calendarLight .calendarPopover {
+  left: auto;
+  right: 0;
+  background: white;
+  border-color: #cbd5e1;
+  box-shadow: 0 18px 48px #0f172a29;
+}
+.calendarLight .presets {
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.calendarLight .presets button,
+.calendarLight .calendarHeading button {
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: #334155;
+  background: #f1f5f9;
+}
+.calendarLight button:not(:disabled):hover {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+.calendarLight button:focus-visible {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+}
+.calendarLight button:disabled {
+  opacity: .4;
+}
+.calendarLight .calendarGrid button {
+  border-radius: 5px;
+}
+.calendarLight .calendarSelected,
+.calendarLight .calendarHeading .primary {
+  color: white;
+  background: var(--revenue-accent);
+}
+.calendarLight .calendarBetween {
+  color: #3730a3;
+  background: #eef2ff;
+}
+.calendarLight .calendarDates input {
+  color: #0f172a;
+  background: white;
+  border-color: #cbd5e1;
+  color-scheme: light;
+}
+@media (max-width: 639px) {
+  .calendarLight .calendarPopover {
+    left: 0;
+    right: auto;
+  }
+}

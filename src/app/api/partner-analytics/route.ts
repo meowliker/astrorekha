@@ -5,6 +5,8 @@ import {
 } from "@/lib/partner-analytics-access";
 import { readPartnerAnalytics } from "@/lib/partner-analytics-report";
 
+import { analyticsDate, recentAnalyticsRange, validAnalyticsRange } from "@/lib/partner-analytics-period";
+
 export const dynamic = "force-dynamic";
 const json = (body: object, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "private, no-store" } });
 
@@ -12,14 +14,26 @@ export async function GET(request: NextRequest) {
   try {
     const viewer = await readAnalyticsViewer(request);
     if (!viewer) return json({ error: "Sign in to view this report." }, 401);
-    const days = request.nextUrl.searchParams.get("days") || "30";
-    if (days !== "7" && days !== "30" && days !== "90") return json({ error: "Invalid reporting period." }, 400);
+    const params = request.nextUrl.searchParams;
+    const timeZone = process.env.GA4_PROPERTY_TIMEZONE || process.env.GOOGLE_ANALYTICS_PROPERTY_TIMEZONE || "America/Chicago";
+    const today = analyticsDate(new Date(), timeZone);
+    const days = params.get("days") ?? "30";
+    const custom = params.has("start") || params.has("end");
+    if ((custom && params.has("days")) || (!custom && !["7", "30", "90"].includes(days))) {
+      return json({ error: "Invalid reporting period." }, 400);
+    }
+    const range = custom
+      ? { start: params.get("start") ?? "", end: params.get("end") ?? "" }
+      : recentAnalyticsRange(today, Number(days));
+    if (!validAnalyticsRange(range, today)) {
+      return json({ error: "Choose a valid date range of up to 366 days." }, 400);
+    }
     const permissions = viewerPermissions(viewer);
     let report;
     try {
-      report = await readPartnerAnalytics(permissions, Number(days) as 7 | 30 | 90);
+      report = await readPartnerAnalytics(permissions, range);
     } catch {
-      return json({ viewer: viewer.label, error: "The analytics report is temporarily unavailable." }, 503);
+      return json({ viewer: viewer.label, calendar: { timeZone, today, range }, error: "The analytics report is temporarily unavailable." }, 503);
     }
     const current = await readAnalyticsViewer(request);
     if (!current || current.id !== viewer.id || current.session_version !== viewer.session_version) {
@@ -28,7 +42,7 @@ export async function GET(request: NextRequest) {
     if (JSON.stringify(viewerPermissions(current)) !== JSON.stringify(permissions)) {
       return json({ error: "Your access changed. Refresh to load the updated report." }, 409);
     }
-    return json({ viewer: current.label, report });
+    return json({ viewer: current.label, calendar: { timeZone, today, range }, report });
   } catch {
     return json({ error: "Analytics access is temporarily unavailable." }, 503);
   }
