@@ -41,6 +41,9 @@ export default function AnalyticsReport({ report, includesToday }: { report: Par
   const { details, previousRange } = report;
 
   return <>
+    {includesToday && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+      Today’s GA4 figures are still being processed. A dash marks an unavailable figure. Percentage comparisons are shown for completed days.
+    </p>}
     <section aria-labelledby="comparison-heading">
       <h2 id="comparison-heading" className="text-lg font-semibold">Traffic comparison</h2>
       <p className="mb-3 mt-1 text-sm text-slate-600">Compared with the preceding period of the same length, {formatDate(previousRange.start)} – {formatDate(previousRange.end)}.</p>
@@ -52,7 +55,7 @@ export default function AnalyticsReport({ report, includesToday }: { report: Par
               {report.comparison.map(row => {
                 const current = row.values[key];
                 const previous = row.previous[key];
-                const change = typeof current === "number" && typeof previous === "number" && previous > 0
+                const change = !includesToday && typeof current === "number" && typeof previous === "number" && previous > 0
                   ? percent.format((current - previous) / previous) : null;
                 return <div key={row.label} className="py-2 first:pt-0 last:pb-0">
                   <div className="flex items-baseline justify-between gap-2">
@@ -126,7 +129,7 @@ export default function AnalyticsReport({ report, includesToday }: { report: Par
     <div className="space-y-1 text-sm text-slate-600">
       <p>Source is GA4 session attribution. Revenue is shown in INR when enabled.</p>
       {details && <p>Meta Ads traffic is identified by paid Facebook, Instagram and Meta tags in GA4. Untagged traffic may appear under another source.</p>}
-      <p>{includesToday ? "Today’s data is still being collected. " : ""}Recent figures may change as GA4 finishes processing.
+      <p>Recent figures may change as GA4 finishes processing.
         {report.thresholded && " GA4 has applied reporting thresholds. A dash indicates an unavailable figure."}
       </p>
     </div>

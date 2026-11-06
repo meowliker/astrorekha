@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { readMonitoringAlertsPaused, setMonitoringAlertsPaused } from "@/lib/monitoring-delivery";
 import { runMonitoring, validSlackChatId, validSlackWebhook } from "@/lib/system-monitoring";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ const validId = (value: unknown): value is string => typeof value === "string"
 export async function GET(request: NextRequest) {
   const db = await authorized(request);
   if (!db) return json({ error: "Unauthorized" }, 401);
-  const [runs, incidents, destinations, notifications] = await Promise.all([
+  const [runs, incidents, destinations, notifications, alertsPaused] = await Promise.all([
     db.from("monitoring_runs").select("id,trigger,started_at,finished_at,status,checks,alert_count")
       .order("started_at", { ascending: false }).limit(30),
     db.from("monitoring_incidents").select("check_key,status,message,opened_at,last_seen_at")
@@ -33,12 +34,13 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: true }),
     db.from("monitoring_notifications").select("id,check_key,event,destination_kind,destination_label,delivered,error,sent_at")
       .order("sent_at", { ascending: false }).limit(50),
+    readMonitoringAlertsPaused(db).catch(() => null),
   ]);
   if (runs.error || incidents.error || destinations.error || notifications.error) {
     return json({ error: "Unable to read monitoring data. Check that the monitoring migration was applied." }, 500);
   }
   return json({
-    runs: runs.data || [], incidents: incidents.data || [], notifications: notifications.data || [],
+    alertsPaused, runs: runs.data || [], incidents: incidents.data || [], notifications: notifications.data || [],
     deliveryConfig: { emailReady: !!process.env.BREVO_API_KEY, slackBotReady: !!process.env.SLACK_BOT_TOKEN },
     destinations: (destinations.data || []).map(({ address, ...row }) => ({
       ...row, address: row.kind === "slack" ? "•••••••• (saved securely)" : address,
@@ -82,6 +84,15 @@ export async function PATCH(request: NextRequest) {
   const db = await authorized(request);
   if (!db) return json({ error: "Unauthorized" }, 401);
   const body = await request.json().catch(() => null);
+  if (body?.action === "set-alert-pause") {
+    if (typeof body.paused !== "boolean") return json({ error: "Invalid alert pause setting." }, 400);
+    try {
+      await setMonitoringAlertsPaused(db, body.paused);
+      return json({ success: true });
+    } catch {
+      return json({ error: "Unable to update the alert pause setting." }, 500);
+    }
+  }
   if (!validId(body?.id) || typeof body?.enabled !== "boolean") return json({ error: "Invalid destination." }, 400);
   const { error } = await db.from("monitoring_destinations").update({ enabled: body.enabled }).eq("id", body.id);
   return error ? json({ error: "Unable to update destination." }, 500) : json({ success: true });

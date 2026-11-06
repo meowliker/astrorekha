@@ -7,6 +7,7 @@ import { selectMonitoredMetaAccounts } from "@/lib/monitoring-meta-accounts";
 import { fetchPaytmStatus, paytmConfig, isExpectedPaytmProbe } from "@/lib/paytm-api";
 import { verifyPayUTransaction } from "@/lib/payu-api";
 import { buildMonitoringAlert } from "@/lib/monitoring-alerts";
+import { monitoringAlertRecipients, type MonitoringDestination } from "@/lib/monitoring-delivery";
 import { confirmProviderFailure, requiresConsecutiveFailures } from "@/lib/monitoring-failure-policy";
 
 export type MonitorStatus = "ok" | "warning" | "down" | "unconfigured" | "warming";
@@ -19,7 +20,6 @@ export type MonitorCheck = {
   latencyMs: number;
   observedStatus?: "warning" | "down";
 };
-type Destination = { id?: string; kind: "email" | "slack" | "slack_chat"; label: string; address: string; enabled: boolean };
 type Incident = { check_key: string; active: boolean; status: string; opened_at: string; last_seen_at: string; last_notified_at: string | null };
 
 const PAID = ["paid", "success", "captured"];
@@ -368,7 +368,7 @@ export async function collectMonitoringChecks(db: SupabaseClient, now = Date.now
   return [...checks, ...await metaChecks(db, now)];
 }
 
-function destinationsFromEnv(): Destination[] {
+function destinationsFromEnv(): MonitoringDestination[] {
   const emails = (process.env.MONITOR_ALERT_EMAILS || "").split(",").map((value) => value.trim()).filter(Boolean);
   const webhooks = (process.env.MONITOR_SLACK_WEBHOOK_URLS || "").split(",").map((value) => value.trim()).filter(Boolean);
   return [
@@ -389,11 +389,9 @@ export function validSlackChatId(value: string): boolean {
   return /^[CDGU][A-Z0-9]{8,20}$/.test(value);
 }
 
-async function sendAlert(db: SupabaseClient | null, runId: string | null, changed: Array<{ check: MonitorCheck; event: "issue" | "recovery" }>): Promise<number> {
+async function sendAlert(db: SupabaseClient, runId: string | null, changed: Array<{ check: MonitorCheck; event: "issue" | "recovery" }>, environmentOnly = false): Promise<number> {
   if (!changed.length) return 0;
-  const { data } = db ? await db.from("monitoring_destinations").select("id,kind,label,address,enabled").eq("enabled", true) : { data: [] };
-  const destinations = Array.from(new Map([...(data || []) as Destination[], ...destinationsFromEnv()]
-    .map((item) => [`${item.kind}:${item.address}`, item])).values());
+  const destinations = await monitoringAlertRecipients(db, destinationsFromEnv(), environmentOnly);
   if (!destinations.length) return 0;
   const { subject, slackText, emailHtml } = buildMonitoringAlert(changed);
   const deliveries = await Promise.all(destinations.map(async (destination) => {
@@ -421,7 +419,7 @@ async function sendAlert(db: SupabaseClient | null, runId: string | null, change
       ? caught.message : "Delivery request failed"; }
     return { delivered, error, destination };
   }));
-  if (db) await db.from("monitoring_notifications").insert(deliveries.flatMap(({ delivered, error, destination }) =>
+  await db.from("monitoring_notifications").insert(deliveries.flatMap(({ delivered, error, destination }) =>
     changed.map(({ check, event }) => ({
       run_id: runId, check_key: check.key, event,
       destination_kind: destination.kind, destination_label: destination.label, delivered, error,
@@ -436,7 +434,7 @@ export async function runMonitoring(db: SupabaseClient, trigger: "cron" | "manua
     .insert({ slot, trigger }).select("id").single();
   if (startError || !run) {
     if (startError?.code === "23505") return { skipped: true, reason: "This half-hour slot already ran" };
-    await sendAlert(null, null, [{ check: result("supabase", "Supabase database", "down", "Monitoring cannot save its run", now), event: "issue" }]);
+    await sendAlert(db, null, [{ check: result("supabase", "Supabase database", "down", "Monitoring cannot save its run", now), event: "issue" }], true);
     throw new Error("Unable to start monitoring run in Supabase");
   }
   try {
@@ -489,10 +487,10 @@ export async function runMonitoring(db: SupabaseClient, trigger: "cron" | "manua
     return { runId: run.id, checks, alerts: changed.length, delivered };
   } catch (error) {
     await db.from("monitoring_runs").update({ finished_at: new Date().toISOString(), status: "failed" }).eq("id", run.id);
-    await sendAlert(null, null, [{
+    await sendAlert(db, null, [{
       check: result("monitoring_storage", "Monitoring storage", "down", "A monitoring run could not save its results", now),
       event: "issue",
-    }]);
+    }], true);
     throw error;
   }
 }

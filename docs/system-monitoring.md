@@ -20,7 +20,9 @@ For a Slack channel, create an app in your workspace, turn on **Incoming Webhook
 
 For arbitrary channels or a person's DM, grant the Slack app `chat:write`, install it to the workspace, and store its bot token as `SLACK_BOT_TOKEN` in Vercel. In the page choose **Slack channel or person ID** and enter a channel ID (`C…`), group ID (`G…`), DM ID (`D…`), or user ID (`U…`). The bot needs permission to post in the target conversation. This option reports delivery failures in the alert log.
 
-When Supabase is down, the saved destination table cannot be read. Configure `MONITOR_ALERT_EMAILS` (comma-separated email addresses) and/or `MONITOR_SLACK_WEBHOOK_URLS` (comma-separated incoming webhook URLs) as Vercel environment variables for a fallback path. These environment destinations are merged with the UI destinations without duplicate delivery. A Slack fallback can still alert when Brevo itself is unavailable.
+**Pause all alerts** in System Status pauses Slack and email delivery, including Vercel fallback recipients. Health checks and incident logging continue. Resume delivery with **Resume all alerts**.
+
+Vercel can supply fallback recipients through `MONITOR_ALERT_EMAILS` and `MONITOR_SLACK_WEBHOOK_URLS`. Turning off a dashboard destination also suppresses a matching fallback address. The monitor checks the saved pause setting before sending through either path. If it cannot read the setting, including during a full Supabase outage, it skips delivery.
 
 ## Coverage and limitations
 

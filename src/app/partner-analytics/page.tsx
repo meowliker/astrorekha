@@ -7,6 +7,7 @@ import RevenueDateRange from "@/components/admin/revenue/RevenueDateRange";
 import type { PartnerAnalyticsReport } from "@/lib/partner-analytics-report";
 import { analyticsPresets, earliestAnalyticsDate, validAnalyticsRange, type AnalyticsRange } from "@/lib/partner-analytics-period";
 import AnalyticsReport from "./AnalyticsReport";
+import LiveTraffic from "./LiveTraffic";
 
 type Calendar = { today: string; timeZone: string; range: AnalyticsRange };
 const endpoint = "/api/partner-analytics";
@@ -123,6 +124,7 @@ export default function PartnerAnalyticsPage() {
               }} />
             </div>}
           </div>
+          <LiveTraffic endpoint={endpoint} />
           {loading && <p role="status" className="text-slate-600">Loading report…</p>}
           {error && <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-red-700">{error}
             <button onClick={() => void load(range)} className="font-medium underline">Retry</button>

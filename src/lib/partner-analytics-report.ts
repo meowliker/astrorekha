@@ -65,14 +65,15 @@ const numberValue = (value: string | null | undefined, limited: boolean) => {
   return Number.isFinite(number) ? number : null;
 };
 
-function metricValues(report: GA.Schema$RunReportResponse, row: GA.Schema$Row | undefined, metrics: AnalyticsMetric[]): AnalyticsValues {
+function metricValues(report: GA.Schema$RunReportResponse, row: GA.Schema$Row | undefined, metrics: AnalyticsMetric[], provisional = false): AnalyticsValues {
   return Object.fromEntries(metrics.map((key, index) => [
-    key, numberValue(row?.metricValues?.[index]?.value, thresholded(report)),
+    key, numberValue(row?.metricValues?.[index]?.value, thresholded(report) || provisional),
   ]));
 }
 
-export async function readPartnerAnalytics(permissions: ViewerPermissions, range: AnalyticsRange): Promise<PartnerAnalyticsReport> {
+export async function readPartnerAnalytics(permissions: ViewerPermissions, range: AnalyticsRange, today?: string): Promise<PartnerAnalyticsReport> {
   const metrics = (Object.keys(metricNames) as AnalyticsMetric[]).filter(key => permissions[key]);
+  const todayOnly = range.start === today;
   const previousRange = previousAnalyticsRange(range);
   if (!metrics.length) return { metrics, previousRange, comparison: [], details: null, thresholded: false };
 
@@ -131,7 +132,7 @@ export async function readPartnerAnalytics(permissions: ViewerPermissions, range
     const report = overview[index];
     return {
       label,
-      values: metricValues(report, report.rows?.find(row => dimension(row) === "selected"), metrics),
+      values: metricValues(report, report.rows?.find(row => dimension(row) === "selected"), metrics, todayOnly),
       previous: metricValues(report, report.rows?.find(row => dimension(row) === "prior"), metrics),
     };
   });
@@ -161,7 +162,7 @@ export async function readPartnerAnalytics(permissions: ViewerPermissions, range
   const daily = [];
   for (let date = range.end; date >= range.start; date = shiftAnalyticsDate(date, -1)) {
     const key = date.replaceAll("-", "");
-    daily.push({ date, groups: groups.map((_, index) => metricValues(detail[index], byDimension[index].get(key), metrics)) });
+    daily.push({ date, groups: groups.map((_, index) => metricValues(detail[index], byDimension[index].get(key), metrics, date === today)) });
   }
   const eventReport = overview[groups.length + 1];
   result.details = {
@@ -169,11 +170,11 @@ export async function readPartnerAnalytics(permissions: ViewerPermissions, range
     daily,
     landingPages: landingPages.map(path => ({
       path,
-      groups: detail.slice(groups.length).map((report, index) => metricValues(report, byDimension[index + groups.length].get(path), metrics)),
+      groups: detail.slice(groups.length).map((report, index) => metricValues(report, byDimension[index + groups.length].get(path), metrics, todayOnly)),
     })),
     events: eventReport ? Object.entries(trackingEvents).map(([key, label]) => ({
       label,
-      count: numberValue(eventReport.rows?.find(row => dimension(row) === key)?.metricValues?.[0]?.value, thresholded(eventReport)),
+      count: numberValue(eventReport.rows?.find(row => dimension(row) === key)?.metricValues?.[0]?.value, thresholded(eventReport) || todayOnly),
     })) : [],
   };
   return result;

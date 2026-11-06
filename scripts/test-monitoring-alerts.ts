@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { buildMonitoringAlert } from "../src/lib/monitoring-alerts";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { monitoringAlertRecipients, setMonitoringAlertsPaused, type MonitoringDestination } from "../src/lib/monitoring-delivery";
 import type { MonitorCheck } from "../src/lib/system-monitoring";
 
 const at = new Date("2026-10-13T07:00:00.000Z");
@@ -35,3 +37,59 @@ assert.doesNotMatch(escaped.emailHtml, /<script>/);
 assert.match(escaped.emailHtml, /&lt;script&gt;/);
 
 console.log("Monitoring alert wording, Slack mention, and email escaping passed.");
+
+async function verifyAlertPause() {
+  const slack: MonitoringDestination = {
+    kind: "slack", label: "Environment Slack", address: "https://hooks.slack.com/services/example", enabled: true,
+  };
+  const email: MonitoringDestination = {
+    kind: "email", label: "Environment email", address: "alerts@example.invalid", enabled: true,
+  };
+  const savedSlack = { ...slack, label: "Saved Slack" };
+  let saved = [savedSlack];
+  let setting: { value: { paused: boolean } } | null = null;
+  let settingsUnavailable = false;
+  const db = {
+    from(table: string) {
+      if (table === "monitoring_destinations") return { select: () => ({ abortSignal: async () => ({ data: saved }) }) };
+      assert.equal(table, "settings");
+      return {
+        select: () => ({
+          eq: (_column: string, key: string) => {
+            assert.equal(key, "monitoring_alert_delivery");
+            return { abortSignal: () => ({ maybeSingle: async () => ({
+              data: setting, error: settingsUnavailable ? { message: "unavailable" } : null,
+            }) }) };
+          },
+        }),
+        upsert: async ({ key, value }: { key: string; value: { paused: boolean } }) => {
+          assert.equal(key, "monitoring_alert_delivery");
+          setting = { value };
+          return { error: null };
+        },
+      };
+    },
+  } as unknown as SupabaseClient;
+  const recipients = (fallbackOnly = false) => monitoringAlertRecipients(db, [slack, email], fallbackOnly);
+
+  assert.deepEqual(await recipients(), [savedSlack, email]);
+  saved = [{ ...savedSlack, enabled: false }];
+  assert.deepEqual(await recipients(), [email]);
+  assert.deepEqual(await recipients(true), [email]);
+
+  await setMonitoringAlertsPaused(db, true);
+  assert.deepEqual(await recipients(), []);
+  assert.deepEqual(await recipients(true), []);
+
+  await setMonitoringAlertsPaused(db, false);
+  assert.deepEqual(await recipients(), [email]);
+
+  settingsUnavailable = true;
+  assert.deepEqual(await recipients(true), []);
+  console.log("Monitoring pause, resume, fallback delivery, and disabled Slack destinations passed.");
+}
+
+verifyAlertPause().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});

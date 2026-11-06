@@ -4,7 +4,7 @@ import {
   viewerLogout, viewerPermissions, viewerSessionSeconds,
 } from "@/lib/partner-analytics-access";
 import { readPartnerAnalytics } from "@/lib/partner-analytics-report";
-
+import { readPartnerLiveTraffic } from "@/lib/partner-live-traffic";
 import { analyticsDate, recentAnalyticsRange, validAnalyticsRange } from "@/lib/partner-analytics-period";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +16,30 @@ export async function GET(request: NextRequest) {
     if (!viewer) return json({ error: "Sign in to view this report." }, 401);
     const params = request.nextUrl.searchParams;
     const timeZone = process.env.GA4_PROPERTY_TIMEZONE || process.env.GOOGLE_ANALYTICS_PROPERTY_TIMEZONE || "America/Chicago";
-    const today = analyticsDate(new Date(), timeZone);
+    const checkedAt = new Date();
+    const today = analyticsDate(checkedAt, timeZone);
+    const permissions = viewerPermissions(viewer);
+    const accessStatus = async () => {
+      const current = await readAnalyticsViewer(request);
+      if (!current || current.id !== viewer.id || current.session_version !== viewer.session_version) return 401;
+      return JSON.stringify(viewerPermissions(current)) === JSON.stringify(permissions) ? 200 : 409;
+    };
+    const accessError = (status: number) => json({
+      error: status === 401 ? "Sign in to view this report." : "Your access changed. Refresh to load the updated report.",
+    }, status);
+
+    if (params.get("view") === "live") {
+      if (!permissions.traffic) return json({ live: null });
+      const clock = params.get("clock") ?? "property";
+      if (clock !== "property" && clock !== "india") return json({ error: "Invalid live traffic time zone." }, 400);
+      const liveTimeZone = clock === "india" ? "Asia/Kolkata" : timeZone;
+      const liveDate = analyticsDate(checkedAt, liveTimeZone);
+      const live = await readPartnerLiveTraffic(liveTimeZone, liveDate, checkedAt.toISOString(), permissions.channels).catch(() => null);
+      const status = await accessStatus();
+      if (status !== 200) return accessError(status);
+      return live ? json({ live }) : json({ error: "Live traffic is temporarily unavailable." }, 503);
+    }
+
     const days = params.get("days") ?? "30";
     const custom = params.has("start") || params.has("end");
     if ((custom && params.has("days")) || (!custom && !["7", "30", "90"].includes(days))) {
@@ -28,21 +51,15 @@ export async function GET(request: NextRequest) {
     if (!validAnalyticsRange(range, today)) {
       return json({ error: "Choose a valid date range of up to 366 days." }, 400);
     }
-    const permissions = viewerPermissions(viewer);
     let report;
     try {
-      report = await readPartnerAnalytics(permissions, range);
+      report = await readPartnerAnalytics(permissions, range, today);
     } catch {
       return json({ viewer: viewer.label, calendar: { timeZone, today, range }, error: "The analytics report is temporarily unavailable." }, 503);
     }
-    const current = await readAnalyticsViewer(request);
-    if (!current || current.id !== viewer.id || current.session_version !== viewer.session_version) {
-      return json({ error: "Sign in to view this report." }, 401);
-    }
-    if (JSON.stringify(viewerPermissions(current)) !== JSON.stringify(permissions)) {
-      return json({ error: "Your access changed. Refresh to load the updated report." }, 409);
-    }
-    return json({ viewer: current.label, calendar: { timeZone, today, range }, report });
+    const status = await accessStatus();
+    if (status !== 200) return accessError(status);
+    return json({ viewer: viewer.label, calendar: { timeZone, today, range }, report });
   } catch {
     return json({ error: "Analytics access is temporarily unavailable." }, 503);
   }

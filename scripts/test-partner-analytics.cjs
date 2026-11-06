@@ -66,10 +66,16 @@ function adapter(sql) {
       };
       return query;
     },
-    async rpc(name, args) {
+    rpc(name, args) {
+      if (name === 'read_partner_live_traffic') {
+        return { async abortSignal() {
+          const { rows } = await sql.query('select * from read_partner_live_traffic($1,$2)', [args.p_time_zone, args.p_checked_at]);
+          return { data: rows, error: null };
+        } };
+      }
       assert.equal(name, 'allow_partner_analytics_login');
-      const { rows } = await sql.query('select allow_partner_analytics_login($1,$2) as allowed', [args.p_key, args.p_limit]);
-      return { data: rows[0].allowed, error: null };
+      return sql.query('select allow_partner_analytics_login($1,$2) as allowed', [args.p_key, args.p_limit])
+        .then(({ rows }) => ({ data: rows[0].allowed, error: null }));
     },
   };
 }
@@ -81,8 +87,33 @@ test('viewer accounts are isolated from admin and server permissions govern each
       create role anon; create role authenticated; create role service_role;
       create table admin_sessions (id text primary key, expires_at timestamptz not null);
       insert into admin_sessions values ('admin-fixture', now() + interval '1 day');
+      create table marketing_events (created_at timestamptz, event_name text, path text, route text, url text, utm_source text);
+      create table us_soulmate_marketing_events (like marketing_events);
+      grant select on marketing_events, us_soulmate_marketing_events to service_role;
+      insert into marketing_events values
+        (now(), 'page_view', '/', null, 'https://astrorekha.com/?utm_source=facebook&utm_medium=paid', 'facebook'),
+        (now(), 'page_view', '/discover', null, 'https://astrorekha.com/discover?fbclid=organic', null),
+        (now(), 'page_view', '/admin', null, null, null),
+        (now(), 'page_view', '/', null, 'https://astrorekha.com/?utm_source=codex_qa&gclid=test', 'codex_qa'),
+        (now(), 'soulmate_landing_view', '/soulmate', null, null, null),
+        ('2026-11-01 05:55:00Z', 'page_view', '/', null, 'https://astrorekha.com/', null),
+        ('2026-11-01 04:59:59Z', 'page_view', '/', null, 'https://astrorekha.com/', null),
+        ('2026-11-01 05:00:00Z', 'page_view', '/', null, 'https://astrorekha.com/?gclid=ad', null),
+        ('2026-11-01 18:29:59Z', 'page_view', '/', null, 'https://astrorekha.com/', null),
+        ('2026-11-01 18:30:00Z', 'page_view', '/', null, 'https://astrorekha.com/', null);
+      insert into us_soulmate_marketing_events values
+        (now(), 'us_soulmate_landing_view', '/us/soulmate', null, 'https://astrorekha.com/us/soulmate?gclid=ad', null);
     `);
     await db.exec(readFileSync(path.join(__dirname, '../supabase/migrations/20261106140000_partner_analytics.sql'), 'utf8'));
+    await db.exec(readFileSync(path.join(__dirname, '../supabase/migrations/20261106150000_partner_live_traffic.sql'), 'utf8'));
+    await db.exec('set role service_role');
+    const { rows: boundary } = await db.query("select * from read_partner_live_traffic('America/Chicago','2026-11-01 05:20:00Z') order by channel");
+    assert.deepEqual(boundary.map(row => [row.channel, Number(row.today_views), Number(row.recent_views)]), [
+      ['google', 1, 1], ['other', 0, 1],
+    ]);
+    const { rows: indiaBoundary } = await db.query("select * from read_partner_live_traffic('Asia/Kolkata','2026-11-01 18:35:00Z')");
+    assert.deepEqual(indiaBoundary.map(row => [row.channel, Number(row.today_views), Number(row.recent_views)]), [['other', 1, 2]]);
+    await db.exec('reset role');
     const supabase = require.resolve('../src/lib/supabase-admin');
     require.cache[supabase] = { id: supabase, filename: supabase, loaded: true, exports: { getSupabaseAdmin: () => adapter(db) } };
     const reportModule = require.resolve('../src/lib/partner-analytics-report');
@@ -134,6 +165,17 @@ test('viewer accounts are isolated from admin and server permissions govern each
     assert.match(data.headers.get('cache-control'), /no-store/);
     assert.deepEqual((await data.json()).report.metrics, ['traffic']);
     const custom = params => portal.GET(makeRequest(viewerPath + '?' + params, null, { cookie }));
+    assert.equal((await portal.GET(makeRequest(viewerPath + '?view=live'))).status, 401);
+    const limitedLive = await custom('view=live');
+    assert.match(limitedLive.headers.get('cache-control'), /no-store/);
+    const { live } = await limitedLive.json();
+    assert.equal(live.total.recent, 3);
+    assert.deepEqual(live.channels, []);
+    const india = (await (await custom('view=live&clock=india')).json()).live;
+    assert.equal(india.timeZone, 'Asia/Kolkata');
+    assert.equal(india.date, analyticsDate(new Date(india.checkedAt), india.timeZone));
+    assert.equal(india.total.recent, 3);
+    assert.equal((await custom('view=live&clock=invalid')).status, 400);
     const requestedRange = { start: '2026-09-03', end: '2026-10-11' };
     const selected = await custom(new URLSearchParams(requestedRange));
     assert.equal(selected.status, 200);
@@ -154,6 +196,14 @@ test('viewer accounts are isolated from admin and server permissions govern each
     assert.equal(expanded.channels.length, 1);
     assert.equal('revenue' in expanded.channels[0].values, false);
 
+    const expandedLive = (await (await custom('view=live')).json()).live;
+    assert.deepEqual(expandedLive.channels.map(row => [row.label, row.recent]), [
+      ['Google Ads', 1], ['Meta Ads', 1], ['Other or untagged', 1],
+    ]);
+    assert.equal((await modify({ ...update, traffic: false })).status, 200);
+    assert.deepEqual(await (await custom('view=live')).json(), { live: null });
+    assert.equal((await modify(update)).status, 200);
+
     beforeReply = async () => { await modify({ ...update, purchases: false, channels: false }); };
     const stale = await view();
     assert.equal(stale.status, 409);
@@ -173,5 +223,6 @@ test('viewer accounts are isolated from admin and server permissions govern each
     await db.exec('set role anon');
     await assert.rejects(db.query('select * from partner_analytics_viewers'), /permission denied/);
     await assert.rejects(db.query("select allow_partner_analytics_login('test',1)"), /permission denied/);
+    await assert.rejects(db.query("select * from read_partner_live_traffic('America/Chicago', now())"), /permission denied/);
   } finally { await db.close(); }
 });

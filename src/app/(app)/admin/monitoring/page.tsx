@@ -9,7 +9,7 @@ type Run = { id: string; trigger: string; started_at: string; finished_at: strin
 type Incident = { check_key: string; status: string; message: string; opened_at: string };
 type Destination = { id: string; kind: "email" | "slack" | "slack_chat"; label: string; address: string; enabled: boolean };
 type Notification = { id: string; check_key: string; event: string; destination_kind: string; destination_label: string; delivered: boolean; error: string | null; sent_at: string };
-type Dashboard = { runs: Run[]; incidents: Incident[]; destinations: Destination[]; notifications: Notification[]; deliveryConfig: { emailReady: boolean; slackBotReady: boolean } };
+type Dashboard = { alertsPaused: boolean | null; runs: Run[]; incidents: Incident[]; destinations: Destination[]; notifications: Notification[]; deliveryConfig: { emailReady: boolean; slackBotReady: boolean } };
 
 const tone: Record<string, string> = {
   ok: "text-emerald-300 bg-emerald-400/10 border-emerald-400/20",
@@ -90,8 +90,22 @@ export default function MonitoringPage() {
           <div className="flex items-center gap-3"><Activity className="text-teal-300"/><h1 className="text-2xl font-semibold">System status</h1></div>
           <p className="mt-2 text-sm text-slate-400">Health checks run every 30 minutes. Times shown in IST.</p>
         </div>
-        <button disabled={working} onClick={() => mutate({ method: "POST", body: JSON.stringify({ action: "run" }) })}
-          className="flex items-center gap-2 rounded-lg border border-teal-400/30 bg-teal-400/10 px-4 py-2 text-sm text-teal-200 hover:bg-teal-400/20 disabled:opacity-50"><RefreshCw size={16}/> Run checks now</button>
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            <button disabled={working} onClick={() => mutate({ method: "POST", body: JSON.stringify({ action: "run" }) })}
+              className="flex items-center gap-2 rounded-lg border border-teal-400/30 bg-teal-400/10 px-4 py-2 text-sm text-teal-200 hover:bg-teal-400/20 disabled:opacity-50"><RefreshCw size={16}/> Run checks now</button>
+            <button disabled={working || typeof dashboard?.alertsPaused !== "boolean"} onClick={() => mutate({
+              method: "PATCH", body: JSON.stringify({ action: "set-alert-pause", paused: !dashboard?.alertsPaused }),
+            })} className="flex items-center gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-sm text-amber-200 hover:bg-amber-400/20 disabled:opacity-50">
+              <Bell size={16}/>{dashboard?.alertsPaused ? "Resume all alerts" : "Pause all alerts"}
+            </button>
+          </div>
+          {dashboard && <p role="status" className="text-sm text-slate-400">
+            {dashboard.alertsPaused === null ? "Alert delivery status unavailable."
+              : dashboard.alertsPaused ? "Slack and email alerts are paused. Health checks continue."
+                : "Slack and email alerts are enabled."}
+          </p>}
+        </div>
       </header>
 
       {message && <div role="alert" className="rounded-lg border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-200">{message}</div>}
@@ -123,7 +137,7 @@ export default function MonitoringPage() {
           <div className="rounded-xl border border-white/10 bg-[#111a2a] p-5">
             <h2 className="flex items-center gap-2 text-lg font-semibold"><Bell size={18} className="text-teal-300"/> Alert destinations</h2>
             <p className="mt-1 text-sm text-slate-400">Issue and recovery alerts go to every enabled destination. Existing issues do not repeat every run.</p>
-            <p className="mt-2 text-xs text-slate-500">For Supabase outages, also set MONITOR_ALERT_EMAILS or MONITOR_SLACK_WEBHOOK_URLS in Vercel.</p>
+            <p className="mt-2 text-xs text-slate-500">Pause all alerts also covers destinations configured in Vercel.</p>
             {!dashboard?.deliveryConfig.emailReady && <p className="mt-3 text-xs text-amber-300">Email sending needs BREVO_API_KEY in the server environment.</p>}
             {kind === "slack_chat" && !dashboard?.deliveryConfig.slackBotReady && <p className="mt-3 text-xs text-amber-300">Posting to Slack IDs needs SLACK_BOT_TOKEN in the server environment.</p>}
             <div className="mt-4 space-y-2">{dashboard?.destinations.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-lg border border-white/10 p-3">
