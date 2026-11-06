@@ -13,12 +13,13 @@ const json = (body: unknown, status = 200) => NextResponse.json(body, {
   status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
 });
 
-function authorize(request: NextRequest) {
+function authorize(request: NextRequest, allowApiKeyHeader = false) {
   if (process.env.SHIPROCKET_CATALOG_ENABLED !== "true") throw new CatalogueError("Catalogue integration is disabled", 404);
   const key = process.env.SHIPROCKET_CATALOG_API_KEY;
   if (!key || key.length < 32) throw new CatalogueError("Catalogue integration is not configured", 503);
-  const supplied = request.headers.get("authorization") || "";
-  const expected = `Bearer ${key}`;
+  const apiKey = allowApiKeyHeader ? request.headers.get("x-api-key") : null;
+  const supplied = apiKey ?? request.headers.get("authorization") ?? "";
+  const expected = apiKey === null ? `Bearer ${key}` : key;
   const digest = (value: string) => crypto.createHash("sha256").update(value).digest();
   if (!crypto.timingSafeEqual(digest(supplied), digest(expected))) throw new CatalogueError("Unauthorized", 401);
 }
@@ -75,7 +76,7 @@ export async function catalogueResponse(request: NextRequest, resource: Resource
 
 export async function shiprocketFeedResponse(request: NextRequest, resource: Exclude<Resource, "product">) {
   try {
-    authorize(request);
+    authorize(request, true);
     const query = request.nextUrl.searchParams;
     const page = integer(query.get("page"), 1, 100000);
     const limit = integer(query.get("limit"), 100, 100);

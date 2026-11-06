@@ -14,6 +14,7 @@ const { quotePaymentOrder } = require('../src/lib/payment-quote');
 const { buildCatalogue } = require('../src/lib/shiprocket-catalogue/catalogue');
 const { toShiprocketCatalogue } = require('../src/lib/shiprocket-catalogue/partner-format');
 const pricingUpdatedAt = '2026-11-05T12:00:00.000Z';
+const fixtureKey = 'fixture-key-012345678901234567890123456789';
 let databaseFailure, reads;
 const query = {
   select(fields) { assert.equal(fields, 'value,updated_at'); return query; },
@@ -27,12 +28,12 @@ const routes = Object.fromEntries(['products', 'collections', 'catalogue', 'prod
 const feeds = Object.fromEntries(['products', 'collections', 'catalogue'].map(name => [
   name, require('../src/app/api/integrations/shiprocket/v2/' + name + '/route'),
 ]));
-function request(queryString = '', key = 'fixture-key-012345678901234567890123456789') {
+function request(queryString = '', key = fixtureKey) {
   return new NextRequest('http://localhost/api/integrations/shiprocket/v1/products' + queryString, { headers: key ? { authorization: 'Bearer ' + key } : {} });
 }
 beforeEach(() => {
   process.env.SHIPROCKET_CATALOG_ENABLED = 'true';
-  process.env.SHIPROCKET_CATALOG_API_KEY = 'fixture-key-012345678901234567890123456789';
+  process.env.SHIPROCKET_CATALOG_API_KEY = fixtureKey;
   databaseFailure = false; reads = 0;
 });
 test('every exposed product matches its existing checkout quote and has a unique ID', () => {
@@ -63,7 +64,7 @@ test('disabled switch, missing configuration and invalid credentials fail before
   process.env.SHIPROCKET_CATALOG_ENABLED = 'true';
   delete process.env.SHIPROCKET_CATALOG_API_KEY;
   assert.equal((await routes.products.GET(request())).status, 503);
-  process.env.SHIPROCKET_CATALOG_API_KEY = 'fixture-key-012345678901234567890123456789';
+  process.env.SHIPROCKET_CATALOG_API_KEY = fixtureKey;
   assert.equal((await routes.products.GET(request('', null))).status, 401);
   assert.equal(reads, 0);
 });
@@ -150,7 +151,7 @@ test('Shiprocket IDs survive price and title edits and every variant uses the ch
   assert.equal(updated.body_html, '<p>&lt;script&gt; &amp; content</p>');
 });
 
-test('Shiprocket feeds require the bearer token and reject malformed requests and unavailable pricing', async () => {
+test('Shiprocket feeds reject unauthenticated requests, malformed queries and unavailable pricing', async () => {
   for (const route of Object.values(feeds)) {
     assert.equal((await route.GET(request('', null))).status, 401);
   }
@@ -163,4 +164,26 @@ test('Shiprocket feeds require the bearer token and reject malformed requests an
   assert.equal((await feeds.products.GET(request())).status, 503);
   process.env.SHIPROCKET_CATALOG_ENABLED = 'false';
   assert.equal((await feeds.products.GET(request())).status, 404);
+});
+
+test('all v2 feeds accept a raw X-Api-Key and reject an invalid key before reading pricing', async () => {
+  const { collections } = toShiprocketCatalogue(buildCatalogue(normalizePricing(DEFAULT_PRICING)), pricingUpdatedAt);
+  for (const [name, route] of Object.entries(feeds)) {
+    const params = name === 'catalogue' ? `?collection_id=${collections[0].id}` : '';
+    const url = `http://localhost/api/integrations/shiprocket/v2/${name}${params}`;
+    const valid = new NextRequest(url, { headers: { 'X-Api-Key': fixtureKey } });
+    assert.equal((await route.GET(valid)).status, 200);
+
+    const readsBefore = reads;
+    for (const key of ['', 'incorrect', `Bearer ${fixtureKey}`]) {
+      const invalid = new NextRequest(url, { headers: { 'X-Api-Key': key, Authorization: `Bearer ${fixtureKey}` } });
+      assert.equal((await route.GET(invalid)).status, 401);
+    }
+    assert.equal(reads, readsBefore);
+  }
+
+  const v1 = new NextRequest('http://localhost/api/integrations/shiprocket/v1/products', {
+    headers: { 'X-Api-Key': fixtureKey },
+  });
+  assert.equal((await routes.products.GET(v1)).status, 401);
 });
