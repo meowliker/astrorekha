@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import type { AnalyticsMetric, PartnerAnalyticsReport } from "@/lib/partner-analytics-report";
+import type { AnalyticsMetric, PartnerAnalyticsReport, PartnerFunnelAnalytics } from "@/lib/partner-analytics-report";
 
 const labels = { traffic: "Sessions", purchases: "Purchases", revenue: "Purchase revenue" } as const;
 const count = new Intl.NumberFormat("en-IN");
@@ -34,25 +34,25 @@ function Table({ label, first, columns, children, scroll = false }: {
 const cell = "whitespace-nowrap px-4 py-2.5 text-right tabular-nums";
 const rowHeader = "whitespace-nowrap px-4 py-2.5 font-medium";
 
-export default function AnalyticsReport({ report, includesToday }: { report: PartnerAnalyticsReport; includesToday: boolean }) {
+export default function AnalyticsReport({ report, funnel, includesToday }: {
+  report: PartnerAnalyticsReport; funnel: PartnerFunnelAnalytics; includesToday: boolean;
+}) {
   const [selectedMetric, setSelectedMetric] = useState<AnalyticsMetric>(report.metrics[0]);
   const metric = report.metrics.includes(selectedMetric) ? selectedMetric : report.metrics[0];
-  const groupLabels = report.comparison.map(row => row.label);
-  const { details, previousRange } = report;
+  const groupLabels = funnel.comparison.map(row => row.label);
+  const { details } = funnel;
+  const { previousRange } = report;
 
   return <>
-    {includesToday && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-      Today’s GA4 figures are still being processed. A dash marks an unavailable figure. Percentage comparisons are shown for completed days.
-    </p>}
-    <section aria-labelledby="comparison-heading">
-      <h2 id="comparison-heading" className="text-lg font-semibold">Traffic comparison</h2>
+    <section aria-labelledby={`${funnel.key}-comparison`}>
+      <h3 id={`${funnel.key}-comparison`} className="text-lg font-semibold">GA4 traffic comparison</h3>
       <p className="mb-3 mt-1 text-sm text-slate-600">Compared with the preceding period of the same length, {formatDate(previousRange.start)} – {formatDate(previousRange.end)}.</p>
       <div className="grid gap-4 md:grid-cols-3">
         {report.metrics.map(key => (
           <section key={key} className="rounded-xl border border-slate-200 bg-white p-5">
-            <h3 className="mb-4 font-semibold">{labels[key]}</h3>
+            <h4 className="mb-4 font-semibold">{labels[key]}</h4>
             <dl className="divide-y divide-slate-100">
-              {report.comparison.map(row => {
+              {funnel.comparison.map(row => {
                 const current = row.values[key];
                 const previous = row.previous[key];
                 const change = !includesToday && typeof current === "number" && typeof previous === "number" && previous > 0
@@ -73,10 +73,10 @@ export default function AnalyticsReport({ report, includesToday }: { report: Par
       </div>
     </section>
     {details && <>
-      <section aria-labelledby="daily-heading">
+      <section aria-labelledby={`${funnel.key}-daily`}>
         <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
           <div>
-            <h2 id="daily-heading" className="text-lg font-semibold">Daily activity</h2>
+            <h3 id={`${funnel.key}-daily`} className="text-lg font-semibold">Daily activity</h3>
             <p className="mt-1 text-sm text-slate-600">Use these daily totals to compare with GA4 for the same dates.</p>
           </div>
           {report.metrics.length > 1 && <label className="flex items-center gap-2 text-sm font-medium">
@@ -94,9 +94,9 @@ export default function AnalyticsReport({ report, includesToday }: { report: Par
           </tr>)}
         </Table>
       </section>
-      <section aria-labelledby="landing-heading">
-        <h2 id="landing-heading" className="text-lg font-semibold">Paid traffic by landing page</h2>
-        <p className="mb-3 mt-1 text-sm text-slate-600">Compare Google Ads and Meta Ads on the main AstroRekha and Soulmate funnel entry pages. Sessions are grouped by the first page visited.</p>
+      <section aria-labelledby={`${funnel.key}-landing`}>
+        <h3 id={`${funnel.key}-landing`} className="text-lg font-semibold">Paid traffic by landing page</h3>
+        <p className="mb-3 mt-1 text-sm text-slate-600">Compare Google Ads and Meta Ads by the first page visited in each session.</p>
         <Table label="Paid traffic by landing page" first="Landing page and source" columns={report.metrics.map(key => labels[key])}>
           {details.landingPages.flatMap(row => row.groups.map((group, index) => <tr key={`${row.path}-${index}`}>
             <th scope="row" className={rowHeader}>{row.path}<span className="ml-3 font-normal text-slate-600">{groupLabels[index]}</span></th>
@@ -105,8 +105,8 @@ export default function AnalyticsReport({ report, includesToday }: { report: Par
         </Table>
       </section>
       <div className="grid items-start gap-8 lg:grid-cols-2">
-        <section aria-labelledby="channels-heading">
-          <h2 id="channels-heading" className="mb-3 text-lg font-semibold">Channel breakdown</h2>
+        <section aria-labelledby={`${funnel.key}-channels`}>
+          <h3 id={`${funnel.key}-channels`} className="mb-3 text-lg font-semibold">Channel breakdown</h3>
           {details.channels.length ? <Table label="GA4 channel breakdown" first="Channel" columns={report.metrics.map(key => labels[key])}>
             {details.channels.map(row => <tr key={row.label}>
               <th scope="row" className={rowHeader}>{row.label}</th>
@@ -114,9 +114,9 @@ export default function AnalyticsReport({ report, includesToday }: { report: Par
             </tr>)}
           </Table> : <p className="text-sm text-slate-600">GA4 returned no channel rows for these dates.</p>}
         </section>
-        {details.events.length > 0 && <section aria-labelledby="events-heading">
-          <h2 id="events-heading" className="text-lg font-semibold">Funnel tracking events</h2>
-          <p className="mb-3 mt-1 text-sm text-slate-600">Event totals across all traffic. A visitor can trigger an event more than once.</p>
+        {details.events.length > 0 && <section aria-labelledby={`${funnel.key}-events`}>
+          <h3 id={`${funnel.key}-events`} className="text-lg font-semibold">Funnel tracking events</h3>
+          <p className="mb-3 mt-1 text-sm text-slate-600">Events from sessions that entered on this funnel’s landing pages.</p>
           <Table label="Funnel tracking events" first="Event" columns={["Occurrences"]}>
             {details.events.map(event => <tr key={event.label}>
               <th scope="row" className={rowHeader}>{event.label}</th>
@@ -126,12 +126,5 @@ export default function AnalyticsReport({ report, includesToday }: { report: Par
         </section>}
       </div>
     </>}
-    <div className="space-y-1 text-sm text-slate-600">
-      <p>Source is GA4 session attribution. Revenue is shown in INR when enabled.</p>
-      {details && <p>Meta Ads traffic is identified by paid Facebook, Instagram and Meta tags in GA4. Untagged traffic may appear under another source.</p>}
-      <p>Recent figures may change as GA4 finishes processing.
-        {report.thresholded && " GA4 has applied reporting thresholds. A dash indicates an unavailable figure."}
-      </p>
-    </div>
   </>;
 }

@@ -1,5 +1,6 @@
 import { google, type analyticsdata_v1beta as GA } from "googleapis";
 import type { ViewerPermissions } from "@/lib/partner-analytics-access";
+import { partnerFunnels, type PartnerFunnel } from "./partner-funnels";
 import { previousAnalyticsRange, shiftAnalyticsDate, type AnalyticsRange } from "./partner-analytics-period";
 
 const metricNames = { traffic: "sessions", purchases: "ecommercePurchases", revenue: "purchaseRevenue" } as const;
@@ -7,16 +8,21 @@ export type AnalyticsMetric = keyof typeof metricNames;
 export type AnalyticsValues = Partial<Record<AnalyticsMetric, number | null>>;
 type ReportRow = { label: string; values: AnalyticsValues };
 
-export type PartnerAnalyticsReport = {
-  metrics: AnalyticsMetric[];
+export type PartnerFunnelAnalytics = {
+  key: PartnerFunnel;
   comparison: (ReportRow & { previous: AnalyticsValues })[];
-  previousRange: AnalyticsRange;
   details: {
     channels: ReportRow[];
     daily: { date: string; groups: AnalyticsValues[] }[];
     landingPages: { path: string; groups: AnalyticsValues[] }[];
     events: { label: string; count: number | null }[];
   } | null;
+};
+
+export type PartnerAnalyticsReport = {
+  metrics: AnalyticsMetric[];
+  previousRange: AnalyticsRange;
+  funnels: PartnerFunnelAnalytics[];
   thresholded: boolean;
 };
 
@@ -26,15 +32,12 @@ const channels = new Set([
   "Organic Shopping", "Affiliates", "Audio", "SMS", "Mobile Push Notifications", "Unassigned", "Paid Other",
 ]);
 
-const landingPages = ["/", "/discover", "/soulmate", "/soulmate/discover", "/us/soulmate", "/us/soulmate/discover"];
-const trackingEvents = {
-  quiz_start: "Main funnel quiz starts",
-  quiz_complete: "Main funnel quiz completions",
-  soulmate_chat_start: "Soulmate chat starts",
-  soulmate_chat_complete: "Soulmate chat completions",
-  us_soulmate_chat_start: "US Soulmate chat starts",
-  us_soulmate_chat_complete: "US Soulmate chat completions",
-  begin_checkout: "Checkout starts",
+const pathVariants = (path: string) => path === "/" ? [path] : [path, `${path}/`];
+const landingPages = partnerFunnels.flatMap(funnel => funnel.paths.flatMap(pathVariants));
+const trackingEvents: Record<PartnerFunnel, Record<string, string>> = {
+  astrorekha: { quiz_start: "Quiz starts", quiz_complete: "Quiz completions", begin_checkout: "Checkout starts" },
+  soulmate: { soulmate_chat_start: "Chat starts", soulmate_chat_complete: "Chat completions", begin_checkout: "Checkout starts" },
+  "us-soulmate": { us_soulmate_chat_start: "Chat starts", us_soulmate_chat_complete: "Chat completions", begin_checkout: "Checkout starts" },
 };
 
 type Filter = GA.Schema$FilterExpression;
@@ -59,23 +62,36 @@ const metaAds = all(
 
 const includeRealTraffic = not(oneOf("sessionSource", ["codex_qa"]));
 const thresholded = (report: GA.Schema$RunReportResponse) => report.metadata?.subjectToThresholding === true;
-const dimension = (row: GA.Schema$Row) => row.dimensionValues?.[0]?.value || "";
-const numberValue = (value: string | null | undefined, limited: boolean) => {
-  const number = value != null ? Number(value) : limited ? NaN : 0;
-  return Number.isFinite(number) ? number : null;
-};
+const rowKey = (row: GA.Schema$Row) => (row.dimensionValues ?? []).map(item => item.value).join("|");
+const rowsByKey = (report: GA.Schema$RunReportResponse) => new Map((report.rows ?? []).map(row => [rowKey(row), row]));
 
-function metricValues(report: GA.Schema$RunReportResponse, row: GA.Schema$Row | undefined, metrics: AnalyticsMetric[], provisional = false): AnalyticsValues {
-  return Object.fromEntries(metrics.map((key, index) => [
-    key, numberValue(row?.metricValues?.[index]?.value, thresholded(report) || provisional),
-  ]));
+function sumMetric(rows: GA.Schema$Row[], index: number, missing: number | null): number | null {
+  if (!rows.length) return missing;
+  let sum = 0;
+  for (const row of rows) {
+    const value = row.metricValues?.[index]?.value;
+    if (value == null || !Number.isFinite(Number(value))) return null;
+    sum += Number(value);
+  }
+  return sum;
+}
+
+function metricValues(rows: GA.Schema$Row[], metrics: AnalyticsMetric[], unavailable: boolean): AnalyticsValues {
+  return Object.fromEntries(metrics.map((key, index) => [key, sumMetric(rows, index, unavailable ? null : 0)]));
+}
+
+function matchingRows(rows: Map<string, GA.Schema$Row>, paths: string[], suffix: string) {
+  return paths.flatMap(path => {
+    const row = rows.get(`${path}|${suffix}`);
+    return row ? [row] : [];
+  });
 }
 
 export async function readPartnerAnalytics(permissions: ViewerPermissions, range: AnalyticsRange, today?: string): Promise<PartnerAnalyticsReport> {
   const metrics = (Object.keys(metricNames) as AnalyticsMetric[]).filter(key => permissions[key]);
   const todayOnly = range.start === today;
   const previousRange = previousAnalyticsRange(range);
-  if (!metrics.length) return { metrics, previousRange, comparison: [], details: null, thresholded: false };
+  if (!metrics.length) return { metrics, previousRange, funnels: [], thresholded: false };
 
   const propertyId = process.env.GA4_PROPERTY_ID || process.env.GOOGLE_ANALYTICS_PROPERTY_ID;
   const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -107,75 +123,86 @@ export async function readPartnerAnalytics(permissions: ViewerPermissions, range
       { label: "Other traffic", filter: not(any(googleAds, metaAds)) },
     ] : [{ label: "All other traffic", filter: not(googleAds) }]),
   ];
+  const scope = all(includeRealTraffic, oneOf("landingPage", landingPages, true));
   const totals = groups.map(({ filter }) => ({
     ...base,
+    dimensions: [{ name: "landingPage" }],
     dateRanges: [dateRange(range, "selected"), dateRange(previousRange, "prior")],
-    dimensionFilter: all(includeRealTraffic, filter),
+    dimensionFilter: all(scope, filter),
   }));
-  const channelQuery = { ...base, dimensions: [{ name: "sessionDefaultChannelGroup" }], dimensionFilter: includeRealTraffic, limit: "100" };
-  const eventQuery = {
-    dateRanges: base.dateRanges, dimensions: [{ name: "eventName" }], metrics: [{ name: "eventCount" }],
-    dimensionFilter: all(includeRealTraffic, oneOf("eventName", Object.keys(trackingEvents), true)),
+  const channelQuery = {
+    ...base, dimensions: [{ name: "landingPage" }, { name: "sessionDefaultChannelGroup" }],
+    dimensionFilter: scope,
   };
-  const detailQueries = permissions.channels ? [
-    ...groups.map(({ filter }) => ({ ...base, dimensions: [{ name: "date" }], dimensionFilter: all(includeRealTraffic, filter), limit: "366" })),
-    ...groups.slice(0, 2).map(({ filter }) => ({
-      ...base, dimensions: [{ name: "landingPage" }],
-      dimensionFilter: all(includeRealTraffic, filter, oneOf("landingPage", landingPages, true)),
-    })),
-  ] : [];
-  const [overview, detail] = await Promise.all([
+  const eventNames = Array.from(new Set(Object.values(trackingEvents).flatMap(Object.keys)));
+  const eventQuery = {
+    dateRanges: base.dateRanges, dimensions: [{ name: "landingPage" }, { name: "eventName" }],
+    metrics: [{ name: "eventCount" }],
+    dimensionFilter: all(scope, oneOf("eventName", eventNames, true)),
+  };
+  const dailyQueries = groups.map(({ filter }) => ({
+    ...base, dimensions: [{ name: "landingPage" }, { name: "date" }],
+    dimensionFilter: all(scope, filter),
+  }));
+  const [overview, dailyReports] = await Promise.all([
     batch([...totals, ...(permissions.channels ? [channelQuery, ...(permissions.traffic ? [eventQuery] : [])] : [])]),
-    detailQueries.length ? batch(detailQueries) : Promise.resolve([]),
+    permissions.channels ? batch(dailyQueries) : Promise.resolve([]),
   ]);
-  const comparison = groups.map(({ label }, index) => {
-    const report = overview[index];
-    return {
+
+  const totalsRows = overview.slice(0, groups.length).map(rowsByKey);
+  const dailyRows = dailyReports.map(rowsByKey);
+  const channelReport = overview[groups.length];
+  const eventReport = overview[groups.length + 1];
+  const eventRows = eventReport && rowsByKey(eventReport);
+  const reportDates: string[] = [];
+  for (let date = range.end; date >= range.start; date = shiftAnalyticsDate(date, -1)) reportDates.push(date);
+
+  const funnels = partnerFunnels.map(({ key, paths }): PartnerFunnelAnalytics => {
+    const variants = paths.flatMap(pathVariants);
+    const comparison = groups.map(({ label }, index) => ({
       label,
-      values: metricValues(report, report.rows?.find(row => dimension(row) === "selected"), metrics, todayOnly),
-      previous: metricValues(report, report.rows?.find(row => dimension(row) === "prior"), metrics),
+      values: metricValues(matchingRows(totalsRows[index], variants, "selected"), metrics, todayOnly || thresholded(overview[index])),
+      previous: metricValues(matchingRows(totalsRows[index], variants, "prior"), metrics, thresholded(overview[index])),
+    }));
+    if (!permissions.channels) return { key, comparison, details: null };
+
+    const breakdown = new Map<string, GA.Schema$Row[]>();
+    for (const row of channelReport.rows ?? []) {
+      const [path, name] = row.dimensionValues?.map(item => item.value) ?? [];
+      if (!path || !variants.includes(path)) continue;
+      const label = name && channels.has(name) ? name : "Other channels";
+      const matching = breakdown.get(label) ?? [];
+      matching.push(row);
+      breakdown.set(label, matching);
+    }
+
+    return {
+      key,
+      comparison,
+      details: {
+        channels: [...breakdown].map(([label, rows]) => ({
+          label, values: metricValues(rows, metrics, thresholded(channelReport)),
+        })).sort((a, b) => a.label.localeCompare(b.label)),
+        daily: reportDates.map(date => ({
+          date,
+          groups: dailyRows.map((rows, index) => metricValues(
+            matchingRows(rows, variants, date.replaceAll("-", "")),
+            metrics, date === today || thresholded(dailyReports[index]),
+          )),
+        })),
+        landingPages: paths.map(path => ({
+          path,
+          groups: totalsRows.slice(0, 2).map((rows, index) => metricValues(
+            matchingRows(rows, pathVariants(path), "selected"), metrics, todayOnly || thresholded(overview[index]),
+          )),
+        })),
+        events: eventRows ? Object.entries(trackingEvents[key]).map(([event, label]) => ({
+          label,
+          count: sumMetric(matchingRows(eventRows, variants, event), 0, todayOnly || thresholded(eventReport) ? null : 0),
+        })) : [],
+      },
     };
   });
 
-  const result: PartnerAnalyticsReport = {
-    metrics, previousRange, comparison, details: null,
-    thresholded: [...overview, ...detail].some(thresholded),
-  };
-  if (!permissions.channels) return result;
-
-  const channelReport = overview[groups.length];
-  const breakdown = new Map<string, AnalyticsValues>();
-  for (const row of channelReport.rows || []) {
-    const name = dimension(row);
-    const label = channels.has(name) ? name : "Other channels";
-    const next = metricValues(channelReport, row, metrics);
-    const previous = breakdown.get(label);
-    if (previous) {
-      for (const metric of metrics) {
-        const a = previous[metric], b = next[metric];
-        next[metric] = typeof a === "number" && typeof b === "number" ? a + b : null;
-      }
-    }
-    breakdown.set(label, next);
-  }
-  const byDimension = detail.map(report => new Map((report.rows || []).map(row => [dimension(row), row])));
-  const daily = [];
-  for (let date = range.end; date >= range.start; date = shiftAnalyticsDate(date, -1)) {
-    const key = date.replaceAll("-", "");
-    daily.push({ date, groups: groups.map((_, index) => metricValues(detail[index], byDimension[index].get(key), metrics, date === today)) });
-  }
-  const eventReport = overview[groups.length + 1];
-  result.details = {
-    channels: [...breakdown].map(([label, values]) => ({ label, values })).sort((a, b) => a.label.localeCompare(b.label)),
-    daily,
-    landingPages: landingPages.map(path => ({
-      path,
-      groups: detail.slice(groups.length).map((report, index) => metricValues(report, byDimension[index + groups.length].get(path), metrics, todayOnly)),
-    })),
-    events: eventReport ? Object.entries(trackingEvents).map(([key, label]) => ({
-      label,
-      count: numberValue(eventReport.rows?.find(row => dimension(row) === key)?.metricValues?.[0]?.value, thresholded(eventReport) || todayOnly),
-    })) : [],
-  };
-  return result;
+  return { metrics, previousRange, funnels, thresholded: [...overview, ...dailyReports].some(thresholded) };
 }

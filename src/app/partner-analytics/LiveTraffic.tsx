@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { PartnerLiveTraffic } from "@/lib/partner-live-traffic";
+import { useEffect, useState, type ReactNode } from "react";
+import type { PartnerFunnelTraffic, PartnerLiveTraffic } from "@/lib/partner-live-traffic";
 
 const count = new Intl.NumberFormat("en-IN");
 const clockPreference = "astrorekha_partner_live_clock";
 type Clock = "property" | "india";
 
-export default function LiveTraffic({ endpoint }: { endpoint: string }) {
+export default function LiveTraffic({ endpoint, children }: {
+  endpoint: string; children: (report: PartnerLiveTraffic | null) => ReactNode;
+}) {
   const [clock, setClock] = useState<Clock | null>(null);
   const [traffic, setTraffic] = useState<{ clock: Clock; report: PartnerLiveTraffic } | null>(null);
   const [unavailable, setUnavailable] = useState(false);
@@ -56,17 +58,12 @@ export default function LiveTraffic({ endpoint }: { endpoint: string }) {
     };
   }, [clock, endpoint]);
 
-  if (!traffic && !unavailable) return null;
-
-  const report = traffic?.clock === clock && !unavailable ? traffic?.report : null;
+  const report = traffic && traffic.clock === clock && !unavailable ? traffic.report : null;
   const checked = report && new Intl.DateTimeFormat("en-IN", { timeStyle: "short", timeZone: report.timeZone }).format(new Date(report.checkedAt));
-  const date = report && new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${report.date}T00:00:00Z`));
-  const rows = report ? [{ label: "All tracked views", ...report.total }, ...report.channels] : [];
 
-  return (
-    <section aria-labelledby="live-heading" className="rounded-xl border border-slate-200 bg-white p-5">
+  return <>
+    {(traffic || unavailable) && <div className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="live-heading" className="text-lg font-semibold">Live funnel traffic</h2>
         <label className="flex items-center gap-2 text-sm text-slate-600">
           Live traffic time
           <select value={clock ?? "property"} onChange={event => {
@@ -80,27 +77,35 @@ export default function LiveTraffic({ endpoint }: { endpoint: string }) {
           </select>
         </label>
       </div>
-      <p className="mt-1 text-sm text-slate-600">
-        AstroRekha counts views of its public funnel entry pages as they’re recorded. Repeat views can count more than once.
-      </p>
-      {report ? <>
-        <p className="mt-2 text-xs text-slate-600">Updated {checked} · {report.timeZone}</p>
-        <table className="mt-3 w-full text-sm">
-          <thead className="border-b border-slate-200 text-slate-600"><tr>
-            <th scope="col" className="py-2 text-left">Source</th>
-            <th scope="col" className="px-2 py-2 text-right">Last 30 min</th>
-            <th scope="col" className="py-2 text-right">{date} so far</th>
-          </tr></thead>
-          <tbody className="divide-y divide-slate-100">{rows.map(row => <tr key={row.label}>
-            <th scope="row" className="py-2 text-left font-medium">{row.label}</th>
-            <td className="px-2 py-2 text-right tabular-nums">{count.format(row.recent)}</td>
-            <td className="py-2 text-right tabular-nums">{count.format(row.today)}</td>
-          </tr>)}</tbody>
-        </table>
-        {report.channels.length > 0 && <p className="mt-2 text-xs text-slate-600">Google and Meta counts use campaign tags on the entry URL.</p>}
-      </> : <p role="status" className="mt-3 text-sm text-slate-600">
-        {unavailable ? "Live funnel traffic is temporarily unavailable." : "Loading live funnel traffic…"}
-      </p>}
-    </section>
+      {report ? <p className="mt-2 text-xs text-slate-600">Live views updated {checked} · {report.timeZone}</p>
+        : <p role="status" className="mt-2 text-sm text-slate-600">
+          {unavailable ? "Live funnel traffic is temporarily unavailable." : "Loading live funnel traffic…"}
+        </p>}
+    </div>}
+    {children(report)}
+  </>;
+}
+
+export function LiveTrafficTable({ traffic, date }: { traffic: PartnerFunnelTraffic; date: string }) {
+  const formattedDate = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${date}T00:00:00Z`));
+  const rows = [{ label: "All tracked views", ...traffic.total }, ...traffic.channels];
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5">
+      <h3 className="text-lg font-semibold">Live funnel traffic</h3>
+      <p className="mt-1 text-sm text-slate-600">Views of this funnel’s entry pages. Repeat views can count more than once.</p>
+      <table className="mt-3 w-full text-sm">
+        <thead className="border-b border-slate-200 text-slate-600"><tr>
+          <th scope="col" className="py-2 text-left">Source</th>
+          <th scope="col" className="px-2 py-2 text-right">Last 30 min</th>
+          <th scope="col" className="py-2 text-right">{formattedDate} so far</th>
+        </tr></thead>
+        <tbody className="divide-y divide-slate-100">{rows.map(row => <tr key={row.label}>
+          <th scope="row" className="py-2 text-left font-medium">{row.label}</th>
+          <td className="px-2 py-2 text-right tabular-nums">{count.format(row.recent)}</td>
+          <td className="py-2 text-right tabular-nums">{count.format(row.today)}</td>
+        </tr>)}</tbody>
+      </table>
+      {traffic.channels.length > 0 && <p className="mt-2 text-xs text-slate-600">Google and Meta counts use campaign tags on the entry URL.</p>}
+    </div>
   );
 }

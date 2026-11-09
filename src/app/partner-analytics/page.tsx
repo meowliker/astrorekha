@@ -7,7 +7,8 @@ import RevenueDateRange from "@/components/admin/revenue/RevenueDateRange";
 import type { PartnerAnalyticsReport } from "@/lib/partner-analytics-report";
 import { analyticsPresets, earliestAnalyticsDate, validAnalyticsRange, type AnalyticsRange } from "@/lib/partner-analytics-period";
 import AnalyticsReport from "./AnalyticsReport";
-import LiveTraffic from "./LiveTraffic";
+import LiveTraffic, { LiveTrafficTable } from "./LiveTraffic";
+import { partnerFunnels } from "@/lib/partner-funnels";
 
 type Calendar = { today: string; timeZone: string; range: AnalyticsRange };
 const endpoint = "/api/partner-analytics";
@@ -124,14 +125,34 @@ export default function PartnerAnalyticsPage() {
               }} />
             </div>}
           </div>
-          <LiveTraffic endpoint={endpoint} />
           {loading && <p role="status" className="text-slate-600">Loading report…</p>}
           {error && <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-red-700">{error}
             <button onClick={() => void load(range)} className="font-medium underline">Retry</button>
           </div>}
           {report && report.metrics.length === 0 && <p className="text-slate-600">Your account has no metrics enabled. Contact your AstroRekha admin for access.</p>}
-          {report && report.metrics.length > 0 && <AnalyticsReport report={report}
-            includesToday={Boolean(calendar && calendar.range.end === calendar.today)} />}
+          {calendar && calendar.range.end === calendar.today && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            Today’s GA4 figures are still being processed. A dash marks an unavailable figure. Percentage comparisons are shown for completed days.
+          </p>}
+          <LiveTraffic endpoint={endpoint}>{live => partnerFunnels.map(({ key, label, paths }) => {
+            const historical = report?.funnels.find(funnel => funnel.key === key);
+            const current = live?.funnels.find(funnel => funnel.key === key);
+            return (
+              <section key={key} aria-labelledby={`${key}-heading`} className="space-y-5 border-t border-slate-200 pt-7">
+                <div>
+                  <h2 id={`${key}-heading`} className="text-2xl font-semibold tracking-tight">{label}</h2>
+                  <p className="mt-1 break-words text-sm text-slate-600">{paths.join(" · ")}</p>
+                </div>
+                {live && current && <LiveTrafficTable traffic={current} date={live.date} />}
+                {report && historical && <AnalyticsReport report={report} funnel={historical}
+                  includesToday={Boolean(calendar && calendar.range.end === calendar.today)} />}
+              </section>
+            );
+          })}</LiveTraffic>
+          {report && report.metrics.length > 0 && <p className="text-sm text-slate-600">
+            GA4 groups sessions by the landing pages listed under each funnel. Revenue is shown in INR when enabled.
+            Recent figures may change as GA4 finishes processing.
+            {report.thresholded && " GA4 has applied reporting thresholds. A dash indicates an unavailable figure."}
+          </p>}
         </section>
       )}
     </main>
