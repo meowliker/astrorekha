@@ -28,7 +28,11 @@ export function USMainMarketing() {
    // Queue before the asynchronously loaded GA library; do not create a second container.
    const w = window as typeof window & {dataLayer?: unknown[]};
    w.dataLayer ||= [];
-   if (!w.gtag) w.gtag = (...args) => { w.dataLayer!.push(args); };
+   if (!w.gtag) w.gtag = function () {
+    // gtag processes Arguments objects, not arrays of command parameters.
+    // eslint-disable-next-line prefer-rest-params
+    w.dataLayer!.push(arguments);
+   };
    if(!gaConfigured.current){
     gaConfigured.current=true;
     const command=w.gtag as (...args:unknown[])=>void;
