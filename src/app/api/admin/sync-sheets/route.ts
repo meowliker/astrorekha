@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 
 import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
@@ -20,7 +21,7 @@ async function getGoogleSheetsClient() {
 }
 
 // POST - Manual trigger with auth header
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   try {
     // Verify admin access
     const authHeader = request.headers.get("authorization");
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest) {
 }
 
 // GET - For Vercel Cron jobs
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   try {
     // Vercel cron sends authorization header with CRON_SECRET
     const authHeader = request.headers.get("authorization");
@@ -194,3 +195,6 @@ async function syncSheets() {
     },
   });
 }
+
+export const POST=withAdminAccess(handlePOST);
+export const GET=withAdminAccess(handleGET);

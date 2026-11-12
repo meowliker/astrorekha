@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -22,7 +23,7 @@ async function bounceRate(startDate: string, endDate: string) {
   } catch { return { value: null, sessions: null, status: "GA4 report unavailable. Check property access and credentials." }; }
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   const db = getSupabaseAdmin({ fresh: true });
   const token = request.headers.get("authorization")?.replace(/^Bearer /, "");
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -58,3 +59,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ...summarizeSoulmateAnalytics(events, orders), bounce: await bounceRate(startDate, endDate), startDate, endDate }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load report" }, { status: 503 }); }
 }
+
+export const GET=withAdminAccess(handleGET);

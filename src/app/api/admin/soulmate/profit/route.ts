@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { soulmateAdmin } from "@/lib/soulmate-admin";
 import { DAY_MS, SOULMATE_PROFIT_START, latestSoulmateProfitRange, profitDay, validProfitDate } from "@/lib/soulmate-profit";
@@ -7,7 +8,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 const json = (data: unknown, status = 200) => NextResponse.json(data, { status, headers: { "Cache-Control": "no-store" } });
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   const db = await soulmateAdmin(request);
   if (!db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const start = request.nextUrl.searchParams.get("start") || SOULMATE_PROFIT_START;
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
     return json(await readSoulmateProfitLedger(db, start, end));
   } catch { return json({ error: "Unable to load saved Soulmate profit rows." }, 503); }
 }
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   const db = await soulmateAdmin(request);
   if (!db) return json({ error: "Unauthorized" }, 401);
   try {
@@ -30,3 +31,6 @@ export async function POST(request: NextRequest) {
     return json({ syncedRange: await syncSoulmateProfitLedger(db, selected.start, selected.end) });
   } catch (e) { return json({ error: e instanceof Error ? e.message : "Unable to refresh. Saved figures have been kept." }, 503); }
 }
+
+export const GET=withAdminAccess(handleGET);
+export const POST=withAdminAccess(handlePOST);

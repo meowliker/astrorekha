@@ -1,6 +1,7 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest,NextResponse } from 'next/server';
 import { soulmateAdmin } from '@/lib/us-soulmate-admin';
-export async function GET(req:NextRequest) {
+async function handleGET(req:NextRequest) {
  const db=await soulmateAdmin(req);if(!db)return NextResponse.json({error:'Unauthorized'},{status:401});
  try {
   const q=req.nextUrl.searchParams, mode=q.get('mode')==='test'?'test':'live';
@@ -17,3 +18,5 @@ export async function GET(req:NextRequest) {
   return NextResponse.json({orders:orders.data,total:orders.count,summary:summary.data,currency:'USD',timezone:'UTC'},{headers:{'Cache-Control':'private, no-store'}});
  }catch{return NextResponse.json({error:'US main data is unavailable. Check that its database migration has been applied.'},{status:503});}
 }
+
+export const GET=withAdminAccess(handleGET);

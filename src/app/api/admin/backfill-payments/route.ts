@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 
 import { getErrorMessage } from "@/lib/error-message";
 import { isSoulmateTransaction } from "@/lib/soulmate-orders";
@@ -76,7 +77,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -298,3 +299,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: getErrorMessage(error) || "Backfill failed" }, { status: 500 });
   }
 }
+
+export const POST=withAdminAccess(handlePOST);

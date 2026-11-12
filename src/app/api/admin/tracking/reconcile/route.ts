@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { verifyPayUTransaction } from "@/lib/payu-api";
@@ -9,7 +10,7 @@ export const maxDuration = 60;
 const PAID_AT_PAYU = new Set(["success", "paid", "captured"]);
 
 /** Recover recent completed PayU payments left in created/pending when a callback was missed. */
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   try {
     const supabase = getSupabaseAdmin();
     const token = request.headers.get("x-admin-session");
@@ -72,3 +73,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unable to verify pending payments" }, { status: 500 });
   }
 }
+
+export const POST=withAdminAccess(handlePOST);

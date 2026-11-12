@@ -20,6 +20,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import {useAdminAccess} from "@/components/admin/AdminAccessGate";
+import {canAccess,workspaceForPath} from "@/lib/admin-workspaces";
+
 interface AdminOption {
   id: string;
   title: string;
@@ -39,10 +42,6 @@ const adminOptions: AdminOption[] = [
     href: "/support",
     color: "text-emerald-400",
     bgColor: "bg-emerald-500/20",
-  },
-  {
-    id: "us-main", title: "US AstroRekha", description: "US main funnel orders, USD sales and tracking", icon: ShoppingBag,
-    href: "/admin/us-main/orders", color: "text-violet-400", bgColor: "bg-violet-500/20",
   },
   {
     id: "revenue",
@@ -165,6 +164,7 @@ const usSoulmateOptions: AdminOption[] = soulmateOptions.map((option) => ({
 
 export default function AdminDashboardPage() {
   const router = useRouter();
+  const access=useAdminAccess();
   const [loading, setLoading] = useState(true);
   const [systemSummary, setSystemSummary] = useState<{ issues: number; checkedAt: string | null } | null>(null);
 
@@ -202,7 +202,8 @@ export default function AdminDashboardPage() {
     return () => { active = false; window.clearInterval(timer); };
   }, [loading]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await fetch("/api/admin/logout",{method:"POST",headers:{"x-admin-session":localStorage.getItem("admin_session_token")||""}});
     localStorage.removeItem("admin_session_token");
     localStorage.removeItem("admin_session_expiry");
     router.push("/admin/login");
@@ -248,7 +249,7 @@ export default function AdminDashboardPage() {
 
         {/* Admin Options Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {adminOptions.map((option, index) => (
+          {adminOptions.filter(o=>access&&canAccess(access,workspaceForPath(o.href))).map((option, index) => (
             <motion.div
               key={option.id}
               initial={{ opacity: 0, y: 20 }}
@@ -277,10 +278,10 @@ export default function AdminDashboardPage() {
           ))}
         </div>
 
-        <section aria-labelledby="soulmate-workspace-title" className="mt-8">
+        {access&&canAccess(access,"soulmate")&&<section aria-labelledby="soulmate-workspace-title" className="mt-8">
           <h2 id="soulmate-workspace-title" className="mb-3 text-sm font-medium text-white/50">Soulmate workspace</h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {soulmateOptions.map((option, index) => <motion.button
+            {soulmateOptions.filter(()=>access&&canAccess(access,"soulmate")).map((option, index) => <motion.button
               key={option.id}
               type="button"
               initial={{ opacity: 0, y: 16 }}
@@ -294,12 +295,12 @@ export default function AdminDashboardPage() {
               <ChevronRight className="mt-1 h-5 w-5 shrink-0 text-white/30 transition-transform group-hover:translate-x-1 group-hover:text-primary" aria-hidden="true" />
             </motion.button>)}
           </div>
-        </section>
+        </section>}
 
-        <section aria-labelledby="us-soulmate-workspace-title" className="mt-8">
+        {access&&canAccess(access,"us-soulmate")&&<section aria-labelledby="us-soulmate-workspace-title" className="mt-8">
           <h2 id="us-soulmate-workspace-title" className="mb-3 text-sm font-medium text-white/50">US Soulmate workspace</h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {usSoulmateOptions.map((option, index) => <motion.button
+            {usSoulmateOptions.filter(()=>access&&canAccess(access,"us-soulmate")).map((option, index) => <motion.button
               key={option.id}
               type="button"
               initial={{ opacity: 0, y: 16 }}
@@ -313,8 +314,10 @@ export default function AdminDashboardPage() {
               <ChevronRight className="mt-1 h-5 w-5 shrink-0 text-white/30 transition-transform group-hover:translate-x-1 group-hover:text-primary" aria-hidden="true" />
             </motion.button>)}
           </div>
-        </section>
+        </section>}
 
+        {access&&canAccess(access,'us-main')&&<section className="mt-8"><h2 className="mb-3 text-sm font-medium text-white/50">US AstroRekha workspace</h2><div className="grid grid-cols-1 md:grid-cols-2 gap-4">{adminOptions.filter(o=>['revenue','orders','tracking','pricing','ab-tests'].includes(o.id)).map(o=><button key={o.id} onClick={()=>router.push('/admin/us-main/'+o.id)} className="group flex gap-4 text-left bg-[#1A2235] border border-white/10 rounded-2xl p-6 hover:border-primary/50"><span className={`w-12 h-12 shrink-0 rounded-xl flex items-center justify-center ${o.bgColor}`}><o.icon className={`w-6 h-6 ${o.color}`}/></span><span><span className="block text-lg font-semibold">{o.title}</span><span className="block text-sm text-white/50">{o.description}</span></span><ChevronRight className="w-5 h-5 shrink-0 ml-auto"/></button>)}</div></section>}
+        {access?.isAdministrator&&<button onClick={()=>router.push('/admin/access')} className="mt-8 p-6 w-full text-left bg-[#1A2235] border border-white/10 rounded-2xl"><h2 className="text-lg font-semibold">Workspace access</h2><p className="text-sm text-white/50">Manage which workspaces each admin can view and edit.</p></button>}
         {/* Footer */}
         <motion.p
           initial={{ opacity: 0 }}

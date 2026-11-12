@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing, type PricingConfig } from "@/lib/pricing";
@@ -181,7 +182,7 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Failed to fetch orders";
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   try {
     const supabase = getSupabaseAdmin();
     const { searchParams } = new URL(request.url);
@@ -291,3 +292,5 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export const GET=withAdminAccess(handleGET);

@@ -1,10 +1,11 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { pineLabsConfig, pineLabsSigningConfigured } from "@/lib/pinelabs-api";
 import { NextRequest, NextResponse } from "next/server";
 import { soulmateAdmin } from "@/lib/soulmate-admin";
 import { paytmConfig } from "@/lib/paytm-api";
 import { localPaymentGateway } from "@/lib/local-payment-gateway";
 export const dynamic = "force-dynamic";
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   const db = await soulmateAdmin(request);
   if (!db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const setting = await db.from("settings").select("value").eq("key", "payment_gateway").maybeSingle();
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
   } catch { /* Setup needed. */ }
   return NextResponse.json({ pineLabsReady, active: localPaymentGateway() || setting.data?.value?.active || "payu", paytmReady }, { headers: { "Cache-Control": "no-store" } });
 }
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   const db = await soulmateAdmin(request);
   if (!db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (localPaymentGateway()) return NextResponse.json({ error: "Local checkout uses LOCAL_PAYMENT_GATEWAY. Change the local environment to switch; the production setting is protected." }, { status: 400 });
@@ -46,3 +47,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ active });
   } catch (e) { return NextResponse.json({ error: e instanceof Error ? e.message : "Unable to switch gateway" }, { status: 400 }); }
 }
+
+export const GET=withAdminAccess(handleGET);
+export const POST=withAdminAccess(handlePOST);

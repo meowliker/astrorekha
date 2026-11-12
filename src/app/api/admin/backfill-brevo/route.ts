@@ -1,10 +1,11 @@
+import {withAdminAccess} from "@/lib/admin-access";
 
 import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { addContactToList, BREVO_LISTS } from "@/lib/brevo";
 
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   try {
     // Verify admin token
     const { searchParams } = new URL(request.url);
@@ -65,3 +66,5 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export const POST=withAdminAccess(handlePOST);

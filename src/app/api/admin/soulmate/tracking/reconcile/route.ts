@@ -1,10 +1,11 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { reconcileSoulmateOrder, type SoulmateOrder } from "@/lib/soulmate-payu";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   const db = getSupabaseAdmin({ fresh: true });
   const token = request.headers.get("x-admin-session");
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -27,3 +28,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ checked: data.length, recovered }, { headers: { "Cache-Control": "no-store" } });
   } catch { return NextResponse.json({ error: "Unable to verify pending Soulmate payments." }, { status: 503 }); }
 }
+
+export const POST=withAdminAccess(handlePOST);

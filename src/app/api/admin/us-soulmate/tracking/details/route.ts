@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { soulmateTrackingCredentials, soulmateTrackingRate } from "@/lib/us-soulmate-tracking-data";
@@ -11,7 +12,7 @@ export const maxDuration = 60;
 const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
 const dateValid = (value: string | null): value is string => !!value && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   try {
     const supabase = getSupabaseAdmin();
     const token = request.headers.get("x-admin-session");
@@ -65,3 +66,5 @@ export async function GET(request: NextRequest) {
     return json({ error: error instanceof Error ? error.message : "Meta detail unavailable" }, 500);
   }
 }
+
+export const GET=withAdminAccess(handleGET);

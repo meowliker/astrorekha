@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 
 import type { MetaActionValue, MetaReportingRow, MetaReportingResponse } from "@/lib/meta-api-types";
 
@@ -199,7 +200,7 @@ function mergeAccountMetrics(items: AccountMetrics[]): AccountMetrics {
   };
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   try {
     const supabase = getSupabaseAdmin();
 
@@ -396,3 +397,5 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export const GET=withAdminAccess(handleGET);

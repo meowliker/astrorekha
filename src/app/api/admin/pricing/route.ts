@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 
 import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
@@ -5,7 +6,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing } from "@/lib/pricing";
 
 // GET - Fetch current pricing
-export async function GET() {
+async function handleGET() {
   try {
     const supabase = getSupabaseAdmin();
     
@@ -29,7 +30,7 @@ export async function GET() {
 }
 
 // POST - Update pricing
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   try {
     const { pricing } = await request.json();
 
@@ -71,3 +72,6 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export const GET=withAdminAccess(handleGET);
+export const POST=withAdminAccess(handlePOST);

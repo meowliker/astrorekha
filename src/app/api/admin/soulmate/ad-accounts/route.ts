@@ -1,16 +1,17 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { soulmateAdmin } from "@/lib/soulmate-admin";
 import { loadSoulmateProfitSettings, publicSoulmateSettings, validateSoulmateAccounts } from "@/lib/soulmate-profit-settings";
 import { listSoulmateCampaigns } from "@/lib/soulmate-campaigns";
 export const dynamic = "force-dynamic";
 const json = (data: unknown, status = 200) => NextResponse.json(data, { status, headers: { "Cache-Control": "no-store" } });
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   const db = await soulmateAdmin(request);
   if (!db) return json({ error: "Unauthorized" }, 401);
   try { return json(publicSoulmateSettings(await loadSoulmateProfitSettings(db))); }
   catch { return json({ error: "Unable to load Soulmate ad accounts." }, 503); }
 }
-export async function PUT(request: NextRequest) {
+async function handlePUT(request: NextRequest) {
   const db = await soulmateAdmin(request);
   if (!db) return json({ error: "Unauthorized" }, 401);
   try {
@@ -29,3 +30,6 @@ export async function PUT(request: NextRequest) {
     return json(publicSoulmateSettings({ accounts, exchange_rate: rate, revision: data }));
   } catch (e) { return json({ error: e instanceof Error ? e.message : "Unable to save ad accounts." }, 400); }
 }
+
+export const GET=withAdminAccess(handleGET);
+export const PUT=withAdminAccess(handlePUT);

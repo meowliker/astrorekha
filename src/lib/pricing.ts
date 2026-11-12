@@ -454,7 +454,7 @@ export const DEFAULT_PRICING: PricingConfig = {
 // Server-side function to get pricing
 export async function getPricing(): Promise<PricingConfig> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/admin/pricing`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/pricing`, {
       cache: 'no-store',
     });
     const data = await response.json();

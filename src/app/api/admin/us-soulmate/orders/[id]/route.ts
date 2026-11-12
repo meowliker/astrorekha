@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { soulmateAdmin, validSoulmateId } from "@/lib/us-soulmate-admin";
 import { sanitizeAnswers, steps } from "@/app/us/soulmate/chat-data";
@@ -5,7 +6,7 @@ import { SKETCH_BUCKET, refreshSoulmateDeliveryStatuses } from "@/lib/us-soulmat
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
+async function handleGET(request: NextRequest, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
   const params = await paramsPromise;
   const db = await soulmateAdmin(request);
   if (!db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest, { params: paramsPromise }: { par
   }
 }
 
-export async function PATCH(request: NextRequest, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
+async function handlePATCH(request: NextRequest, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
   const params = await paramsPromise;
   const db = await soulmateAdmin(request);
   if (!db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -72,3 +73,6 @@ export async function PATCH(request: NextRequest, { params: paramsPromise }: { p
     return NextResponse.json({ error: "Unable to save the revised answers." }, { status: 503 });
   }
 }
+
+export const GET=withAdminAccess(handleGET);
+export const PATCH=withAdminAccess(handlePATCH);

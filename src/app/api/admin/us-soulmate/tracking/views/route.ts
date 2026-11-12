@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -31,7 +32,7 @@ function savedView(value: unknown): TrackingSavedView | null {
 }
 
 /** Dedicated Soulmate rows; normal saved views are never read or changed. */
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   const supabase = await authorized(request);
   if (!supabase) return response({ error: "Unauthorized" }, 401);
   const { data, error } = await supabase.from("us_soulmate_tracking_views").select("key,value").like("key", `${PREFIX}%`).limit(100);
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
   return response({ views });
 }
 
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   const supabase = await authorized(request);
   if (!supabase) return response({ error: "Unauthorized" }, 401);
   const body = await request.json().catch(() => null);
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
   return response({ view }, 201);
 }
 
-export async function PUT(request: NextRequest) {
+async function handlePUT(request: NextRequest) {
   const supabase = await authorized(request);
   if (!supabase) return response({ error: "Unauthorized" }, 401);
   const body = await request.json().catch(() => null);
@@ -74,7 +75,7 @@ export async function PUT(request: NextRequest) {
   return response({ view });
 }
 
-export async function DELETE(request: NextRequest) {
+async function handleDELETE(request: NextRequest) {
   const supabase = await authorized(request);
   if (!supabase) return response({ error: "Unauthorized" }, 401);
   const id = request.nextUrl.searchParams.get("id");
@@ -83,3 +84,8 @@ export async function DELETE(request: NextRequest) {
   if (error) return response({ error: "Unable to delete view" }, 500);
   return response({ success: true });
 }
+
+export const GET=withAdminAccess(handleGET);
+export const POST=withAdminAccess(handlePOST);
+export const PUT=withAdminAccess(handlePUT);
+export const DELETE=withAdminAccess(handleDELETE);

@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 
 import type { MetaReportingRow } from "@/lib/meta-api-types";
 type ProductTotals = { orders: number; revenueInr: number };
@@ -266,7 +267,7 @@ function findSpend(row: PaymentRow, spend: Awaited<ReturnType<typeof fetchMetaSp
   return null;
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   try {
     const supabase = getSupabaseAdmin();
     const { searchParams } = new URL(request.url);
@@ -487,3 +488,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Failed to load marketing attribution" }, { status: 500 });
   }
 }
+
+export const GET=withAdminAccess(handleGET);

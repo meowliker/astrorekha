@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { assertSoulmateCampaignObject, SoulmateCampaignAccessError, SoulmateCampaignSelectionError } from "@/lib/us-soulmate-campaigns";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -33,7 +34,7 @@ function respondToError(error: unknown) {
   return json({ error: "Unable to reach Meta for this bid." }, 502);
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   try {
     const params = new URL(request.url).searchParams;
     const accountId = params.get("accountId");
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest) {
   } catch (error) { return respondToError(error); }
 }
 
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   try {
     const input = await request.json().catch(() => null) as Record<string, unknown> | null;
     if (!input || !isId(input.accountId) || !isId(input.adsetId) ||
@@ -57,3 +58,6 @@ export async function POST(request: NextRequest) {
     return json({ bid: await changeMetaBid(credential, input.adsetId, input.expectedAmountMinor, input.newAmountMinor) });
   } catch (error) { return respondToError(error); }
 }
+
+export const GET=withAdminAccess(handleGET);
+export const POST=withAdminAccess(handlePOST);

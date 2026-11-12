@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { soulmateAdmin } from "@/lib/soulmate-admin";
 import { loadSoulmateProfitSettings } from "@/lib/soulmate-profit-settings";
@@ -8,7 +9,7 @@ export const maxDuration = 60;
 const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
 
 // POST keeps a newly entered token out of URLs and logs. This only reads Meta.
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   const db = await soulmateAdmin(request);
   if (!db) return json({ error: "Unauthorized" }, 401);
   try {
@@ -20,3 +21,5 @@ export async function POST(request: NextRequest) {
     return json({ campaigns: await listSoulmateCampaigns({ accountId, accessToken }) });
   } catch (error) { return json({ error: error instanceof Error ? error.message : "Unable to load campaigns." }, 400); }
 }
+
+export const POST=withAdminAccess(handlePOST);

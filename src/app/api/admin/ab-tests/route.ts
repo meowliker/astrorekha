@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 
 import type { AbTestConfig, AbTestStats, AbEventMetadata, AbDailyStats } from "@/lib/ab-test-types";
 import { NextRequest, NextResponse } from "next/server";
@@ -621,7 +622,7 @@ async function buildDefaultTestData(testId: string) {
   return row;
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const testId = searchParams.get("testId");
@@ -1356,7 +1357,7 @@ export async function GET(request: NextRequest) {
 }
 
 // Update test configuration
-export async function PUT(request: NextRequest) {
+async function handlePUT(request: NextRequest) {
   try {
     const body = await request.json();
     const { testId, status, variants, name, resetAnalytics } = body;
@@ -1429,7 +1430,7 @@ export async function PUT(request: NextRequest) {
 }
 
 // Create new test
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   try {
     const body = await request.json();
     const { testId, name, variants } = body;
@@ -1479,7 +1480,7 @@ export async function POST(request: NextRequest) {
 }
 
 // Delete test
-export async function DELETE(request: NextRequest) {
+async function handleDELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const testId = searchParams.get("testId");
@@ -1503,3 +1504,8 @@ export async function DELETE(request: NextRequest) {
     );
   }
 }
+
+export const GET=withAdminAccess(handleGET);
+export const PUT=withAdminAccess(handlePUT);
+export const POST=withAdminAccess(handlePOST);
+export const DELETE=withAdminAccess(handleDELETE);

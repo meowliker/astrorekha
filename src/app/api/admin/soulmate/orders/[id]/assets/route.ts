@@ -1,9 +1,10 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { soulmateAdmin, validSoulmateId } from "@/lib/soulmate-admin";
 import { SKETCH_BUCKET } from "@/lib/soulmate-fulfillment";
 export const dynamic = "force-dynamic";
-export async function GET(request: NextRequest, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
+async function handleGET(request: NextRequest, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
   const params = await paramsPromise;
   const db = await soulmateAdmin(request);
   if (!db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest, { params: paramsPromise }: { par
   }));
   return NextResponse.json({ assets }, { headers: { "Cache-Control": "no-store" } });
 }
-export async function POST(request: NextRequest, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
+async function handlePOST(request: NextRequest, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
   const params = await paramsPromise;
   const db = await soulmateAdmin(request);
   if (!db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -45,3 +46,6 @@ export async function POST(request: NextRequest, { params: paramsPromise }: { pa
     return NextResponse.json({ success: true });
   } catch { return NextResponse.json({ error: "Unable to upload file. Please try again." }, { status: 503 }); }
 }
+
+export const GET=withAdminAccess(handleGET);
+export const POST=withAdminAccess(handlePOST);

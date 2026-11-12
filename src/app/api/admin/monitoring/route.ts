@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { readMonitoringAlertsPaused, setMonitoringAlertsPaused } from "@/lib/monitoring-delivery";
@@ -22,7 +23,7 @@ async function authorized(request: NextRequest) {
 const validId = (value: unknown): value is string => typeof value === "string"
   && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   const db = await authorized(request);
   if (!db) return json({ error: "Unauthorized" }, 401);
   const [runs, incidents, destinations, notifications, alertsPaused] = await Promise.all([
@@ -48,7 +49,7 @@ export async function GET(request: NextRequest) {
   });
 }
 
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   const db = await authorized(request);
   if (!db) return json({ error: "Unauthorized" }, 401);
   const body = await request.json().catch(() => null);
@@ -80,7 +81,7 @@ export async function POST(request: NextRequest) {
   return json({ success: true }, 201);
 }
 
-export async function PATCH(request: NextRequest) {
+async function handlePATCH(request: NextRequest) {
   const db = await authorized(request);
   if (!db) return json({ error: "Unauthorized" }, 401);
   const body = await request.json().catch(() => null);
@@ -98,7 +99,7 @@ export async function PATCH(request: NextRequest) {
   return error ? json({ error: "Unable to update destination." }, 500) : json({ success: true });
 }
 
-export async function DELETE(request: NextRequest) {
+async function handleDELETE(request: NextRequest) {
   const db = await authorized(request);
   if (!db) return json({ error: "Unauthorized" }, 401);
   const id = request.nextUrl.searchParams.get("id");
@@ -106,3 +107,8 @@ export async function DELETE(request: NextRequest) {
   const { error } = await db.from("monitoring_destinations").delete().eq("id", id);
   return error ? json({ error: "Unable to remove destination." }, 500) : json({ success: true });
 }
+
+export const GET=withAdminAccess(handleGET);
+export const POST=withAdminAccess(handlePOST);
+export const PATCH=withAdminAccess(handlePATCH);
+export const DELETE=withAdminAccess(handleDELETE);

@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 
 import { getErrorMessage } from "@/lib/error-message";
 import { isSoulmateTransaction } from "@/lib/soulmate-orders";
@@ -334,7 +335,7 @@ function buildUpsellAttachmentSummary(transactions: Array<{
   };
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -634,3 +635,5 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export const GET=withAdminAccess(handleGET);

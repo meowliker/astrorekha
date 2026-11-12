@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { SoulmateCampaignSelectionError } from "@/lib/soulmate-campaigns";
@@ -255,7 +256,7 @@ async function live(supabase: ReturnType<typeof getSupabaseAdmin>, dayMode: Trac
     todayRevenue: payments.reduce((sum, row) => sum + Number(row.amount || 0) / 100, 0), fetchedAt: new Date().toISOString() };
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   try {
     const supabase = getSupabaseAdmin();
     const token = request.headers.get("x-admin-session");
@@ -295,3 +296,5 @@ export async function GET(request: NextRequest) {
     return json({ error: error instanceof Error ? error.message : "Tracking data unavailable" }, 500);
   }
 }
+
+export const GET=withAdminAccess(handleGET);

@@ -1,6 +1,7 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { soulmateAdmin, validSoulmateId } from "@/lib/soulmate-admin";
-export async function POST(request: NextRequest, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
+async function handlePOST(request: NextRequest, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
   const params = await paramsPromise;
   const db = await soulmateAdmin(request);
   if (!db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -12,3 +13,5 @@ export async function POST(request: NextRequest, { params: paramsPromise }: { pa
     return NextResponse.json({ success: true });
   } catch { return NextResponse.json({ error: "Unable to approve order" }, { status: 503 }); }
 }
+
+export const POST=withAdminAccess(handlePOST);

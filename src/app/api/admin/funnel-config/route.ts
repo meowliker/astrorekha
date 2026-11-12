@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 
 import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
@@ -33,7 +34,7 @@ async function saveConfig(config: ReturnType<typeof normalizeLayoutBConfig>) {
   return normalized;
 }
 
-export async function GET() {
+async function handleGET() {
   try {
     const config = await loadConfig();
     return NextResponse.json({ success: true, config });
@@ -43,7 +44,7 @@ export async function GET() {
   }
 }
 
-export async function PUT(request: NextRequest) {
+async function handlePUT(request: NextRequest) {
   try {
     const body = await request.json();
     const config = await saveConfig(body?.config ?? body ?? DEFAULT_LAYOUT_B_CONFIG);
@@ -56,3 +57,6 @@ export async function PUT(request: NextRequest) {
     );
   }
 }
+
+export const GET=withAdminAccess(handleGET);
+export const PUT=withAdminAccess(handlePUT);

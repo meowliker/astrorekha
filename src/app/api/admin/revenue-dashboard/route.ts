@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { savedRevenueReport } from "@/lib/revenue-cache";
 import { filterAndSortOrders } from "@/lib/revenue-table";
 import { NextRequest, NextResponse } from "next/server";
@@ -122,9 +123,12 @@ async function handle(request: NextRequest, refresh = false) {
   }
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   return handle(request);
 }
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   return handle(request, true);
 }
+
+export const GET=withAdminAccess(handleGET);
+export const POST=withAdminAccess(handlePOST);

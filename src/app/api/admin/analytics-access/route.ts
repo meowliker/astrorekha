@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { soulmateAdmin } from "@/lib/soulmate-admin";
 import {
@@ -7,7 +8,7 @@ import {
 export const dynamic = "force-dynamic";
 const json = (body: object, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "private, no-store" } });
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   try {
     const db = await soulmateAdmin(request);
     if (!db) return json({ error: "Unauthorized." }, 401);
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   if (!sameViewerOrigin(request)) return json({ error: "Invalid request origin." }, 403);
   try {
     const db = await soulmateAdmin(request);
@@ -50,3 +51,6 @@ export async function POST(request: NextRequest) {
     return json({ error: "Unable to save analytics access." }, 503);
   }
 }
+
+export const GET=withAdminAccess(handleGET);
+export const POST=withAdminAccess(handlePOST);

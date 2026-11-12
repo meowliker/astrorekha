@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { isSoulmateTransaction } from "@/lib/soulmate-orders";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -907,7 +908,7 @@ async function syncProfitSheetRows(
   return result;
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -1081,3 +1082,5 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export const GET=withAdminAccess(handleGET);

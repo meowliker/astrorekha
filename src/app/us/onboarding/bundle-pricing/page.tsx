@@ -88,7 +88,7 @@ const scrollingEmails = [
 
 export default function BundlePricingPage() {
   const googleAds = useGoogleAdsExperience();
-  const { pricing, enabled } = usePricing();
+  const { pricing, enabled, defaultBundle, isLoading } = usePricing(true);
   const allBundlePlans = pricing.bundles;
 
   const [selectedPlan, setSelectedPlan] = useState<string>("");
@@ -155,13 +155,14 @@ export default function BundlePricingPage() {
   }, [googleAds]);
 
   useEffect(() => {
-    if (!paywallAssignmentReady || bundlePlans.length === 0) return;
+    if (isLoading || !paywallAssignmentReady || bundlePlans.length === 0) return;
     setSelectedPlan((current) => {
       if (bundlePlans.some((plan) => plan.id === current)) return current;
+      if(defaultBundle && bundlePlans.some(plan=>plan.id===defaultBundle)) return defaultBundle;
       const defaultIndex = paywallVariant === "B" ? 3 : 2;
       return bundlePlans[defaultIndex]?.id || bundlePlans[bundlePlans.length - 1]?.id || bundlePlans[0].id;
     });
-  }, [bundlePlans, paywallAssignmentReady, paywallVariant]);
+  }, [bundlePlans, paywallAssignmentReady, paywallVariant, defaultBundle, isLoading]);
 
   // Keep the checkout CTA visible while the user is selecting bundles.
   useEffect(() => {

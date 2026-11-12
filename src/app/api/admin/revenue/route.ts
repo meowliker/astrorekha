@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -249,7 +250,7 @@ function buildUpsellAttachmentSummary(sales: Record<string, unknown>[]) {
   };
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   try {
     // Create fresh Supabase client directly - no caching
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -630,3 +631,5 @@ export async function GET(request: NextRequest) {
   }
 }
 // Force redeploy Mon Mar  9 17:24:14 IST 2026
+
+export const GET=withAdminAccess(handleGET);

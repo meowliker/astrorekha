@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 
 import type { AbTestConfig } from "@/lib/ab-test-types";
 import { NextRequest, NextResponse } from "next/server";
@@ -435,7 +436,7 @@ export async function GET(request: NextRequest) {
 }
 
 // Update test configuration (admin only)
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   try {
     const body = await request.json();
     const { testId, variants, status, name } = body;
@@ -488,3 +489,5 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export const POST=withAdminAccess(handlePOST,"astrorekha");

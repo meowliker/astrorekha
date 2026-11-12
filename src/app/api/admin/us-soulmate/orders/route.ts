@@ -1,8 +1,9 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { soulmateAdmin } from "@/lib/us-soulmate-admin";
 import { refreshSoulmateDeliveryStatuses } from "@/lib/us-soulmate-fulfillment";
 export const dynamic = "force-dynamic";
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   const db = await soulmateAdmin(request);
   if (!db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
@@ -25,3 +26,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ deliverySyncWarning: syncFailures ? "Email status could not be refreshed from Brevo. Showing saved status; try Refresh again." : null, orders: result.data.map(({ attribution, ...row }) => ({ ...row, checkout_environment: ["local", "preview", "production"].includes(attribution?.trackingEnvironment) ? attribution.trackingEnvironment : "unknown", generation: jobs.data?.find((j) => j.order_id === row.id) || null, email: emails.data?.find((e) => e.order_id === row.id) || null, assets: assets.data?.filter((a) => a.order_id === row.id) || [] })), total: result.count, page: Math.floor(page) }, { headers: { "Cache-Control": "no-store" } });
   } catch { return NextResponse.json({ error: "Unable to load soulmate orders. Check the database migration and try again." }, { status: 503 }); }
 }
+
+export const GET=withAdminAccess(handleGET);

@@ -374,17 +374,19 @@ export function buildRevenueDashboard(input: {
   pricing: PricingConfig;
   range: ReturnType<typeof resolveRevenueRange>;
   attribution: "first" | "last";
+  currency?: "INR" | "USD";
   warnings?: string[];
   usage?: UsageSource | null;
 }) {
   const { range, pricing } = input;
+  const currency = input.currency || "INR";
   const deduped = deduplicatePayments(input.payments);
   const inRange = (p: { created_at: string }) =>
     Date.parse(p.created_at) >= Date.parse(range.from) &&
     Date.parse(p.created_at) < Date.parse(range.to);
   const scoped = deduped.payments.filter(inRange);
   const excluded = scoped.filter(
-    (p) => !Number.isSafeInteger(Number(p.amount)) || p.currency !== "INR",
+    (p) => !Number.isSafeInteger(Number(p.amount)) || p.currency !== currency,
   );
   const payments = scoped.filter((p) => !excluded.includes(p));
   const events = input.events?.filter(inRange) ?? null;
@@ -709,7 +711,7 @@ export function buildRevenueDashboard(input: {
   const usage = buildRevenueUsage(
     deduped.payments
       .filter(
-        (p) => Number.isSafeInteger(Number(p.amount)) && p.currency === "INR",
+        (p) => Number.isSafeInteger(Number(p.amount)) && p.currency === currency,
       )
       .map((p) => ({ ...p, payment_status: paymentState(p) })),
     input.usage || null,
@@ -742,7 +744,7 @@ export function buildRevenueDashboard(input: {
     );
   if (excluded.length)
     warnings.push(
-      `${excluded.length} rows excluded for invalid amounts or non-INR / missing currency; no exchange rate is assumed.`,
+      `${excluded.length} rows excluded for invalid amounts or non-${currency} / missing currency; no exchange rate is assumed.`,
     );
   if (totals.unknown)
     warnings.push(

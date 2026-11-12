@@ -1,0 +1,3 @@
+import {NextRequest,NextResponse} from 'next/server';
+import {readAdminAccess,adminToken,ADMIN_COOKIE} from '@/lib/admin-access';
+export async function GET(req:NextRequest){try{const access=await readAdminAccess(req);if(!access)return NextResponse.json({error:'Sign in to admin'},{status:401});const response=NextResponse.json(access,{headers:{'Cache-Control':'private, no-store'}});response.cookies.set(ADMIN_COOKIE,adminToken(req),{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'strict',path:'/',maxAge:86400});return response;}catch{return NextResponse.json({error:'Access service unavailable'},{status:503});}}

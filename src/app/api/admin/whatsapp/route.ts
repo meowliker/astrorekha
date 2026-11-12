@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { resendInvoiceDeliveryWhatsappMessage } from "@/lib/whatsapp-invoice";
@@ -90,7 +91,7 @@ function formatMessage(row: WhatsappMessageRow) {
   };
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const session = await assertAdminSession(searchParams.get("token"));
@@ -154,7 +155,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
     const session = await assertAdminSession(cleanText(body.token));
@@ -174,3 +175,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const GET=withAdminAccess(handleGET);
+export const POST=withAdminAccess(handlePOST);

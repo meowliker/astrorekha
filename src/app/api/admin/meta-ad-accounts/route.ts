@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 
 import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
@@ -99,7 +100,7 @@ async function assertAdminSession(request: NextRequest) {
   return { supabase, error: null };
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   try {
     const { supabase, error } = await assertAdminSession(request);
     if (error) return error;
@@ -144,7 +145,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function PUT(request: NextRequest) {
+async function handlePUT(request: NextRequest) {
   try {
     const { supabase, error } = await assertAdminSession(request);
     if (error) return error;
@@ -185,3 +186,6 @@ export async function PUT(request: NextRequest) {
     );
   }
 }
+
+export const GET=withAdminAccess(handleGET);
+export const PUT=withAdminAccess(handlePUT);

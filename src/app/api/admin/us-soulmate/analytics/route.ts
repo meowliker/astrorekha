@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { usGABounceRate } from "@/lib/us-soulmate-ga-report";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -7,7 +8,7 @@ import { US_SOULMATE_FUNNEL, US_SOULMATE_ORDERS_TABLE } from "@/lib/us-soulmate-
 import { analyticsRange, analyticsToday, defaultAnalyticsStart } from "@/lib/us-soulmate-analytics-range";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   const db = getSupabaseAdmin({ fresh: true });
   const token = request.headers.get("authorization")?.replace(/^Bearer /, "");
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -44,3 +45,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ...summarizeSoulmateAnalytics(events, orders), bounce: await usGABounceRate(startDate, endDate), startDate, endDate, startAt: range.start, endAt: range.end }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load report" }, { status: 503 }); }
 }
+
+export const GET=withAdminAccess(handleGET);

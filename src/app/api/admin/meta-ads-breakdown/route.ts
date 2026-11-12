@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 
 import type { MetaActionValue, MetaReportingRow, MetaReportingResponse } from "@/lib/meta-api-types";
 
@@ -725,7 +726,7 @@ function buildInsightsUrl(
   return `${META_BASE_URL}/act_${accountId}/insights?${params.toString()}`;
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   try {
     const supabase = getSupabaseAdmin();
 
@@ -1338,3 +1339,5 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export const GET=withAdminAccess(handleGET);

@@ -1,3 +1,4 @@
+import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { jsPDF } from "jspdf";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -947,7 +948,7 @@ function generatePdf(invoice: InvoicePayload): ArrayBuffer {
   return doc.output("arraybuffer");
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const token = searchParams.get("token") || "";
@@ -981,3 +982,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
   }
 }
+
+export const GET=withAdminAccess(handleGET);
