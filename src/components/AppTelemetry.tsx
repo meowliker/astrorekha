@@ -7,7 +7,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { MarketingBoundary } from "./MarketingBoundary";
 
 const privateAnalyticsPath = (path: string) =>
-  /^\/(partner-analytics|admin\/analytics-access)\/?$/.test(path);
+  /^\/(support(?:\/.*)?|partner-analytics|admin\/analytics-access)\/?$/.test(path);
 
 export function AppTelemetry({ children }: { children: ReactNode }) {
   const privatePage = privateAnalyticsPath(usePathname());
