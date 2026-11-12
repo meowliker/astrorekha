@@ -62,6 +62,10 @@
     {
       "path": "/api/cron/reconcile-pinelabs-payments",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-us-main-payments",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

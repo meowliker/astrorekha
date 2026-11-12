@@ -1,0 +1,341 @@
+{
+  "bundles": [
+    {
+      "id": "palm-reading",
+      "name": "Palm Reading",
+      "price": 559,
+      "displayPrice": 559,
+      "originalPrice": 699,
+      "discount": "20% OFF",
+      "description": "Personalized palm reading report delivered instantly.",
+      "features": [
+        "palmReading"
+      ],
+      "featureList": [
+        "Complete palm line analysis",
+        "Life, heart, head line insights",
+        "Personality traits revealed"
+      ],
+      "popular": false,
+      "limitedOffer": false,
+      "active": true
+    },
+    {
+      "id": "palm-birth",
+      "name": "Palm + Birth Chart",
+      "price": 839,
+      "displayPrice": 839,
+      "originalPrice": 1199,
+      "discount": "30% OFF",
+      "description": "Deep palm insights plus your full zodiac reading.",
+      "features": [
+        "palmReading",
+        "birthChart"
+      ],
+      "featureList": [
+        "Everything in Palm Reading",
+        "Complete birth chart analysis",
+        "Planetary positions & houses"
+      ],
+      "popular": true,
+      "limitedOffer": false,
+      "active": true
+    },
+    {
+      "id": "palm-birth-compat",
+      "name": "Palm + Birth Chart + Compatibility Report + Future Partner Report",
+      "price": 1599,
+      "displayPrice": 1599,
+      "originalPrice": 3199,
+      "discount": "50% OFF",
+      "description": "Complete cosmic package with compatibility + future partner report.",
+      "features": [
+        "palmReading",
+        "birthChart",
+        "compatibilityTest",
+        "futurePartnerReport"
+      ],
+      "featureList": [
+        "Everything in Palm + Birth Chart",
+        "Full compatibility analysis",
+        "Future partner report"
+      ],
+      "popular": false,
+      "limitedOffer": true,
+      "active": false
+    },
+    {
+      "id": "palm-birth-sketch",
+      "name": "Palm + Birth Chart + Soulmate Sketch + Future Partner Report",
+      "price": 1599,
+      "displayPrice": 1599,
+      "originalPrice": 3199,
+      "discount": "50% OFF",
+      "description": "Palm reading + birth chart + soulmate sketch + future partner report.",
+      "features": [
+        "palmReading",
+        "birthChart",
+        "soulmateSketch",
+        "futurePartnerReport"
+      ],
+      "featureList": [
+        "Everything in Palm + Birth Chart",
+        "One AI soulmate sketch",
+        "Future partner report"
+      ],
+      "popular": false,
+      "limitedOffer": true,
+      "active": true
+    },
+    {
+      "id": "palm-birth-sketch-aura-astro",
+      "name": "Cosmic Bundle",
+      "price": 2599,
+      "displayPrice": 2599,
+      "originalPrice": 5199,
+      "discount": "50% OFF",
+      "description": "All premium reports plus Aura Color Quiz, Astrocartography, and Past Life Report.",
+      "features": [
+        "palmReading",
+        "birthChart",
+        "soulmateSketch",
+        "futurePartnerReport",
+        "auraColorReport",
+        "astrocartographyReport",
+        "pastLifeReport"
+      ],
+      "featureList": [
+        "Everything in Palm + Birth Chart + Soulmate Sketch + Future Partner Report",
+        "Aura Color Quiz",
+        "Astrocartography map",
+        "Past Life Report",
+        "20 questions to chat with Elysia"
+      ],
+      "popular": false,
+      "limitedOffer": false,
+      "active": false
+    }
+  ],
+  "upsells": [
+    {
+      "id": "2026-predictions",
+      "name": "2026 Future Predictions",
+      "price": 499,
+      "displayPrice": 499,
+      "originalPrice": 999,
+      "discount": "50% OFF",
+      "description": "Detailed predictions for your 2026 journey.",
+      "feature": "prediction2026",
+      "active": true
+    },
+    {
+      "id": "compatibility",
+      "name": "Compatibility Report",
+      "price": 499,
+      "displayPrice": 499,
+      "originalPrice": 999,
+      "discount": "50% OFF",
+      "description": "Check your love match and relationship chemistry.",
+      "feature": "compatibilityTest",
+      "active": true
+    },
+    {
+      "id": "birth-chart",
+      "name": "Birth Chart Report",
+      "price": 499,
+      "displayPrice": 499,
+      "originalPrice": 999,
+      "discount": "50% OFF",
+      "description": "Unlock your complete astrological blueprint.",
+      "feature": "birthChart",
+      "active": true
+    },
+    {
+      "id": "soulmate-sketch",
+      "name": "Soulmate Sketch",
+      "price": 499,
+      "displayPrice": 499,
+      "originalPrice": 999,
+      "discount": "50% OFF",
+      "description": "Generate your one-time AI soulmate portrait.",
+      "feature": "soulmateSketch",
+      "active": true
+    },
+    {
+      "id": "past-life",
+      "name": "Past Life Report",
+      "price": 499,
+      "displayPrice": 499,
+      "originalPrice": 999,
+      "discount": "50% OFF",
+      "description": "Reveal your symbolic past-life archetype, karmic pattern, and soul lesson.",
+      "feature": "pastLifeReport",
+      "active": true
+    },
+    {
+      "id": "numerology",
+      "name": "Numerology Report",
+      "price": 499,
+      "displayPrice": 499,
+      "originalPrice": 999,
+      "discount": "50% OFF",
+      "description": "Decode your core numbers, strengths, timing, and personal remedies.",
+      "feature": "numerologyReport",
+      "active": true
+    },
+    {
+      "id": "spirit-animal",
+      "name": "Spirit Animal Report",
+      "price": 499,
+      "displayPrice": 499,
+      "originalPrice": 999,
+      "discount": "50% OFF",
+      "description": "Reveal your spirit animal and discover its guidance.",
+      "feature": "spiritAnimalReport",
+      "active": true
+    },
+    {
+      "id": "witch-archetype",
+      "name": "Witch Archetype Report",
+      "price": 499,
+      "displayPrice": 499,
+      "originalPrice": 999,
+      "discount": "50% OFF",
+      "description": "Explore your symbolic archetype, gifts, and growth practices.",
+      "feature": "witchArchetypeReport",
+      "active": true
+    }
+  ],
+  "reports": [
+    {
+      "id": "report-2026",
+      "name": "2026 Future Predictions",
+      "price": 582,
+      "originalPrice": 999,
+      "feature": "prediction2026",
+      "active": true
+    },
+    {
+      "id": "report-birth-chart",
+      "name": "Birth Chart Report",
+      "price": 582,
+      "originalPrice": 999,
+      "feature": "birthChart",
+      "active": true
+    },
+    {
+      "id": "report-compatibility",
+      "name": "Compatibility Report",
+      "price": 582,
+      "originalPrice": 999,
+      "feature": "compatibilityTest",
+      "active": true
+    },
+    {
+      "id": "report-soulmate-sketch",
+      "name": "Soulmate Sketch",
+      "price": 582,
+      "originalPrice": 999,
+      "feature": "soulmateSketch",
+      "active": true
+    },
+    {
+      "id": "report-future-partner",
+      "name": "Future Partner Report",
+      "price": 582,
+      "originalPrice": 999,
+      "feature": "futurePartnerReport",
+      "active": true
+    },
+    {
+      "id": "report-aura-color",
+      "name": "Aura Color Quiz",
+      "price": 582,
+      "originalPrice": 999,
+      "feature": "auraColorReport",
+      "active": true
+    },
+    {
+      "id": "report-astrocartography",
+      "name": "Astrocartography",
+      "price": 582,
+      "originalPrice": 999,
+      "feature": "astrocartographyReport",
+      "active": true
+    },
+    {
+      "id": "report-past-life",
+      "name": "Past Life Report",
+      "price": 582,
+      "originalPrice": 999,
+      "feature": "pastLifeReport",
+      "active": true
+    },
+    {
+      "id": "report-numerology",
+      "name": "Numerology Report",
+      "price": 582,
+      "originalPrice": 999,
+      "feature": "numerologyReport",
+      "active": true
+    },
+    {
+      "id": "report-spirit-animal",
+      "name": "Spirit Animal Report",
+      "price": 582,
+      "originalPrice": 999,
+      "feature": "spiritAnimalReport",
+      "active": true
+    },
+    {
+      "id": "report-vastu-shastra-guide",
+      "name": "Complete Vastu Shastra Guide Ebook",
+      "price": 297,
+      "originalPrice": 999,
+      "feature": "vastuShastraGuide",
+      "active": true
+    },
+    {
+      "id": "report-witch-archetype",
+      "name": "Witch Archetype Report",
+      "price": 582,
+      "originalPrice": 999,
+      "feature": "witchArchetypeReport",
+      "active": true
+    }
+  ],
+  "coinPackages": [
+    {
+      "id": "coins-50",
+      "coins": 45,
+      "price": 199,
+      "displayPrice": 416,
+      "originalPrice": 500,
+      "active": true
+    },
+    {
+      "id": "coins-150",
+      "coins": 150,
+      "price": 509,
+      "displayPrice": 1082,
+      "originalPrice": 1500,
+      "active": true
+    },
+    {
+      "id": "coins-300",
+      "coins": 300,
+      "price": 839,
+      "displayPrice": 1666,
+      "originalPrice": 2500,
+      "active": true
+    },
+    {
+      "id": "coins-500",
+      "coins": 450,
+      "price": 1199,
+      "displayPrice": 2499,
+      "originalPrice": 3500,
+      "active": true
+    }
+  ]
+}

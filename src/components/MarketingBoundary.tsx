@@ -8,12 +8,23 @@ import { GoogleTagManager } from "./GoogleTagManager";
 import { Clarity } from "./Clarity";
 import { trackPixelEvent as trackUSPixelEvent } from "@/lib/us-soulmate-pixel";
 
+import {isCustomerAccountPath as isAccount} from '@/lib/customer-account-path';
+import {useCustomerCommerce} from '@/hooks/useCustomerCommerce';
+import { USMainMarketing } from './us-main/Marketing';
+const isUSMain = (path: string) => path === '/us' || path.startsWith('/us/onboarding') || path === '/us/payment';
+const category = (path: string) => isAccount(path)?'account':isUSMain(path) ? 'us_main' : isUS(path) ? 'us_soulmate' : 'normal';
 const isUS = (path: string) => path === "/us/soulmate" || path.startsWith("/us/soulmate/");
 
+function AccountMarketing(){
+ const commerce=useCustomerCommerce();
+ if(!commerce.ready)return null;
+ return commerce.isUS?<USMainMarketing />:<><GoogleTagManager /><MetaPixel /><GoogleAnalytics /><Clarity /></>;
+}
 export function MarketingBoundary() {
   const pathname = usePathname();
   const us = isUS(pathname);
   const initialUS = useRef(us).current;
+  const initialCategory = useRef(category(pathname)).current;
   const previousPath = useRef(pathname);
   useEffect(() => {
     const changed = previousPath.current !== pathname;
@@ -28,7 +39,7 @@ export function MarketingBoundary() {
       const link = event.target instanceof Element ? event.target.closest("a[href]") as HTMLAnchorElement | null : null;
       if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || link.hasAttribute("download") || (link.target && link.target !== "_self")) return;
       const url = new URL(link.href, window.location.href);
-      if (url.origin === window.location.origin && isUS(url.pathname) !== initialUS) {
+      if (url.origin === window.location.origin && category(url.pathname) !== initialCategory) {
         event.preventDefault();
         event.stopPropagation();
         window.location.assign(url.href);
@@ -36,10 +47,12 @@ export function MarketingBoundary() {
     };
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
-  }, [initialUS]);
-  useEffect(() => { if (us !== initialUS) window.location.replace(window.location.href); }, [us, initialUS]);
+  }, [initialCategory]);
+  useEffect(() => { if (category(pathname) !== initialCategory) window.location.replace(window.location.href); }, [pathname, initialCategory]);
   if (pathname === "/page-previews" || pathname.startsWith("/page-previews/")) return null;
-  if (us !== initialUS) return null;
+  if (category(pathname) !== initialCategory) return null;
+  if (isAccount(pathname)) return <AccountMarketing />;
+  if (isUSMain(pathname)) return <USMainMarketing />;
   if (!us) return <><GoogleTagManager /><MetaPixel /><GoogleAnalytics /><Clarity /></>;
   const pixel = process.env.NEXT_PUBLIC_US_SOULMATE_META_PIXEL_ID;
   const ga = process.env.NEXT_PUBLIC_US_SOULMATE_GA_ID;

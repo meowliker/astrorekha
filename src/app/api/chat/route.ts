@@ -1,3 +1,5 @@
+import {activeUsChatPass} from '@/lib/customer-market';
+import {reportSessionUser} from '@/lib/report-session';
 
 import type { ChatReadingContext } from "@/lib/astrology-context-types";
 import { anthropic } from "@/lib/anthropic";
@@ -469,7 +471,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const activeUnlimitedPass = await getActiveUnlimitedChatPass(userId);
+    const activeUnlimitedPass = (userId&&reportSessionUser(request)===userId?await activeUsChatPass(userId):null) || await getActiveUnlimitedChatPass(userId);
     if (!activeUnlimitedPass) {
       const coins = await getUserCoins(userId);
       if (coins < COINS_PER_QUESTION) {
