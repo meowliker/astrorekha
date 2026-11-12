@@ -2,6 +2,7 @@ import {reportSessionUser} from '@/lib/report-session';
 import {customerMarket} from '@/lib/customer-market';
 import {quoteAccountProduct,type AccountPurchaseType} from '@/lib/us-main/account-catalog';
 import crypto from 'crypto';
+import { validateUsTestPromo, US_TEST_PROMO_TAG } from '@/lib/us-main/test-promo';
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { sanitizePaymentAttribution } from '@/lib/attribution';
@@ -31,6 +32,9 @@ export async function POST(req:NextRequest) {
     const type=accountPurchase?body.type as AccountPurchaseType:body.type==='upsell'?'upsell':'bundle';
     const prices=await readPrices();
     const quote=accountPurchase?quoteAccountProduct(type as AccountPurchaseType,body.productId,prices):quoteUsBasket(type==='bundle'?[body.bundleId]:body.offerIds,type as 'bundle'|'upsell',prices);
+    let testPromo=false;
+    try { testPromo=await validateUsTestPromo(body.promoCode,type,quote.cents); }
+    catch(error) { return NextResponse.json({error:error instanceof Error?error.message:'Unable to check testing code'},{status:400}); }
     if(type==='report'&&account&&quote.features.every(f=>account!.unlocked_features?.[f]))return NextResponse.json({error:'This report is already unlocked. Refresh your reports.'},{status:409});
     const parent=type==='upsell'?await ownedOrder(req,body.parentOrderId):null;
     if(type==='upsell' && (!parent?.fulfilled_at || parent.type!=='bundle' || parent.customer_email!==email)) return NextResponse.json({error:'A verified US bundle purchase is required'},{status:403});
@@ -40,26 +44,37 @@ export async function POST(req:NextRequest) {
     const existing=await db.from(ORDER_TABLE).select('*').eq('owner_hash',hash).eq('request_key',body.requestKey).maybeSingle();
     if(existing.error) throw new Error('US order storage unavailable');
     let order:UsOrder=existing.data;
-    if(order && (order.customer_email!==email || order.type!==type || order.amount_cents!==quote.cents || order.line_items.map(p=>p.id).join(',')!==quote.lines.map(p=>p.id).join(','))) return NextResponse.json({error:'Checkout reference belongs to another basket'},{status:409});
+    if(order && (order.customer_email!==email || order.type!==type || Boolean(order.attribution.testPromotion)!==testPromo || order.amount_cents!==quote.cents || order.line_items.map(p=>p.id).join(',')!==quote.lines.map(p=>p.id).join(','))) return NextResponse.json({error:'Checkout reference belongs to another basket'},{status:409});
     if(!order) {
       const {count,error}=await db.from(ORDER_TABLE).select('id',{count:'exact',head:true}).eq('owner_hash',hash).gte('created_at',new Date(Date.now()-3600000).toISOString());
       if(error) throw new Error('US order storage unavailable');
       if((count||0)>=12) return NextResponse.json({error:'Too many checkouts. Please wait before trying again.'},{status:429});
-      const result=await db.from(ORDER_TABLE).insert({id:`us_ar_${crypto.randomBytes(12).toString('hex')}`,owner_hash:hash,request_key:body.requestKey,user_id:account?.id||null,customer_email:email,customer_name:String(body.firstName||'Customer').slice(0,100),type,bundle_id:type==='bundle'?body.bundleId:accountPurchase?body.productId:null,parent_order_id:parent?.id||null,amount_cents:quote.cents,currency:'USD',payment_mode:stripeKey().mode,line_items:quote.lines,fulfillment_features:quote.features,fulfillment_coins:quote.coins,birth_details:normalizeBirthDetailsSnapshot(body.birthDetails||{},'us_main')||{},attribution:{marketing:sanitizePaymentAttribution(body.attribution?.marketing||{}),...soulmateGaIdentity(body.attribution),trackingEnvironment:process.env.VERCEL_ENV||'local',userAgent:(req.headers.get('user-agent')||'').slice(0,512)}}).select('*').single();
+      const result=await db.from(ORDER_TABLE).insert({id:`us_ar_${crypto.randomBytes(12).toString('hex')}`,owner_hash:hash,request_key:body.requestKey,user_id:account?.id||null,customer_email:email,customer_name:String(body.firstName||'Customer').slice(0,100),type,bundle_id:type==='bundle'?body.bundleId:accountPurchase?body.productId:null,parent_order_id:parent?.id||null,amount_cents:quote.cents,currency:'USD',payment_mode:stripeKey().mode,line_items:quote.lines,fulfillment_features:quote.features,fulfillment_coins:quote.coins,birth_details:normalizeBirthDetailsSnapshot(body.birthDetails||{},'us_main')||{},attribution:{...(testPromo?{testPromotion:US_TEST_PROMO_TAG}:{}),marketing:sanitizePaymentAttribution(body.attribution?.marketing||{}),...soulmateGaIdentity(body.attribution),trackingEnvironment:process.env.VERCEL_ENV||'local',userAgent:(req.headers.get('user-agent')||'').slice(0,512)}}).select('*').single();
       if(result.error?.code==='23505') { const raced=await db.from(ORDER_TABLE).select('*').eq('owner_hash',hash).eq('request_key',body.requestKey).single(); if(raced.error) throw new Error('Unable to recover checkout'); order=raced.data; }
       else { if(result.error) throw new Error('Unable to create US order'); order=result.data; }
     }
-    if((account&&order.user_id!==account.id) || order.customer_email!==email || order.type!==type || order.parent_order_id!==(parent?.id||null) || order.amount_cents!==quote.cents || order.line_items.map(p=>p.id).join(',')!==quote.lines.map(p=>p.id).join(',')) return NextResponse.json({error:'Checkout reference belongs to another basket'},{status:409});
+    if((account&&order.user_id!==account.id) || order.customer_email!==email || order.type!==type || order.parent_order_id!==(parent?.id||null) || Boolean(order.attribution.testPromotion)!==testPromo || order.amount_cents!==quote.cents || order.line_items.map(p=>p.id).join(',')!==quote.lines.map(p=>p.id).join(',')) return NextResponse.json({error:'Checkout reference belongs to another basket'},{status:409});
     if(order.fulfilled_at) return setOwner(NextResponse.json({orderId:order.id,url:`/us/payment?order=${order.id}`}),token);
     const origin=checkoutOrigin(req);
     const params=new URLSearchParams({mode:'payment',allow_promotion_codes:'true','adaptive_pricing[enabled]':'false',customer_email:order.customer_email,client_reference_id:order.id,success_url:`${origin}/us/payment?order=${order.id}`,cancel_url:`${origin}/us/payment?order=${order.id}&cancelled=1`,'payment_method_types[0]':'card','metadata[funnel]':'us_main','metadata[order_id]':order.id,'payment_intent_data[metadata][funnel]':'us_main','payment_intent_data[metadata][order_id]':order.id});
     order.line_items.forEach((p,i)=>{params.set(`line_items[${i}][price_data][currency]`,'usd');params.set(`line_items[${i}][price_data][unit_amount]`,String(p.cents));params.set(`line_items[${i}][price_data][product_data][name]`,p.name);params.set(`line_items[${i}][quantity]`,'1');});
+    if(testPromo && !order.stripe_session_id) {
+      // The reusable app code never grants access: Stripe must still capture $1.
+      const coupon=await stripe('/coupons',new URLSearchParams({
+        amount_off:String(order.amount_cents-100),currency:'usd',duration:'once',max_redemptions:'1',
+        name:'US bundle testing discount','metadata[order_id]':order.id,
+      }),`us-main-test-coupon-${order.id}`);
+      if(typeof coupon.id!=='string' || coupon.amount_off!==order.amount_cents-100 || coupon.currency!=='usd') throw new Error('Testing discount mismatch');
+      params.delete('allow_promotion_codes');
+      params.set('discounts[0][coupon]',coupon.id);
+    }
     const session=order.stripe_session_id?await stripe(`/checkout/sessions/${encodeURIComponent(order.stripe_session_id)}`):await stripe('/checkout/sessions',params,`us-main-checkout-${order.id}`);
     if(session.metadata?.order_id!==order.id || session.metadata?.funnel!=='us_main' || (session.amount_subtotal ?? session.amount_total)!==order.amount_cents || session.currency!=='usd' || session.livemode!==(order.payment_mode==='live')) throw new Error('Checkout mismatch');
+    if(testPromo && session.amount_total!==100) throw new Error('Testing checkout total mismatch');
     const saved=await db.from(ORDER_TABLE).update({stripe_session_id:session.id}).eq('id',order.id).is('stripe_session_id',null);
     if(saved.error) throw new Error('Unable to save checkout');
     if(session.status!=='open') return setOwner(NextResponse.json({orderId:order.id,url:`/us/payment?order=${order.id}`}),token);
     if(typeof session.url!=='string'||new URL(session.url).hostname!=='checkout.stripe.com') throw new Error('Invalid Stripe checkout URL');
-    return setOwner(NextResponse.json({orderId:order.id,url:session.url,amount:order.amount_cents/100,currency:'USD'}),token);
+    return setOwner(NextResponse.json({orderId:order.id,url:session.url,amount:session.amount_total/100,currency:'USD'}),token);
   } catch(e) { console.error('[us-main checkout]',e instanceof Error?e.message:'Unavailable'); return NextResponse.json({error:e instanceof Error&&e.message.includes('pricing')?e.message:'Unable to start US checkout. Please try again.'},{status:503}); }
 }

@@ -306,14 +306,18 @@ export default function BundlePricingPage() {
   };
 
   // The popup callback is only a hint. Independently recover payments confirmed by the server.
-  const handlePurchase = async () => {
+  const handlePurchase = async (promoCode?: string) => {
     if (!isPlanSelectionReady || !agreedToTerms || checkoutStartingRef.current) return;
     checkoutStartingRef.current=true; setIsProcessing(true); setPaymentError("");
-    try { await startUsCheckout('bundle', [selectedPlan]); }
+    try { await startUsCheckout('bundle', [selectedPlan], promoCode); }
     catch(e) { setPaymentError(e instanceof Error ? e.message : 'Unable to start checkout'); }
     finally { checkoutStartingRef.current=false; setIsProcessing(false); }
   };
-  const handleCouponUnlock = async () => { setPaymentError("Coupons are not available for US checkout yet."); };
+  const handleCouponUnlock = async () => {
+    if (!couponCode.trim()) { setPaymentError("Enter your testing code first."); return; }
+    if (!agreedToTerms) { setPaymentError("Please agree to the terms before continuing."); return; }
+    await handlePurchase(couponCode.trim());
+  };
 
 
   return (
@@ -550,7 +554,7 @@ export default function BundlePricingPage() {
           className="w-full max-w-sm mb-6"
         >
           <Button
-            onClick={handlePurchase}
+            onClick={() => handlePurchase()}
             disabled={!isPlanSelectionReady || !agreedToTerms || isCheckingCheckout || isProcessing || isRedeemingCoupon}
             className="w-full h-14 text-lg font-semibold"
             size="lg"
@@ -610,11 +614,11 @@ export default function BundlePricingPage() {
                   disabled={isRedeemingCoupon || isProcessing}
                   className="shrink-0"
                 >
-                  {isRedeemingCoupon ? "Applying..." : "Apply"}
+                  {isProcessing ? "Applying..." : "Apply & checkout"}
                 </Button>
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">
-                Coupons are not available for US checkout yet.
+                Enter your testing code here. Review the discounted total on Stripe before paying.
               </p>
             </div>
           )}
@@ -1125,7 +1129,7 @@ export default function BundlePricingPage() {
         >
           <div className="max-w-sm mx-auto">
             <Button
-              onClick={handlePurchase}
+              onClick={() => handlePurchase()}
               disabled={!isPlanSelectionReady || !agreedToTerms || isCheckingCheckout || isProcessing || isRedeemingCoupon}
               className="w-full h-14 text-lg font-semibold"
               size="lg"

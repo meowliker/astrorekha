@@ -4,13 +4,13 @@ import { useOnboardingStore } from './onboarding-store';
 import { trackCheckout } from './analytics';
 import {readUsMainGaIdentity} from './ga-client';
 import { pixelEvents } from './pixel-events';
-export async function startUsCheckout(type:'bundle'|'upsell',ids:string[]){
+export async function startUsCheckout(type:'bundle'|'upsell',ids:string[],promoCode?:string){
  const email=(localStorage.getItem('astrorekha_us_main_email')||'').trim().toLowerCase();
- const basket=JSON.stringify([email,type,ids]);const savedKey='astrorekha_us_main_request';let saved: {basket:string;key:string}|null=null;
+ const basket=JSON.stringify([email,type,ids,...(promoCode?[promoCode.trim().toUpperCase()]:[])]);const savedKey='astrorekha_us_main_request';let saved: {basket:string;key:string}|null=null;
  try{saved=JSON.parse(localStorage.getItem(savedKey)||'null');}catch{}
  const requestKey=saved?.basket===basket?saved.key:crypto.randomUUID();localStorage.setItem(savedKey,JSON.stringify({basket,key:requestKey}));
  const gaIdentity=await readUsMainGaIdentity();
- const response=await fetch('/api/us/main/checkout',{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(30000),body:JSON.stringify({requestKey,email,type,bundleId:ids[0],offerIds:ids,parentOrderId:localStorage.getItem('astrorekha_us_main_main_order'),firstName:localStorage.getItem('astrorekha_us_main_name')||'Customer',birthDetails:useOnboardingStore.getState(),attribution:{marketing:getPaymentAttributionPayload(),...gaIdentity}})});
+ const response=await fetch('/api/us/main/checkout',{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(30000),body:JSON.stringify({requestKey,email,type,...(promoCode?{promoCode:promoCode.trim().toUpperCase()}:{}),bundleId:ids[0],offerIds:ids,parentOrderId:localStorage.getItem('astrorekha_us_main_main_order'),firstName:localStorage.getItem('astrorekha_us_main_name')||'Customer',birthDetails:useOnboardingStore.getState(),attribution:{marketing:getPaymentAttributionPayload(),...gaIdentity}})});
  const data=await response.json();if(!response.ok)throw new Error(data.error||'Unable to start checkout');
  localStorage.setItem('astrorekha_us_main_pending_order',data.orderId);
  if(type==='bundle')localStorage.setItem('astrorekha_us_main_main_order',data.orderId);
