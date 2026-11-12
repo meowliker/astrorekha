@@ -17,6 +17,7 @@ import {
 import type { customerSnapshot } from "@/lib/support/customer";
 import { FEATURES } from "@/lib/support/policy";
 import "./support.css";
+import SupportRules from "./SupportRules";
 type Snapshot = Awaited<ReturnType<typeof customerSnapshot>>;
 type Staff = {
   id: string;
@@ -342,6 +343,7 @@ export default function SupportWorkspace() {
             ["cases", "Support cases", Inbox],
             ["approvals", "Approvals & activity", ClipboardCheck],
             ["access", "Team & Codex", Users],
+            ["rules", "Support Rules", FileText],
           ].map(([key, label, Icon]) => (
             <button
               key={String(key)}
@@ -401,7 +403,9 @@ export default function SupportWorkspace() {
                     ? "Every conversation, in context."
                     : tab === "approvals"
                       ? "Review changes with confidence."
-                      : "Your team, with the right access."}
+                      : tab === "rules"
+                        ? "One current workflow for your team."
+                        : "Your team, with the right access."}
               </h1>
               <p>
                 {tab === "customers"
@@ -427,6 +431,9 @@ export default function SupportWorkspace() {
               open.
             </div>
           )}
+          <div hidden={tab !== "rules"}>
+            <SupportRules owner={staff.role === "owner"} />
+          </div>
           {tab === "customers" && (
             <>
               <form
@@ -1051,9 +1058,9 @@ export default function SupportWorkspace() {
                         </button>
                       </div>
                       <small>
-                        Saved here, not sent. Connected Codex saves the Gmail
-                        draft, adds For Santushti, removes Completed and marks
-                        the handled thread as read.
+                        Saved here, not sent. Connected Codex follows the
+                        current Support Rules to save the Gmail draft, apply
+                        labels and mark handled messages as read.
                       </small>
                     </section>
                   </div>
@@ -1383,8 +1390,16 @@ export default function SupportWorkspace() {
                   <CheckCircle2 size={20} /> Gmail handoff
                 </h2>
                 <p>
+                  <a href="/downloads/astrorekha-support-kit.zip" download>
+                    Download the updated Support Kit
+                  </a>
+                  . Keep your existing .env.support when replacing the kit
+                  files.
+                </p>
+                <p>
                   Connect only <strong>team.astrorekha@gmail.com</strong> in
-                  Codex. Use the support runbook and this API to investigate and
+                  Codex. Load the latest Support Rules with the updated client
+                  before every Gmail run, then use this API to investigate and
                   fix cases.
                 </p>
                 <ol>
@@ -1394,10 +1409,11 @@ export default function SupportWorkspace() {
                     Save a concise, unsent Gmail draft for specific issues.
                   </li>
                   <li>
-                    Apply For Santushti, remove Completed, then mark read.
+                    Apply the current specific-issue label, remove the completed
+                    label, then mark read.
                   </li>
                   <li>
-                    Use For Santushti/Login for routine payment/login cases.
+                    Use the current login label for routine payment/login cases.
                   </li>
                 </ol>
                 <p>Sending remains a human support action in Gmail.</p>

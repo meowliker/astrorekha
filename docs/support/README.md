@@ -12,6 +12,18 @@ The `/support` workspace provides individual staff access to customer investigat
 
 No owner is seeded with a default password. API tokens cannot manage team access or approve sensitive actions, even if issued to an owner. Owner decisions require a same-origin browser session.
 
+## Live Support Rules
+
+Open **Support Rules** in the dashboard. Owners edit the full instructions, label names, required closing/signature and blocked reply topics, add a short change note, then publish. Staff can read rules/history. Published versions are immutable; restoring an old policy publishes a new version. Conflicting owner edits are rejected without losing the local editor text.
+
+The API's fixed permissions remain enforced: this mailbox only, no automatic email sending or refunds, owner approval for sensitive account changes, verified saved reports before availability claims, and no quoted customer history/report PDF attachments. Rules do not create app features or Gmail labels.
+
+At the beginning of **every** Gmail run, between customers, and before Gmail draft/label/read changes, Codex runs `node scripts/support/client.mjs start` and reads the returned version, instructions, settings and safeguards. If it cannot fetch them, it stops. The updated client reads `.env.support` automatically, stores a short-lived rules receipt in `.support-rules-session.json` (mode 0600), and never prints credentials. Customer API operations reject old, expired or different-token receipts; the receipt lasts 30 minutes and becomes invalid immediately when another version is published. A failed operation is not automatically retried.
+
+Gmail is a separate connector: the support server can enforce freshness on its own operations, but Codex must follow the refresh instruction before Gmail changes. Existing personal tokens do not need replacing. Old client copies must be replaced once; they cannot perform customer operations without the new receipt.
+
+Install the kit in a dedicated folder, save only `ASTROREKHA_SUPPORT_TOKEN=...` in its `.env.support`, and use Node.js 20 or newer. Never commit or share `.env.support` or `.support-rules-session.json`. No production environment file is needed.
+
 ## Workflow
 
 Find the customer by exact email, phone number in payment records, user ID, internal payment ID, PayU ID, or gateway transaction reference. Read the full email conversation, including previous replies. Create a support case with the Gmail thread ID, customer ID and evidence. Search by other references if the first search finds nothing; a missing account match does not establish that the customer did not pay.
@@ -42,8 +54,11 @@ The initial implementation is for the **website database**. Android accounts, cr
 
 ## API
 
-All endpoints require an individual `Authorization: Bearer ar_support_…` token, except browser login, invite activation and owner bootstrap. Tokens never authorize existing `/api/admin` endpoints. Browser writes require a matching Origin and use an HttpOnly, Secure, SameSite=Strict cookie. Responses are no-store. Support pages disable marketing/analytics and search indexing.
+Customer endpoints also require the current `X-Support-Rules-Receipt` header, handled by the updated client. All endpoints require an individual `Authorization: Bearer ar_support_…` token, except browser login, invite activation and owner bootstrap. Tokens never authorize existing `/api/admin` endpoints. Browser writes require a matching Origin and use an HttpOnly, Secure, SameSite=Strict cookie. Responses are no-store. Support pages disable marketing/analytics and search indexing.
 
+- `GET rules`: current version, instructions, settings, fixed safeguards and (for an API token) an opaque rules receipt. Use the client `start` command; do not print/store the receipt manually.
+- `GET rules/history?offset=0`: immutable versions, 20 per page.
+- `POST rules`: owner browser only, `{baseVersion, content, settings, changeNote}`. Concurrent edits return 409.
 - `GET me`
 - `GET search?q=<URL-encoded exact identifier>`
 - `GET customers/<userId>`
@@ -67,7 +82,7 @@ Action payloads:
 | `link_payment` | `{paymentId}` | Yes |
 | `reset_quiz` | `{report:"auraColorReport"}` | No; record customer's request |
 
-Run `node scripts/support/client.mjs GET 'search?q=customer%40example.com'`. For writes, put JSON in a local file and pass the filename: `node scripts/support/client.mjs POST actions /path/to/request.json`. Never put credentials in prompts or command arguments.
+Run `node scripts/support/client.mjs start` first. Then run `node scripts/support/client.mjs GET 'search?q=customer%40example.com'`. For writes, put JSON in a local file and pass the filename: `node scripts/support/client.mjs POST actions /path/to/request.json`. Never put credentials in prompts or command arguments.
 
 ## Validation and rollout
 

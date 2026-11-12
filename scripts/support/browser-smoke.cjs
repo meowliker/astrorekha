@@ -104,6 +104,32 @@ const assert = require("assert/strict");
     evidence: [],
     verifiedAt: new Date().toISOString(),
   };
+  let liveRules = {
+    version: 1,
+    content:
+      "Read the entire customer thread and recover verified paid reports from saved data. Never send mail automatically. ".repeat(
+        3,
+      ),
+    settings: {
+      specificLabel: "For Santushti",
+      loginLabel: "For Santushti/Login",
+      completedLabel: "Completed",
+      closing:
+        "Please feel free to reach out to us if you have any questions or concerns.",
+      signature: "Regards,\nTeam AstroRekha",
+      blockedTopics: [
+        "refunds",
+        "failedPayments",
+        "processing",
+        "generationMethods",
+        "palmReplacement",
+      ],
+    },
+    change_note: "Initial rules",
+    published_at: new Date().toISOString(),
+    published_by: "Support Owner",
+  };
+  const ruleHistory = [liveRules];
   let cases = [];
   let requests = [];
   await page.route("**/api/support/**", async (route) => {
@@ -112,7 +138,19 @@ const assert = require("assert/strict");
     const body = route.request().postDataJSON();
     requests.push({ endpoint, body });
     let data = {};
-    if (endpoint === "me") data = { staff };
+    if (endpoint === "rules" && body) {
+      liveRules = {
+        ...liveRules,
+        ...body,
+        version: liveRules.version + 1,
+        change_note: body.changeNote,
+      };
+      ruleHistory.unshift(liveRules);
+      data = liveRules;
+    } else if (endpoint === "rules") data = liveRules;
+    else if (endpoint === "rules/history")
+      data = { versions: ruleHistory, nextOffset: null };
+    else if (endpoint === "me") data = { staff };
     else if (endpoint === "search")
       data = { customers: [customer.user], payments: customer.payments };
     else if (endpoint.startsWith("customers/")) data = customer;
@@ -195,6 +233,78 @@ const assert = require("assert/strict");
   assert.deepEqual(outbound, []);
   await page.getByRole("button", { name: "Team & Codex", exact: true }).click();
   await page.getByRole("heading", { name: "Staff access" }).waitFor();
+  await page
+    .getByRole("button", { name: "Support Rules", exact: true })
+    .click();
+  await page
+    .getByLabel("Support instructions")
+    .fill(liveRules.content + " Use the updated follow-up guidance.");
+  await page
+    .getByLabel("Required closing")
+    .fill("Please contact us with any questions.");
+  await page
+    .getByLabel("Specific-issue label", { exact: true })
+    .fill("For Santushti");
+  await page
+    .getByLabel("Change note")
+    .fill("Update closing and follow-up guidance");
+  await page
+    .getByRole("button", { name: "Publish rules", exact: true })
+    .click();
+  await page.getByText("Live version 2", { exact: true }).waitFor();
+  assert.equal(
+    liveRules.settings.closing,
+    "Please contact us with any questions.",
+  );
+  const oldVersion = page
+    .locator("details")
+    .filter({
+      has: page.locator("summary", { hasText: "Version 1 · Initial rules" }),
+    });
+  await oldVersion.locator("summary").click();
+  await page.getByRole("button", { name: "Use version 1 in editor" }).click();
+  assert.equal(
+    await page.getByLabel("Required closing").inputValue(),
+    "Please feel free to reach out to us if you have any questions or concerns.",
+  );
+  await page
+    .getByRole("button", { name: "Publish rules", exact: true })
+    .click();
+  await page.getByText("Live version 3", { exact: true }).waitFor();
+  assert.equal(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+    true,
+    "Rules mobile overflow",
+  );
+  await page.screenshot({
+    path: "/tmp/astrorekha-support-rules-mobile.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: "/tmp/astrorekha-support-rules-desktop.png",
+    fullPage: true,
+  });
+  staff.role = "support";
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Support Rules", exact: true })
+    .click();
+  await page.getByText("Live version 3", { exact: true }).waitFor();
+  assert.equal(
+    await page.getByLabel("Support instructions").getAttribute("readonly"),
+    "",
+  );
+  assert.equal(
+    await page
+      .getByRole("button", { name: "Publish rules", exact: true })
+      .count(),
+    0,
+  );
+  assert.deepEqual(errors, []);
   await browser.close();
   console.log(
     "PASS: login, customer search, case creation, verified report selection, draft preparation, team screen, desktop/mobile overflow, no analytics or client errors.",

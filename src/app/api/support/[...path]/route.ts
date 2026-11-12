@@ -22,6 +22,13 @@ import {
 } from "@/lib/support/policy";
 import { findCustomers, customerSnapshot } from "@/lib/support/customer";
 import { createAction, decideAction } from "@/lib/support/actions";
+import {
+  currentRules,
+  publishRules,
+  readRules,
+  requireCurrentRules,
+} from "@/lib/support/rules";
+import { SUPPORT_SAFEGUARDS } from "@/lib/support/rules-config";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -143,7 +150,42 @@ async function handle(request: NextRequest) {
       return response;
     }
     const actor = await actorFor(request);
+    if (
+      actor.kind === "api" &&
+      !["me", "rules", "tokens", "logout"].includes(path[0])
+    ) {
+      await requireCurrentRules(request, actor);
+    }
     if (request.method === "GET") {
+      if (path[0] === "rules") {
+        if (path[1] === "history") {
+          const offset = Number(
+            request.nextUrl.searchParams.get("offset") || 0,
+          );
+          if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100000)
+            throw new SupportError("Invalid history offset");
+          const versions =
+            checked(
+              await db()
+                .from("support_rule_versions")
+                .select(
+                  "version,content,settings,change_note,published_at,published_by",
+                )
+                .order("version", { ascending: false })
+                .range(offset, offset + 19),
+            ) || [];
+          return reply({
+            versions,
+            nextOffset: versions.length === 20 ? offset + 20 : null,
+          });
+        }
+        if (path.length !== 1)
+          throw new SupportError("Support endpoint not found", 404);
+        return reply({
+          ...(await readRules(actor)),
+          safeguards: SUPPORT_SAFEGUARDS,
+        });
+      }
       if (path[0] === "me")
         return reply({
           staff: {
@@ -230,6 +272,8 @@ async function handle(request: NextRequest) {
       }
     }
     if (request.method === "POST") {
+      if (path[0] === "rules" && path.length === 1)
+        return reply(await publishRules(actor, body));
       if (path[0] === "logout") {
         checked(
           await db()
@@ -342,6 +386,7 @@ async function handle(request: NextRequest) {
           }
           if (typeof body.issue === "string")
             patch.issue = requireText(body.issue, "issue", 6000);
+          const rules = await currentRules();
           if (body.generateDraft || typeof body.draft === "string") {
             if (!current.customer_id)
               throw new SupportError(
@@ -383,9 +428,10 @@ async function handle(request: NextRequest) {
                   snapshot.user.name,
                   snapshot.user.email,
                   ready.map((r) => r.name),
+                  rules.settings,
                 )
               : String(body.draft);
-            validateDraft(draft);
+            validateDraft(draft, rules.settings);
             if (
               /\b(ready|available|generated|fixed|restored|corrected)\b/i.test(
                 draft,
@@ -409,8 +455,8 @@ async function handle(request: NextRequest) {
             mailbox: SUPPORT_MAILBOX,
             gmail: {
               send: false,
-              label: "For Santushti",
-              removeLabel: "Completed",
+              label: rules.settings.specificLabel,
+              removeLabel: rules.settings.completedLabel,
               markReadAfterDraft: true,
             },
           });
