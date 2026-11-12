@@ -22,6 +22,7 @@ import {
   normalizeBirthDetailsSnapshot,
 } from "@/lib/birth-details";
 import { fetchFromAstroEngine } from "@/lib/astro-client";
+import { extractStoredSignName } from "@/lib/zodiac-utils";
 import { getVedicSignsFromChart } from "@/lib/vedic-signs";
 import { generateFuturePartnerReport } from "@/lib/future-partner-report";
 import {
@@ -74,7 +75,7 @@ export function birthInput(row: Record<string, unknown>) {
 }
 export async function calculateBirth(input: Record<string, unknown>) {
   const snapshot = normalizeBirthDetailsSnapshot(input, "support");
-  if (!snapshot?.completeForBirthChart)
+  if (!snapshot?.completeForBirthChart || !snapshot.hasBirthTime)
     throw new SupportError(
       "Complete birth date, time and place are required. Check the saved profile and payment data first.",
     );
@@ -94,7 +95,8 @@ export async function calculateBirth(input: Record<string, unknown>) {
     );
   return { snapshot, date, time, result, signs };
 }
-async function savedInputs(user: Record<string, unknown>) {
+async function savedInputs(user: Record<string, unknown>, palmOnly = false) {
+  const required = palmOnly ? "completeForPalm" : "completeForBirthChart";
   const profile = checked(
     await db()
       .from("user_profiles")
@@ -156,8 +158,7 @@ async function savedInputs(user: Record<string, unknown>) {
     .slice(0, 2)
     .find(
       (row) =>
-        normalizeBirthDetailsSnapshot(birthInput(row), "support")
-          ?.completeForBirthChart,
+        normalizeBirthDetailsSnapshot(birthInput(row), "support")?.[required],
     );
   let birth = native ? birthInput(native) : null;
   if (!birth) {
@@ -165,8 +166,7 @@ async function savedInputs(user: Record<string, unknown>) {
       ...linked.map(birthInput),
       ...purchases.map((p) => p.birth_details_snapshot),
     ].filter(
-      (s) =>
-        s && normalizeBirthDetailsSnapshot(s, "support")?.completeForBirthChart,
+      (s) => s && normalizeBirthDetailsSnapshot(s, "support")?.[required],
     );
     const distinct = new Map(
       snapshots.map((s) => [
@@ -336,9 +336,8 @@ export async function recoverReport(
       })
       .eq("id", actionId),
   );
-  const inputs = await savedInputs(user);
+  const inputs = await savedInputs(user, key === "palmReading");
   const birthReports = [
-    "palmReading",
     "birthChart",
     "futurePartnerReport",
     "pastLifeReport",
@@ -376,6 +375,25 @@ export async function recoverReport(
     );
   }
   if (key === "palmReading") {
+    const birth = [inputs.profile, user]
+      .filter(Boolean)
+      .map((row) => birthInput(row!))
+      .find((input) => getBirthDateIso(input));
+    const palmDate = birth && getBirthDateIso(birth);
+    if (!birth || !palmDate)
+      throw new SupportError(
+        "The primary account needs its verified birth date saved before Palm Reading recovery.",
+      );
+    let palmSign =
+      extractStoredSignName(inputs.profile?.sun_sign) ||
+      extractStoredSignName(user.sun_sign);
+    const fullBirth = normalizeBirthDetailsSnapshot(birth, "support");
+    if (fullBirth?.completeForBirthChart && fullBirth.hasBirthTime)
+      palmSign = (await calculateBirth(birth)).signs.sun;
+    if (!palmSign)
+      throw new SupportError(
+        "The account has no verified saved Sun sign. Review its birth details before recovery.",
+      );
     const image = await palmImage(userId, inputs.profile, inputs.linked, old);
     const data = await invoke(
       (await import("@/app/api/palm-reading/route")).POST,
@@ -384,8 +402,8 @@ export async function recoverReport(
       {
         userId,
         imageData: image,
-        birthDate: calculated!.date,
-        zodiacSign: calculated!.signs.sun,
+        birthDate: palmDate,
+        zodiacSign: palmSign,
         gender: user.gender,
       },
     );
@@ -399,8 +417,8 @@ export async function recoverReport(
             id: userId,
             reading: data.reading,
             palm_image_url: old?.palm_image_url || image,
-            birth_date: calculated!.date,
-            zodiac_sign: calculated!.signs.sun,
+            birth_date: palmDate,
+            zodiac_sign: palmSign,
             deleted_at: null,
             created_at: new Date().toISOString(),
           },
@@ -471,19 +489,17 @@ export async function recoverReport(
         "Past Life report could not be generated from the saved details",
       );
     checked(
-      await db()
-        .from(spec.table)
-        .upsert(
-          {
-            user_id: userId,
-            status: "complete",
-            birth_data: report.birthData,
-            report_data: report,
-            generated_at: report.generatedAt,
-            updated_at: report.generatedAt,
-          },
-          { onConflict: "user_id" },
-        ),
+      await db().from(spec.table).upsert(
+        {
+          user_id: userId,
+          status: "complete",
+          birth_data: report.birthData,
+          report_data: report,
+          generated_at: report.generatedAt,
+          updated_at: report.generatedAt,
+        },
+        { onConflict: "user_id" },
+      ),
     );
   } else if (key === "astrocartographyReport") {
     const c = calculated!,
@@ -552,21 +568,19 @@ export async function recoverReport(
       throw new SupportError("Astrocartography provider has no usable result");
     const report = buildAstrocartographyReport(provider, birthData);
     checked(
-      await db()
-        .from(spec.table)
-        .upsert(
-          {
-            user_id: userId,
-            status: "complete",
-            birth_data: birthData,
-            provider: "astrologyapi",
-            provider_response: provider,
-            report_data: report,
-            generated_at: report.generatedAt,
-            updated_at: report.generatedAt,
-          },
-          { onConflict: "user_id" },
-        ),
+      await db().from(spec.table).upsert(
+        {
+          user_id: userId,
+          status: "complete",
+          birth_data: birthData,
+          provider: "astrologyapi",
+          provider_response: provider,
+          report_data: report,
+          generated_at: report.generatedAt,
+          updated_at: report.generatedAt,
+        },
+        { onConflict: "user_id" },
+      ),
     );
   } else if (key === "soulmateSketch") {
     let answers = old?.question_answers;

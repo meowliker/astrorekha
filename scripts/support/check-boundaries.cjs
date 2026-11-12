@@ -82,6 +82,10 @@ require("../../src/lib/supabase-admin").getSupabaseAdmin = () => ({
 const { GET, POST } = require("../../src/app/api/support/[...path]/route");
 const { NextRequest } = require("next/server");
 const policy = require("../../src/lib/support/policy");
+const {
+  getBirthTime24,
+  normalizeBirthDetailsSnapshot,
+} = require("../../src/lib/birth-details");
 let count = 0;
 async function request(
   endpoint,
@@ -232,6 +236,41 @@ async function request(
       { status: "complete", sections: { career: "x" } },
       true,
     ),
+    true,
+  );
+  assert.equal(
+    getBirthTime24({
+      birthHour: "12",
+      birthMinute: "00",
+      birthPeriod: "AM",
+      knowsBirthTime: true,
+    }),
+    "00:00",
+  );
+  assert.equal(
+    getBirthTime24({
+      birthHour: "12",
+      birthMinute: "00",
+      birthPeriod: "PM",
+      knowsBirthTime: true,
+    }),
+    "12:00",
+  );
+  assert.equal(
+    getBirthTime24({
+      birthHour: "12",
+      birthMinute: "00",
+      birthPeriod: "PM",
+      knowsBirthTime: false,
+    }),
+    null,
+  );
+  assert.equal(
+    normalizeBirthDetailsSnapshot({
+      birthYear: "2003",
+      birthMonth: "6",
+      birthDay: "28",
+    }).completeForPalm,
     true,
   );
   const text = policy.makeReply("A", "a@example.com", ["Birth Chart"]);
