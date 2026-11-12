@@ -44,9 +44,17 @@ for (const [id, role, kind] of [
     active: id !== "disabled",
   });
 }
+rows.support_staff[0].password_hash = require("bcryptjs").hashSync(
+  "test-only-correct-password",
+  12,
+);
 function query(table) {
   let filters = [];
   const q = {
+    insert(row) {
+      (rows[table] ||= []).push(row);
+      return Promise.resolve({ data: null, error: null });
+    },
     select() {
       return q;
     },
@@ -103,6 +111,37 @@ async function request(
   return response.json();
 }
 (async () => {
+  const signedIn = await POST(
+    new NextRequest("https://astrorekha.com/api/support/login", {
+      method: "POST",
+      headers: {
+        origin: "https://astrorekha.com",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: "staff@example.invalid",
+        password: "test-only-correct-password",
+      }),
+    }),
+  );
+  assert.equal(signedIn.status, 200);
+  const cookie = signedIn.headers.get("set-cookie");
+  assert.match(cookie, /HttpOnly/i);
+  assert.match(cookie, /SameSite=strict/i);
+  assert.match(cookie, /Path=\/api\/support/i);
+  const body = await signedIn.json();
+  assert.equal(body.staff.role, "support");
+  assert.equal(body.staff.password_hash, undefined);
+  const token = cookie.match(/ar_support=([^;]+)/)[1];
+  await request("me", { cookie: token }, 200);
+  await request(
+    "login",
+    {
+      body: { email: "staff@example.invalid", password: "incorrect" },
+      origin: "https://astrorekha.com",
+    },
+    401,
+  );
   await request("me", {}, 401);
   await request("me", { token: "invalid" }, 401);
   await request("me", { token: "disabled" }, 403);
