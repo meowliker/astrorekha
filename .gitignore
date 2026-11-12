@@ -68,3 +68,7 @@ DEPLOYMENT_CHECKLIST.md
 
 # Supabase CLI local project metadata
 /supabase/.temp/
+
+# Local support operator credentials and short-lived policy receipt
+.env.support
+.support-rules-session.json*

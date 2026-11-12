@@ -22,8 +22,21 @@ require("ts-node").register({
   },
 });
 process.env.ANTHROPIC_API_KEY = "test-key-not-used";
+process.env.SUPABASE_SERVICE_ROLE_KEY = "test-rules-signing-key";
 const { digest } = require("../../src/lib/support/auth");
-const rows = { support_sessions: [], support_staff: [] };
+const { DEFAULT_RULE_SETTINGS } = require("../../src/lib/support/rules-config");
+const rulesModule = require("../../src/lib/support/rules");
+const rows = {
+  support_sessions: [],
+  support_staff: [],
+  support_rule_versions: [
+    {
+      version: 1,
+      content: "Initial support instructions ".repeat(8),
+      settings: DEFAULT_RULE_SETTINGS,
+    },
+  ],
+};
 for (const [id, role, kind] of [
   ["staff", "support", "api"],
   ["owner", "owner", "api"],
@@ -58,6 +71,15 @@ function query(table) {
     select() {
       return q;
     },
+    order() {
+      return q;
+    },
+    limit() {
+      return q;
+    },
+    range() {
+      return Promise.resolve({ data: rows[table] || [], error: null });
+    },
     eq(k, v) {
       filters.push((r) => r[k] === v);
       return q;
@@ -89,11 +111,19 @@ const {
 let count = 0;
 async function request(
   endpoint,
-  { token, body, origin, cookie } = {},
+  { token, body, origin, cookie, rulesReceipt = "auto" } = {},
   expected,
 ) {
   const headers = {};
   if (token) headers.authorization = "Bearer ar_support_" + token;
+  if (token && rulesReceipt !== null)
+    headers["x-support-rules-receipt"] =
+      rulesReceipt === "auto"
+        ? rulesModule.issueRulesReceipt(
+            digest("ar_support_" + token),
+            rows.support_rule_versions[0].version,
+          )
+        : rulesReceipt;
   if (origin) headers.origin = origin;
   if (cookie) headers.cookie = "ar_support=" + cookie;
   if (body) headers["content-type"] = "application/json";
@@ -138,6 +168,8 @@ async function request(
   assert.equal(body.staff.password_hash, undefined);
   const token = cookie.match(/ar_support=([^;]+)/)[1];
   await request("me", { cookie: token }, 200);
+  await request("rules",{cookie:token,origin:"https://astrorekha.com",body:{content:"Staff cannot publish"}},403);
+  await request("rules",{cookie:"ar_support_browser",origin:"https://astrorekha.com",body:{baseVersion:1,content:"too short"}},400);
   await request(
     "login",
     {
@@ -193,6 +225,122 @@ async function request(
     403,
   );
   await request("bootstrap", { body: {}, origin: "https://evil.example" }, 403);
+  const live = await request(
+    "rules",
+    { token: "staff", rulesReceipt: null },
+    200,
+  );
+  assert.equal(live.version, 1);
+  assert.ok(live.receipt);
+  assert.equal(live.settings.specificLabel, "For Santushti");
+  await request(
+    "search?q=a%40example.com",
+    { token: "staff", rulesReceipt: null },
+    409,
+  );
+  await request(
+    "cases",
+    {
+      token: "staff",
+      body: { mailbox: "another@gmail.com" },
+      rulesReceipt: live.receipt,
+    },
+    400,
+  );
+  rows.support_rule_versions[0].version = 2;
+  await request(
+    "cases",
+    {
+      token: "staff",
+      body: { mailbox: "another@gmail.com" },
+      rulesReceipt: live.receipt,
+    },
+    409,
+  );
+  await request(
+    "rules",
+    { token: "owner", body: { content: "Cannot publish from API" } },
+    403,
+  );
+  const receipt = rulesModule.issueRulesReceipt(
+    digest("ar_support_staff"),
+    2,
+    1000000,
+  );
+  assert.equal(
+    rulesModule.validRulesReceipt(
+      receipt,
+      digest("ar_support_staff"),
+      2,
+      1001000,
+    ),
+    true,
+  );
+  assert.equal(
+    rulesModule.validRulesReceipt(
+      receipt,
+      digest("ar_support_owner"),
+      2,
+      1001000,
+    ),
+    false,
+  );
+  assert.equal(
+    rulesModule.validRulesReceipt(
+      receipt,
+      digest("ar_support_staff"),
+      3,
+      1001000,
+    ),
+    false,
+  );
+  assert.equal(
+    rulesModule.validRulesReceipt(
+      receipt,
+      digest("ar_support_staff"),
+      2,
+      3000000,
+    ),
+    false,
+  );
+  assert.equal(
+    rulesModule.validRulesReceipt(
+      receipt + "x",
+      digest("ar_support_staff"),
+      2,
+      1001000,
+    ),
+    false,
+  );
+  assert.throws(() =>
+    rulesModule.validateRuleSettings({
+      ...DEFAULT_RULE_SETTINGS,
+      specificLabel: "INBOX",
+    }),
+  );
+  assert.throws(() =>
+    rulesModule.validateRuleSettings({
+      ...DEFAULT_RULE_SETTINGS,
+      specificLabel: DEFAULT_RULE_SETTINGS.loginLabel,
+    }),
+  );
+  const custom = {
+    ...DEFAULT_RULE_SETTINGS,
+    closing: "Contact our team with any questions.",
+    signature: "Thanks, AstroRekha Support",
+    blockedTopics: [],
+  };
+  const customReply = policy.makeReply(
+    "A",
+    "a@example.com",
+    ["Birth Chart"],
+    custom,
+  );
+  policy.validateDraft(customReply, custom);
+  assert.ok(customReply.includes(custom.closing));
+  assert.ok(!customReply.includes(policy.CLOSING));
+  policy.validateDraft(customReply + "\nRefund", custom);
+  assert.throws(() => policy.validateDraft(customReply, DEFAULT_RULE_SETTINGS));
   assert.throws(() => policy.identifier("id,role.eq.owner"));
   assert.throws(() =>
     policy.emailAddress("x@example.com\nBcc: bad@example.com"),
@@ -283,7 +431,13 @@ async function request(
     "We can replace your palm",
   ])
     assert.throws(() =>
-      policy.validateDraft(prohibited + "\n" + policy.CLOSING),
+      policy.validateDraft(
+        prohibited +
+          "\n" +
+          policy.CLOSING +
+          "\n" +
+          DEFAULT_RULE_SETTINGS.signature,
+      ),
     );
   console.log(
     `PASS: ${count} API boundary checks; report readiness, input validation and reply-policy checks.`,

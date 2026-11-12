@@ -692,3 +692,17 @@
     flex-wrap: wrap;
   }
 }
+
+.support-rules { display: grid; gap: 24px; }
+.support-rules-meta { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:14px 0; color:#476467; }
+.support-rules .support-rules-editor { min-height:500px; font-family:inherit; line-height:1.65; }
+.support-rules pre { white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; line-height:1.6; background:#f3f7f7; border-radius:10px; padding:16px; }
+.support-rules-version { border-top:1px solid #dbe5e5; padding:16px 0; }
+.support-rules-topics { border:1px solid #dbe5e5; border-radius:10px; margin:16px 0; padding:16px; }
+.support-rules-topics label { display:flex; align-items:center; gap:10px; }
+.support-rules-topics input { width:auto; }
+.support-rules .support-two-col { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; }
+
+.support-rule-settings-history { display:grid; grid-template-columns:minmax(120px,1fr) 2fr; gap:10px 16px; margin:16px 0; }
+.support-rule-settings-history dt { font-weight:600; }
+.support-rule-settings-history dd { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }

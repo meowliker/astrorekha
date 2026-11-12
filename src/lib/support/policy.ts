@@ -1,3 +1,4 @@
+import { DEFAULT_RULE_SETTINGS, type RuleSettings } from "./rules-config";
 export const SUPPORT_MAILBOX = "team.astrorekha@gmail.com";
 export const CLOSING =
   "Please feel free to reach out to us if you have any questions or concerns.";
@@ -138,22 +139,40 @@ export function requireBrowserOwner(actor: { role: string; kind: string }) {
   if (actor.role !== "owner" || actor.kind !== "browser")
     throw new SupportError("Owner browser approval is required", 403);
 }
-export function validateDraft(text: string) {
-  if (text.length > 12000 || !text.includes(CLOSING))
+export function validateDraft(
+  text: string,
+  settings: RuleSettings = DEFAULT_RULE_SETTINGS,
+) {
+  if (
+    text.length > 12000 ||
+    !text.includes(settings.closing) ||
+    !text.includes(settings.signature)
+  )
     throw new SupportError("Include the required customer-support closing");
   if (/(^|\n)\s*>|On .+wrote:|Forwarded message/i.test(text))
     throw new SupportError("Remove quoted customer history from the draft");
-  if (
-    /\brefund\b|payment.{0,25}(failed|failure)|(failed|failure).{0,25}payment|\bprocessing\b|AI.generated|entertainment|replace.{0,30}palm/i.test(
-      text,
-    )
-  )
-    throw new SupportError("Draft conflicts with the support reply rules");
+  const expressions = {
+    refunds: /\brefund\b/i,
+    failedPayments:
+      /payment.{0,25}(failed|failure)|(failed|failure).{0,25}payment/i,
+    processing: /\bprocessing\b/i,
+    generationMethods: /AI.generated|entertainment/i,
+    palmReplacement: /replace.{0,30}palm/i,
+  };
+  if (settings.blockedTopics.some((topic) => expressions[topic].test(text)))
+    throw new SupportError(
+      "Draft conflicts with the current support reply rules",
+    );
 }
-export function makeReply(name: string, email: string, reports: string[]) {
+export function makeReply(
+  name: string,
+  email: string,
+  reports: string[],
+  settings: RuleSettings = DEFAULT_RULE_SETTINGS,
+) {
   if (!reports.length)
     throw new SupportError(
       "No verified reports selected. Investigate before drafting a ready message.",
     );
-  return `Hi ${name || "there"},\n\nYour ${reports.join(", ")} ${reports.length === 1 ? "is" : "are"} available in your AstroRekha account.\n\n1. Open https://astrorekha.com/login.\n2. Sign in using ${email}.\n3. Open Reports and select ${reports.join(" or ")} to view ${reports.length === 1 ? "it" : "them"}.\n\n${CLOSING}\n\nRegards,\nTeam AstroRekha`;
+  return `Hi ${name || "there"},\n\nYour ${reports.join(", ")} ${reports.length === 1 ? "is" : "are"} available in your AstroRekha account.\n\n1. Open https://astrorekha.com/login.\n2. Sign in using ${email}.\n3. Open Reports and select ${reports.join(" or ")} to view ${reports.length === 1 ? "it" : "them"}.\n\n${settings.closing}\n\n${settings.signature}`;
 }
