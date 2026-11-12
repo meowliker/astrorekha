@@ -343,20 +343,8 @@ function Step19Content() {
           body: JSON.stringify({ imageData: palmImage, birthDate, zodiacSign, gender: onboardingData.gender, userId: uid }),
         })
           .then((res) => res.json())
-          .then(async (result) => {
-            if (result.success && result.reading) {
-              await supabase.from("palm_readings").upsert(
-                {
-                  id: uid,
-                  reading: result.reading,
-                  palm_image_url: palmImage,
-                  created_at: new Date().toISOString(),
-                  birth_date: birthDate,
-                  zodiac_sign: zodiacSign,
-                },
-                { onConflict: "id" }
-              );
-            }
+          .then((result) => {
+            if (!result.success) console.error("Palm reading preparation failed; saved photo will be retried on the report page.");
           })
           .catch((err) => console.error("Background palm analysis error:", err));
       }

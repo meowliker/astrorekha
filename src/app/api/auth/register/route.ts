@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { setReportSession } from "@/lib/report-session";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import bcrypt from "bcryptjs";
 import { reconcilePaidPaymentsForEmail } from "@/lib/payment-reconciliation";
@@ -247,7 +248,7 @@ export async function POST(request: NextRequest) {
       })();
     }
 
-    return NextResponse.json({
+    return setReportSession(NextResponse.json({
       success: true,
       user: {
         id: uid,
@@ -258,7 +259,7 @@ export async function POST(request: NextRequest) {
         bundlePurchased: migratedData.bundle_purchased || null,
         unlockedFeatures: migratedData.unlocked_features || {},
       },
-    });
+    }), uid);
   } catch (error: unknown) {
     const message =
       error instanceof Error

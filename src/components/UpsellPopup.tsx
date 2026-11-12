@@ -1,4 +1,7 @@
 "use client";
+import {useCustomerCommerce} from '@/hooks/useCustomerCommerce';
+import {startUsAccountCheckout} from '@/lib/us-main/account-checkout-client';
+import USProductOfferTracker from '@/components/us-main/ProductOfferTracker';
 import type { CheckoutWidgetWindow, PayUBoltResponse, RazorpaySuccess } from "@/lib/checkout-widget-types";
 
 import { openPaytmCheckout } from "@/lib/payment-checkout-browser";
@@ -76,6 +79,7 @@ interface UpsellPopupProps {
 }
 
 export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopupProps) {
+  const commerce=useCustomerCommerce();
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState("");
 
@@ -92,6 +96,8 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
 
     try {
       const reportId = featureToReportId[feature];
+      if(!commerce.ready)throw new Error(commerce.error||'Please wait for account prices.');
+      if(commerce.isUS){await startUsAccountCheckout('report',reportId,commerce.data!.userId);return;}
       const checkoutWhatsappNumber = normalizeIndianWhatsappNumber(
         localStorage.getItem("astrorekha_whatsapp_number")
       );
@@ -208,7 +214,8 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
   };
 
   const featureName = featureNames[feature];
-  const price = featurePrices[feature];
+  const usdProduct=commerce.data?.products.find(p=>p.id===featureToReportId[feature]&&p.type==='report');
+  const price = commerce.isUS ? (usdProduct?.cents ?? 0)/100 : featurePrices[feature];
   const isVastuGuide = feature === "vastuShastraGuide";
   const isAuraColorReport = feature === "auraColorReport";
   const isAstrocartographyReport = feature === "astrocartographyReport";
@@ -238,7 +245,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
 
   return (
     <>
-      <Script src="https://jssdk.payu.in/bolt/bolt.min.js" strategy="afterInteractive" />
+      {commerce.ready&&!commerce.isUS&&<Script src="https://jssdk.payu.in/bolt/bolt.min.js" strategy="afterInteractive" />}
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -255,7 +262,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
             onClick={(e) => e.stopPropagation()}
             className="bg-gradient-to-b from-[#1A1F2E] to-[#0A0E1A] rounded-3xl w-full max-w-sm p-6 border border-white/10"
           >
-            <ProductOfferTracker type="report" id={featureToReportId[feature]} name={featureNames[feature]}/>
+            {commerce.ready&&(commerce.isUS?<USProductOfferTracker type="report" id={featureToReportId[feature]} name={featureNames[feature]}/>:<ProductOfferTracker type="report" id={featureToReportId[feature]} name={featureNames[feature]}/>)}
             {/* Close Button */}
             <button
               onClick={onClose}
@@ -289,22 +296,22 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
                   <span className="truncate text-white font-medium">{displayName}</span>
                 </div>
                 <div className="ml-3 flex-shrink-0 text-right">
-                  <span className="text-white text-xl font-bold">₹{price}</span>
+                  <span className="text-white text-xl font-bold">{!commerce.ready?'Loading…':commerce.isUS?(usdProduct?.cents?'$'+price.toFixed(2):'Unavailable'):'₹'+price}</span>
                 </div>
               </div>
             </div>
 
             {/* Error Message */}
-            {error && (
+            {(error||commerce.error) && (
               <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl">
-                <p className="text-red-400 text-sm text-center">{error}</p>
+                <p className="text-red-400 text-sm text-center">{error||commerce.error}</p>
               </div>
             )}
 
             {/* Purchase Button */}
             <Button
               onClick={handlePurchase}
-              disabled={isProcessing}
+              disabled={isProcessing||!commerce.ready||(commerce.isUS&&(!usdProduct?.cents||!commerce.data?.enabled))}
               className="w-full h-14 px-4 text-base sm:text-lg font-semibold whitespace-nowrap bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
               size="lg"
             >

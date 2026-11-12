@@ -41,6 +41,10 @@ const adminOptions: AdminOption[] = [
     bgColor: "bg-emerald-500/20",
   },
   {
+    id: "us-main", title: "US AstroRekha", description: "US main funnel orders, USD sales and tracking", icon: ShoppingBag,
+    href: "/admin/us-main/orders", color: "text-violet-400", bgColor: "bg-violet-500/20",
+  },
+  {
     id: "revenue",
     title: "Revenue Dashboard",
     description: "View MRR, ARR, subscriptions, transactions, and financial metrics",

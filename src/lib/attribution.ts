@@ -1,4 +1,8 @@
 export type PaymentAttributionPayload = {
+  google_campaign_id?: string;
+  gclid?: string;
+  gbraid?: string;
+  wbraid?: string;
   fbclid?: string;
   fbc?: string;
   fbp?: string;
@@ -43,6 +47,10 @@ export function sanitizePaymentAttribution(input: unknown): PaymentAttributionPa
       : undefined;
 
   const payload: PaymentAttributionPayload = {
+    google_campaign_id: cleanId(raw.google_campaign_id) || undefined,
+    gclid: cleanText(raw.gclid, 512) || undefined,
+    gbraid: cleanText(raw.gbraid, 512) || undefined,
+    wbraid: cleanText(raw.wbraid, 512) || undefined,
     fbclid: cleanText(raw.fbclid, 256) || undefined,
     fbc: cleanText(raw.fbc, 256) || undefined,
     fbp: cleanText(raw.fbp, 256) || undefined,

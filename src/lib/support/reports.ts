@@ -395,6 +395,9 @@ export async function recoverReport(
         "The account has no verified saved Sun sign. Review its birth details before recovery.",
       );
     const image = await palmImage(userId, inputs.profile, inputs.linked, old);
+    // Invalidate the old result before invoking the account route, which otherwise reuses its cache.
+    // The previous content and image remain available in the action audit and source row.
+    if (old) checked(await db().from("palm_readings").update({ deleted_at: new Date().toISOString() }).eq("id", userId));
     const data = await invoke(
       (await import("@/app/api/palm-reading/route")).POST,
       "/api/palm-reading",

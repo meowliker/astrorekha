@@ -19,9 +19,13 @@ import { useUserStore } from "@/lib/user-store";
 import { supabase } from "@/lib/supabase";
 import { generateUserId } from "@/lib/user-profile";
 import Script from "next/script";
+import {useCustomerCommerce} from '@/hooks/useCustomerCommerce';
+import {startUsAccountCheckout} from '@/lib/us-main/account-checkout-client';
+import {trackMarketingEvent as trackUsMarketingEvent} from '@/lib/us-main/events-client';
+import USProductOfferTracker from '@/components/us-main/ProductOfferTracker';
 import { usePricing } from "@/hooks/usePricing";
 import { getPaymentAttributionPayload } from "@/lib/attribution-client";
-import { trackMarketingEvent } from "@/lib/marketing-events-client";
+import { trackMarketingEvent as trackIndianMarketingEvent } from "@/lib/marketing-events-client";
 import { normalizeIndianWhatsappNumber, toPayUPhoneNumber } from "@/lib/whatsapp";
 import { trackCheckout } from "@/lib/analytics";
 import {
@@ -170,9 +174,15 @@ export default function ChatPage() {
   
   // Get dynamic pricing from API
   const { pricing } = usePricing();
+  const commerce=useCustomerCommerce();
+  const usPass=commerce.data?.products.find(p=>p.type==='chat_pass');
+  const trackMarketingEvent=(event:Parameters<typeof trackIndianMarketingEvent>[0])=>{
+    if(!commerce.ready)return Promise.resolve();
+    return commerce.isUS?trackUsMarketingEvent({eventName:event.eventName,productType:event.productType||undefined,productId:event.productId||undefined,productName:event.productName||undefined}):trackIndianMarketingEvent(event);
+  };
   
   // Build question packages from the existing coin pricing model.
-  const questionPackages = pricing?.coinPackages?.filter(p => p.active).map((p, i) => ({
+  const indianQuestionPackages = pricing?.coinPackages?.filter(p => p.active).map((p, i) => ({
     id: i + 1,
     coins: p.coins,
     questions: getQuestionPackageDisplayCount(p.id, p.coins, i),
@@ -188,6 +198,8 @@ export default function ChatPage() {
       packageId,
     };
   });
+
+  const questionPackages=commerce.isUS ? (commerce.data?.products.filter(p=>p.type==='coins').map((p,i)=>({id:i+1,coins:p.coins,questions:Math.floor(p.coins/3),price:(p.cents||0)/100,discount:null,popular:i===1,packageId:p.id}))||[]) : indianQuestionPackages;
 
   const refreshUnlimitedPassStatus = async (userId: string | null = currentUserId) => {
     if (!userId) return null;
@@ -307,6 +319,8 @@ export default function ChatPage() {
     setPurchasingPackage(pkg.id);
 
     try {
+      if(!commerce.ready)throw new Error(commerce.error||'Please wait for account prices.');
+      if(commerce.isUS){await startUsAccountCheckout('coins',pkg.packageId,commerce.data!.userId);return;}
       const checkoutWhatsappNumber = normalizeIndianWhatsappNumber(
         localStorage.getItem("astrorekha_whatsapp_number")
       );
@@ -416,6 +430,8 @@ export default function ChatPage() {
     setPurchasingUnlimitedPass(true);
 
     try {
+      if(!commerce.ready)throw new Error(commerce.error||'Please wait for account prices.');
+      if(commerce.isUS){await startUsAccountCheckout('chat_pass',CHAT_UNLIMITED_PASS_ID,commerce.data!.userId);return;}
       const checkoutWhatsappNumber = normalizeIndianWhatsappNumber(
         localStorage.getItem("astrorekha_whatsapp_number")
       );
@@ -1286,27 +1302,27 @@ export default function ChatPage() {
 
                 <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                   <div className="flex items-end justify-center gap-2">
-                    <span className="text-4xl font-bold text-white">₹{CHAT_UNLIMITED_PASS_PRICE_INR}</span>
+                    <span className="text-4xl font-bold text-white">{!commerce.ready?'Loading…':commerce.isUS?(usPass?.cents?'$'+(usPass.cents/100).toFixed(2):'Unavailable'):'₹'+CHAT_UNLIMITED_PASS_PRICE_INR}</span>
                     <span className="pb-1 text-sm font-medium text-white/50">for 20 minutes</span>
                   </div>
                 </div>
 
                 <AnimatePresence>
-                  {purchaseError && (
+                  {(purchaseError||commerce.error) && (
                     <motion.div
                       initial={{ opacity: 0, y: -8 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -8 }}
                       className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3"
                     >
-                      <p className="text-center text-sm text-red-300">{purchaseError}</p>
+                      <p className="text-center text-sm text-red-300">{purchaseError||commerce.error}</p>
                     </motion.div>
                   )}
                 </AnimatePresence>
 
                 <Button
                   onClick={handlePurchaseUnlimitedPass}
-                  disabled={purchasingUnlimitedPass}
+                  disabled={purchasingUnlimitedPass||!commerce.ready||(commerce.isUS&&(!commerce.data?.enabled||!usPass?.cents))}
                   className="mt-5 h-12 w-full rounded-2xl bg-gradient-to-r from-primary to-purple-600 text-base font-bold text-white hover:from-primary/90 hover:to-purple-600/90"
                 >
                   {purchasingUnlimitedPass ? <Loader2 className="h-5 w-5 animate-spin" /> : "Get Unlimited Chat"}
@@ -1370,14 +1386,14 @@ export default function ChatPage() {
 
               {/* Floating Error Message */}
               <AnimatePresence>
-                {purchaseError && (
+                {(purchaseError||commerce.error) && (
                   <motion.div
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
                     className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl"
                   >
-                    <p className="text-red-400 text-sm text-center">{purchaseError}</p>
+                    <p className="text-red-400 text-sm text-center">{purchaseError||commerce.error}</p>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -1390,14 +1406,14 @@ export default function ChatPage() {
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={() => handlePurchaseQuestions(pkg)}
-                    disabled={purchasingPackage !== null}
+                    disabled={purchasingPackage !== null||!commerce.ready||(commerce.isUS&&(!commerce.data?.enabled||pkg.price<=0))}
                     className={`relative bg-gradient-to-br from-[#1A1F2E] to-[#0F1419] rounded-xl sm:rounded-2xl p-3 sm:p-6 border-2 transition-all ${
                       pkg.popular
                         ? "border-primary shadow-lg shadow-primary/20"
                         : "border-white/10 hover:border-white/20"
                     }`}
                   >
-                    <ProductOfferTracker type="coins" id={pkg.packageId}/>
+                    {commerce.ready&&(commerce.isUS?<USProductOfferTracker type="coins" id={pkg.packageId}/>:<ProductOfferTracker type="coins" id={pkg.packageId}/>)}
                     {/* Discount Badge */}
                     {pkg.discount && (
                       <div className="absolute -top-1.5 -right-1.5 sm:-top-2 sm:-right-2 bg-gradient-to-r from-primary to-purple-600 text-white text-[10px] sm:text-xs font-bold px-2 py-0.5 sm:px-3 sm:py-1 rounded-full shadow-lg">
@@ -1420,7 +1436,7 @@ export default function ChatPage() {
 
                     {/* Price */}
                     <div className="text-center mb-2 sm:mb-4">
-                      <p className="text-white text-lg sm:text-2xl font-bold">₹{pkg.price}</p>
+                      <p className="text-white text-lg sm:text-2xl font-bold">{!commerce.ready?'Loading…':commerce.isUS?(pkg.price>0?'$'+pkg.price.toFixed(2):'Unavailable'):'₹'+pkg.price}</p>
                     </div>
 
                     {/* Buy Button */}
@@ -1451,7 +1467,7 @@ export default function ChatPage() {
       </AnimatePresence>
       </div>
       {/* Load PayU Bolt script only on this page */}
-      <Script src="https://jssdk.payu.in/bolt/bolt.min.js" strategy="afterInteractive" />
+      {commerce.ready&&!commerce.isUS&&<Script src="https://jssdk.payu.in/bolt/bolt.min.js" strategy="afterInteractive" />}
     </div>
   );
 }

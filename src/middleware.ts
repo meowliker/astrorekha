@@ -8,6 +8,7 @@ const ATTRIBUTION_COOKIE_AGE = 30 * 24 * 60 * 60;
 
 function withAttribution(request: NextRequest, response: NextResponse): NextResponse {
   if (request.nextUrl.pathname === "/us/soulmate" || request.nextUrl.pathname.startsWith("/us/soulmate/")) return response;
+  const prefix = /^\/us(?:\/|$)/.test(request.nextUrl.pathname) ? "ar_us_main_utm" : "ar_utm";
   const params = request.nextUrl.searchParams;
   // A touch is a tagged landing, not every later navigation without campaign parameters.
   if (!ATTRIBUTION_KEYS.some((key) => params.has(key))) return response;
@@ -26,10 +27,10 @@ function withAttribution(request: NextRequest, response: NextResponse): NextResp
     secure: process.env.NODE_ENV === "production",
   };
   const value = JSON.stringify(touch);
-  if (!request.cookies.has("ar_utm_first")) {
-    response.cookies.set("ar_utm_first", value, cookieOptions);
+  if (!request.cookies.has(`${prefix}_first`)) {
+    response.cookies.set(`${prefix}_first`, value, cookieOptions);
   }
-  response.cookies.set("ar_utm_last", value, cookieOptions);
+  response.cookies.set(`${prefix}_last`, value, cookieOptions);
   return response;
 }
 

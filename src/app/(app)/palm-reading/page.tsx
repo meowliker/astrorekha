@@ -10,7 +10,6 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Share2, ChevronDown, ChevronUp, Camera, Flashlight, FlashlightOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useOnboardingStore } from "@/lib/onboarding-store";
-import { supabase } from "@/lib/supabase";
 import { calculateZodiacSign, generateUserId } from "@/lib/user-profile";
 import { getBirthDateIso, normalizeBirthDetailsSnapshot } from "@/lib/birth-details";
 import ReportDisclaimer from "@/components/ReportDisclaimer";
@@ -51,15 +50,6 @@ export default function PalmReadingPage() {
   const birthDate = getBirthDateIso({ birthMonth, birthDay, birthYear }) || "";
   const zodiacSign = birthSnapshot?.completeForPalm ? calculateZodiacSign(birthMonth, birthDay) : "";
 
-  const isStoredReadingUsable = (storedBirthDate: unknown): boolean => {
-    const [storedYear, storedMonth, storedDay] = String(storedBirthDate || "").split("-");
-    const storedSnapshot = normalizeBirthDetailsSnapshot(
-      { birthYear: storedYear, birthMonth: storedMonth, birthDay: storedDay },
-      "palm_reading_stored"
-    );
-    return !!storedSnapshot?.completeForPalm;
-  };
-
   useEffect(() => {
     loadExistingReading();
     return () => {
@@ -82,7 +72,7 @@ export default function PalmReadingPage() {
         const elapsedMs = Date.now() - startedAt;
         const elapsedTarget = Math.min(100, Math.floor((elapsedMs / 16000) * 100));
         const next = Math.max(prev + 1, elapsedTarget);
-        return Math.min(100, next);
+        return Math.min(95, next);
       });
     }, 250);
 
@@ -91,40 +81,24 @@ export default function PalmReadingPage() {
 
   const loadExistingReading = async () => {
     try {
-      const userId = generateUserId();
-      const { data: palmData } = await supabase.from("palm_readings").select("*").eq("id", userId).single();
-      
-      if (palmData?.reading && isStoredReadingUsable(palmData.birth_date)) {
-        setReading(palmData.reading);
-        setCapturedImage(palmData.palm_image_url || null);
-        setLoading(false);
+      const response = await fetch("/api/palm-reading", {cache:"no-store"});
+      const result = await response.json();
+      if(!response.ok || !result.success) throw new Error(result.error || "Unable to load your saved reading.");
+      if(result.reading) {
+        setReading(result.reading);
+        setCapturedImage(result.image);
         return;
       }
-      
-      // Check if palm image exists in localStorage (from onboarding)
-      const savedPalmImage = localStorage.getItem("astrorekha_palm_image");
-      if (savedPalmImage) {
+      // Recover the account's stored photo on any device, for both onboarding flows.
+      const savedPalmImage = result.image || localStorage.getItem("astrorekha_palm_image");
+      if(savedPalmImage) {
         setCapturedImage(savedPalmImage);
-        // For Flow B users, auto-analyze if they have a palm image but no reading
-        const flow = localStorage.getItem("astrorekha_onboarding_flow");
-        if (flow === "flow-b" && birthSnapshot?.completeForPalm) {
-          setLoading(false);
-          // Auto-analyze the palm image
-          analyzePalm(savedPalmImage);
-          return;
-        }
+        setLoading(false);
+        await analyzePalm(savedPalmImage, true);
       }
-      
-      setLoading(false);
     } catch (err) {
-      console.error("Failed to load reading:", err);
-      // Still check localStorage as fallback
-      const savedPalmImage = localStorage.getItem("astrorekha_palm_image");
-      if (savedPalmImage) {
-        setCapturedImage(savedPalmImage);
-      }
-      setLoading(false);
-    }
+      setError(err instanceof Error ? err.message : "Unable to load your saved reading. Please retry.");
+    } finally { setLoading(false); }
   };
 
   const startCamera = async () => {
@@ -175,8 +149,8 @@ export default function PalmReadingPage() {
     }
   };
 
-  const analyzePalm = async (imageData: string) => {
-    if (!birthSnapshot?.completeForPalm || !birthDate || !zodiacSign) {
+  const analyzePalm = async (imageData: string, useSavedDetails = false) => {
+    if (!useSavedDetails && (!birthSnapshot?.completeForPalm || !birthDate || !zodiacSign)) {
       setError("Please complete your birth details before generating an accurate palm reading.");
       return;
     }
@@ -191,9 +165,7 @@ export default function PalmReadingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           imageData,
-          birthDate,
-          zodiacSign,
-          gender,
+          ...(useSavedDetails ? {} : {birthDate, zodiacSign, gender}),
           userId: generateUserId(),
         }),
       });
@@ -219,16 +191,7 @@ export default function PalmReadingPage() {
       setAnalysisProgress(100);
       await new Promise((resolve) => setTimeout(resolve, 250));
 
-      // Save to Firestore
-      const userId = generateUserId();
-      await supabase.from("palm_readings").upsert({
-        id: userId,
-        reading: palmReading,
-        palm_image_url: imageData,
-        created_at: new Date().toISOString(),
-        birth_date: birthDate,
-        zodiac_sign: zodiacSign,
-      }, { onConflict: "id" });
+      // The authenticated API has persisted the reading before returning success.
 
     } catch (err) {
       console.error("Palm analysis error:", err);
@@ -614,6 +577,7 @@ export default function PalmReadingPage() {
           </div>
 
           <div className="flex-1 flex flex-col items-center justify-center px-6">
+            {capturedImage && <Button onClick={() => analyzePalm(capturedImage, true)} className="w-full mb-4">Retry with saved palm photo</Button>}
             {error && (
               <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 mb-6 w-full">
                 <p className="text-red-400 text-center text-sm">{error}</p>

@@ -1,0 +1,4 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { ownedOrder } from '@/lib/us-main/server';
+import { reconcileUsOrder } from '@/lib/us-main/reconcile';
+export async function GET(req:NextRequest){try{let o=await ownedOrder(req,req.nextUrl.searchParams.get('order')||'');if(!o)return NextResponse.json({error:'Order access required'},{status:403});o=await reconcileUsOrder(o);return NextResponse.json({id:o.id,status:o.payment_status,fulfilled:!!o.fulfilled_at,type:o.type,bundleId:o.bundle_id,parentOrderId:o.parent_order_id,amount:(o.paid_amount_cents ?? o.amount_cents)/100,currency:'USD',email:o.customer_email,userId:o.user_id,features:o.fulfillment_features},{headers:{'Cache-Control':'private, no-store'}});}catch{return NextResponse.json({error:'We could not confirm payment yet. Please check again.'},{status:503});}}

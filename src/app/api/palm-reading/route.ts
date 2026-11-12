@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
+import { reportSessionUser } from "@/lib/report-session";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { calculateZodiacSign } from "@/lib/user-profile";
 import Anthropic from "@anthropic-ai/sdk";
 import { logClaudeUsage } from "@/lib/ai-usage-logger";
-import { normalizeBirthDetailsSnapshot } from "@/lib/birth-details";
+import { getBirthDateIso, normalizeBirthDetailsSnapshot } from "@/lib/birth-details";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
+  timeout: 120000,
+  maxRetries: 0,
 });
+
+export const maxDuration = 180;
 
 const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
 
@@ -75,7 +82,7 @@ Analyze the palm and return this exact JSON structure:
         "title": "Pregnancy Window",
         "primaryYear": "Most likely year, for example 2027",
         "secondaryWindow": "Optional secondary timing window, for example late 2028 or empty string",
-        "description": "2-3 sentences explaining the pregnancy or parenthood timing in a warm, entertainment-style palm reading tone"
+        "description": "2-3 sentences explaining the pregnancy or parenthood timing in a warm, reflective palm reading tone"
       }
     }
   },
@@ -109,12 +116,56 @@ Pregnancy/parenthood guidance rules:
 - Do not give an exact birth date or exact conception date.
 - Do not make medical claims or guarantees. Use language like "suggests", "may", and "supportive window".`;
 
+async function palmAccount(request: NextRequest) {
+  const userId = reportSessionUser(request);
+  if (!userId) return null;
+  const db = getSupabaseAdmin();
+  const {data, error} = await db.from("users").select("unlocked_features,is_dev_tester").eq("id",userId).maybeSingle();
+  if(error) throw error;
+  return data && (data.is_dev_tester === true || data.unlocked_features?.palmReading === true) ? userId : null;
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const userId = await palmAccount(request);
+    if(!userId) return NextResponse.json({success:false,error:"Sign in to your purchased account."},{status:403});
+    const db=getSupabaseAdmin();
+    const [saved,profile]=await Promise.all([
+      db.from("palm_readings").select("reading,palm_image_url,birth_date,deleted_at").eq("id",userId).maybeSingle(),
+      db.from("user_profiles").select("palm_image,birth_year,birth_month,birth_day,gender").eq("id",userId).maybeSingle()
+    ]);
+    if(saved.error || profile.error) throw saved.error || profile.error;
+    return NextResponse.json({success:true,reading:!saved.data?.deleted_at && saved.data?.reading?.tabs ? saved.data.reading : null,
+      image:profile.data?.palm_image || saved.data?.palm_image_url || null}, {headers:{"Cache-Control":"private, no-store"}});
+  } catch { return NextResponse.json({success:false,error:"Unable to load your saved palm. Please try again."},{status:503}); }
+}
+
 export async function POST(request: NextRequest) {
   let userId: string | null = null;
 
   try {
-    const { imageData, birthDate, zodiacSign, gender, userId: requestUserId } = await request.json();
-    userId = requestUserId || null;
+    if(request.headers.get("sec-fetch-site")==="cross-site" || (request.headers.get("origin") && new URL(request.headers.get("origin")!).host!==request.headers.get("host"))) {
+      return NextResponse.json({success:false,error:"Invalid origin"},{status:403});
+    }
+    userId = await palmAccount(request);
+    if(!userId) return NextResponse.json({success:false,error:"Sign in to your purchased account."},{status:403});
+    const body = await request.json();
+    const db=getSupabaseAdmin();
+    const {data:profile,error:profileError}=await db.from("user_profiles").select("palm_image,birth_year,birth_month,birth_day,gender").eq("id",userId).maybeSingle();
+    if(profileError) throw profileError;
+    const imageData = body.imageData || profile?.palm_image;
+    const birthDate = body.birthDate || (profile ? getBirthDateIso({birthYear:profile.birth_year,birthMonth:profile.birth_month,birthDay:profile.birth_day}) : "");
+    const gender = body.gender || profile?.gender;
+    const parts=String(birthDate).split("-");
+    const zodiacSign = body.zodiacSign || calculateZodiacSign(parts[1],parts[2]);
+    if(typeof imageData!=="string" || imageData.length>8000000 || !/^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(imageData)) {
+      return NextResponse.json({success:false,error:"Please use a supported palm photo under 6 MB."},{status:400});
+    }
+    const {data:existing,error:existingError}=await db.from("palm_readings").select("reading,birth_date,palm_image_url,zodiac_sign,deleted_at").eq("id",userId).maybeSingle();
+    if(existingError) throw existingError;
+    if(!existing?.deleted_at && existing?.reading?.tabs && existing.birth_date===birthDate && existing.zodiac_sign===zodiacSign && existing.palm_image_url===imageData) {
+      return NextResponse.json({success:true,reading:existing.reading,cached:true});
+    }
 
     if (!imageData) {
       return NextResponse.json(
@@ -138,6 +189,12 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    // Keep the input even if generation is interrupted, so another device can retry.
+    if(profile?.palm_image !== imageData) {
+      const {error:inputError}=await db.from("user_profiles").upsert({id:userId,palm_image:imageData,birth_year:birthYear,birth_month:birthMonth,birth_day:birthDay,gender,updated_at:new Date().toISOString()},{onConflict:"id"});
+      if(inputError) throw inputError;
     }
 
     // Prepare the prompt with user data
@@ -214,6 +271,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (reading?.tabs && !reading?.meta?.errorMessage) {
+      const {error:saveError}=await db.from("palm_readings").upsert({id:userId,reading,palm_image_url:imageData,birth_date:birthDate,zodiac_sign:zodiacSign,deleted_at:null,created_at:new Date().toISOString()},{onConflict:"id"});
+      if(saveError) throw saveError;
+    }
     return NextResponse.json({
       success: true,
       reading,

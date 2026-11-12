@@ -1,3 +1,5 @@
+import {activeUsChatPass,customerMarket} from '@/lib/customer-market';
+import {reportSessionUser} from '@/lib/report-session';
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import {
@@ -26,6 +28,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ active: false, shown: false, remainingSeconds: 0 });
     }
 
+    const isUS=reportSessionUser(request)===userId&&await customerMarket(userId)==='US';
+    const usPass=isUS?await activeUsChatPass(userId):null;
     const supabase = getSupabaseAdmin();
     const [{ data: passRows, error: passError }, { data: shownRows, error: shownError }] = await Promise.all([
       supabase
@@ -39,7 +43,7 @@ export async function GET(request: NextRequest) {
         .order("created_at", { ascending: false })
         .limit(3),
       supabase
-        .from("marketing_events")
+        .from(isUS?"us_main_events":"marketing_events")
         .select("id")
         .eq("user_id", userId)
         .eq("event_name", CHAT_UNLIMITED_OFFER_EVENT_NAMES.shown)
@@ -53,7 +57,7 @@ export async function GET(request: NextRequest) {
       console.warn("[chat/unlimited-pass/status] shown lookup failed", shownError.message);
     }
 
-    const activePass = (passRows || [])
+    const activePass = usPass || (passRows || [])
       .map((row) => {
         const startedAt = row.fulfilled_at || row.created_at || null;
         const endsAt = getChatUnlimitedPassEndsAt(startedAt);
