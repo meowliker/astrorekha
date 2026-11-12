@@ -126,18 +126,26 @@
   animation: scroll 15s linear infinite;
 }
 
-/* Keep onboarding CTAs comfortably above mobile browser bars */
+/* Follow the visible viewport as mobile address/tool bars expand and collapse. */
+.onboarding-shell {
+  height: 100vh;
+  height: 100dvh;
+}
+
 .onboarding-shell .min-h-screen {
   min-height: 100%;
 }
 
-.onboarding-shell .pb-24 {
-  padding-bottom: calc(env(safe-area-inset-bottom) + 3.5rem);
+/* Remain in flow so the last content can scroll above the action area. */
+.onboarding-shell .onboarding-cta {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  flex-shrink: 0;
+  background: var(--background);
+  padding: 1rem 1.5rem calc(env(safe-area-inset-bottom, 0px) + 3.5rem);
 }
 
-.onboarding-shell .onboarding-cta {
-  padding-left: 1.5rem;
-  padding-right: 1.5rem;
-  padding-top: 1rem;
-  padding-bottom: calc(env(safe-area-inset-bottom) + 5.25rem);
+.onboarding-shell .onboarding-payment-cta {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 3.5rem);
 }

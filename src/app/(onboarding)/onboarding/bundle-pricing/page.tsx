@@ -1368,7 +1368,7 @@ export default function BundlePricingPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 1.8 }}
-          className="w-full max-w-sm pb-[6rem]"
+          className="w-full max-w-sm pb-[calc(env(safe-area-inset-bottom,0px)+8rem)]"
         >
           {/* Logo */}
           <div className="flex flex-col items-center mb-6">
@@ -1418,7 +1418,7 @@ export default function BundlePricingPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 20 }}
-          className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-background via-background to-transparent"
+          className="onboarding-payment-cta fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-background via-background to-transparent"
         >
           <div className="max-w-sm mx-auto">
             <Button
@@ -1437,7 +1437,7 @@ export default function BundlePricingPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 20 }}
-          className="fixed bottom-0 left-0 right-0 z-50 p-4 bg-gradient-to-t from-background via-background to-transparent"
+          className="onboarding-payment-cta fixed bottom-0 left-0 right-0 z-50 p-4 bg-gradient-to-t from-background via-background to-transparent"
         >
           <div className="max-w-sm mx-auto">
             <Button

@@ -344,7 +344,7 @@ export default function Step15Page() {
         </motion.div>
       </div>
 
-      <div className="shrink-0 bg-background px-5 pt-2 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+      <div className="onboarding-cta">
         <Button
           onClick={handleContinue}
           disabled={isSubmitting}

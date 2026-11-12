@@ -9,9 +9,9 @@ export default function OnboardingLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="onboarding-shell min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+    <div className="onboarding-shell bg-[#0a0a0f] flex items-center justify-center">
       <ABRouteImpressionTracker />
-      <div className="w-full max-w-md h-screen bg-background overflow-hidden shadow-2xl shadow-black/50 flex flex-col">
+      <div className="onboarding-viewport w-full max-w-md h-full bg-background overflow-hidden shadow-2xl shadow-black/50 flex flex-col">
         <AnimatePresence mode="wait">
           <motion.main
             initial={{ opacity: 0 }}

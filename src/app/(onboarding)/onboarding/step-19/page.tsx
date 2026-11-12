@@ -656,7 +656,7 @@ function Step19Content() {
       </div>
 
       {/* Sign up button */}
-      <div className="px-6 pb-24">
+      <div className="onboarding-cta">
         <div className="mx-auto w-full max-w-sm">
           <Button
             onClick={handleSignUp}

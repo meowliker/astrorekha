@@ -405,7 +405,7 @@ export default function Step13Page() {
             <canvas ref={canvasRef} className="hidden" />
           </div>
 
-          <div className="bg-background px-6 pt-4 pb-[calc(env(safe-area-inset-bottom)+5.25rem)] flex flex-col items-center gap-4">
+          <div className="onboarding-cta flex flex-col items-center gap-4">
             <p className="text-muted-foreground text-center text-sm">
               Place left palm inside outline and take a photo
             </p>

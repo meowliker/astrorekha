@@ -79,7 +79,7 @@ export default function Step6Page() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="px-6 pb-24"
+          className="onboarding-cta"
         >
           <Button
             onClick={handleContinue}

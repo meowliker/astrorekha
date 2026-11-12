@@ -36,7 +36,7 @@ export function OnboardingHeader({
 
   return (
     <>
-      <header className="flex items-center justify-between px-4 py-4 relative">
+      <header className="shrink-0 flex items-center justify-between px-4 py-4 relative">
         <div className="w-10">
           {showBack && (
             <button
@@ -95,7 +95,7 @@ export function ProgressBar({ currentStep, totalSteps }: ProgressBarProps) {
   const progress = (currentStep / totalSteps) * 100;
 
   return (
-    <div className="w-full h-1 bg-muted rounded-full overflow-hidden">
+    <div className="shrink-0 w-full h-1 bg-muted rounded-full overflow-hidden">
       <div
         className="h-full bg-primary transition-all duration-300 ease-out"
         style={{ width: `${progress}%` }}
