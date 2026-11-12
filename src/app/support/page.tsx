@@ -585,6 +585,43 @@ export default function SupportWorkspace() {
                         <small>
                           Case {activeCase.id} ·{" "}
                           {activeCase.status.replaceAll("_", " ")}
+                          <span className="support-row">
+                            <button
+                              disabled={busy}
+                              onClick={() =>
+                                void run(async () => {
+                                  await api(`cases/${activeCase.id}`, {
+                                    issue: reason,
+                                  });
+                                  setNotice("Case notes saved.");
+                                  await refresh();
+                                })
+                              }
+                            >
+                              Save case notes
+                            </button>
+                            <button
+                              disabled={busy}
+                              onClick={() =>
+                                void run(async () => {
+                                  const status =
+                                    activeCase.status === "resolved"
+                                      ? "open"
+                                      : "resolved";
+                                  await api(`cases/${activeCase.id}`, {
+                                    status,
+                                    reviewConfirmed: true,
+                                  });
+                                  setActiveCase({ ...activeCase, status });
+                                  await refresh();
+                                })
+                              }
+                            >
+                              {activeCase.status === "resolved"
+                                ? "Reopen case"
+                                : "Mark reviewed & resolved"}
+                            </button>
+                          </span>
                         </small>
                       )}
                     </section>
@@ -1080,6 +1117,31 @@ export default function SupportWorkspace() {
                   <ArrowRight size={18} />
                 </button>
               ))}
+              {cases.length >= 100 && (
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      const result = await api<{ cases: Case[] }>(
+                        `cases?offset=${cases.length}`,
+                      );
+                      setCases((previous) =>
+                        Array.from(
+                          new Map(
+                            [...previous, ...result.cases].map((c) => [
+                              c.id,
+                              c,
+                            ]),
+                          ).values(),
+                        ),
+                      );
+                      if (!result.cases.length) setNotice("No older cases.");
+                    })
+                  }
+                >
+                  Load older cases
+                </button>
+              )}
               {!cases.length && (
                 <div className="support-empty">
                   <Inbox size={35} />
@@ -1174,6 +1236,32 @@ export default function SupportWorkspace() {
                   </div>
                 </article>
               ))}
+              {actions.length >= 100 && (
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      const result = await api<{ actions: Action[] }>(
+                        `actions?offset=${actions.length}`,
+                      );
+                      setActions((previous) =>
+                        Array.from(
+                          new Map(
+                            [...previous, ...result.actions].map((a) => [
+                              a.id,
+                              a,
+                            ]),
+                          ).values(),
+                        ),
+                      );
+                      if (!result.actions.length)
+                        setNotice("No older actions.");
+                    })
+                  }
+                >
+                  Load older actions
+                </button>
+              )}
               {!actions.length && <p>No repair requests yet.</p>}
             </section>
           )}

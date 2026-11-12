@@ -164,7 +164,9 @@ export async function createAction(
         updated_at: new Date().toISOString(),
       })
       .eq("customer_id", customerId)
-      .neq("status", "resolved"),
+      .or(
+        caseId ? `status.neq.resolved,id.eq.${caseId}` : "status.neq.resolved",
+      ),
   );
   if (action.status === "awaiting_approval")
     return { id: action.id, status: action.status };

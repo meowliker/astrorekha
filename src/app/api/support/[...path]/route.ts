@@ -169,28 +169,32 @@ async function handle(request: NextRequest) {
         await audit(actor.id, "customer_viewed", path[1]);
         return reply(snapshot);
       }
-      if (path[0] === "cases")
+      if (path[0] === "cases" || path[0] === "actions") {
+        const offset = Number(request.nextUrl.searchParams.get("offset") || 0);
+        if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100000)
+          throw new SupportError("Invalid page offset");
+        const isCase = path[0] === "cases";
+        let query = db()
+          .from(isCase ? "support_cases" : "support_actions")
+          .select(
+            isCase
+              ? "*"
+              : "id,customer_id,kind,payload,reason,status,result,actor_id,approved_by,created_at",
+          )
+          .order(isCase ? "updated_at" : "created_at", { ascending: false })
+          .order("id", { ascending: false });
+        const threadId = request.nextUrl.searchParams.get("threadId");
+        if (isCase && threadId)
+          query = query.eq("thread_id", identifier(threadId));
+        const status = request.nextUrl.searchParams.get("status");
+        if (status)
+          query = query.eq("status", requireText(status, "status", 40));
+        const rows = checked(await query.range(offset, offset + 99)) || [];
         return reply({
-          cases: checked(
-            await db()
-              .from("support_cases")
-              .select("*")
-              .order("updated_at", { ascending: false })
-              .limit(100),
-          ),
+          [isCase ? "cases" : "actions"]: rows,
+          nextOffset: rows.length === 100 ? offset + 100 : null,
         });
-      if (path[0] === "actions")
-        return reply({
-          actions: checked(
-            await db()
-              .from("support_actions")
-              .select(
-                "id,customer_id,kind,payload,reason,status,result,actor_id,approved_by,created_at",
-              )
-              .order("created_at", { ascending: false })
-              .limit(100),
-          ),
-        });
+      }
       if (path[0] === "team") {
         requireBrowserOwner(actor);
         return reply({
@@ -314,6 +318,11 @@ async function handle(request: NextRequest) {
           const patch: Record<string, unknown> = {
             updated_at: new Date().toISOString(),
           };
+          if (body.status === "resolved" && actor.kind !== "browser")
+            throw new SupportError(
+              "A staff member must resolve the case after review in the browser",
+              403,
+            );
           if (body.status) {
             if (
               ![
@@ -415,6 +424,23 @@ async function handle(request: NextRequest) {
           throw new SupportError(
             "Use the thread ID from the connected Gmail account",
           );
+        if (threadId) {
+          const existing = checked(
+            await db()
+              .from("support_cases")
+              .select("*")
+              .eq("thread_id", threadId)
+              .maybeSingle(),
+          );
+          if (existing) {
+            if (existing.customer_id !== customerId)
+              throw new SupportError(
+                "This thread is already linked to another customer. Review its case before continuing.",
+                409,
+              );
+            return reply(existing); // Preserve staff edits and make repeated imports safe.
+          }
+        }
         const row = checked(
           await db()
             .from("support_cases")

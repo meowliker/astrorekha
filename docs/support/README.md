@@ -47,7 +47,7 @@ All endpoints require an individual `Authorization: Bearer ar_support_…` token
 - `GET me`
 - `GET search?q=<URL-encoded exact identifier>`
 - `GET customers/<userId>`
-- `GET cases` and `GET actions` (latest 100; customer detail includes latest 50 actions)
+- `GET cases` and `GET actions` (100 per page; follow `nextOffset` with `?offset=N`; optional `?status=...` filter). Cases also support `?threadId=...`. Re-importing a thread returns its existing case without overwriting staff edits. Customer detail includes the latest 50 actions.
 - `POST cases`: `{customerId, threadId, subject, issue, mailbox:"team.astrorekha@gmail.com"}`
 - `POST actions`: `{requestKey:<UUID>, customerId, caseId?, kind, reason, payload}`
 - `POST cases/<id>`: `{generateDraft:true, reportKeys:["birthChart"]}` or `{draft:<text>, reportKeys:[...]}`
