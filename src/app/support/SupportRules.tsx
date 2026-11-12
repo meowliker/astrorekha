@@ -353,7 +353,24 @@ export default function SupportRules({ owner }: { owner: boolean }) {
               {new Date(v.published_at).toLocaleString("en-IN")}
             </p>
             <pre>{v.content}</pre>
-            <pre>{JSON.stringify(v.settings, null, 2)}</pre>
+            <dl className="support-rule-settings-history">
+              <dt>Specific-issue label</dt>
+              <dd>{v.settings.specificLabel}</dd>
+              <dt>Routine login label</dt>
+              <dd>{v.settings.loginLabel}</dd>
+              <dt>Completed label to remove</dt>
+              <dd>{v.settings.completedLabel}</dd>
+              <dt>Required closing</dt>
+              <dd>{v.settings.closing}</dd>
+              <dt>Signature</dt>
+              <dd>{v.settings.signature}</dd>
+              <dt>Blocked reply topics</dt>
+              <dd>
+                {v.settings.blockedTopics
+                  .map((topic) => REPLY_TOPICS[topic])
+                  .join(", ") || "None"}
+              </dd>
+            </dl>
             {owner && (
               <button
                 disabled={busy}

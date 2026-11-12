@@ -702,3 +702,7 @@
 .support-rules-topics label { display:flex; align-items:center; gap:10px; }
 .support-rules-topics input { width:auto; }
 .support-rules .support-two-col { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; }
+
+.support-rule-settings-history { display:grid; grid-template-columns:minmax(120px,1fr) 2fr; gap:10px 16px; margin:16px 0; }
+.support-rule-settings-history dt { font-weight:600; }
+.support-rule-settings-history dd { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
