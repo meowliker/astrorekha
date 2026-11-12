@@ -1,4 +1,5 @@
 "use client";
+import { beginInrCouponCheckout } from "@/lib/inr-coupon-client";
 import { openPaytmCheckout } from "@/lib/payment-checkout-browser";
 
 import ProductOfferTracker from "@/components/ProductOfferTracker";
@@ -169,7 +170,6 @@ export default function BundlePricingPage() {
   const [paywallAssignmentReady, setPaywallAssignmentReady] = useState(false);
   const hasUserTouchedPlanSelectionRef = useRef(false);
   
-  const { userId } = useUserStore();
   const bundlePlans = useMemo(
     () =>
       allBundlePlans
@@ -191,6 +191,7 @@ export default function BundlePricingPage() {
     let cancelled = false;
     let checking = false;
     const handlePageShow = async () => {
+      setIsRedeemingCoupon(false);
       if (checking) return;
       checking = true;
       setIsCheckingCheckout(true);
@@ -571,6 +572,8 @@ export default function BundlePricingPage() {
   const handleCouponUnlock = async () => {
     setPaymentError("");
 
+    if (!isPlanSelectionReady || isProcessing || isRedeemingCoupon) return;
+
     const code = couponCode.trim();
     if (!code) {
       setPaymentError("Please enter a coupon code");
@@ -585,33 +588,7 @@ export default function BundlePricingPage() {
     setIsRedeemingCoupon(true);
 
     try {
-      const couponUserId = userId || generateUserId();
-      const response = await fetch("/api/coupons/redeem", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code,
-          userId: couponUserId,
-          email: localStorage.getItem("astrorekha_email") || "",
-          firstName: localStorage.getItem("astrorekha_name") || "Customer",
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || "Invalid coupon code");
-      }
-
-      localStorage.setItem("astrorekha_payment_completed", "true");
-      localStorage.setItem("astrorekha_purchase_type", "coupon_unlock");
-      localStorage.setItem("astrorekha_bundle_id", data.bundleId);
-      localStorage.setItem("astrorekha_selected_plan", data.bundleId);
-      localStorage.setItem("astrorekha_coupon_code", data.code);
-      if (data.userId) {
-        localStorage.setItem("astrorekha_user_id", data.userId);
-      }
-
-      router.push("/onboarding/bundle-upsell");
+      await beginInrCouponCheckout({ code, type: "bundle", productId: selectedPlan });
     } catch (error) {
       console.error("Coupon unlock error:", error);
       setPaymentError(error instanceof Error ? error.message : "Unable to redeem coupon code");
@@ -930,7 +907,7 @@ export default function BundlePricingPage() {
                 </Button>
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">
-                Valid test coupons unlock their mapped bundle directly without opening PayU.
+                Apply a coupon to your selected bundle before completing your unlock.
               </p>
             </div>
           )}

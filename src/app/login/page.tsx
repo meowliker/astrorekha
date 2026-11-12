@@ -130,7 +130,7 @@ export default function LoginPage() {
       }
       
       // Redirect to dashboard
-      router.push(new URLSearchParams(window.location.search).get("next") === "/witch-archetype" ? "/witch-archetype" : "/reports");
+      router.push(["/witch-archetype", "/coupon-checkout"].includes(new URLSearchParams(window.location.search).get("next") || "") ? new URLSearchParams(window.location.search).get("next")! : "/reports");
     } catch (err) {
       console.error("Login error:", err);
       setError("Login failed. Please check your credentials.");
@@ -252,7 +252,7 @@ export default function LoginPage() {
         console.error("Failed to set session:", err);
       }
 
-      router.push(new URLSearchParams(window.location.search).get("next") === "/witch-archetype" ? "/witch-archetype" : "/reports");
+      router.push(["/witch-archetype", "/coupon-checkout"].includes(new URLSearchParams(window.location.search).get("next") || "") ? new URLSearchParams(window.location.search).get("next")! : "/reports");
     } catch (err) {
       console.error("OTP verify error:", err);
       setOtpError(getErrorMessage(err) || "Invalid OTP. Please try again.");

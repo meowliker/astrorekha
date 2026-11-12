@@ -1,4 +1,5 @@
 "use client";
+import InrReportCoupon from "@/components/InrReportCoupon";
 import { openPaytmCheckout } from "@/lib/payment-checkout-browser";
 
 import { isReportAvailableForPurchase } from "@/lib/customer-report-visibility";
@@ -649,6 +650,7 @@ function BundleUpsellContent() {
                   "Continue without this offer →"
                 )}
               </Button>
+              {selectedOffers.length > 0 && <InrReportCoupon type="upsell" productId={selectedOfferIds} disabled={isProcessing} onBusyChange={setIsProcessing} />}
             </div>
           </div>
         </motion.div>

@@ -1,4 +1,5 @@
 "use client";
+import InrReportCoupon from "@/components/InrReportCoupon";
 import {useCustomerCommerce} from '@/hooks/useCustomerCommerce';
 import {startUsAccountCheckout} from '@/lib/us-main/account-checkout-client';
 import USProductOfferTracker from '@/components/us-main/ProductOfferTracker';
@@ -321,6 +322,8 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
                 ctaLabel
               )}
             </Button>
+
+            {commerce.ready && !commerce.isUS && <InrReportCoupon productId={featureToReportId[feature]} disabled={isProcessing} onBusyChange={setIsProcessing} />}
 
             {/* Cancel Link */}
             <button
