@@ -32,6 +32,15 @@ interface AdminOption {
 
 const adminOptions: AdminOption[] = [
   {
+    id: "support",
+    title: "Customer Support",
+    description: "Investigate accounts, recover paid reports, and review support replies",
+    icon: Shield,
+    href: "/support",
+    color: "text-emerald-400",
+    bgColor: "bg-emerald-500/20",
+  },
+  {
     id: "us-main", title: "US AstroRekha", description: "US main funnel orders, USD sales and tracking", icon: ShoppingBag,
     href: "/admin/us-main/orders", color: "text-violet-400", bgColor: "bg-violet-500/20",
   },

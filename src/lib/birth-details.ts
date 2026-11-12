@@ -132,7 +132,8 @@ export function getBirthTime24(input: Pick<BirthDetailsInput, "birthHour" | "bir
   if (!Number.isInteger(hour) || hour < 1 || hour > 12) return null;
   if (!Number.isInteger(minute) || minute < 0 || minute > 59) return null;
   if (periodText !== "AM" && periodText !== "PM") return null;
-  if (hour === 12 && minute === 0) return null;
+  // Noon and midnight are valid when the birth time is known. Unknown times
+  // are represented by knowsBirthTime=false, not by rejecting 12:00.
 
   let normalizedHour = hour;
   if (periodText === "PM" && normalizedHour !== 12) normalizedHour += 12;

@@ -131,11 +131,11 @@ export async function GET(request: NextRequest) {
     if(!userId) return NextResponse.json({success:false,error:"Sign in to your purchased account."},{status:403});
     const db=getSupabaseAdmin();
     const [saved,profile]=await Promise.all([
-      db.from("palm_readings").select("reading,palm_image_url,birth_date").eq("id",userId).maybeSingle(),
+      db.from("palm_readings").select("reading,palm_image_url,birth_date,deleted_at").eq("id",userId).maybeSingle(),
       db.from("user_profiles").select("palm_image,birth_year,birth_month,birth_day,gender").eq("id",userId).maybeSingle()
     ]);
     if(saved.error || profile.error) throw saved.error || profile.error;
-    return NextResponse.json({success:true,reading:saved.data?.reading?.tabs ? saved.data.reading : null,
+    return NextResponse.json({success:true,reading:!saved.data?.deleted_at && saved.data?.reading?.tabs ? saved.data.reading : null,
       image:profile.data?.palm_image || saved.data?.palm_image_url || null}, {headers:{"Cache-Control":"private, no-store"}});
   } catch { return NextResponse.json({success:false,error:"Unable to load your saved palm. Please try again."},{status:503}); }
 }
@@ -161,9 +161,9 @@ export async function POST(request: NextRequest) {
     if(typeof imageData!=="string" || imageData.length>8000000 || !/^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(imageData)) {
       return NextResponse.json({success:false,error:"Please use a supported palm photo under 6 MB."},{status:400});
     }
-    const {data:existing,error:existingError}=await db.from("palm_readings").select("reading,birth_date,palm_image_url").eq("id",userId).maybeSingle();
+    const {data:existing,error:existingError}=await db.from("palm_readings").select("reading,birth_date,palm_image_url,zodiac_sign,deleted_at").eq("id",userId).maybeSingle();
     if(existingError) throw existingError;
-    if(existing?.reading?.tabs && existing.birth_date===birthDate && existing.palm_image_url===imageData) {
+    if(!existing?.deleted_at && existing?.reading?.tabs && existing.birth_date===birthDate && existing.zodiac_sign===zodiacSign && existing.palm_image_url===imageData) {
       return NextResponse.json({success:true,reading:existing.reading,cached:true});
     }
 
@@ -272,7 +272,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (reading?.tabs && !reading?.meta?.errorMessage) {
-      const {error:saveError}=await db.from("palm_readings").upsert({id:userId,reading,palm_image_url:imageData,birth_date:birthDate,zodiac_sign:zodiacSign,created_at:new Date().toISOString()},{onConflict:"id"});
+      const {error:saveError}=await db.from("palm_readings").upsert({id:userId,reading,palm_image_url:imageData,birth_date:birthDate,zodiac_sign:zodiacSign,deleted_at:null,created_at:new Date().toISOString()},{onConflict:"id"});
       if(saveError) throw saveError;
     }
     return NextResponse.json({

@@ -15,8 +15,11 @@ test('palm recovery uses authenticated account, server inputs and durable writes
  uid='owner';locked=true;assert.equal((await api.GET(req())).status,403);locked=false;
  assert.equal((await api.POST(req({},'https://evil.invalid'))).status,403);
  const res=await api.POST(req({userId:'victim'}));assert.equal(res.status,200);assert.equal(saved.id,'owner');assert.equal(saved.palm_image_url,image);assert.equal(saved.birth_date,'2001-01-01');assert.ok(selected.every(x=>x[2]==='owner'));assert.equal(generated,1);
- existing={reading:saved.reading,birth_date:saved.birth_date,palm_image_url:image};assert.equal((await (await api.POST(req())).json()).cached,true);assert.equal(generated,1);
+ existing={reading:saved.reading,birth_date:saved.birth_date,palm_image_url:image,zodiac_sign:saved.zodiac_sign};assert.equal((await (await api.POST(req())).json()).cached,true);assert.equal(generated,1);
  const recovered=await (await api.GET(req())).json();assert.ok(recovered.reading);assert.equal(recovered.image,image);
+ existing.deleted_at=new Date().toISOString();assert.equal((await (await api.GET(req())).json()).reading,null);
+ assert.equal((await api.POST(req())).status,200);assert.equal(generated,2);assert.equal(saved.deleted_at,null);
+ existing={...saved,zodiac_sign:'Wrong stale sign'};assert.equal((await api.POST(req())).status,200);assert.equal(generated,3);
  existing=null;saveError=true;assert.equal((await api.POST(req())).status,500);
  assert.equal((await api.POST(req({imageData:'https://untrusted.invalid/photo'}))).status,400);
 });
