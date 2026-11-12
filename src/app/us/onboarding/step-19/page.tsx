@@ -185,51 +185,9 @@ function Step19Content() {
 
       // Pre-generate birth chart if user bought a bundle that includes it
       if (bundleId === "palm-birth" || bundleId === "palm-birth-compat" || bundleId === "palm-birth-sketch" || bundleId === "palm-birth-sketch-aura-astro") {
-        const birthTime = onboardingData.knowsBirthTime
-          ? (() => {
-              let hour = parseInt(onboardingData.birthHour) || 12;
-              const minute = onboardingData.birthMinute || "00";
-              if (onboardingData.birthPeriod === "PM" && hour !== 12) hour += 12;
-              if (onboardingData.birthPeriod === "AM" && hour === 12) hour = 0;
-              return `${String(hour).padStart(2, "0")}:${minute}`;
-            })()
-          : "12:00";
-
-        // Get geo coordinates first, then generate chart
-        (async () => {
-          try {
-            if (!onboardingData.birthPlace) throw new Error('Birthplace required for chart generation');
-            const geoRes = await fetch('/api/astrology/geo', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({place_name:onboardingData.birthPlace})});
-            const geoData = await geoRes.json();
-            if (!geoRes.ok || !geoData.success || !geoData.data || ![geoData.data.latitude,geoData.data.longitude,geoData.data.timezone].every(Number.isFinite)) throw new Error('Unable to resolve the actual birthplace; generation can be retried from the report');
-            const {latitude,longitude,timezone}=geoData.data;
-            const chartRes = await fetch("/api/astrology/birth-chart", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ birthDate, birthTime, latitude, longitude, timezone, chartType: "vedic" }),
-            });
-            const chartResult = await chartRes.json();
-            if (chartResult.success && chartResult.data) {
-              const cacheKey = `chart_${birthDate}_${birthTime}_${onboardingData.birthPlace || "unknown"}`.replace(/[^a-zA-Z0-9_]/g, "_") + "_vedic";
-              const nowIso = new Date().toISOString();
-              await supabase.from("birth_charts").upsert(
-                { id: cacheKey, data: { ...chartResult.data, cachedAt: nowIso }, cached_at: nowIso },
-                { onConflict: "id" }
-              );
-              await supabase.from("birth_chart_user_links").upsert(
-                {
-                  user_id: uid,
-                  birth_chart_id: cacheKey,
-                  updated_at: nowIso,
-                  last_accessed_at: nowIso,
-                },
-                { onConflict: "user_id,birth_chart_id" }
-              );
-            }
-          } catch (err) {
-            console.error("Background birth chart generation error:", err);
-          }
-        })();
+        fetch("/api/us/main/astrology/chart", {cache:"no-store"})
+          .then(res => { if(!res.ok) throw new Error("Birth chart preparation failed"); })
+          .catch(err => console.error("Background Western birth chart error:",err));
       }
     } catch (err: unknown) {
       console.error("Sign up failed:", err);

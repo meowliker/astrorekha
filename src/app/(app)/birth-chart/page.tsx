@@ -2,6 +2,8 @@
 import type { BirthChartData } from "@/lib/birth-chart-data";
 
 
+import {useCustomerCommerce} from "@/hooks/useCustomerCommerce";
+import WesternBirthChart from "@/components/us-main/WesternBirthChart";
 import ReportInfoButton from "@/components/ReportInfoButton";
 
 import { useState, useEffect } from "react";
@@ -62,6 +64,11 @@ function getAscendantLagna(data: BirthChartData | null): string {
 }
 
 export default function BirthChartPage() {
+  const commerce = useCustomerCommerce();
+  if (!commerce.ready) return <main className="min-h-screen p-8">{commerce.error || "Loading your birth chart…"}</main>;
+  return commerce.isUS ? <WesternBirthChart/> : <IndianBirthChartPage/>;
+}
+function IndianBirthChartPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [chartData, setChartData] = useState<BirthChartData | null>(null);

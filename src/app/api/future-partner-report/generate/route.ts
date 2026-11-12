@@ -4,6 +4,10 @@ import { generateFuturePartnerReport } from "@/lib/future-partner-report";
 import { normalizeFuturePartnerReportData } from "@/lib/future-partner-report-data";
 import { normalizeBirthDetailsSnapshot } from "@/lib/birth-details";
 
+import {customerMarket} from "@/lib/customer-market";
+import {loadWesternAccountChart} from "@/lib/us-main/western-chart";
+import {WESTERN_CHART_VERSION} from "@/lib/western-zodiac";
+
 export const maxDuration = 60;
 
 function getPublicErrorMessage(raw: unknown): string {
@@ -80,8 +84,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "generation_failed" }, { status: 500 });
   }
 
+  const western = await customerMarket(userId) === "US";
+  const westernResult = western ? await loadWesternAccountChart(userId) : null;
   const cachedReport = normalizeFuturePartnerReportData(existingRow?.report_data);
-  if (existingRow?.status === "complete" && cachedReport) {
+  if (existingRow?.status === "complete" && cachedReport && (!western || (existingRow.report_data?._zodiac_system === WESTERN_CHART_VERSION && existingRow.report_data?._birth_chart_id === westernResult?.id))) {
     return NextResponse.json({
       success: true,
       cached: true,
@@ -209,7 +215,7 @@ export async function POST(request: NextRequest) {
       ? userBirthSnapshot
       : profileBirthSnapshot || userBirthSnapshot;
 
-  if (!birthSnapshot?.completeForBirthChart) {
+  if (!westernResult && !birthSnapshot?.completeForBirthChart) {
     await supabase
       .from("future_partner_reports")
       .update({
@@ -250,9 +256,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const report = await generateFuturePartnerReport({
-      user,
+      user: westernResult ? {...user,birth_year:westernResult.data.birthDetails.date.split("-")[0]} : user,
       userProfile,
-      chartData,
+      chartData: westernResult?.data || chartData,
+      western,
       usageLogContext: {
         userId,
         reportId: generationRow?.id || null,
@@ -265,7 +272,7 @@ export async function POST(request: NextRequest) {
       .from("future_partner_reports")
       .update({
         status: "complete",
-        report_data: report,
+        report_data: {...report,...(western ? {_zodiac_system:WESTERN_CHART_VERSION,_birth_chart_id:westernResult?.id} : {})},
         generated_at: generatedAt,
         updated_at: generatedAt,
       })

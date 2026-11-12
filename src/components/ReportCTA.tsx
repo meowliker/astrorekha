@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import ReportDisclaimer from "@/components/ReportDisclaimer";
 
-export default function ReportCTA() {
+export default function ReportCTA({western = false}: {western?: boolean}) {
   const router = useRouter();
 
   return (
@@ -19,7 +19,7 @@ export default function ReportCTA() {
       <h3 className="text-white text-lg font-semibold mb-1">Want a deeper reading?</h3>
       <p className="text-white/60 text-sm leading-relaxed mb-4">
         Get your personalized 10-section birth chart report — life predictions,
-        career, relationships, current dasha and more.
+        career, relationships, {western ? "planetary patterns" : "current dasha"} and more.
       </p>
 
       <button

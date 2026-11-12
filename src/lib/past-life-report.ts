@@ -1,3 +1,4 @@
+import type {WesternChart} from "@/lib/western-zodiac";
 
 import type { BirthChartData } from "@/lib/birth-chart-data";
 import type { StoredProfile } from "@/lib/stored-profile-types";
@@ -26,7 +27,7 @@ export interface PastLifePlanetSignal {
 }
 
 export interface PastLifeChartSignals {
-  method: "vedic-ketu-chart" | "birth-date-symbolic";
+  method: "vedic-ketu-chart" | "western-south-node" | "birth-date-symbolic";
   ketu: PastLifePlanetSignal | null;
   rahu: PastLifePlanetSignal | null;
   saturn: PastLifePlanetSignal | null;
@@ -614,9 +615,21 @@ export function buildPastLifeReport(params: {
   user?: StoredProfile | null;
   chartData?: BirthChartData | null;
   generatedAt?: string;
+  westernChart?: WesternChart;
 }): PastLifeReport | null {
   const birthData = buildBirthData(params.userProfile || null, params.user || null);
   if (!birthData) return null;
+  const western = params.westernChart;
+  if(western) {
+    birthData.sunSign = western.sun_sign;
+    birthData.moonSign = western.moon_sign;
+    birthData.ascendantSign = western.ascendant;
+    birthData.knowsBirthTime = western.knowsBirthTime;
+    birthData.time = western.knowsBirthTime ? western.birthDetails.time : null;
+    birthData.place = western.birthDetails.place;
+    const [year, month, day] = western.birthDetails.date.split("-").map(Number);
+    Object.assign(birthData, {year, month, day});
+  }
 
   const seedSource = [
     params.userId,
@@ -633,17 +646,25 @@ export function buildPastLifeReport(params: {
   ].join("|");
   const seed = hashString(seedSource);
   const chartSignals = buildChartSignals(params.chartData || null);
+  if(western) {
+    const signal = (name:string): PastLifePlanetSignal | null => {
+      const p = western.planets[name];
+      return p ? {planet:name, sign:p.sign, house:p.house == null ? null : String(p.house), nakshatra:null, pada:null, retrograde:!!p.retrograde} : null;
+    };
+    Object.assign(chartSignals, {method:"western-south-node", ketu:signal("South Node"), rahu:signal("North Node"), saturn:signal("Saturn"), jupiter:signal("Jupiter"), moonNakshatra:null,
+      twelfthHousePlanets:Object.entries(western.planets).filter(([,p])=>p.house===12).map(([name])=>name)});
+  }
   const archetype = pickArchetypeFromSignals(chartSignals, seed);
   const count = calculatePastLifeCount(birthData);
   const era = (chartSignals.ketu?.sign && SIGN_ERAS[chartSignals.ketu.sign]) || ERAS[(seed >>> 6) % ERAS.length];
   const region = (chartSignals.ketu?.sign && SIGN_REGIONS[chartSignals.ketu.sign]) || REGIONS[(seed >>> 9) % REGIONS.length];
   const ketuPlacement =
     chartSignals.ketu?.sign || chartSignals.ketu?.house
-      ? `Ketu in ${[chartSignals.ketu.sign, chartSignals.ketu.house ? `house ${chartSignals.ketu.house}` : null].filter(Boolean).join(", ")}`
+      ? `${western ? "South Node" : "Ketu"} in ${[chartSignals.ketu.sign, chartSignals.ketu.house ? `house ${chartSignals.ketu.house}` : null].filter(Boolean).join(", ")}`
       : null;
   const rahuPlacement =
     chartSignals.rahu?.sign || chartSignals.rahu?.house
-      ? `Rahu in ${[chartSignals.rahu.sign, chartSignals.rahu.house ? `house ${chartSignals.rahu.house}` : null].filter(Boolean).join(", ")}`
+      ? `${western ? "North Node" : "Rahu"} in ${[chartSignals.rahu.sign, chartSignals.rahu.house ? `house ${chartSignals.rahu.house}` : null].filter(Boolean).join(", ")}`
       : null;
   const saturnPlacement =
     chartSignals.saturn?.sign || chartSignals.saturn?.house
@@ -655,7 +676,7 @@ export function buildPastLifeReport(params: {
       : null;
   const ketuHouseStory = chartSignals.ketu?.house ? HOUSE_STORIES[chartSignals.ketu.house] : null;
   const chartContext = ketuPlacement
-    ? `${ketuPlacement} is used as the main past-life indicator in this Vedic reading. ${
+    ? `${ketuPlacement} is used as the main past-life indicator in this ${western ? "Western tropical" : "Vedic"} reading. ${
         ketuHouseStory ? `It points toward ${ketuHouseStory}.` : ""
       }`
     : "";

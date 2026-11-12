@@ -1,9 +1,13 @@
+import {loadWesternAccountChart} from "@/lib/us-main/western-chart";
 
 import type { BirthChartData, ChartPlanet, PanchangPeriod } from "@/lib/birth-chart-data";
 import type { StoredProfile } from "@/lib/stored-profile-types";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { getBirthDateIso, getBirthTime24 } from "@/lib/birth-details";
+
+import {customerMarket} from "@/lib/customer-market";
+import {WESTERN_CHART_VERSION,westernChartDetails,type WesternChart} from "@/lib/western-zodiac";
 
 function getSessionUserId(request: NextRequest, fallbackUserId?: string | null): string | null {
   const accessCookie = request.cookies.get("ar_access")?.value;
@@ -594,6 +598,13 @@ export async function GET(
 
   if (!report) {
     return NextResponse.json({ error: "report_not_found" }, { status: 404 });
+  }
+
+  if (await customerMarket(userId) === "US") {
+    if(report.sections?._zodiac_system !== WESTERN_CHART_VERSION || report.birth_chart_id !== (await loadWesternAccountChart(userId)).id) return NextResponse.json({error:"report_needs_regeneration"},{status:409});
+    const {data:cached,error:chartError}=await supabaseAdmin.from("birth_charts").select("data").eq("id",report.birth_chart_id).maybeSingle();
+    if(chartError || cached?.data?.zodiacSystem !== WESTERN_CHART_VERSION) return NextResponse.json({error:"western_chart_unavailable"},{status:503});
+    return NextResponse.json({...report,chart_details:westernChartDetails(cached.data as WesternChart)});
   }
 
   const { data: userProfile } = await supabaseAdmin

@@ -125,6 +125,10 @@ async function palmAccount(request: NextRequest) {
   return data && (data.is_dev_tester === true || data.unlocked_features?.palmReading === true) ? userId : null;
 }
 
+import {customerMarket} from "@/lib/customer-market";
+import {loadWesternAccountChart} from "@/lib/us-main/western-chart";
+import {WESTERN_CHART_VERSION} from "@/lib/western-zodiac";
+
 export async function GET(request: NextRequest) {
   try {
     const userId = await palmAccount(request);
@@ -135,7 +139,9 @@ export async function GET(request: NextRequest) {
       db.from("user_profiles").select("palm_image,birth_year,birth_month,birth_day,gender").eq("id",userId).maybeSingle()
     ]);
     if(saved.error || profile.error) throw saved.error || profile.error;
-    return NextResponse.json({success:true,reading:!saved.data?.deleted_at && saved.data?.reading?.tabs ? saved.data.reading : null,
+    const western = await customerMarket(userId) === "US";
+    const westernResult = western ? await loadWesternAccountChart(userId) : null;
+    return NextResponse.json({success:true,reading:!saved.data?.deleted_at && saved.data?.reading?.tabs && (!western || (saved.data.reading._zodiac_system === WESTERN_CHART_VERSION && saved.data.reading._birth_chart_id === westernResult?.id)) ? saved.data.reading : null,
       image:profile.data?.palm_image || saved.data?.palm_image_url || null}, {headers:{"Cache-Control":"private, no-store"}});
   } catch { return NextResponse.json({success:false,error:"Unable to load your saved palm. Please try again."},{status:503}); }
 }
@@ -154,16 +160,19 @@ export async function POST(request: NextRequest) {
     const {data:profile,error:profileError}=await db.from("user_profiles").select("palm_image,birth_year,birth_month,birth_day,gender").eq("id",userId).maybeSingle();
     if(profileError) throw profileError;
     const imageData = body.imageData || profile?.palm_image;
-    const birthDate = body.birthDate || (profile ? getBirthDateIso({birthYear:profile.birth_year,birthMonth:profile.birth_month,birthDay:profile.birth_day}) : "");
+    let birthDate = body.birthDate || (profile ? getBirthDateIso({birthYear:profile.birth_year,birthMonth:profile.birth_month,birthDay:profile.birth_day}) : "");
     const gender = body.gender || profile?.gender;
     const parts=String(birthDate).split("-");
-    const zodiacSign = body.zodiacSign || calculateZodiacSign(parts[1],parts[2]);
+    const western = await customerMarket(userId) === "US";
+    const westernResult = western ? await loadWesternAccountChart(userId) : null;
+    if(westernResult) birthDate = westernResult.data.birthDetails.date;
+    const zodiacSign = westernResult ? westernResult.data.sun_sign : body.zodiacSign || calculateZodiacSign(parts[1],parts[2]);
     if(typeof imageData!=="string" || imageData.length>8000000 || !/^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(imageData)) {
       return NextResponse.json({success:false,error:"Please use a supported palm photo under 6 MB."},{status:400});
     }
     const {data:existing,error:existingError}=await db.from("palm_readings").select("reading,birth_date,palm_image_url,zodiac_sign,deleted_at").eq("id",userId).maybeSingle();
     if(existingError) throw existingError;
-    if(!existing?.deleted_at && existing?.reading?.tabs && existing.birth_date===birthDate && existing.zodiac_sign===zodiacSign && existing.palm_image_url===imageData) {
+    if(!existing?.deleted_at && existing?.reading?.tabs && (!western || (existing.reading._zodiac_system === WESTERN_CHART_VERSION && existing.reading._birth_chart_id === westernResult?.id)) && existing.birth_date===birthDate && existing.zodiac_sign===zodiacSign && existing.palm_image_url===imageData) {
       return NextResponse.json({success:true,reading:existing.reading,cached:true});
     }
 
@@ -202,7 +211,7 @@ export async function POST(request: NextRequest) {
       .replace("{birthDate}", birthDate)
       .replace("{zodiacSign}", zodiacSign)
       .replace("{gender}", gender || "Not specified")
-      + PREGNANCY_WINDOW_GUIDANCE;
+      + PREGNANCY_WINDOW_GUIDANCE + (western ? " Use the supplied Western tropical Sun sign. Do not infer Moon, Ascendant, houses or sidereal placements from a palm photo." : "");
 
     // Extract base64 data from data URL
     const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");
@@ -263,6 +272,7 @@ export async function POST(request: NextRequest) {
       let jsonText = textContent.text.trim();
       jsonText = jsonText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
       reading = JSON.parse(jsonText);
+      if(western) { reading._zodiac_system = WESTERN_CHART_VERSION; reading._birth_chart_id = westernResult?.id; }
     } catch (parseError) {
       console.error("Failed to parse AI response:", textContent.text);
       return NextResponse.json(

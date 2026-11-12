@@ -1,5 +1,9 @@
+import {loadWesternAccountChart} from "@/lib/us-main/western-chart";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+
+import {customerMarket} from "@/lib/customer-market";
+import {WESTERN_CHART_VERSION} from "@/lib/western-zodiac";
 
 function getSessionUserId(request: NextRequest, fallbackUserId?: string | null): string | null {
   const accessCookie = request.cookies.get("ar_access")?.value;
@@ -29,7 +33,7 @@ export async function GET(request: NextRequest) {
 
   const { data: latestReport, error } = await supabaseAdmin
     .from("birth_chart_reports")
-    .select("id, status, generated_at, created_at")
+    .select("id, status, generated_at, created_at, sections, birth_chart_id")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -40,7 +44,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "status_fetch_failed" }, { status: 500 });
   }
 
-  if (!latestReport) {
+  if (!latestReport || (await customerMarket(userId) === "US" && (latestReport.sections?._zodiac_system !== WESTERN_CHART_VERSION || latestReport.birth_chart_id !== (await loadWesternAccountChart(userId)).id))) {
     return NextResponse.json({ status: "not_started" });
   }
 

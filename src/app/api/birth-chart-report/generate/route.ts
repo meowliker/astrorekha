@@ -3,6 +3,11 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { generateBirthChartReport } from "@/lib/birth-chart-report-generator";
 import { getBirthDateIso, getBirthTime24 } from "@/lib/birth-details";
 
+import {customerMarket} from "@/lib/customer-market";
+import {loadWesternAccountChart} from "@/lib/us-main/western-chart";
+import {WESTERN_CHART_VERSION} from "@/lib/western-zodiac";
+import {generateWesternBirthReport} from "@/lib/us-main/western-report";
+
 export const maxDuration = 60;
 
 type AnyRecord = Record<string, unknown>;
@@ -125,18 +130,20 @@ export async function POST(request: NextRequest) {
 
   try {
     const force = !!requestBody?.force;
+    const western = await customerMarket(userId) === "US";
+    const westernResult = western ? await loadWesternAccountChart(userId) : null;
 
     if (!force) {
       const { data: existingComplete } = await supabaseAdmin
         .from("birth_chart_reports")
-        .select("id, status, sections, generated_at, created_at")
+        .select("id, status, sections, generated_at, created_at, birth_chart_id")
         .eq("user_id", userId)
         .eq("status", "complete")
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (existingComplete) {
+      if (existingComplete && (!western || (existingComplete.sections?._zodiac_system === WESTERN_CHART_VERSION && existingComplete.birth_chart_id === westernResult?.id))) {
         return NextResponse.json({
           report_id: existingComplete.id,
           status: existingComplete.status,
@@ -158,7 +165,7 @@ export async function POST(request: NextRequest) {
       .eq("id", userId)
       .maybeSingle();
 
-    const birthChartCacheKey = makeBirthChartCacheKey(userProfile || null, user || null);
+    const birthChartCacheKey = westernResult?.id || makeBirthChartCacheKey(userProfile || null, user || null);
     if (!birthChartCacheKey) {
       return NextResponse.json(
         {
@@ -198,6 +205,7 @@ export async function POST(request: NextRequest) {
         user_id: userId,
         birth_chart_id: birthChart?.id || null,
         status: "generating",
+        ...(western ? {sections:{_zodiac_system:WESTERN_CHART_VERSION}} : {}),
       })
       .select("id")
       .single();
@@ -210,7 +218,7 @@ export async function POST(request: NextRequest) {
     const reportId = insertedReport.id as string;
 
     try {
-      const generated = await generateBirthChartReport(chartData, userProfile || {}, user || {}, {
+      const generated = westernResult ? await generateWesternBirthReport(westernResult.data,userId,reportId) : await generateBirthChartReport(chartData, userProfile || {}, user || {}, {
         userId,
         reportId,
       });

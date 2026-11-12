@@ -19,6 +19,11 @@ function getDateKey(): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
 }
 
+import {customerMarket} from "@/lib/customer-market";
+import {loadWesternAccountChart} from "@/lib/us-main/western-chart";
+import {WESTERN_REPORT_INSTRUCTIONS} from "@/lib/us-main/western-report";
+import {WESTERN_CHART_VERSION} from "@/lib/western-zodiac";
+
 const INSIGHTS_PROMPT = `You are an expert Vedic and Western astrologer. Given a user's natal chart and current transits, generate their personalized daily insights.
 
 You MUST respond with ONLY valid JSON (no markdown, no code fences):
@@ -93,8 +98,11 @@ export async function POST(request: NextRequest) {
 
     for (const userId of userIds) {
       // Check if already generated today
-      const { data: existingInsight } = await supabase.from("daily_insights").select("date").eq("id", userId).single();
-      if (existingInsight?.date === dateKey) {
+      const { data: existingInsight } = await supabase.from("daily_insights").select("date, insights").eq("id", userId).single();
+      const western = await customerMarket(userId) === "US";
+      const westernResult = western ? await loadWesternAccountChart(userId).catch(() => null) : null;
+      if(western && !westernResult) { results[userId] = false; continue; }
+      if (existingInsight?.date === dateKey && (!western || (existingInsight.insights?._zodiac_system === WESTERN_CHART_VERSION && existingInsight.insights?._birth_chart_id === westernResult?.id))) {
         results[userId] = true;
         continue;
       }
@@ -133,7 +141,7 @@ export async function POST(request: NextRequest) {
         // Try astro-engine for detailed natal data, but fall back gracefully
         let natalData: NatalPromptData | null = null;
         try {
-          natalData = await fetchFromAstroEngine("/calculate", {
+          natalData = western ? null : await fetchFromAstroEngine("/calculate", {
             year: parseInt(birthYear),
             month: monthNum,
             day: parseInt(birthDay),
@@ -201,8 +209,8 @@ Generate the daily insights JSON now.`;
         const response = await anthropic.messages.create({
           model: CLAUDE_MODEL,
           max_tokens: 512,
-          system: INSIGHTS_PROMPT,
-          messages: [{ role: "user", content: userMessage }],
+          system: INSIGHTS_PROMPT + (western ? "\n" + WESTERN_REPORT_INSTRUCTIONS : ""),
+          messages: [{ role: "user", content: western ? `Generate daily insights JSON for ${dateKey} using natal themes. No current transits are supplied. Chart: ${JSON.stringify(westernResult?.data)}` : userMessage }],
         });
 
         await logClaudeUsage({
@@ -227,12 +235,19 @@ Generate the daily insights JSON now.`;
         }
 
         const insightsData = JSON.parse(jsonStr);
+        if(western) { insightsData._zodiac_system = WESTERN_CHART_VERSION; insightsData._birth_chart_id = westernResult?.id; }
 
         // Add metadata
         insightsData.sun_sign = bigThree.sun?.sign || sunSign || "Unknown";
         insightsData.moon_sign = bigThree.moon?.sign || "Unknown";
         insightsData.rising_sign = bigThree.rising?.sign || "Unknown";
         insightsData.current_dasha = currentDasha.label || "Unknown";
+        if(westernResult) {
+          insightsData.sun_sign = westernResult.data.sun_sign;
+          insightsData.moon_sign = westernResult.data.moon_sign || "Birth time needed";
+          insightsData.rising_sign = westernResult.data.ascendant || "Birth time needed";
+          delete insightsData.current_dasha;
+        }
 
         // Calculate expiry (end of today UTC)
         const expiresAt = new Date();

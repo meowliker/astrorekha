@@ -1,7 +1,11 @@
+import {loadWesternAccountChart} from "@/lib/us-main/western-chart";
 
 import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+
+import {customerMarket} from "@/lib/customer-market";
+import {WESTERN_CHART_VERSION} from "@/lib/western-zodiac";
 
 function getDateKey(): string {
   const now = new Date();
@@ -27,9 +31,11 @@ export async function GET(request: NextRequest) {
   const dateKey = getDateKey();
 
   try {
+    const western = await customerMarket(userId) === "US";
+    const westernResult = western ? await loadWesternAccountChart(userId) : null;
     const { data: insight } = await supabase.from("daily_insights").select("*").eq("id", userId).single();
 
-    if (insight && insight.date === dateKey) {
+    if (insight && insight.date === dateKey && (!western || (insight.insights?._zodiac_system === WESTERN_CHART_VERSION && insight.insights?._birth_chart_id === westernResult?.id))) {
       // Return the insights JSONB data (contains lucky_number, dos, donts, daily_tip, etc.)
       const insightsData = insight.insights || insight;
       return NextResponse.json({
@@ -60,7 +66,7 @@ export async function GET(request: NextRequest) {
       if (genRes.ok) {
         // Re-fetch the newly generated data
         const { data: fresh } = await supabase.from("daily_insights").select("*").eq("id", userId).single();
-        if (fresh && fresh.date === dateKey) {
+        if (fresh && fresh.date === dateKey && (!western || (fresh.insights?._zodiac_system === WESTERN_CHART_VERSION && fresh.insights?._birth_chart_id === westernResult?.id))) {
           const freshData = fresh.insights || fresh;
           return NextResponse.json({
             success: true,

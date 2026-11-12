@@ -1,3 +1,6 @@
+import {customerMarket} from "@/lib/customer-market";
+import {loadWesternAccountChart} from "@/lib/us-main/western-chart";
+import {WESTERN_CHART_VERSION} from "@/lib/western-zodiac";
 
 import type { BirthChartData } from "@/lib/birth-chart-data";
 
@@ -202,6 +205,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "feature_locked" }, { status: 403 });
     }
 
+    const westernResult = await customerMarket(userId) === "US" ? await loadWesternAccountChart(userId) : null;
     if (!force) {
       const { data: existingComplete } = await supabase
         .from("past_life_reports")
@@ -210,7 +214,7 @@ export async function POST(request: NextRequest) {
         .eq("status", "complete")
         .maybeSingle();
 
-      if (existingComplete?.report_data) {
+      if (existingComplete?.report_data && (!westernResult || (existingComplete.report_data._zodiac_system === WESTERN_CHART_VERSION && existingComplete.report_data._birth_chart_id === westernResult.id))) {
         return NextResponse.json({
           id: existingComplete.id,
           status: "complete",
@@ -228,7 +232,7 @@ export async function POST(request: NextRequest) {
       .eq("id", userId)
       .maybeSingle();
 
-    if (!hasCompletePastLifeBirthDetails(userProfile || null, user)) {
+    if (!westernResult && !hasCompletePastLifeBirthDetails(userProfile || null, user)) {
       return NextResponse.json(
         {
           error: "missing_birth_details",
@@ -238,7 +242,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const chartData = await getPastLifeChartData(request, supabase, userId, userProfile || null, user);
+    const chartData = westernResult ? null : await getPastLifeChartData(request, supabase, userId, userProfile || null, user);
 
     const nowIso = new Date().toISOString();
     await supabase.from("past_life_reports").upsert(
@@ -257,6 +261,7 @@ export async function POST(request: NextRequest) {
       userProfile: userProfile || null,
       user,
       chartData,
+      westernChart: westernResult?.data,
       generatedAt: nowIso,
     });
 
@@ -275,7 +280,7 @@ export async function POST(request: NextRequest) {
           user_id: userId,
           status: "complete",
           birth_data: report.birthData,
-          report_data: report,
+          report_data: {...report,...(westernResult ? {_zodiac_system:WESTERN_CHART_VERSION,_birth_chart_id:westernResult.id} : {})},
           generated_at: report.generatedAt,
           updated_at: report.generatedAt,
         },

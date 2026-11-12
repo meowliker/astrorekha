@@ -1,7 +1,11 @@
+import {reportSessionUser} from "@/lib/report-session";
+import {customerMarket} from "@/lib/customer-market";
 import { NextRequest, NextResponse } from "next/server";
 import { fetchFromAstroEngine } from "@/lib/astro-client";
 import { supabase } from "@/lib/supabase";
 import { getVedicSignsFromChart, VEDIC_SIGNS_CACHE_VERSION } from "@/lib/vedic-signs";
+
+import { getWesternSignsFromChart, WESTERN_CHART_VERSION } from "@/lib/western-zodiac";
 
 const SIGN_SYMBOLS: Record<string, string> = {
   Aries: "♈", Taurus: "♉", Gemini: "♊", Cancer: "♋",
@@ -70,7 +74,9 @@ function to24Hour(hour: string, minute: string, period: string): { hour: number;
 
 export async function POST(request: NextRequest) {
   try {
-    const { birthMonth, birthDay, birthYear, birthHour, birthMinute, birthPeriod, birthPlace, knowsBirthTime } = await request.json();
+    const { birthMonth, birthDay, birthYear, birthHour, birthMinute, birthPeriod, birthPlace, knowsBirthTime, zodiacSystem } = await request.json();
+    const accountId = reportSessionUser(request);
+    const western = zodiacSystem === "western" || (zodiacSystem !== "vedic" && !!accountId && await customerMarket(accountId) === "US");
 
     const monthNum = MONTH_MAP[String(birthMonth).toLowerCase()] || Number(birthMonth);
     const dayNum = Number(birthDay);
@@ -99,7 +105,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check cache first
-    const cacheKey = generateCacheKey(String(monthNum), String(dayNum), String(yearNum), hour, minute, period, place, hasBirthTime);
+    const cacheKey = (western ? WESTERN_CHART_VERSION + "_" : "") + generateCacheKey(String(monthNum), String(dayNum), String(yearNum), hour, minute, period, place, hasBirthTime);
     try {
       const { data: cached } = await supabase.from("astrology_signs_cache").select("*").eq("id", cacheKey).single();
       if (cached) {
@@ -128,9 +134,9 @@ export async function POST(request: NextRequest) {
       place,
     }, 15000);
 
-    const vedicSigns = getVedicSignsFromChart(astroResult.chart);
+    const vedicSigns = western ? getWesternSignsFromChart(astroResult.chart) : getVedicSignsFromChart(astroResult.chart);
     if (!vedicSigns) {
-      return NextResponse.json({ success: false, error: "The birth chart did not include complete Vedic sign data. Please try again." }, { status: 502 });
+      return NextResponse.json({ success: false, error: "The birth chart did not include complete sign data. Please try again." }, { status: 502 });
     }
     const sunSignName = vedicSigns.sun;
     const moonSignName = vedicSigns.moon;
@@ -138,6 +144,7 @@ export async function POST(request: NextRequest) {
 
     // Format response to match what the frontend expects
     const signs = {
+      zodiacSystem: western ? "western" : "vedic",
       sunSign: {
         name: sunSignName,
         symbol: SIGN_SYMBOLS[sunSignName] || "♈",
@@ -158,10 +165,10 @@ export async function POST(request: NextRequest) {
       } : null,
       modality: SIGN_MODALITIES[sunSignName] || "Cardinal",
       polarity: SIGN_POLARITIES[sunSignName] || "Masculine",
-      rulingPlanet: SIGN_RULERS[sunSignName] || "Mars",
+      rulingPlanet: (western ? ({Scorpio:"Pluto",Aquarius:"Uranus",Pisces:"Neptune"} as Record<string,string>)[sunSignName] : null) || SIGN_RULERS[sunSignName] || "Mars",
       cosmicInsight: hasBirthTime
         ? `Your ${sunSignName} Sun with ${moonSignName} Moon and ${risingSignName} rising creates a unique blend of ${SIGN_ELEMENTS[sunSignName]} drive, ${SIGN_ELEMENTS[moonSignName]} emotional depth, and ${SIGN_ELEMENTS[risingSignName]} outward expression. This combination shapes how you pursue goals, process feelings, and present yourself to the world.`
-        : `Your Vedic Sun sign is ${sunSignName}. Add your birth time to calculate your Moon sign and ascendant reliably.`,
+        : `Your ${western ? "Western" : "Vedic"} Sun sign is ${sunSignName}. Add your birth time to calculate your Moon sign and ascendant reliably.`,
     };
 
     // Cache the signs result
@@ -178,7 +185,7 @@ export async function POST(request: NextRequest) {
     // Also save the FULL chart data to Firestore for chat/Elysia to use
     try {
       const userId = request.headers.get("x-user-id");
-      if (userId) {
+      if (userId && !western) {
         await supabase.from("natal_charts").upsert({
           id: userId,
           chart: astroResult.chart,

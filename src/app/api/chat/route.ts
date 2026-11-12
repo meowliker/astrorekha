@@ -457,6 +457,10 @@ async function getUserCoins(userId: string | null): Promise<number> {
   }
 }
 
+import {customerMarket} from "@/lib/customer-market";
+import {loadWesternAccountChart} from "@/lib/us-main/western-chart";
+import {WESTERN_REPORT_INSTRUCTIONS} from "@/lib/us-main/western-report";
+
 export async function POST(request: NextRequest) {
   let userId: string | null = null;
 
@@ -497,7 +501,12 @@ export async function POST(request: NextRequest) {
     };
 
     // Build structured user context from palm + chart data
-    const structuredContext = buildUserContext(userProfile, mergedData);
+    const western = userId && reportSessionUser(request) === userId && await customerMarket(userId) === "US";
+    const westernResult = western ? await loadWesternAccountChart(userId!).catch(() => null) : null;
+    const palmContext = buildUserContext(null, {palm: palmReading?.palm_analysis || palmReading?.palm || palmReading || {}}).split("=== PALM ANALYSIS ===")[1] || "No palm analysis available.";
+    const structuredContext = western
+      ? `Authoritative Western natal chart: ${westernResult ? JSON.stringify(westernResult.data) : "Unavailable. Ask the user to complete saved birth details; never substitute old signs."}\n=== PALM ANALYSIS ===${palmContext}`
+      : buildUserContext(userProfile, mergedData);
 
     const careerDirective = isCareerIntent(String(message || ""))
       ? `\n\n=== CAREER RESPONSE RULE (MANDATORY FOR THIS MESSAGE) ===
@@ -509,7 +518,7 @@ If the user's question is about job/career/profession:
       : "";
 
     // Build full system prompt with loaded prompts + user data
-    const fullSystemPrompt = `${elysiaSystemPrompt}\n\n${ELYSIA_PRODUCT_CONTEXT}\n\n${interpretationRules}${careerDirective}${getCurrentDateContext()}${FOLLOW_UP_DIRECTIVE}\n\n=== ASTROREKHA PRODUCT RULE ===\nYou are Elysia inside AstroRekha. Soulmate Sketch is an AstroRekha report. Acknowledge the user's experience with it without claiming to see the finished image or dismissing the product. Earlier assistant replies that denied the feature or used another app name were wrong. If the user challenges one of those replies, own the mistake instead of denying it.\n\n=== THIS USER'S PERSONAL DATA ===\n${structuredContext}`;
+    const fullSystemPrompt = `${elysiaSystemPrompt}\n\n${ELYSIA_PRODUCT_CONTEXT}\n\n${interpretationRules}${careerDirective}${getCurrentDateContext()}${FOLLOW_UP_DIRECTIVE}\n\n=== ASTROREKHA PRODUCT RULE ===\nYou are Elysia inside AstroRekha. Soulmate Sketch is an AstroRekha report. Acknowledge the user's experience with it without claiming to see the finished image or dismissing the product. Earlier assistant replies that denied the feature or used another app name were wrong. If the user challenges one of those replies, own the mistake instead of denying it.\n\n=== THIS USER'S PERSONAL DATA ===\n${structuredContext}${western ? "\n" + WESTERN_REPORT_INSTRUCTIONS + " The Birth Chart product for this account is Western, not Vedic. Ignore earlier messages or client profile signs that conflict with this chart." : ""}`;
 
     // Build messages array with chat history (last 20 messages for context)
     const messages: { role: "user" | "assistant"; content: string }[] = [];

@@ -151,6 +151,7 @@ export const useOnboardingStore = create<OnboardingState>()(
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
+              zodiacSystem: "vedic",
               birthMonth: state.birthMonth,
               birthDay: state.birthDay,
               birthYear: state.birthYear,

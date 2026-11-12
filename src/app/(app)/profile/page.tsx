@@ -2,6 +2,8 @@
 import type { StoredProfile } from "@/lib/stored-profile-types";
 
 
+import {accountWesternSigns} from "@/lib/account-zodiac-client";
+import {useCustomerCommerce} from "@/hooks/useCustomerCommerce";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -47,6 +49,11 @@ const zodiacModality: Record<string, string> = {
 };
 
 export default function ProfilePage() {
+  const commerce = useCustomerCommerce();
+  if (!commerce.ready) return <main className="min-h-screen p-8">{commerce.error || "Loading your profile…"}</main>;
+  return <AccountProfilePage key={commerce.data!.userId} western={commerce.isUS}/>;
+}
+function AccountProfilePage({western}: {western:boolean}) {
   const router = useRouter();
   const [isClient, setIsClient] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -107,12 +114,22 @@ export default function ProfilePage() {
       let moonSign = knowsBirthTime ? "Unavailable" : "Birth time needed";
       let ascendantSign = knowsBirthTime ? "Unavailable" : "Birth time needed";
 
-      if (month && day && year && place) {
+      if (western) {
+        try {
+          const signs = await accountWesternSigns();
+          if (signs) {
+            sunSign = signs.sun;
+            moonSign = signs.moon || "Birth time needed";
+            ascendantSign = signs.ascendant || "Birth time needed";
+          }
+        } catch (error) { console.error("Unable to load Western profile signs", error); }
+      } else if (month && day && year && place) {
         try {
           const response = await fetch("/api/astrology/signs", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
+              zodiacSystem: western ? "western" : "vedic",
               birthMonth: month, birthDay: day, birthYear: year,
               birthHour: hour, birthMinute: minute, birthPeriod: period,
               birthPlace: place, knowsBirthTime,
@@ -281,7 +298,7 @@ export default function ProfilePage() {
                   />
                 ))}
               </div>
-              <p className="text-white text-lg font-medium mt-4">Vedic Sun sign - {sunSign}</p>
+              <p className="text-white text-lg font-medium mt-4">{western ? "Western" : "Vedic"} Sun sign - {sunSign}</p>
             </motion.div>
 
             {/* Zodiac Info Grid - Row 1 */}
@@ -296,7 +313,7 @@ export default function ProfilePage() {
                 <div className="w-16 h-16 rounded-full bg-[#1A1F2E] flex items-center justify-center border border-primary/20">
                   <span className="text-2xl text-primary">☽</span>
                 </div>
-                <p className="text-white/50 text-xs mt-2">Vedic Moon Sign</p>
+                <p className="text-white/50 text-xs mt-2">{western ? "Western" : "Vedic"} Moon Sign</p>
                 <p className="text-white font-medium text-sm">{userMoonSign}</p>
               </div>
 
@@ -319,7 +336,7 @@ export default function ProfilePage() {
                 <div className="w-16 h-16 rounded-full bg-[#1A1F2E] flex items-center justify-center border border-primary/20">
                   <span className="text-2xl text-primary">{zodiacSymbols[userAscendant] || "✦"}</span>
                 </div>
-                <p className="text-white/50 text-xs mt-2">Vedic Ascendant</p>
+                <p className="text-white/50 text-xs mt-2">{western ? "Western" : "Vedic"} Ascendant</p>
                 <p className="text-white font-medium text-sm">{userAscendant}</p>
               </div>
             </motion.div>
@@ -337,7 +354,7 @@ export default function ProfilePage() {
                   <span className="text-2xl text-primary">♃</span>
                 </div>
                 <p className="text-white/50 text-xs mt-2">Planet</p>
-                <p className="text-white font-medium text-sm">{zodiacPlanets[sunSign] || "Unavailable"}</p>
+                <p className="text-white font-medium text-sm">{(western ? ({Aquarius:"Uranus",Pisces:"Neptune",Scorpio:"Pluto"}[sunSign] || zodiacPlanets[sunSign]) : zodiacPlanets[sunSign]) || "Unavailable"}</p>
               </div>
 
               {/* Polarity */}

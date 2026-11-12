@@ -158,11 +158,13 @@ export async function generateFuturePartnerReport({
   user,
   userProfile,
   chartData,
+  western = false,
   usageLogContext,
 }: {
   user: StoredProfile;
   userProfile: StoredProfile | null;
   chartData: BirthChartData | null;
+  western?: boolean;
   usageLogContext?: {
     userId?: string | null;
     reportId?: string | null;
@@ -170,11 +172,11 @@ export async function generateFuturePartnerReport({
 }): Promise<FuturePartnerReportData> {
   const name = String(user?.name || userProfile?.name || "friend").trim() || "friend";
 
-  const sunSign = firstKnownValue([chartData?.sun_sign, user?.sun_sign, userProfile?.sun_sign]);
+  const sunSign = firstKnownValue(western ? [chartData?.sun_sign] : [chartData?.sun_sign, user?.sun_sign, userProfile?.sun_sign]);
 
-  const moonSign = firstKnownValue([chartData?.moon_sign, user?.moon_sign, userProfile?.moon_sign]);
+  const moonSign = firstKnownValue(western ? [chartData?.moon_sign] : [chartData?.moon_sign, user?.moon_sign, userProfile?.moon_sign]);
 
-  const ascendant = firstKnownValue([
+  const ascendant = firstKnownValue(western ? [chartData?.ascendant] : [
     chartData?.lagna,
     chartData?.ascendant,
     user?.ascendant_sign,
@@ -193,7 +195,7 @@ export async function generateFuturePartnerReport({
 
   const userGender = String(user?.gender || userProfile?.gender || "").trim() || "not specified";
 
-  const prompt = `You are an experienced Vedic astrologer for an Indian audience.
+  const prompt = `You are an experienced ${western ? "Western tropical astrologer for a US audience. Use only supplied tropical signs. Do not guess missing Moon or Ascendant, or use sidereal signs, dashas or nakshatras" : "Vedic astrologer for an Indian audience"}.
 
 Generate one concise, realistic marriage prediction as JSON only.
 
@@ -210,7 +212,7 @@ Strict requirements:
 1. Return VALID JSON only. No markdown, no explanation.
 2. Output keys exactly:
 {
-  "partnerName": "one plausible Indian first name only, formatted like Aarav",
+  "partnerName": "one plausible ${western ? "first name suited to a US audience" : "Indian first name, formatted like Aarav"} only",
   "marriageYear": "YYYY",
   "partnerAgeAtMarriage": "number",
   "relationshipTheme": "short phrase",
@@ -222,7 +224,7 @@ Strict requirements:
   "guidance": "2-3 sentences"
 }
 3. Use one plausible future partner first name only. Do not include a surname, last initial, or initials-only output.
-4. Match the partner name to the user's stated gender and likely relationship context: if the user is female, use a masculine Indian first name; if the user is male, use a feminine Indian first name; if gender is not specified, use a neutral/plausible Indian first name.
+4. Match the partner name to the user's stated gender and likely relationship context: if the user is female, use a masculine ${western ? "" : "Indian "}first name; if the user is male, use a feminine ${western ? "" : "Indian "}first name; if gender is not specified, use a neutral/plausible ${western ? "" : "Indian "}first name.
 5. Keep tone warm and practical. This is an entertainment-style astrological insight.
 6. Do not include uncertainty language like "cannot predict".`;
 

@@ -1,3 +1,6 @@
+import {customerMarket} from "@/lib/customer-market";
+import {loadWesternAccountChart} from "@/lib/us-main/western-chart";
+import {WESTERN_CHART_VERSION} from "@/lib/western-zodiac";
 import { NextRequest, NextResponse } from "next/server";
 import { unstable_noStore as noStore } from "next/cache";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -60,7 +63,7 @@ export async function GET(request: NextRequest) {
       return jsonNoStore({ error: "status_fetch_failed" }, { status: 500 });
     }
 
-    if (!report) {
+    if (!report || (report.status === "complete" && await customerMarket(userId) === "US" && (report.report_data?._zodiac_system !== WESTERN_CHART_VERSION || report.report_data?._birth_chart_id !== (await loadWesternAccountChart(userId)).id))) {
       return jsonNoStore({ status: "not_started" });
     }
 

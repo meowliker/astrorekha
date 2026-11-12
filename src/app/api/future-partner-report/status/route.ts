@@ -1,6 +1,10 @@
+import {loadWesternAccountChart} from "@/lib/us-main/western-chart";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { normalizeFuturePartnerReportData } from "@/lib/future-partner-report-data";
+
+import {customerMarket} from "@/lib/customer-market";
+import {WESTERN_CHART_VERSION} from "@/lib/western-zodiac";
 
 function getSessionUserId(request: NextRequest): string | null {
   const accessCookie = request.cookies.get("ar_access")?.value;
@@ -38,7 +42,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "status_fetch_failed" }, { status: 500 });
     }
 
-    if (!data) {
+    if (!data || (await customerMarket(userId) === "US" && data.status === "complete" && (data.report_data?._zodiac_system !== WESTERN_CHART_VERSION || data.report_data?._birth_chart_id !== (await loadWesternAccountChart(userId)).id))) {
       return NextResponse.json({ status: "not_started" });
     }
 

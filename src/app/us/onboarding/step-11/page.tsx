@@ -305,7 +305,7 @@ export default function Step11Page() {
                 >
                   <span className="text-xl">{moonSign.symbol}</span>
                   <span className="flex min-h-8 items-center justify-center text-xs font-medium">{moonSign.name}</span>
-                  <span className="text-xs text-muted-foreground"><span className="block">Vedic</span>{" "}Moon Sign</span>
+                  <span className="text-xs text-muted-foreground"><span className="block">Western</span>{" "}Moon Sign</span>
                 </motion.div>
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
@@ -315,7 +315,7 @@ export default function Step11Page() {
                 >
                   <span className="text-xl">{sunSign.symbol}</span>
                   <span className="flex min-h-8 items-center justify-center text-xs font-medium">{sunSign.name}</span>
-                  <span className="text-xs text-muted-foreground"><span className="block">Vedic</span>{" "}Sun Sign</span>
+                  <span className="text-xs text-muted-foreground"><span className="block">Western</span>{" "}Sun Sign</span>
                 </motion.div>
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
@@ -325,7 +325,7 @@ export default function Step11Page() {
                 >
                   <span className="text-xl">{ascendant.symbol}</span>
                   <span className="flex min-h-8 items-center justify-center text-xs font-medium">{ascendant.name}</span>
-                  <span className="text-xs text-muted-foreground"><span className="block">Vedic</span>{" "}Ascendant</span>
+                  <span className="text-xs text-muted-foreground"><span className="block">Western</span>{" "}Ascendant</span>
                 </motion.div>
               </motion.div>
             )}

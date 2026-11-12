@@ -1,4 +1,5 @@
 "use client";
+import {accountWesternSigns} from "@/lib/account-zodiac-client";
 
 import ReportInfoButton from "@/components/ReportInfoButton";
 
@@ -38,7 +39,7 @@ export default function Prediction2026Page() {
   const [prediction, setPrediction] = useState<(typeof predictions2026Data)["aries"]["prediction"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedMonth, setExpandedMonth] = useState<string | null>(null);
-  const [zodiacSign, setZodiacSign] = useState<string>("Aries");
+  const [zodiacSign, setZodiacSign] = useState<string>("");
 
   // Get sun sign from onboarding store as fallback
   const { sunSign: storeSunSign } = useOnboardingStore();
@@ -49,6 +50,8 @@ export default function Prediction2026Page() {
 
   const loadUserSunSign = async () => {
     try {
+      const westernSigns = await accountWesternSigns();
+      if(westernSigns){setZodiacSign(westernSigns.sun);return;}
       const userId = localStorage.getItem("astrorekha_user_id");
       if (userId) {
         const { data: dbUser } = await supabase.from("users").select("sun_sign").eq("id", userId).single();
@@ -61,19 +64,16 @@ export default function Prediction2026Page() {
         }
       }
       // Fallback to onboarding store
-      if (storeSunSign?.name) {
-        setZodiacSign(storeSunSign.name);
-      }
+      setZodiacSign(storeSunSign?.name || "Aries");
     } catch (err) {
       console.error("Failed to load sun sign:", err);
-      if (storeSunSign?.name) {
-        setZodiacSign(storeSunSign.name);
-      }
+      setError("Unable to load your sign. Please check your saved birth details.");
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadPrediction();
+    if(zodiacSign) loadPrediction();
   }, [zodiacSign]);
 
   const loadPrediction = async () => {
@@ -141,7 +141,7 @@ export default function Prediction2026Page() {
             <div className="text-center">
               <p className="text-red-400 mb-4">{error}</p>
               <button
-                onClick={loadPrediction}
+                onClick={loadUserSunSign}
                 className="px-6 py-3 bg-primary rounded-xl text-white font-semibold"
               >
                 Try Again

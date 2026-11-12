@@ -1,4 +1,5 @@
 "use client";
+import {accountWesternSigns} from "@/lib/account-zodiac-client";
 import type { CheckoutWidgetWindow, PayUBoltResponse, RazorpaySuccess } from "@/lib/checkout-widget-types";
 
 import { getErrorCode, getErrorMessage } from "@/lib/error-message";
@@ -595,8 +596,10 @@ export default function ChatPage() {
         console.error("[Chat] Failed to load palm reading:", err);
       }
 
-      // Load natal chart from Supabase (calculated by astro-engine)
+      // US chart context is calculated authoritatively by the chat API.
       try {
+        const westernSigns = await accountWesternSigns();
+        if(westernSigns) { setNatalChart(null); } else {
         const { data: chartData } = await supabase.from("natal_charts").select("*").eq("id", userId).single();
         if (chartData) {
           setNatalChart(chartData);
@@ -629,6 +632,7 @@ export default function ChatPage() {
           } catch (calcErr) {
             console.error("[Chat] Failed to calculate natal chart:", calcErr);
           }
+        }
         }
       } catch (err) {
         console.error("[Chat] Failed to load natal chart:", err);

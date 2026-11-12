@@ -283,7 +283,9 @@ export default function ReportViewer({ report }: ReportViewerProps) {
         </section>
       )}
 
-      {SECTIONS.map((section, index) => {
+      {SECTIONS.map((originalSection, index) => {
+        const section = report.sections._zodiac_system === "western_tropical_v1" && originalSection.key === "current_dasha"
+          ? {...originalSection,title:"Your Planetary Patterns"} : originalSection;
         const rawText = report.sections?.[section.key] || "Section not available yet.";
         const paragraphs = dedupeParagraphs(
           removeTitleEcho(getReadableParagraphs(rawText), section.title)

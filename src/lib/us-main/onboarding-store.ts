@@ -151,6 +151,7 @@ export const useOnboardingStore = create<OnboardingState>()(
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
+              zodiacSystem: "western",
               birthMonth: state.birthMonth,
               birthDay: state.birthDay,
               birthYear: state.birthYear,
@@ -189,7 +190,7 @@ export const useOnboardingStore = create<OnboardingState>()(
     }),
     {
       name: "astrorekha-us-main-onboarding",
-      version: 1,
+      version: 2,
       migrate: (persistedState) => ({ ...(persistedState as object), ...invalidatedSigns }),
     }
   )

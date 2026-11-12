@@ -1,0 +1,5692 @@
+[
+  {
+    "input": {
+      "year": 2000,
+      "month": 3,
+      "day": 9,
+      "hour": 12,
+      "minute": 0,
+      "second": 0,
+      "place": "New York, USA"
+    },
+    "chart": {
+      "birth_data": {
+        "date": "2000-03-09",
+        "time": "12:00:00",
+        "place": "New York, USA",
+        "latitude": 40.7128,
+        "longitude": -74.006,
+        "timezone": "America/New_York",
+        "julian_day": 2451613.208333,
+        "ayanamsa_lahiri": 23.8597
+      },
+      "big_three": {
+        "sun": {
+          "sign": "Pisces",
+          "house": 10,
+          "degree": "19°25'54\" Pisces"
+        },
+        "moon": {
+          "sign": "Taurus",
+          "house": 11,
+          "degree": "2°51'53\" Taurus",
+          "nakshatra": "Ashwini",
+          "nakshatra_pada": 3
+        },
+        "rising": {
+          "sign": "Cancer",
+          "degree": "9°23'32\" Cancer"
+        }
+      },
+      "planets": {
+        "Sun": {
+          "tropical": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 19,
+            "minute": 25,
+            "second": 54,
+            "formatted": "19°25'54\" Pisces",
+            "total_longitude": 349.4319,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 25,
+            "minute": 34,
+            "second": 19,
+            "formatted": "25°34'19\" Aquarius",
+            "total_longitude": 325.5722,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Purva Bhadrapada",
+            "ruler": "Jupiter",
+            "quality": "Transformative fire, spiritual warrior",
+            "pada": 2,
+            "degree_in_nakshatra": 5.57
+          },
+          "dignity": "neutral",
+          "house_western": 10,
+          "house_vedic": 8,
+          "retrograde": false,
+          "speed_deg_per_day": 0.999493,
+          "latitude": -0.0002
+        },
+        "Moon": {
+          "tropical": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 2,
+            "minute": 51,
+            "second": 53,
+            "formatted": "2°51'53\" Taurus",
+            "total_longitude": 32.865,
+            "element": "Earth",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 9,
+            "minute": 0,
+            "second": 18,
+            "formatted": "9°00'18\" Aries",
+            "total_longitude": 9.0053,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Ashwini",
+            "ruler": "Ketu",
+            "quality": "Swift, healing, new beginnings",
+            "pada": 3,
+            "degree_in_nakshatra": 9.01
+          },
+          "dignity": "exaltation",
+          "house_western": 11,
+          "house_vedic": 10,
+          "retrograde": false,
+          "speed_deg_per_day": 13.804671,
+          "latitude": -5.133
+        },
+        "Mercury": {
+          "tropical": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 4,
+            "minute": 11,
+            "second": 35,
+            "formatted": "4°11'35\" Pisces",
+            "total_longitude": 334.1931,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 10,
+            "minute": 20,
+            "second": 0,
+            "formatted": "10°20'00\" Aquarius",
+            "total_longitude": 310.3334,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Shatabhisha",
+            "ruler": "Rahu",
+            "quality": "Hundred healers, mystical healing",
+            "pada": 2,
+            "degree_in_nakshatra": 3.67
+          },
+          "dignity": "detriment",
+          "house_western": 9,
+          "house_vedic": 8,
+          "retrograde": true,
+          "speed_deg_per_day": -0.554763,
+          "latitude": 2.4956
+        },
+        "Venus": {
+          "tropical": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 25,
+            "minute": 20,
+            "second": 7,
+            "formatted": "25°20'07\" Aquarius",
+            "total_longitude": 325.3355,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 1,
+            "minute": 28,
+            "second": 32,
+            "formatted": "1°28'32\" Aquarius",
+            "total_longitude": 301.4758,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Dhanishtha",
+            "ruler": "Mars",
+            "quality": "Wealth, music, adaptability",
+            "pada": 3,
+            "degree_in_nakshatra": 8.14
+          },
+          "dignity": "neutral",
+          "house_western": 9,
+          "house_vedic": 8,
+          "retrograde": false,
+          "speed_deg_per_day": 1.235701,
+          "latitude": -0.9339
+        },
+        "Mars": {
+          "tropical": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 20,
+            "minute": 6,
+            "second": 58,
+            "formatted": "20°06'58\" Aries",
+            "total_longitude": 20.1163,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "sidereal": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 26,
+            "minute": 15,
+            "second": 23,
+            "formatted": "26°15'23\" Pisces",
+            "total_longitude": 356.2566,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Revati",
+            "ruler": "Mercury",
+            "quality": "Journey's end, compassion",
+            "pada": 3,
+            "degree_in_nakshatra": 9.59
+          },
+          "dignity": "domicile",
+          "house_western": 10,
+          "house_vedic": 9,
+          "retrograde": false,
+          "speed_deg_per_day": 0.745491,
+          "latitude": -0.1901
+        },
+        "Jupiter": {
+          "tropical": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 4,
+            "minute": 22,
+            "second": 58,
+            "formatted": "4°22'58\" Taurus",
+            "total_longitude": 34.3828,
+            "element": "Earth",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 10,
+            "minute": 31,
+            "second": 23,
+            "formatted": "10°31'23\" Aries",
+            "total_longitude": 10.5231,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Ashwini",
+            "ruler": "Ketu",
+            "quality": "Swift, healing, new beginnings",
+            "pada": 4,
+            "degree_in_nakshatra": 10.52
+          },
+          "dignity": "neutral",
+          "house_western": 11,
+          "house_vedic": 10,
+          "retrograde": false,
+          "speed_deg_per_day": 0.202593,
+          "latitude": -0.9781
+        },
+        "Saturn": {
+          "tropical": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 13,
+            "minute": 10,
+            "second": 15,
+            "formatted": "13°10'15\" Taurus",
+            "total_longitude": 43.1709,
+            "element": "Earth",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 19,
+            "minute": 18,
+            "second": 40,
+            "formatted": "19°18'40\" Aries",
+            "total_longitude": 19.3112,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Bharani",
+            "ruler": "Venus",
+            "quality": "Transformation, bearing responsibility",
+            "pada": 2,
+            "degree_in_nakshatra": 5.98
+          },
+          "dignity": "neutral",
+          "house_western": 11,
+          "house_vedic": 10,
+          "retrograde": false,
+          "speed_deg_per_day": 0.093102,
+          "latitude": -2.1326
+        },
+        "Uranus": {
+          "tropical": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 18,
+            "minute": 36,
+            "second": 55,
+            "formatted": "18°36'55\" Aquarius",
+            "total_longitude": 318.6155,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 24,
+            "minute": 45,
+            "second": 20,
+            "formatted": "24°45'20\" Capricorn",
+            "total_longitude": 294.7558,
+            "element": "Earth",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Dhanishtha",
+            "ruler": "Mars",
+            "quality": "Wealth, music, adaptability",
+            "pada": 1,
+            "degree_in_nakshatra": 1.42
+          },
+          "dignity": "neutral",
+          "house_western": 8,
+          "house_vedic": 7,
+          "retrograde": false,
+          "speed_deg_per_day": 0.051871,
+          "latitude": -0.6613
+        },
+        "Neptune": {
+          "tropical": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 5,
+            "minute": 38,
+            "second": 10,
+            "formatted": "5°38'10\" Aquarius",
+            "total_longitude": 305.6362,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 11,
+            "minute": 46,
+            "second": 35,
+            "formatted": "11°46'35\" Capricorn",
+            "total_longitude": 281.7765,
+            "element": "Earth",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Shravana",
+            "ruler": "Moon",
+            "quality": "Listening, learning, connection",
+            "pada": 1,
+            "degree_in_nakshatra": 1.78
+          },
+          "dignity": "neutral",
+          "house_western": 8,
+          "house_vedic": 7,
+          "retrograde": false,
+          "speed_deg_per_day": 0.029471,
+          "latitude": 0.2243
+        },
+        "Pluto": {
+          "tropical": {
+            "sign": "Sagittarius",
+            "sign_index": 8,
+            "degree": 12,
+            "minute": 53,
+            "second": 33,
+            "formatted": "12°53'33\" Sagittarius",
+            "total_longitude": 252.8925,
+            "element": "Fire",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Scorpio",
+            "sign_index": 7,
+            "degree": 19,
+            "minute": 1,
+            "second": 58,
+            "formatted": "19°01'58\" Scorpio",
+            "total_longitude": 229.0328,
+            "element": "Water",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Jyeshtha",
+            "ruler": "Mercury",
+            "quality": "Seniority, protective, chief",
+            "pada": 1,
+            "degree_in_nakshatra": 2.37
+          },
+          "dignity": "neutral",
+          "house_western": 6,
+          "house_vedic": 5,
+          "retrograde": false,
+          "speed_deg_per_day": 0.00327,
+          "latitude": 11.1062
+        },
+        "Rahu": {
+          "tropical": {
+            "sign": "Leo",
+            "sign_index": 4,
+            "degree": 1,
+            "minute": 25,
+            "second": 42,
+            "formatted": "1°25'42\" Leo",
+            "total_longitude": 121.4286,
+            "element": "Fire",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 7,
+            "minute": 34,
+            "second": 8,
+            "formatted": "7°34'08\" Cancer",
+            "total_longitude": 97.5689,
+            "element": "Water",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Pushya",
+            "ruler": "Saturn",
+            "quality": "Nourishing, most auspicious",
+            "pada": 2,
+            "degree_in_nakshatra": 4.24
+          },
+          "dignity": "neutral",
+          "house_western": 2,
+          "house_vedic": 1,
+          "retrograde": true,
+          "speed_deg_per_day": -0.052982,
+          "latitude": 0
+        },
+        "Ketu": {
+          "tropical": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 1,
+            "minute": 25,
+            "second": 42,
+            "formatted": "1°25'42\" Aquarius",
+            "total_longitude": 301.4286,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 7,
+            "minute": 34,
+            "second": 8,
+            "formatted": "7°34'08\" Capricorn",
+            "total_longitude": 277.5689,
+            "element": "Earth",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Uttara Ashadha",
+            "ruler": "Sun",
+            "quality": "Final victory, universal",
+            "pada": 4,
+            "degree_in_nakshatra": 10.9
+          },
+          "dignity": "neutral",
+          "house_western": 8,
+          "house_vedic": 7,
+          "retrograde": true,
+          "speed_deg_per_day": 0,
+          "latitude": 0
+        }
+      },
+      "houses": {
+        "1": {
+          "cusp_longitude": 99.3923,
+          "sign": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 9,
+            "minute": 23,
+            "second": 32,
+            "formatted": "9°23'32\" Cancer",
+            "total_longitude": 99.3923,
+            "element": "Water",
+            "modality": "Cardinal"
+          }
+        },
+        "2": {
+          "cusp_longitude": 118.9628,
+          "sign": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 28,
+            "minute": 57,
+            "second": 45,
+            "formatted": "28°57'45\" Cancer",
+            "total_longitude": 118.9628,
+            "element": "Water",
+            "modality": "Cardinal"
+          }
+        },
+        "3": {
+          "cusp_longitude": 140.6077,
+          "sign": {
+            "sign": "Leo",
+            "sign_index": 4,
+            "degree": 20,
+            "minute": 36,
+            "second": 27,
+            "formatted": "20°36'27\" Leo",
+            "total_longitude": 140.6077,
+            "element": "Fire",
+            "modality": "Fixed"
+          }
+        },
+        "4": {
+          "cusp_longitude": 167.6921,
+          "sign": {
+            "sign": "Virgo",
+            "sign_index": 5,
+            "degree": 17,
+            "minute": 41,
+            "second": 31,
+            "formatted": "17°41'31\" Virgo",
+            "total_longitude": 167.6921,
+            "element": "Earth",
+            "modality": "Mutable"
+          }
+        },
+        "5": {
+          "cusp_longitude": 202.9945,
+          "sign": {
+            "sign": "Libra",
+            "sign_index": 6,
+            "degree": 22,
+            "minute": 59,
+            "second": 40,
+            "formatted": "22°59'40\" Libra",
+            "total_longitude": 202.9945,
+            "element": "Air",
+            "modality": "Cardinal"
+          }
+        },
+        "6": {
+          "cusp_longitude": 243.4534,
+          "sign": {
+            "sign": "Sagittarius",
+            "sign_index": 8,
+            "degree": 3,
+            "minute": 27,
+            "second": 12,
+            "formatted": "3°27'12\" Sagittarius",
+            "total_longitude": 243.4534,
+            "element": "Fire",
+            "modality": "Mutable"
+          }
+        },
+        "7": {
+          "cusp_longitude": 279.3923,
+          "sign": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 9,
+            "minute": 23,
+            "second": 32,
+            "formatted": "9°23'32\" Capricorn",
+            "total_longitude": 279.3923,
+            "element": "Earth",
+            "modality": "Cardinal"
+          }
+        },
+        "8": {
+          "cusp_longitude": 298.9628,
+          "sign": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 28,
+            "minute": 57,
+            "second": 45,
+            "formatted": "28°57'45\" Capricorn",
+            "total_longitude": 298.9628,
+            "element": "Earth",
+            "modality": "Cardinal"
+          }
+        },
+        "9": {
+          "cusp_longitude": 320.6077,
+          "sign": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 20,
+            "minute": 36,
+            "second": 27,
+            "formatted": "20°36'27\" Aquarius",
+            "total_longitude": 320.6077,
+            "element": "Air",
+            "modality": "Fixed"
+          }
+        },
+        "10": {
+          "cusp_longitude": 347.6921,
+          "sign": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 17,
+            "minute": 41,
+            "second": 31,
+            "formatted": "17°41'31\" Pisces",
+            "total_longitude": 347.6921,
+            "element": "Water",
+            "modality": "Mutable"
+          }
+        },
+        "11": {
+          "cusp_longitude": 22.9945,
+          "sign": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 22,
+            "minute": 59,
+            "second": 40,
+            "formatted": "22°59'40\" Aries",
+            "total_longitude": 22.9945,
+            "element": "Fire",
+            "modality": "Cardinal"
+          }
+        },
+        "12": {
+          "cusp_longitude": 63.4534,
+          "sign": {
+            "sign": "Gemini",
+            "sign_index": 2,
+            "degree": 3,
+            "minute": 27,
+            "second": 12,
+            "formatted": "3°27'12\" Gemini",
+            "total_longitude": 63.4534,
+            "element": "Air",
+            "modality": "Mutable"
+          }
+        }
+      },
+      "ascendant": {
+        "sign": "Cancer",
+        "sign_index": 3,
+        "degree": 9,
+        "minute": 23,
+        "second": 32,
+        "formatted": "9°23'32\" Cancer",
+        "total_longitude": 99.3923,
+        "element": "Water",
+        "modality": "Cardinal"
+      },
+      "midheaven": {
+        "sign": "Pisces",
+        "sign_index": 11,
+        "degree": 17,
+        "minute": 41,
+        "second": 31,
+        "formatted": "17°41'31\" Pisces",
+        "total_longitude": 347.6921,
+        "element": "Water",
+        "modality": "Mutable"
+      },
+      "aspects": [
+        {
+          "planet1": "Rahu",
+          "planet2": "Ketu",
+          "aspect": "opposition",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 0,
+          "strength": 1
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Jupiter",
+          "aspect": "semi_square",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 0.05,
+          "strength": 0.975
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Jupiter",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 0.19,
+          "strength": 0.962
+        },
+        {
+          "planet1": "Saturn",
+          "planet2": "Pluto",
+          "aspect": "quincunx",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 0.28,
+          "strength": 0.907
+        },
+        {
+          "planet1": "Jupiter",
+          "planet2": "Neptune",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 1.25,
+          "strength": 0.821
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Jupiter",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 1.52,
+          "strength": 0.81
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Rahu",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 1.44,
+          "strength": 0.795
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Ketu",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 1.44,
+          "strength": 0.795
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Mercury",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 1.33,
+          "strength": 0.734
+        },
+        {
+          "planet1": "Mars",
+          "planet2": "Uranus",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 1.5,
+          "strength": 0.7
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Mars",
+          "aspect": "semi_sextile",
+          "nature": "minor",
+          "harmony": "neutral",
+          "orb": 0.68,
+          "strength": 0.658
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Neptune",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 2.77,
+          "strength": 0.604
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Uranus",
+          "aspect": "semi_sextile",
+          "nature": "minor",
+          "harmony": "neutral",
+          "orb": 0.82,
+          "strength": 0.592
+        },
+        {
+          "planet1": "Jupiter",
+          "planet2": "Rahu",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 2.95,
+          "strength": 0.578
+        },
+        {
+          "planet1": "Jupiter",
+          "planet2": "Ketu",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 2.95,
+          "strength": 0.578
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Mars",
+          "aspect": "semi_square",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 0.92,
+          "strength": 0.538
+        },
+        {
+          "planet1": "Neptune",
+          "planet2": "Rahu",
+          "aspect": "opposition",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 4.21,
+          "strength": 0.474
+        },
+        {
+          "planet1": "Neptune",
+          "planet2": "Ketu",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 4.21,
+          "strength": 0.474
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Neptune",
+          "aspect": "semi_square",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 1.2,
+          "strength": 0.398
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Neptune",
+          "aspect": "semi_sextile",
+          "nature": "minor",
+          "harmony": "neutral",
+          "orb": 1.44,
+          "strength": 0.278
+        },
+        {
+          "planet1": "Saturn",
+          "planet2": "Uranus",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 5.44,
+          "strength": 0.222
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Moon",
+          "aspect": "semi_square",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 1.57,
+          "strength": 0.217
+        },
+        {
+          "planet1": "Venus",
+          "planet2": "Uranus",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 6.72,
+          "strength": 0.16
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Rahu",
+          "aspect": "quincunx",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 2.76,
+          "strength": 0.079
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Pluto",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 6.54,
+          "strength": 0.066
+        }
+      ],
+      "stelliums": [
+        {
+          "sign": "Taurus",
+          "planets": [
+            "Moon",
+            "Jupiter",
+            "Saturn"
+          ],
+          "count": 3
+        },
+        {
+          "sign": "Aquarius",
+          "planets": [
+            "Venus",
+            "Uranus",
+            "Neptune",
+            "Ketu"
+          ],
+          "count": 4
+        }
+      ],
+      "elements": {
+        "counts": {
+          "Fire": 3,
+          "Earth": 5,
+          "Air": 4,
+          "Water": 8
+        },
+        "dominant": "Water"
+      },
+      "modalities": {
+        "counts": {
+          "Cardinal": 5,
+          "Fixed": 9,
+          "Mutable": 6
+        },
+        "dominant": "Fixed"
+      }
+    }
+  },
+  {
+    "input": {
+      "year": 2025,
+      "month": 3,
+      "day": 9,
+      "hour": 12,
+      "minute": 0,
+      "second": 0,
+      "place": "New York, USA"
+    },
+    "chart": {
+      "birth_data": {
+        "date": "2025-03-09",
+        "time": "12:00:00",
+        "place": "New York, USA",
+        "latitude": 40.7128,
+        "longitude": -74.006,
+        "timezone": "America/New_York",
+        "julian_day": 2460744.166667,
+        "ayanamsa_lahiri": 24.2089
+      },
+      "big_three": {
+        "sun": {
+          "sign": "Pisces",
+          "house": 10,
+          "degree": "19°19'50\" Pisces"
+        },
+        "moon": {
+          "sign": "Cancer",
+          "house": 2,
+          "degree": "26°13'59\" Cancer",
+          "nakshatra": "Punarvasu",
+          "nakshatra_pada": 4
+        },
+        "rising": {
+          "sign": "Gemini",
+          "degree": "25°47'50\" Gemini"
+        }
+      },
+      "planets": {
+        "Sun": {
+          "tropical": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 19,
+            "minute": 19,
+            "second": 50,
+            "formatted": "19°19'50\" Pisces",
+            "total_longitude": 349.3307,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 25,
+            "minute": 7,
+            "second": 18,
+            "formatted": "25°07'18\" Aquarius",
+            "total_longitude": 325.1218,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Purva Bhadrapada",
+            "ruler": "Jupiter",
+            "quality": "Transformative fire, spiritual warrior",
+            "pada": 2,
+            "degree_in_nakshatra": 5.12
+          },
+          "dignity": "neutral",
+          "house_western": 10,
+          "house_vedic": 9,
+          "retrograde": false,
+          "speed_deg_per_day": 0.999259,
+          "latitude": 0.0001
+        },
+        "Moon": {
+          "tropical": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 26,
+            "minute": 13,
+            "second": 59,
+            "formatted": "26°13'59\" Cancer",
+            "total_longitude": 116.2332,
+            "element": "Water",
+            "modality": "Cardinal"
+          },
+          "sidereal": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 2,
+            "minute": 1,
+            "second": 27,
+            "formatted": "2°01'27\" Cancer",
+            "total_longitude": 92.0243,
+            "element": "Water",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Punarvasu",
+            "ruler": "Jupiter",
+            "quality": "Renewal, optimism after hardship",
+            "pada": 4,
+            "degree_in_nakshatra": 12.02
+          },
+          "dignity": "domicile",
+          "house_western": 2,
+          "house_vedic": 2,
+          "retrograde": false,
+          "speed_deg_per_day": 12.984422,
+          "latitude": 4.6328
+        },
+        "Mercury": {
+          "tropical": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 7,
+            "minute": 19,
+            "second": 39,
+            "formatted": "7°19'39\" Aries",
+            "total_longitude": 7.3276,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "sidereal": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 13,
+            "minute": 7,
+            "second": 7,
+            "formatted": "13°07'07\" Pisces",
+            "total_longitude": 343.1187,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Uttara Bhadrapada",
+            "ruler": "Saturn",
+            "quality": "Depth, wisdom from cosmic ocean",
+            "pada": 3,
+            "degree_in_nakshatra": 9.79
+          },
+          "dignity": "neutral",
+          "house_western": 11,
+          "house_vedic": 10,
+          "retrograde": false,
+          "speed_deg_per_day": 0.796474,
+          "latitude": 2.1938
+        },
+        "Venus": {
+          "tropical": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 9,
+            "minute": 37,
+            "second": 14,
+            "formatted": "9°37'14\" Aries",
+            "total_longitude": 9.6206,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "sidereal": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 15,
+            "minute": 24,
+            "second": 41,
+            "formatted": "15°24'41\" Pisces",
+            "total_longitude": 345.4117,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Uttara Bhadrapada",
+            "ruler": "Saturn",
+            "quality": "Depth, wisdom from cosmic ocean",
+            "pada": 4,
+            "degree_in_nakshatra": 12.08
+          },
+          "dignity": "detriment",
+          "house_western": 11,
+          "house_vedic": 10,
+          "retrograde": true,
+          "speed_deg_per_day": -0.317464,
+          "latitude": 7.9957
+        },
+        "Mars": {
+          "tropical": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 18,
+            "minute": 5,
+            "second": 34,
+            "formatted": "18°05'34\" Cancer",
+            "total_longitude": 108.0928,
+            "element": "Water",
+            "modality": "Cardinal"
+          },
+          "sidereal": {
+            "sign": "Gemini",
+            "sign_index": 2,
+            "degree": 23,
+            "minute": 53,
+            "second": 1,
+            "formatted": "23°53'01\" Gemini",
+            "total_longitude": 83.8839,
+            "element": "Air",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Punarvasu",
+            "ruler": "Jupiter",
+            "quality": "Renewal, optimism after hardship",
+            "pada": 2,
+            "degree_in_nakshatra": 3.88
+          },
+          "dignity": "fall",
+          "house_western": 2,
+          "house_vedic": 1,
+          "retrograde": false,
+          "speed_deg_per_day": 0.152734,
+          "latitude": 3.2832
+        },
+        "Jupiter": {
+          "tropical": {
+            "sign": "Gemini",
+            "sign_index": 2,
+            "degree": 13,
+            "minute": 3,
+            "second": 58,
+            "formatted": "13°03'58\" Gemini",
+            "total_longitude": 73.0664,
+            "element": "Air",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 18,
+            "minute": 51,
+            "second": 26,
+            "formatted": "18°51'26\" Taurus",
+            "total_longitude": 48.8574,
+            "element": "Earth",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Rohini",
+            "ruler": "Moon",
+            "quality": "Growth, beauty, sensuality",
+            "pada": 3,
+            "degree_in_nakshatra": 8.86
+          },
+          "dignity": "detriment",
+          "house_western": 12,
+          "house_vedic": 12,
+          "retrograde": false,
+          "speed_deg_per_day": 0.103361,
+          "latitude": -0.3695
+        },
+        "Saturn": {
+          "tropical": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 21,
+            "minute": 45,
+            "second": 16,
+            "formatted": "21°45'16\" Pisces",
+            "total_longitude": 351.7547,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 27,
+            "minute": 32,
+            "second": 44,
+            "formatted": "27°32'44\" Aquarius",
+            "total_longitude": 327.5457,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Purva Bhadrapada",
+            "ruler": "Jupiter",
+            "quality": "Transformative fire, spiritual warrior",
+            "pada": 3,
+            "degree_in_nakshatra": 7.55
+          },
+          "dignity": "neutral",
+          "house_western": 10,
+          "house_vedic": 9,
+          "retrograde": false,
+          "speed_deg_per_day": 0.123416,
+          "latitude": -1.9136
+        },
+        "Uranus": {
+          "tropical": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 23,
+            "minute": 52,
+            "second": 58,
+            "formatted": "23°52'58\" Taurus",
+            "total_longitude": 53.8829,
+            "element": "Earth",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 29,
+            "minute": 40,
+            "second": 26,
+            "formatted": "29°40'26\" Aries",
+            "total_longitude": 29.6739,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Krittika",
+            "ruler": "Sun",
+            "quality": "Sharp, purifying, courage",
+            "pada": 1,
+            "degree_in_nakshatra": 3.01
+          },
+          "dignity": "neutral",
+          "house_western": 12,
+          "house_vedic": 11,
+          "retrograde": false,
+          "speed_deg_per_day": 0.031733,
+          "latitude": -0.2293
+        },
+        "Neptune": {
+          "tropical": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 29,
+            "minute": 12,
+            "second": 46,
+            "formatted": "29°12'46\" Pisces",
+            "total_longitude": 359.2129,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 5,
+            "minute": 0,
+            "second": 14,
+            "formatted": "5°00'14\" Pisces",
+            "total_longitude": 335.004,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Uttara Bhadrapada",
+            "ruler": "Saturn",
+            "quality": "Depth, wisdom from cosmic ocean",
+            "pada": 1,
+            "degree_in_nakshatra": 1.67
+          },
+          "dignity": "neutral",
+          "house_western": 10,
+          "house_vedic": 10,
+          "retrograde": false,
+          "speed_deg_per_day": 0.037492,
+          "latitude": -1.2618
+        },
+        "Pluto": {
+          "tropical": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 3,
+            "minute": 6,
+            "second": 25,
+            "formatted": "3°06'25\" Aquarius",
+            "total_longitude": 303.1072,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 8,
+            "minute": 53,
+            "second": 53,
+            "formatted": "8°53'53\" Capricorn",
+            "total_longitude": 278.8983,
+            "element": "Earth",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Uttara Ashadha",
+            "ruler": "Sun",
+            "quality": "Final victory, universal",
+            "pada": 4,
+            "degree_in_nakshatra": 12.23
+          },
+          "dignity": "neutral",
+          "house_western": 8,
+          "house_vedic": 8,
+          "retrograde": false,
+          "speed_deg_per_day": 0.024098,
+          "latitude": -3.389
+        },
+        "Rahu": {
+          "tropical": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 27,
+            "minute": 54,
+            "second": 52,
+            "formatted": "27°54'52\" Pisces",
+            "total_longitude": 357.9145,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 3,
+            "minute": 42,
+            "second": 20,
+            "formatted": "3°42'20\" Pisces",
+            "total_longitude": 333.7056,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Uttara Bhadrapada",
+            "ruler": "Saturn",
+            "quality": "Depth, wisdom from cosmic ocean",
+            "pada": 1,
+            "degree_in_nakshatra": 0.37
+          },
+          "dignity": "neutral",
+          "house_western": 10,
+          "house_vedic": 10,
+          "retrograde": true,
+          "speed_deg_per_day": -0.052942,
+          "latitude": 0
+        },
+        "Ketu": {
+          "tropical": {
+            "sign": "Virgo",
+            "sign_index": 5,
+            "degree": 27,
+            "minute": 54,
+            "second": 52,
+            "formatted": "27°54'52\" Virgo",
+            "total_longitude": 177.9145,
+            "element": "Earth",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Virgo",
+            "sign_index": 5,
+            "degree": 3,
+            "minute": 42,
+            "second": 20,
+            "formatted": "3°42'20\" Virgo",
+            "total_longitude": 153.7056,
+            "element": "Earth",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Uttara Phalguni",
+            "ruler": "Sun",
+            "quality": "Patronage, contracts, friendship",
+            "pada": 3,
+            "degree_in_nakshatra": 7.04
+          },
+          "dignity": "neutral",
+          "house_western": 4,
+          "house_vedic": 4,
+          "retrograde": true,
+          "speed_deg_per_day": 0,
+          "latitude": 0
+        }
+      },
+      "houses": {
+        "1": {
+          "cusp_longitude": 85.7975,
+          "sign": {
+            "sign": "Gemini",
+            "sign_index": 2,
+            "degree": 25,
+            "minute": 47,
+            "second": 50,
+            "formatted": "25°47'50\" Gemini",
+            "total_longitude": 85.7975,
+            "element": "Air",
+            "modality": "Mutable"
+          }
+        },
+        "2": {
+          "cusp_longitude": 106.121,
+          "sign": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 16,
+            "minute": 7,
+            "second": 15,
+            "formatted": "16°07'15\" Cancer",
+            "total_longitude": 106.121,
+            "element": "Water",
+            "modality": "Cardinal"
+          }
+        },
+        "3": {
+          "cusp_longitude": 126.7987,
+          "sign": {
+            "sign": "Leo",
+            "sign_index": 4,
+            "degree": 6,
+            "minute": 47,
+            "second": 55,
+            "formatted": "6°47'55\" Leo",
+            "total_longitude": 126.7987,
+            "element": "Fire",
+            "modality": "Fixed"
+          }
+        },
+        "4": {
+          "cusp_longitude": 151.5734,
+          "sign": {
+            "sign": "Virgo",
+            "sign_index": 5,
+            "degree": 1,
+            "minute": 34,
+            "second": 24,
+            "formatted": "1°34'24\" Virgo",
+            "total_longitude": 151.5734,
+            "element": "Earth",
+            "modality": "Mutable"
+          }
+        },
+        "5": {
+          "cusp_longitude": 184.4659,
+          "sign": {
+            "sign": "Libra",
+            "sign_index": 6,
+            "degree": 4,
+            "minute": 27,
+            "second": 57,
+            "formatted": "4°27'57\" Libra",
+            "total_longitude": 184.4659,
+            "element": "Air",
+            "modality": "Cardinal"
+          }
+        },
+        "6": {
+          "cusp_longitude": 225.9783,
+          "sign": {
+            "sign": "Scorpio",
+            "sign_index": 7,
+            "degree": 15,
+            "minute": 58,
+            "second": 41,
+            "formatted": "15°58'41\" Scorpio",
+            "total_longitude": 225.9783,
+            "element": "Water",
+            "modality": "Fixed"
+          }
+        },
+        "7": {
+          "cusp_longitude": 265.7975,
+          "sign": {
+            "sign": "Sagittarius",
+            "sign_index": 8,
+            "degree": 25,
+            "minute": 47,
+            "second": 50,
+            "formatted": "25°47'50\" Sagittarius",
+            "total_longitude": 265.7975,
+            "element": "Fire",
+            "modality": "Mutable"
+          }
+        },
+        "8": {
+          "cusp_longitude": 286.121,
+          "sign": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 16,
+            "minute": 7,
+            "second": 15,
+            "formatted": "16°07'15\" Capricorn",
+            "total_longitude": 286.121,
+            "element": "Earth",
+            "modality": "Cardinal"
+          }
+        },
+        "9": {
+          "cusp_longitude": 306.7987,
+          "sign": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 6,
+            "minute": 47,
+            "second": 55,
+            "formatted": "6°47'55\" Aquarius",
+            "total_longitude": 306.7987,
+            "element": "Air",
+            "modality": "Fixed"
+          }
+        },
+        "10": {
+          "cusp_longitude": 331.5734,
+          "sign": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 1,
+            "minute": 34,
+            "second": 24,
+            "formatted": "1°34'24\" Pisces",
+            "total_longitude": 331.5734,
+            "element": "Water",
+            "modality": "Mutable"
+          }
+        },
+        "11": {
+          "cusp_longitude": 4.4659,
+          "sign": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 4,
+            "minute": 27,
+            "second": 57,
+            "formatted": "4°27'57\" Aries",
+            "total_longitude": 4.4659,
+            "element": "Fire",
+            "modality": "Cardinal"
+          }
+        },
+        "12": {
+          "cusp_longitude": 45.9783,
+          "sign": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 15,
+            "minute": 58,
+            "second": 41,
+            "formatted": "15°58'41\" Taurus",
+            "total_longitude": 45.9783,
+            "element": "Earth",
+            "modality": "Fixed"
+          }
+        }
+      },
+      "ascendant": {
+        "sign": "Gemini",
+        "sign_index": 2,
+        "degree": 25,
+        "minute": 47,
+        "second": 50,
+        "formatted": "25°47'50\" Gemini",
+        "total_longitude": 85.7975,
+        "element": "Air",
+        "modality": "Mutable"
+      },
+      "midheaven": {
+        "sign": "Pisces",
+        "sign_index": 11,
+        "degree": 1,
+        "minute": 34,
+        "second": 24,
+        "formatted": "1°34'24\" Pisces",
+        "total_longitude": 331.5734,
+        "element": "Water",
+        "modality": "Mutable"
+      },
+      "aspects": [
+        {
+          "planet1": "Rahu",
+          "planet2": "Ketu",
+          "aspect": "opposition",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 0,
+          "strength": 1
+        },
+        {
+          "planet1": "Neptune",
+          "planet2": "Rahu",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 1.3,
+          "strength": 0.838
+        },
+        {
+          "planet1": "Neptune",
+          "planet2": "Ketu",
+          "aspect": "opposition",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 1.3,
+          "strength": 0.838
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Mars",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 1.24,
+          "strength": 0.823
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Rahu",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 1.68,
+          "strength": 0.76
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Venus",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 2.29,
+          "strength": 0.713
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Saturn",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 2.42,
+          "strength": 0.697
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Ketu",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 1.68,
+          "strength": 0.664
+        },
+        {
+          "planet1": "Venus",
+          "planet2": "Uranus",
+          "aspect": "semi_square",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 0.74,
+          "strength": 0.631
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Neptune",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 2.98,
+          "strength": 0.574
+        },
+        {
+          "planet1": "Saturn",
+          "planet2": "Uranus",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 2.13,
+          "strength": 0.574
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Uranus",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 2.35,
+          "strength": 0.53
+        },
+        {
+          "planet1": "Mars",
+          "planet2": "Saturn",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 3.66,
+          "strength": 0.477
+        },
+        {
+          "planet1": "Uranus",
+          "planet2": "Ketu",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 4.03,
+          "strength": 0.424
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Pluto",
+          "aspect": "semi_square",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 1.22,
+          "strength": 0.388
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Saturn",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 4.48,
+          "strength": 0.36
+        },
+        {
+          "planet1": "Venus",
+          "planet2": "Jupiter",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 3.45,
+          "strength": 0.311
+        },
+        {
+          "planet1": "Pluto",
+          "planet2": "Ketu",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 5.19,
+          "strength": 0.258
+        },
+        {
+          "planet1": "Saturn",
+          "planet2": "Rahu",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 6.16,
+          "strength": 0.23
+        },
+        {
+          "planet1": "Saturn",
+          "planet2": "Ketu",
+          "aspect": "opposition",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 6.16,
+          "strength": 0.23
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Uranus",
+          "aspect": "semi_square",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 1.56,
+          "strength": 0.222
+        },
+        {
+          "planet1": "Neptune",
+          "planet2": "Pluto",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 3.89,
+          "strength": 0.221
+        },
+        {
+          "planet1": "Uranus",
+          "planet2": "Rahu",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 4.03,
+          "strength": 0.194
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Pluto",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 4.22,
+          "strength": 0.156
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Pluto",
+          "aspect": "opposition",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 6.87,
+          "strength": 0.141
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Jupiter",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 6.26,
+          "strength": 0.105
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Uranus",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 4.55,
+          "strength": 0.09
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Jupiter",
+          "aspect": "semi_square",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 1.83,
+          "strength": 0.083
+        },
+        {
+          "planet1": "Saturn",
+          "planet2": "Neptune",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 7.46,
+          "strength": 0.068
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Moon",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 6.9,
+          "strength": 0.014
+        }
+      ],
+      "stelliums": [
+        {
+          "sign": "Pisces",
+          "planets": [
+            "Sun",
+            "Saturn",
+            "Neptune",
+            "Rahu"
+          ],
+          "count": 4
+        }
+      ],
+      "elements": {
+        "counts": {
+          "Fire": 4,
+          "Earth": 1,
+          "Air": 5,
+          "Water": 10
+        },
+        "dominant": "Water"
+      },
+      "modalities": {
+        "counts": {
+          "Cardinal": 9,
+          "Fixed": 2,
+          "Mutable": 9
+        },
+        "dominant": "Cardinal"
+      }
+    }
+  },
+  {
+    "input": {
+      "year": 2025,
+      "month": 3,
+      "day": 8,
+      "hour": 12,
+      "minute": 0,
+      "second": 0,
+      "place": "New York, USA"
+    },
+    "chart": {
+      "birth_data": {
+        "date": "2025-03-08",
+        "time": "12:00:00",
+        "place": "New York, USA",
+        "latitude": 40.7128,
+        "longitude": -74.006,
+        "timezone": "America/New_York",
+        "julian_day": 2460743.208333,
+        "ayanamsa_lahiri": 24.2089
+      },
+      "big_three": {
+        "sun": {
+          "sign": "Pisces",
+          "house": 10,
+          "degree": "18°22'22\" Pisces"
+        },
+        "moon": {
+          "sign": "Cancer",
+          "house": 1,
+          "degree": "13°40'13\" Cancer",
+          "nakshatra": "Ardra",
+          "nakshatra_pada": 4
+        },
+        "rising": {
+          "sign": "Cancer",
+          "degree": "8°29'56\" Cancer"
+        }
+      },
+      "planets": {
+        "Sun": {
+          "tropical": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 18,
+            "minute": 22,
+            "second": 22,
+            "formatted": "18°22'22\" Pisces",
+            "total_longitude": 348.3728,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 24,
+            "minute": 9,
+            "second": 50,
+            "formatted": "24°09'50\" Aquarius",
+            "total_longitude": 324.1639,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Purva Bhadrapada",
+            "ruler": "Jupiter",
+            "quality": "Transformative fire, spiritual warrior",
+            "pada": 2,
+            "degree_in_nakshatra": 4.16
+          },
+          "dignity": "neutral",
+          "house_western": 10,
+          "house_vedic": 8,
+          "retrograde": false,
+          "speed_deg_per_day": 0.999841,
+          "latitude": 0.0001
+        },
+        "Moon": {
+          "tropical": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 13,
+            "minute": 40,
+            "second": 13,
+            "formatted": "13°40'13\" Cancer",
+            "total_longitude": 103.6705,
+            "element": "Water",
+            "modality": "Cardinal"
+          },
+          "sidereal": {
+            "sign": "Gemini",
+            "sign_index": 2,
+            "degree": 19,
+            "minute": 27,
+            "second": 41,
+            "formatted": "19°27'41\" Gemini",
+            "total_longitude": 79.4616,
+            "element": "Air",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Ardra",
+            "ruler": "Rahu",
+            "quality": "Storm, destruction for renewal",
+            "pada": 4,
+            "degree_in_nakshatra": 12.79
+          },
+          "dignity": "domicile",
+          "house_western": 1,
+          "house_vedic": 12,
+          "retrograde": false,
+          "speed_deg_per_day": 13.23694,
+          "latitude": 5.0734
+        },
+        "Mercury": {
+          "tropical": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 6,
+            "minute": 30,
+            "second": 15,
+            "formatted": "6°30'15\" Aries",
+            "total_longitude": 6.5042,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "sidereal": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 12,
+            "minute": 17,
+            "second": 43,
+            "formatted": "12°17'43\" Pisces",
+            "total_longitude": 342.2953,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Uttara Bhadrapada",
+            "ruler": "Saturn",
+            "quality": "Depth, wisdom from cosmic ocean",
+            "pada": 3,
+            "degree_in_nakshatra": 8.96
+          },
+          "dignity": "neutral",
+          "house_western": 10,
+          "house_vedic": 9,
+          "retrograde": false,
+          "speed_deg_per_day": 0.920906,
+          "latitude": 1.9819
+        },
+        "Venus": {
+          "tropical": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 9,
+            "minute": 54,
+            "second": 22,
+            "formatted": "9°54'22\" Aries",
+            "total_longitude": 9.9063,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "sidereal": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 15,
+            "minute": 41,
+            "second": 50,
+            "formatted": "15°41'50\" Pisces",
+            "total_longitude": 345.6974,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Uttara Bhadrapada",
+            "ruler": "Saturn",
+            "quality": "Depth, wisdom from cosmic ocean",
+            "pada": 4,
+            "degree_in_nakshatra": 12.36
+          },
+          "dignity": "detriment",
+          "house_western": 10,
+          "house_vedic": 9,
+          "retrograde": true,
+          "speed_deg_per_day": -0.278569,
+          "latitude": 7.8791
+        },
+        "Mars": {
+          "tropical": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 17,
+            "minute": 57,
+            "second": 3,
+            "formatted": "17°57'03\" Cancer",
+            "total_longitude": 107.951,
+            "element": "Water",
+            "modality": "Cardinal"
+          },
+          "sidereal": {
+            "sign": "Gemini",
+            "sign_index": 2,
+            "degree": 23,
+            "minute": 44,
+            "second": 31,
+            "formatted": "23°44'31\" Gemini",
+            "total_longitude": 83.7421,
+            "element": "Air",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Punarvasu",
+            "ruler": "Jupiter",
+            "quality": "Renewal, optimism after hardship",
+            "pada": 2,
+            "degree_in_nakshatra": 3.74
+          },
+          "dignity": "fall",
+          "house_western": 1,
+          "house_vedic": 12,
+          "retrograde": false,
+          "speed_deg_per_day": 0.143224,
+          "latitude": 3.3118
+        },
+        "Jupiter": {
+          "tropical": {
+            "sign": "Gemini",
+            "sign_index": 2,
+            "degree": 12,
+            "minute": 58,
+            "second": 6,
+            "formatted": "12°58'06\" Gemini",
+            "total_longitude": 72.9685,
+            "element": "Air",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 18,
+            "minute": 45,
+            "second": 34,
+            "formatted": "18°45'34\" Taurus",
+            "total_longitude": 48.7596,
+            "element": "Earth",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Rohini",
+            "ruler": "Moon",
+            "quality": "Growth, beauty, sensuality",
+            "pada": 3,
+            "degree_in_nakshatra": 8.76
+          },
+          "dignity": "detriment",
+          "house_western": 12,
+          "house_vedic": 11,
+          "retrograde": false,
+          "speed_deg_per_day": 0.100814,
+          "latitude": -0.3724
+        },
+        "Saturn": {
+          "tropical": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 21,
+            "minute": 38,
+            "second": 11,
+            "formatted": "21°38'11\" Pisces",
+            "total_longitude": 351.6364,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 27,
+            "minute": 25,
+            "second": 39,
+            "formatted": "27°25'39\" Aquarius",
+            "total_longitude": 327.4275,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Purva Bhadrapada",
+            "ruler": "Jupiter",
+            "quality": "Transformative fire, spiritual warrior",
+            "pada": 3,
+            "degree_in_nakshatra": 7.43
+          },
+          "dignity": "neutral",
+          "house_western": 10,
+          "house_vedic": 8,
+          "retrograde": false,
+          "speed_deg_per_day": 0.123374,
+          "latitude": -1.9131
+        },
+        "Uranus": {
+          "tropical": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 23,
+            "minute": 51,
+            "second": 9,
+            "formatted": "23°51'09\" Taurus",
+            "total_longitude": 53.8528,
+            "element": "Earth",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 29,
+            "minute": 38,
+            "second": 37,
+            "formatted": "29°38'37\" Aries",
+            "total_longitude": 29.6439,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Krittika",
+            "ruler": "Sun",
+            "quality": "Sharp, purifying, courage",
+            "pada": 1,
+            "degree_in_nakshatra": 2.98
+          },
+          "dignity": "neutral",
+          "house_western": 11,
+          "house_vedic": 10,
+          "retrograde": false,
+          "speed_deg_per_day": 0.031044,
+          "latitude": -0.2296
+        },
+        "Neptune": {
+          "tropical": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 29,
+            "minute": 10,
+            "second": 37,
+            "formatted": "29°10'37\" Pisces",
+            "total_longitude": 359.177,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 4,
+            "minute": 58,
+            "second": 5,
+            "formatted": "4°58'05\" Pisces",
+            "total_longitude": 334.9681,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Uttara Bhadrapada",
+            "ruler": "Saturn",
+            "quality": "Depth, wisdom from cosmic ocean",
+            "pada": 1,
+            "degree_in_nakshatra": 1.63
+          },
+          "dignity": "neutral",
+          "house_western": 10,
+          "house_vedic": 9,
+          "retrograde": false,
+          "speed_deg_per_day": 0.037416,
+          "latitude": -1.2618
+        },
+        "Pluto": {
+          "tropical": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 3,
+            "minute": 5,
+            "second": 2,
+            "formatted": "3°05'02\" Aquarius",
+            "total_longitude": 303.0839,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 8,
+            "minute": 52,
+            "second": 30,
+            "formatted": "8°52'30\" Capricorn",
+            "total_longitude": 278.875,
+            "element": "Earth",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Uttara Ashadha",
+            "ruler": "Sun",
+            "quality": "Final victory, universal",
+            "pada": 4,
+            "degree_in_nakshatra": 12.21
+          },
+          "dignity": "neutral",
+          "house_western": 8,
+          "house_vedic": 7,
+          "retrograde": false,
+          "speed_deg_per_day": 0.024423,
+          "latitude": -3.3866
+        },
+        "Rahu": {
+          "tropical": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 27,
+            "minute": 57,
+            "second": 54,
+            "formatted": "27°57'54\" Pisces",
+            "total_longitude": 357.9653,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 3,
+            "minute": 45,
+            "second": 22,
+            "formatted": "3°45'22\" Pisces",
+            "total_longitude": 333.7564,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Uttara Bhadrapada",
+            "ruler": "Saturn",
+            "quality": "Depth, wisdom from cosmic ocean",
+            "pada": 1,
+            "degree_in_nakshatra": 0.42
+          },
+          "dignity": "neutral",
+          "house_western": 10,
+          "house_vedic": 9,
+          "retrograde": true,
+          "speed_deg_per_day": -0.05293,
+          "latitude": 0
+        },
+        "Ketu": {
+          "tropical": {
+            "sign": "Virgo",
+            "sign_index": 5,
+            "degree": 27,
+            "minute": 57,
+            "second": 55,
+            "formatted": "27°57'55\" Virgo",
+            "total_longitude": 177.9653,
+            "element": "Earth",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Virgo",
+            "sign_index": 5,
+            "degree": 3,
+            "minute": 45,
+            "second": 23,
+            "formatted": "3°45'23\" Virgo",
+            "total_longitude": 153.7564,
+            "element": "Earth",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Uttara Phalguni",
+            "ruler": "Sun",
+            "quality": "Patronage, contracts, friendship",
+            "pada": 3,
+            "degree_in_nakshatra": 7.09
+          },
+          "dignity": "neutral",
+          "house_western": 4,
+          "house_vedic": 3,
+          "retrograde": true,
+          "speed_deg_per_day": 0,
+          "latitude": 0
+        }
+      },
+      "houses": {
+        "1": {
+          "cusp_longitude": 98.499,
+          "sign": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 8,
+            "minute": 29,
+            "second": 56,
+            "formatted": "8°29'56\" Cancer",
+            "total_longitude": 98.499,
+            "element": "Water",
+            "modality": "Cardinal"
+          }
+        },
+        "2": {
+          "cusp_longitude": 118.0891,
+          "sign": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 28,
+            "minute": 5,
+            "second": 20,
+            "formatted": "28°05'20\" Cancer",
+            "total_longitude": 118.0891,
+            "element": "Water",
+            "modality": "Cardinal"
+          }
+        },
+        "3": {
+          "cusp_longitude": 139.6496,
+          "sign": {
+            "sign": "Leo",
+            "sign_index": 4,
+            "degree": 19,
+            "minute": 38,
+            "second": 58,
+            "formatted": "19°38'58\" Leo",
+            "total_longitude": 139.6496,
+            "element": "Fire",
+            "modality": "Fixed"
+          }
+        },
+        "4": {
+          "cusp_longitude": 166.5723,
+          "sign": {
+            "sign": "Virgo",
+            "sign_index": 5,
+            "degree": 16,
+            "minute": 34,
+            "second": 20,
+            "formatted": "16°34'20\" Virgo",
+            "total_longitude": 166.5723,
+            "element": "Earth",
+            "modality": "Mutable"
+          }
+        },
+        "5": {
+          "cusp_longitude": 201.7453,
+          "sign": {
+            "sign": "Libra",
+            "sign_index": 6,
+            "degree": 21,
+            "minute": 44,
+            "second": 43,
+            "formatted": "21°44'43\" Libra",
+            "total_longitude": 201.7453,
+            "element": "Air",
+            "modality": "Cardinal"
+          }
+        },
+        "6": {
+          "cusp_longitude": 242.3216,
+          "sign": {
+            "sign": "Sagittarius",
+            "sign_index": 8,
+            "degree": 2,
+            "minute": 19,
+            "second": 17,
+            "formatted": "2°19'17\" Sagittarius",
+            "total_longitude": 242.3216,
+            "element": "Fire",
+            "modality": "Mutable"
+          }
+        },
+        "7": {
+          "cusp_longitude": 278.499,
+          "sign": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 8,
+            "minute": 29,
+            "second": 56,
+            "formatted": "8°29'56\" Capricorn",
+            "total_longitude": 278.499,
+            "element": "Earth",
+            "modality": "Cardinal"
+          }
+        },
+        "8": {
+          "cusp_longitude": 298.0891,
+          "sign": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 28,
+            "minute": 5,
+            "second": 20,
+            "formatted": "28°05'20\" Capricorn",
+            "total_longitude": 298.0891,
+            "element": "Earth",
+            "modality": "Cardinal"
+          }
+        },
+        "9": {
+          "cusp_longitude": 319.6496,
+          "sign": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 19,
+            "minute": 38,
+            "second": 58,
+            "formatted": "19°38'58\" Aquarius",
+            "total_longitude": 319.6496,
+            "element": "Air",
+            "modality": "Fixed"
+          }
+        },
+        "10": {
+          "cusp_longitude": 346.5723,
+          "sign": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 16,
+            "minute": 34,
+            "second": 20,
+            "formatted": "16°34'20\" Pisces",
+            "total_longitude": 346.5723,
+            "element": "Water",
+            "modality": "Mutable"
+          }
+        },
+        "11": {
+          "cusp_longitude": 21.7453,
+          "sign": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 21,
+            "minute": 44,
+            "second": 43,
+            "formatted": "21°44'43\" Aries",
+            "total_longitude": 21.7453,
+            "element": "Fire",
+            "modality": "Cardinal"
+          }
+        },
+        "12": {
+          "cusp_longitude": 62.3216,
+          "sign": {
+            "sign": "Gemini",
+            "sign_index": 2,
+            "degree": 2,
+            "minute": 19,
+            "second": 17,
+            "formatted": "2°19'17\" Gemini",
+            "total_longitude": 62.3216,
+            "element": "Air",
+            "modality": "Mutable"
+          }
+        }
+      },
+      "ascendant": {
+        "sign": "Cancer",
+        "sign_index": 3,
+        "degree": 8,
+        "minute": 29,
+        "second": 56,
+        "formatted": "8°29'56\" Cancer",
+        "total_longitude": 98.499,
+        "element": "Water",
+        "modality": "Cardinal"
+      },
+      "midheaven": {
+        "sign": "Pisces",
+        "sign_index": 11,
+        "degree": 16,
+        "minute": 34,
+        "second": 20,
+        "formatted": "16°34'20\" Pisces",
+        "total_longitude": 346.5723,
+        "element": "Water",
+        "modality": "Mutable"
+      },
+      "aspects": [
+        {
+          "planet1": "Rahu",
+          "planet2": "Ketu",
+          "aspect": "opposition",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 0,
+          "strength": 1
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Mars",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 0.42,
+          "strength": 0.94
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Pluto",
+          "aspect": "semi_square",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 0.29,
+          "strength": 0.856
+        },
+        {
+          "planet1": "Neptune",
+          "planet2": "Rahu",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 1.21,
+          "strength": 0.849
+        },
+        {
+          "planet1": "Neptune",
+          "planet2": "Ketu",
+          "aspect": "opposition",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 1.21,
+          "strength": 0.849
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Jupiter",
+          "aspect": "semi_sextile",
+          "nature": "minor",
+          "harmony": "neutral",
+          "orb": 0.7,
+          "strength": 0.649
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Saturn",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 3.26,
+          "strength": 0.592
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Venus",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 3.4,
+          "strength": 0.575
+        },
+        {
+          "planet1": "Saturn",
+          "planet2": "Uranus",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 2.22,
+          "strength": 0.557
+        },
+        {
+          "planet1": "Mars",
+          "planet2": "Saturn",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 3.69,
+          "strength": 0.474
+        },
+        {
+          "planet1": "Venus",
+          "planet2": "Uranus",
+          "aspect": "semi_square",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 1.05,
+          "strength": 0.473
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Mars",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 4.28,
+          "strength": 0.465
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Venus",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 3.76,
+          "strength": 0.462
+        },
+        {
+          "planet1": "Uranus",
+          "planet2": "Ketu",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 4.11,
+          "strength": 0.412
+        },
+        {
+          "planet1": "Venus",
+          "planet2": "Jupiter",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 3.06,
+          "strength": 0.388
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Moon",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 4.7,
+          "strength": 0.328
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Pluto",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 3.42,
+          "strength": 0.316
+        },
+        {
+          "planet1": "Pluto",
+          "planet2": "Ketu",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 5.12,
+          "strength": 0.269
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Jupiter",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 5.4,
+          "strength": 0.228
+        },
+        {
+          "planet1": "Neptune",
+          "planet2": "Pluto",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 3.91,
+          "strength": 0.219
+        },
+        {
+          "planet1": "Saturn",
+          "planet2": "Rahu",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 6.33,
+          "strength": 0.209
+        },
+        {
+          "planet1": "Saturn",
+          "planet2": "Ketu",
+          "aspect": "opposition",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 6.33,
+          "strength": 0.209
+        },
+        {
+          "planet1": "Uranus",
+          "planet2": "Rahu",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 4.11,
+          "strength": 0.177
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Neptune",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 7.33,
+          "strength": 0.084
+        },
+        {
+          "planet1": "Saturn",
+          "planet2": "Neptune",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 7.54,
+          "strength": 0.057
+        }
+      ],
+      "stelliums": [
+        {
+          "sign": "Pisces",
+          "planets": [
+            "Sun",
+            "Saturn",
+            "Neptune",
+            "Rahu"
+          ],
+          "count": 4
+        }
+      ],
+      "elements": {
+        "counts": {
+          "Fire": 4,
+          "Earth": 1,
+          "Air": 2,
+          "Water": 13
+        },
+        "dominant": "Water"
+      },
+      "modalities": {
+        "counts": {
+          "Cardinal": 12,
+          "Fixed": 2,
+          "Mutable": 6
+        },
+        "dominant": "Cardinal"
+      }
+    }
+  },
+  {
+    "input": {
+      "year": 2003,
+      "month": 6,
+      "day": 28,
+      "hour": 12,
+      "minute": 30,
+      "second": 0,
+      "place": "New Delhi, India"
+    },
+    "chart": {
+      "birth_data": {
+        "date": "2003-06-28",
+        "time": "12:30:00",
+        "place": "New Delhi, India",
+        "latitude": 28.6139,
+        "longitude": 77.209,
+        "timezone": "Asia/Kolkata",
+        "julian_day": 2452818.791667,
+        "ayanamsa_lahiri": 23.9058
+      },
+      "big_three": {
+        "sun": {
+          "sign": "Cancer",
+          "house": 9,
+          "degree": "6°11'40\" Cancer"
+        },
+        "moon": {
+          "sign": "Gemini",
+          "house": 9,
+          "degree": "19°23'10\" Gemini",
+          "nakshatra": "Mrigashira",
+          "nakshatra_pada": 1
+        },
+        "rising": {
+          "sign": "Libra",
+          "degree": "7°12'11\" Libra"
+        }
+      },
+      "planets": {
+        "Sun": {
+          "tropical": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 6,
+            "minute": 11,
+            "second": 40,
+            "formatted": "6°11'40\" Cancer",
+            "total_longitude": 96.1945,
+            "element": "Water",
+            "modality": "Cardinal"
+          },
+          "sidereal": {
+            "sign": "Gemini",
+            "sign_index": 2,
+            "degree": 12,
+            "minute": 17,
+            "second": 19,
+            "formatted": "12°17'19\" Gemini",
+            "total_longitude": 72.2887,
+            "element": "Air",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Ardra",
+            "ruler": "Rahu",
+            "quality": "Storm, destruction for renewal",
+            "pada": 2,
+            "degree_in_nakshatra": 5.62
+          },
+          "dignity": "neutral",
+          "house_western": 9,
+          "house_vedic": 9,
+          "retrograde": false,
+          "speed_deg_per_day": 0.95398,
+          "latitude": 0
+        },
+        "Moon": {
+          "tropical": {
+            "sign": "Gemini",
+            "sign_index": 2,
+            "degree": 19,
+            "minute": 23,
+            "second": 10,
+            "formatted": "19°23'10\" Gemini",
+            "total_longitude": 79.3864,
+            "element": "Air",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 25,
+            "minute": 28,
+            "second": 50,
+            "formatted": "25°28'50\" Taurus",
+            "total_longitude": 55.4806,
+            "element": "Earth",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Mrigashira",
+            "ruler": "Mars",
+            "quality": "Searching, curious, gentle",
+            "pada": 1,
+            "degree_in_nakshatra": 2.15
+          },
+          "dignity": "neutral",
+          "house_western": 9,
+          "house_vedic": 8,
+          "retrograde": false,
+          "speed_deg_per_day": 12.126163,
+          "latitude": 1.8003
+        },
+        "Mercury": {
+          "tropical": {
+            "sign": "Gemini",
+            "sign_index": 2,
+            "degree": 27,
+            "minute": 35,
+            "second": 21,
+            "formatted": "27°35'21\" Gemini",
+            "total_longitude": 87.5894,
+            "element": "Air",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Gemini",
+            "sign_index": 2,
+            "degree": 3,
+            "minute": 41,
+            "second": 0,
+            "formatted": "3°41'00\" Gemini",
+            "total_longitude": 63.6836,
+            "element": "Air",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Mrigashira",
+            "ruler": "Mars",
+            "quality": "Searching, curious, gentle",
+            "pada": 4,
+            "degree_in_nakshatra": 10.35
+          },
+          "dignity": "domicile",
+          "house_western": 9,
+          "house_vedic": 9,
+          "retrograde": false,
+          "speed_deg_per_day": 2.106999,
+          "latitude": 0.2939
+        },
+        "Venus": {
+          "tropical": {
+            "sign": "Gemini",
+            "sign_index": 2,
+            "degree": 22,
+            "minute": 7,
+            "second": 20,
+            "formatted": "22°07'20\" Gemini",
+            "total_longitude": 82.1224,
+            "element": "Air",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 28,
+            "minute": 12,
+            "second": 59,
+            "formatted": "28°12'59\" Taurus",
+            "total_longitude": 58.2166,
+            "element": "Earth",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Mrigashira",
+            "ruler": "Mars",
+            "quality": "Searching, curious, gentle",
+            "pada": 2,
+            "degree_in_nakshatra": 4.88
+          },
+          "dignity": "neutral",
+          "house_western": 9,
+          "house_vedic": 8,
+          "retrograde": false,
+          "speed_deg_per_day": 1.221749,
+          "latitude": -0.3718
+        },
+        "Mars": {
+          "tropical": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 4,
+            "minute": 19,
+            "second": 37,
+            "formatted": "4°19'37\" Pisces",
+            "total_longitude": 334.3272,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 10,
+            "minute": 25,
+            "second": 17,
+            "formatted": "10°25'17\" Aquarius",
+            "total_longitude": 310.4214,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Shatabhisha",
+            "ruler": "Rahu",
+            "quality": "Hundred healers, mystical healing",
+            "pada": 2,
+            "degree_in_nakshatra": 3.75
+          },
+          "dignity": "neutral",
+          "house_western": 5,
+          "house_vedic": 5,
+          "retrograde": false,
+          "speed_deg_per_day": 0.34471,
+          "latitude": -4.1567
+        },
+        "Jupiter": {
+          "tropical": {
+            "sign": "Leo",
+            "sign_index": 4,
+            "degree": 17,
+            "minute": 25,
+            "second": 34,
+            "formatted": "17°25'34\" Leo",
+            "total_longitude": 137.4262,
+            "element": "Fire",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 23,
+            "minute": 31,
+            "second": 13,
+            "formatted": "23°31'13\" Cancer",
+            "total_longitude": 113.5204,
+            "element": "Water",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Ashlesha",
+            "ruler": "Mercury",
+            "quality": "Mystical, hypnotic, transformative",
+            "pada": 3,
+            "degree_in_nakshatra": 6.85
+          },
+          "dignity": "neutral",
+          "house_western": 11,
+          "house_vedic": 10,
+          "retrograde": false,
+          "speed_deg_per_day": 0.188529,
+          "latitude": 0.7993
+        },
+        "Saturn": {
+          "tropical": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 3,
+            "minute": 7,
+            "second": 37,
+            "formatted": "3°07'37\" Cancer",
+            "total_longitude": 93.1272,
+            "element": "Water",
+            "modality": "Cardinal"
+          },
+          "sidereal": {
+            "sign": "Gemini",
+            "sign_index": 2,
+            "degree": 9,
+            "minute": 13,
+            "second": 17,
+            "formatted": "9°13'17\" Gemini",
+            "total_longitude": 69.2214,
+            "element": "Air",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Ardra",
+            "ruler": "Rahu",
+            "quality": "Storm, destruction for renewal",
+            "pada": 1,
+            "degree_in_nakshatra": 2.55
+          },
+          "dignity": "detriment",
+          "house_western": 9,
+          "house_vedic": 9,
+          "retrograde": false,
+          "speed_deg_per_day": 0.130053,
+          "latitude": -0.7966
+        },
+        "Uranus": {
+          "tropical": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 2,
+            "minute": 38,
+            "second": 48,
+            "formatted": "2°38'48\" Pisces",
+            "total_longitude": 332.6467,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 8,
+            "minute": 44,
+            "second": 27,
+            "formatted": "8°44'27\" Aquarius",
+            "total_longitude": 308.7409,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Shatabhisha",
+            "ruler": "Rahu",
+            "quality": "Hundred healers, mystical healing",
+            "pada": 1,
+            "degree_in_nakshatra": 2.07
+          },
+          "dignity": "neutral",
+          "house_western": 5,
+          "house_vedic": 5,
+          "retrograde": true,
+          "speed_deg_per_day": -0.016287,
+          "latitude": -0.7724
+        },
+        "Neptune": {
+          "tropical": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 12,
+            "minute": 42,
+            "second": 54,
+            "formatted": "12°42'54\" Aquarius",
+            "total_longitude": 312.715,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 18,
+            "minute": 48,
+            "second": 33,
+            "formatted": "18°48'33\" Capricorn",
+            "total_longitude": 288.8092,
+            "element": "Earth",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Shravana",
+            "ruler": "Moon",
+            "quality": "Listening, learning, connection",
+            "pada": 3,
+            "degree_in_nakshatra": 8.81
+          },
+          "dignity": "neutral",
+          "house_western": 5,
+          "house_vedic": 4,
+          "retrograde": true,
+          "speed_deg_per_day": -0.020343,
+          "latitude": 0.0083
+        },
+        "Pluto": {
+          "tropical": {
+            "sign": "Sagittarius",
+            "sign_index": 8,
+            "degree": 18,
+            "minute": 7,
+            "second": 22,
+            "formatted": "18°07'22\" Sagittarius",
+            "total_longitude": 258.1229,
+            "element": "Fire",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Scorpio",
+            "sign_index": 7,
+            "degree": 24,
+            "minute": 13,
+            "second": 1,
+            "formatted": "24°13'01\" Scorpio",
+            "total_longitude": 234.2171,
+            "element": "Water",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Jyeshtha",
+            "ruler": "Mercury",
+            "quality": "Seniority, protective, chief",
+            "pada": 3,
+            "degree_in_nakshatra": 7.55
+          },
+          "dignity": "neutral",
+          "house_western": 3,
+          "house_vedic": 2,
+          "retrograde": true,
+          "speed_deg_per_day": -0.024973,
+          "latitude": 9.4853
+        },
+        "Rahu": {
+          "tropical": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 27,
+            "minute": 35,
+            "second": 18,
+            "formatted": "27°35'18\" Taurus",
+            "total_longitude": 57.5885,
+            "element": "Earth",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 3,
+            "minute": 40,
+            "second": 57,
+            "formatted": "3°40'57\" Taurus",
+            "total_longitude": 33.6827,
+            "element": "Earth",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Krittika",
+            "ruler": "Sun",
+            "quality": "Sharp, purifying, courage",
+            "pada": 3,
+            "degree_in_nakshatra": 7.02
+          },
+          "dignity": "neutral",
+          "house_western": 8,
+          "house_vedic": 8,
+          "retrograde": true,
+          "speed_deg_per_day": -0.052919,
+          "latitude": 0
+        },
+        "Ketu": {
+          "tropical": {
+            "sign": "Scorpio",
+            "sign_index": 7,
+            "degree": 27,
+            "minute": 35,
+            "second": 18,
+            "formatted": "27°35'18\" Scorpio",
+            "total_longitude": 237.5885,
+            "element": "Water",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Scorpio",
+            "sign_index": 7,
+            "degree": 3,
+            "minute": 40,
+            "second": 57,
+            "formatted": "3°40'57\" Scorpio",
+            "total_longitude": 213.6827,
+            "element": "Water",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Anuradha",
+            "ruler": "Saturn",
+            "quality": "Devotion, friendship",
+            "pada": 1,
+            "degree_in_nakshatra": 0.35
+          },
+          "dignity": "neutral",
+          "house_western": 2,
+          "house_vedic": 2,
+          "retrograde": true,
+          "speed_deg_per_day": 0,
+          "latitude": 0
+        }
+      },
+      "houses": {
+        "1": {
+          "cusp_longitude": 187.2032,
+          "sign": {
+            "sign": "Libra",
+            "sign_index": 6,
+            "degree": 7,
+            "minute": 12,
+            "second": 11,
+            "formatted": "7°12'11\" Libra",
+            "total_longitude": 187.2032,
+            "element": "Air",
+            "modality": "Cardinal"
+          }
+        },
+        "2": {
+          "cusp_longitude": 215.5112,
+          "sign": {
+            "sign": "Scorpio",
+            "sign_index": 7,
+            "degree": 5,
+            "minute": 30,
+            "second": 40,
+            "formatted": "5°30'40\" Scorpio",
+            "total_longitude": 215.5112,
+            "element": "Water",
+            "modality": "Fixed"
+          }
+        },
+        "3": {
+          "cusp_longitude": 245.9691,
+          "sign": {
+            "sign": "Sagittarius",
+            "sign_index": 8,
+            "degree": 5,
+            "minute": 58,
+            "second": 8,
+            "formatted": "5°58'08\" Sagittarius",
+            "total_longitude": 245.9691,
+            "element": "Fire",
+            "modality": "Mutable"
+          }
+        },
+        "4": {
+          "cusp_longitude": 277.5088,
+          "sign": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 7,
+            "minute": 30,
+            "second": 31,
+            "formatted": "7°30'31\" Capricorn",
+            "total_longitude": 277.5088,
+            "element": "Earth",
+            "modality": "Cardinal"
+          }
+        },
+        "5": {
+          "cusp_longitude": 309.1385,
+          "sign": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 9,
+            "minute": 8,
+            "second": 18,
+            "formatted": "9°08'18\" Aquarius",
+            "total_longitude": 309.1385,
+            "element": "Air",
+            "modality": "Fixed"
+          }
+        },
+        "6": {
+          "cusp_longitude": 339.5403,
+          "sign": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 9,
+            "minute": 32,
+            "second": 24,
+            "formatted": "9°32'24\" Pisces",
+            "total_longitude": 339.5403,
+            "element": "Water",
+            "modality": "Mutable"
+          }
+        },
+        "7": {
+          "cusp_longitude": 7.2032,
+          "sign": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 7,
+            "minute": 12,
+            "second": 11,
+            "formatted": "7°12'11\" Aries",
+            "total_longitude": 7.2032,
+            "element": "Fire",
+            "modality": "Cardinal"
+          }
+        },
+        "8": {
+          "cusp_longitude": 35.5112,
+          "sign": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 5,
+            "minute": 30,
+            "second": 40,
+            "formatted": "5°30'40\" Taurus",
+            "total_longitude": 35.5112,
+            "element": "Earth",
+            "modality": "Fixed"
+          }
+        },
+        "9": {
+          "cusp_longitude": 65.9691,
+          "sign": {
+            "sign": "Gemini",
+            "sign_index": 2,
+            "degree": 5,
+            "minute": 58,
+            "second": 8,
+            "formatted": "5°58'08\" Gemini",
+            "total_longitude": 65.9691,
+            "element": "Air",
+            "modality": "Mutable"
+          }
+        },
+        "10": {
+          "cusp_longitude": 97.5088,
+          "sign": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 7,
+            "minute": 30,
+            "second": 31,
+            "formatted": "7°30'31\" Cancer",
+            "total_longitude": 97.5088,
+            "element": "Water",
+            "modality": "Cardinal"
+          }
+        },
+        "11": {
+          "cusp_longitude": 129.1385,
+          "sign": {
+            "sign": "Leo",
+            "sign_index": 4,
+            "degree": 9,
+            "minute": 8,
+            "second": 18,
+            "formatted": "9°08'18\" Leo",
+            "total_longitude": 129.1385,
+            "element": "Fire",
+            "modality": "Fixed"
+          }
+        },
+        "12": {
+          "cusp_longitude": 159.5403,
+          "sign": {
+            "sign": "Virgo",
+            "sign_index": 5,
+            "degree": 9,
+            "minute": 32,
+            "second": 24,
+            "formatted": "9°32'24\" Virgo",
+            "total_longitude": 159.5403,
+            "element": "Earth",
+            "modality": "Mutable"
+          }
+        }
+      },
+      "ascendant": {
+        "sign": "Libra",
+        "sign_index": 6,
+        "degree": 7,
+        "minute": 12,
+        "second": 11,
+        "formatted": "7°12'11\" Libra",
+        "total_longitude": 187.2032,
+        "element": "Air",
+        "modality": "Cardinal"
+      },
+      "midheaven": {
+        "sign": "Cancer",
+        "sign_index": 3,
+        "degree": 7,
+        "minute": 30,
+        "second": 31,
+        "formatted": "7°30'31\" Cancer",
+        "total_longitude": 97.5088,
+        "element": "Water",
+        "modality": "Cardinal"
+      },
+      "aspects": [
+        {
+          "planet1": "Mercury",
+          "planet2": "Rahu",
+          "aspect": "semi_sextile",
+          "nature": "minor",
+          "harmony": "neutral",
+          "orb": 0,
+          "strength": 1
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Ketu",
+          "aspect": "quincunx",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 0,
+          "strength": 1
+        },
+        {
+          "planet1": "Rahu",
+          "planet2": "Ketu",
+          "aspect": "opposition",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 0,
+          "strength": 1
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Neptune",
+          "aspect": "sesquiquadrate",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 0.13,
+          "strength": 0.937
+        },
+        {
+          "planet1": "Saturn",
+          "planet2": "Uranus",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 0.48,
+          "strength": 0.931
+        },
+        {
+          "planet1": "Jupiter",
+          "planet2": "Pluto",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 0.7,
+          "strength": 0.9
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Pluto",
+          "aspect": "opposition",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 1.26,
+          "strength": 0.842
+        },
+        {
+          "planet1": "Mars",
+          "planet2": "Saturn",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 1.2,
+          "strength": 0.829
+        },
+        {
+          "planet1": "Mars",
+          "planet2": "Uranus",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 1.68,
+          "strength": 0.79
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Mars",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 1.87,
+          "strength": 0.733
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Venus",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 2.74,
+          "strength": 0.658
+        },
+        {
+          "planet1": "Jupiter",
+          "planet2": "Saturn",
+          "aspect": "semi_square",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 0.7,
+          "strength": 0.649
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Saturn",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 3.07,
+          "strength": 0.617
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Jupiter",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 1.96,
+          "strength": 0.608
+        },
+        {
+          "planet1": "Venus",
+          "planet2": "Pluto",
+          "aspect": "opposition",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 4,
+          "strength": 0.5
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Uranus",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 3.55,
+          "strength": 0.493
+        },
+        {
+          "planet1": "Jupiter",
+          "planet2": "Neptune",
+          "aspect": "opposition",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 4.71,
+          "strength": 0.411
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Venus",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 5.47,
+          "strength": 0.317
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Saturn",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 5.54,
+          "strength": 0.308
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Uranus",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 5.06,
+          "strength": 0.278
+        },
+        {
+          "planet1": "Uranus",
+          "planet2": "Rahu",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 5.06,
+          "strength": 0.277
+        },
+        {
+          "planet1": "Uranus",
+          "planet2": "Ketu",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 5.06,
+          "strength": 0.277
+        },
+        {
+          "planet1": "Venus",
+          "planet2": "Jupiter",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 4.7,
+          "strength": 0.061
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Neptune",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 6.67,
+          "strength": 0.047
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Mars",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 6.74,
+          "strength": 0.037
+        },
+        {
+          "planet1": "Mars",
+          "planet2": "Rahu",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 6.74,
+          "strength": 0.037
+        },
+        {
+          "planet1": "Mars",
+          "planet2": "Ketu",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 6.74,
+          "strength": 0.037
+        }
+      ],
+      "stelliums": [
+        {
+          "sign": "Gemini",
+          "planets": [
+            "Moon",
+            "Mercury",
+            "Venus"
+          ],
+          "count": 3
+        }
+      ],
+      "elements": {
+        "counts": {
+          "Fire": 2,
+          "Earth": 0,
+          "Air": 11,
+          "Water": 7
+        },
+        "dominant": "Air"
+      },
+      "modalities": {
+        "counts": {
+          "Cardinal": 7,
+          "Fixed": 2,
+          "Mutable": 11
+        },
+        "dominant": "Mutable"
+      }
+    }
+  },
+  {
+    "input": {
+      "year": 2000,
+      "month": 3,
+      "day": 9,
+      "hour": 0,
+      "minute": 0,
+      "second": 0,
+      "place": "New York, USA"
+    },
+    "chart": {
+      "birth_data": {
+        "date": "2000-03-09",
+        "time": "00:00:00",
+        "place": "New York, USA",
+        "latitude": 40.7128,
+        "longitude": -74.006,
+        "timezone": "America/New_York",
+        "julian_day": 2451612.708333,
+        "ayanamsa_lahiri": 23.8597
+      },
+      "big_three": {
+        "sun": {
+          "sign": "Pisces",
+          "house": 4,
+          "degree": "18°55'55\" Pisces"
+        },
+        "moon": {
+          "sign": "Aries",
+          "house": 5,
+          "degree": "25°58'57\" Aries",
+          "nakshatra": "Ashwini",
+          "nakshatra_pada": 1
+        },
+        "rising": {
+          "sign": "Sagittarius",
+          "degree": "1°33'41\" Sagittarius"
+        }
+      },
+      "planets": {
+        "Sun": {
+          "tropical": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 18,
+            "minute": 55,
+            "second": 55,
+            "formatted": "18°55'55\" Pisces",
+            "total_longitude": 348.9321,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 25,
+            "minute": 4,
+            "second": 20,
+            "formatted": "25°04'20\" Aquarius",
+            "total_longitude": 325.0724,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Purva Bhadrapada",
+            "ruler": "Jupiter",
+            "quality": "Transformative fire, spiritual warrior",
+            "pada": 2,
+            "degree_in_nakshatra": 5.07
+          },
+          "dignity": "neutral",
+          "house_western": 4,
+          "house_vedic": 3,
+          "retrograde": false,
+          "speed_deg_per_day": 0.99978,
+          "latitude": -0.0002
+        },
+        "Moon": {
+          "tropical": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 25,
+            "minute": 58,
+            "second": 57,
+            "formatted": "25°58'57\" Aries",
+            "total_longitude": 25.9827,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "sidereal": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 2,
+            "minute": 7,
+            "second": 22,
+            "formatted": "2°07'22\" Aries",
+            "total_longitude": 2.123,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Ashwini",
+            "ruler": "Ketu",
+            "quality": "Swift, healing, new beginnings",
+            "pada": 1,
+            "degree_in_nakshatra": 2.12
+          },
+          "dignity": "neutral",
+          "house_western": 5,
+          "house_vedic": 5,
+          "retrograde": false,
+          "speed_deg_per_day": 13.722669,
+          "latitude": -5.0984
+        },
+        "Mercury": {
+          "tropical": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 4,
+            "minute": 29,
+            "second": 1,
+            "formatted": "4°29'01\" Pisces",
+            "total_longitude": 334.4838,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 10,
+            "minute": 37,
+            "second": 26,
+            "formatted": "10°37'26\" Aquarius",
+            "total_longitude": 310.6241,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Shatabhisha",
+            "ruler": "Rahu",
+            "quality": "Hundred healers, mystical healing",
+            "pada": 2,
+            "degree_in_nakshatra": 3.96
+          },
+          "dignity": "detriment",
+          "house_western": 3,
+          "house_vedic": 3,
+          "retrograde": true,
+          "speed_deg_per_day": -0.607974,
+          "latitude": 2.6081
+        },
+        "Venus": {
+          "tropical": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 24,
+            "minute": 43,
+            "second": 3,
+            "formatted": "24°43'03\" Aquarius",
+            "total_longitude": 324.7176,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 0,
+            "minute": 51,
+            "second": 28,
+            "formatted": "0°51'28\" Aquarius",
+            "total_longitude": 300.8579,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Dhanishtha",
+            "ruler": "Mars",
+            "quality": "Wealth, music, adaptability",
+            "pada": 3,
+            "degree_in_nakshatra": 7.52
+          },
+          "dignity": "neutral",
+          "house_western": 3,
+          "house_vedic": 3,
+          "retrograde": false,
+          "speed_deg_per_day": 1.235717,
+          "latitude": -0.9166
+        },
+        "Mars": {
+          "tropical": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 19,
+            "minute": 44,
+            "second": 36,
+            "formatted": "19°44'36\" Aries",
+            "total_longitude": 19.7435,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "sidereal": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 25,
+            "minute": 53,
+            "second": 1,
+            "formatted": "25°53'01\" Pisces",
+            "total_longitude": 355.8838,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Revati",
+            "ruler": "Mercury",
+            "quality": "Journey's end, compassion",
+            "pada": 3,
+            "degree_in_nakshatra": 9.22
+          },
+          "dignity": "domicile",
+          "house_western": 5,
+          "house_vedic": 4,
+          "retrograde": false,
+          "speed_deg_per_day": 0.745856,
+          "latitude": -0.1963
+        },
+        "Jupiter": {
+          "tropical": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 4,
+            "minute": 16,
+            "second": 54,
+            "formatted": "4°16'54\" Taurus",
+            "total_longitude": 34.2817,
+            "element": "Earth",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 10,
+            "minute": 25,
+            "second": 19,
+            "formatted": "10°25'19\" Aries",
+            "total_longitude": 10.422,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Ashwini",
+            "ruler": "Ketu",
+            "quality": "Swift, healing, new beginnings",
+            "pada": 4,
+            "degree_in_nakshatra": 10.42
+          },
+          "dignity": "neutral",
+          "house_western": 5,
+          "house_vedic": 5,
+          "retrograde": false,
+          "speed_deg_per_day": 0.201926,
+          "latitude": -0.9796
+        },
+        "Saturn": {
+          "tropical": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 13,
+            "minute": 7,
+            "second": 28,
+            "formatted": "13°07'28\" Taurus",
+            "total_longitude": 43.1245,
+            "element": "Earth",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 19,
+            "minute": 15,
+            "second": 53,
+            "formatted": "19°15'53\" Aries",
+            "total_longitude": 19.2648,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Bharani",
+            "ruler": "Venus",
+            "quality": "Transformation, bearing responsibility",
+            "pada": 2,
+            "degree_in_nakshatra": 5.93
+          },
+          "dignity": "neutral",
+          "house_western": 6,
+          "house_vedic": 5,
+          "retrograde": false,
+          "speed_deg_per_day": 0.092509,
+          "latitude": -2.1344
+        },
+        "Uranus": {
+          "tropical": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 18,
+            "minute": 35,
+            "second": 22,
+            "formatted": "18°35'22\" Aquarius",
+            "total_longitude": 318.5895,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 24,
+            "minute": 43,
+            "second": 47,
+            "formatted": "24°43'47\" Capricorn",
+            "total_longitude": 294.7299,
+            "element": "Earth",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Dhanishtha",
+            "ruler": "Mars",
+            "quality": "Wealth, music, adaptability",
+            "pada": 1,
+            "degree_in_nakshatra": 1.4
+          },
+          "dignity": "neutral",
+          "house_western": 3,
+          "house_vedic": 2,
+          "retrograde": false,
+          "speed_deg_per_day": 0.052057,
+          "latitude": -0.6612
+        },
+        "Neptune": {
+          "tropical": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 5,
+            "minute": 37,
+            "second": 17,
+            "formatted": "5°37'17\" Aquarius",
+            "total_longitude": 305.6214,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 11,
+            "minute": 45,
+            "second": 42,
+            "formatted": "11°45'42\" Capricorn",
+            "total_longitude": 281.7618,
+            "element": "Earth",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Shravana",
+            "ruler": "Moon",
+            "quality": "Listening, learning, connection",
+            "pada": 1,
+            "degree_in_nakshatra": 1.76
+          },
+          "dignity": "neutral",
+          "house_western": 2,
+          "house_vedic": 2,
+          "retrograde": false,
+          "speed_deg_per_day": 0.029648,
+          "latitude": 0.2243
+        },
+        "Pluto": {
+          "tropical": {
+            "sign": "Sagittarius",
+            "sign_index": 8,
+            "degree": 12,
+            "minute": 53,
+            "second": 26,
+            "formatted": "12°53'26\" Sagittarius",
+            "total_longitude": 252.8908,
+            "element": "Fire",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Scorpio",
+            "sign_index": 7,
+            "degree": 19,
+            "minute": 1,
+            "second": 52,
+            "formatted": "19°01'52\" Scorpio",
+            "total_longitude": 229.0311,
+            "element": "Water",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Jyeshtha",
+            "ruler": "Mercury",
+            "quality": "Seniority, protective, chief",
+            "pada": 1,
+            "degree_in_nakshatra": 2.36
+          },
+          "dignity": "neutral",
+          "house_western": 1,
+          "house_vedic": 12,
+          "retrograde": false,
+          "speed_deg_per_day": 0.003553,
+          "latitude": 11.1038
+        },
+        "Rahu": {
+          "tropical": {
+            "sign": "Leo",
+            "sign_index": 4,
+            "degree": 1,
+            "minute": 27,
+            "second": 18,
+            "formatted": "1°27'18\" Leo",
+            "total_longitude": 121.4551,
+            "element": "Fire",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 7,
+            "minute": 35,
+            "second": 43,
+            "formatted": "7°35'43\" Cancer",
+            "total_longitude": 97.5954,
+            "element": "Water",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Pushya",
+            "ruler": "Saturn",
+            "quality": "Nourishing, most auspicious",
+            "pada": 2,
+            "degree_in_nakshatra": 4.26
+          },
+          "dignity": "neutral",
+          "house_western": 8,
+          "house_vedic": 8,
+          "retrograde": true,
+          "speed_deg_per_day": -0.052988,
+          "latitude": 0
+        },
+        "Ketu": {
+          "tropical": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 1,
+            "minute": 27,
+            "second": 18,
+            "formatted": "1°27'18\" Aquarius",
+            "total_longitude": 301.4551,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 7,
+            "minute": 35,
+            "second": 43,
+            "formatted": "7°35'43\" Capricorn",
+            "total_longitude": 277.5954,
+            "element": "Earth",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Uttara Ashadha",
+            "ruler": "Sun",
+            "quality": "Final victory, universal",
+            "pada": 4,
+            "degree_in_nakshatra": 10.93
+          },
+          "dignity": "neutral",
+          "house_western": 2,
+          "house_vedic": 2,
+          "retrograde": true,
+          "speed_deg_per_day": 0,
+          "latitude": 0
+        }
+      },
+      "houses": {
+        "1": {
+          "cusp_longitude": 241.5614,
+          "sign": {
+            "sign": "Sagittarius",
+            "sign_index": 8,
+            "degree": 1,
+            "minute": 33,
+            "second": 41,
+            "formatted": "1°33'41\" Sagittarius",
+            "total_longitude": 241.5614,
+            "element": "Fire",
+            "modality": "Mutable"
+          }
+        },
+        "2": {
+          "cusp_longitude": 273.3174,
+          "sign": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 3,
+            "minute": 19,
+            "second": 2,
+            "formatted": "3°19'02\" Capricorn",
+            "total_longitude": 273.3174,
+            "element": "Earth",
+            "modality": "Cardinal"
+          }
+        },
+        "3": {
+          "cusp_longitude": 310.4514,
+          "sign": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 10,
+            "minute": 27,
+            "second": 4,
+            "formatted": "10°27'04\" Aquarius",
+            "total_longitude": 310.4514,
+            "element": "Air",
+            "modality": "Fixed"
+          }
+        },
+        "4": {
+          "cusp_longitude": 347.159,
+          "sign": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 17,
+            "minute": 9,
+            "second": 32,
+            "formatted": "17°09'32\" Pisces",
+            "total_longitude": 347.159,
+            "element": "Water",
+            "modality": "Mutable"
+          }
+        },
+        "5": {
+          "cusp_longitude": 17.5668,
+          "sign": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 17,
+            "minute": 34,
+            "second": 0,
+            "formatted": "17°34'00\" Aries",
+            "total_longitude": 17.5668,
+            "element": "Fire",
+            "modality": "Cardinal"
+          }
+        },
+        "6": {
+          "cusp_longitude": 41.5463,
+          "sign": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 11,
+            "minute": 32,
+            "second": 46,
+            "formatted": "11°32'46\" Taurus",
+            "total_longitude": 41.5463,
+            "element": "Earth",
+            "modality": "Fixed"
+          }
+        },
+        "7": {
+          "cusp_longitude": 61.5614,
+          "sign": {
+            "sign": "Gemini",
+            "sign_index": 2,
+            "degree": 1,
+            "minute": 33,
+            "second": 41,
+            "formatted": "1°33'41\" Gemini",
+            "total_longitude": 61.5614,
+            "element": "Air",
+            "modality": "Mutable"
+          }
+        },
+        "8": {
+          "cusp_longitude": 93.3174,
+          "sign": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 3,
+            "minute": 19,
+            "second": 2,
+            "formatted": "3°19'02\" Cancer",
+            "total_longitude": 93.3174,
+            "element": "Water",
+            "modality": "Cardinal"
+          }
+        },
+        "9": {
+          "cusp_longitude": 130.4514,
+          "sign": {
+            "sign": "Leo",
+            "sign_index": 4,
+            "degree": 10,
+            "minute": 27,
+            "second": 4,
+            "formatted": "10°27'04\" Leo",
+            "total_longitude": 130.4514,
+            "element": "Fire",
+            "modality": "Fixed"
+          }
+        },
+        "10": {
+          "cusp_longitude": 167.159,
+          "sign": {
+            "sign": "Virgo",
+            "sign_index": 5,
+            "degree": 17,
+            "minute": 9,
+            "second": 32,
+            "formatted": "17°09'32\" Virgo",
+            "total_longitude": 167.159,
+            "element": "Earth",
+            "modality": "Mutable"
+          }
+        },
+        "11": {
+          "cusp_longitude": 197.5668,
+          "sign": {
+            "sign": "Libra",
+            "sign_index": 6,
+            "degree": 17,
+            "minute": 34,
+            "second": 0,
+            "formatted": "17°34'00\" Libra",
+            "total_longitude": 197.5668,
+            "element": "Air",
+            "modality": "Cardinal"
+          }
+        },
+        "12": {
+          "cusp_longitude": 221.5463,
+          "sign": {
+            "sign": "Scorpio",
+            "sign_index": 7,
+            "degree": 11,
+            "minute": 32,
+            "second": 46,
+            "formatted": "11°32'46\" Scorpio",
+            "total_longitude": 221.5463,
+            "element": "Water",
+            "modality": "Fixed"
+          }
+        }
+      },
+      "ascendant": {
+        "sign": "Sagittarius",
+        "sign_index": 8,
+        "degree": 1,
+        "minute": 33,
+        "second": 41,
+        "formatted": "1°33'41\" Sagittarius",
+        "total_longitude": 241.5614,
+        "element": "Fire",
+        "modality": "Mutable"
+      },
+      "midheaven": {
+        "sign": "Virgo",
+        "sign_index": 5,
+        "degree": 17,
+        "minute": 9,
+        "second": 32,
+        "formatted": "17°09'32\" Virgo",
+        "total_longitude": 167.159,
+        "element": "Earth",
+        "modality": "Mutable"
+      },
+      "aspects": [
+        {
+          "planet1": "Rahu",
+          "planet2": "Ketu",
+          "aspect": "opposition",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 0,
+          "strength": 1
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Jupiter",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 0.2,
+          "strength": 0.96
+        },
+        {
+          "planet1": "Saturn",
+          "planet2": "Pluto",
+          "aspect": "quincunx",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 0.23,
+          "strength": 0.922
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Mars",
+          "aspect": "semi_square",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 0.26,
+          "strength": 0.87
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Uranus",
+          "aspect": "semi_sextile",
+          "nature": "minor",
+          "harmony": "neutral",
+          "orb": 0.34,
+          "strength": 0.829
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Jupiter",
+          "aspect": "semi_square",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 0.35,
+          "strength": 0.825
+        },
+        {
+          "planet1": "Jupiter",
+          "planet2": "Neptune",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 1.34,
+          "strength": 0.809
+        },
+        {
+          "planet1": "Mars",
+          "planet2": "Uranus",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 1.15,
+          "strength": 0.769
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Venus",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 1.27,
+          "strength": 0.747
+        },
+        {
+          "planet1": "Jupiter",
+          "planet2": "Rahu",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 2.83,
+          "strength": 0.596
+        },
+        {
+          "planet1": "Jupiter",
+          "planet2": "Ketu",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 2.83,
+          "strength": 0.596
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Mars",
+          "aspect": "semi_sextile",
+          "nature": "minor",
+          "harmony": "neutral",
+          "orb": 0.81,
+          "strength": 0.594
+        },
+        {
+          "planet1": "Neptune",
+          "planet2": "Rahu",
+          "aspect": "opposition",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 4.17,
+          "strength": 0.479
+        },
+        {
+          "planet1": "Neptune",
+          "planet2": "Ketu",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 4.17,
+          "strength": 0.479
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Neptune",
+          "aspect": "semi_sextile",
+          "nature": "minor",
+          "harmony": "neutral",
+          "orb": 1.14,
+          "strength": 0.431
+        },
+        {
+          "planet1": "Venus",
+          "planet2": "Uranus",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 6.13,
+          "strength": 0.234
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Mars",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 6.24,
+          "strength": 0.22
+        },
+        {
+          "planet1": "Saturn",
+          "planet2": "Uranus",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 5.46,
+          "strength": 0.219
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Rahu",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 5.47,
+          "strength": 0.218
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Ketu",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 5.47,
+          "strength": 0.218
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Neptune",
+          "aspect": "semi_square",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 1.69,
+          "strength": 0.155
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Pluto",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 6.04,
+          "strength": 0.137
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Pluto",
+          "aspect": "sesquiquadrate",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 1.91,
+          "strength": 0.046
+        },
+        {
+          "planet1": "Mars",
+          "planet2": "Pluto",
+          "aspect": "trine",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 6.85,
+          "strength": 0.021
+        },
+        {
+          "planet1": "Venus",
+          "planet2": "Mars",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 4.97,
+          "strength": 0.005
+        }
+      ],
+      "stelliums": [
+        {
+          "sign": "Aquarius",
+          "planets": [
+            "Venus",
+            "Uranus",
+            "Neptune",
+            "Ketu"
+          ],
+          "count": 4
+        }
+      ],
+      "elements": {
+        "counts": {
+          "Fire": 9,
+          "Earth": 2,
+          "Air": 4,
+          "Water": 5
+        },
+        "dominant": "Fire"
+      },
+      "modalities": {
+        "counts": {
+          "Cardinal": 5,
+          "Fixed": 6,
+          "Mutable": 9
+        },
+        "dominant": "Mutable"
+      }
+    }
+  },
+  {
+    "input": {
+      "year": 2000,
+      "month": 3,
+      "day": 9,
+      "hour": 20,
+      "minute": 0,
+      "second": 0,
+      "place": "New York, USA"
+    },
+    "chart": {
+      "birth_data": {
+        "date": "2000-03-09",
+        "time": "20:00:00",
+        "place": "New York, USA",
+        "latitude": 40.7128,
+        "longitude": -74.006,
+        "timezone": "America/New_York",
+        "julian_day": 2451613.541667,
+        "ayanamsa_lahiri": 23.8597
+      },
+      "big_three": {
+        "sun": {
+          "sign": "Pisces",
+          "house": 5,
+          "degree": "19°45'54\" Pisces"
+        },
+        "moon": {
+          "sign": "Taurus",
+          "house": 7,
+          "degree": "7°28'29\" Taurus",
+          "nakshatra": "Bharani",
+          "nakshatra_pada": 1
+        },
+        "rising": {
+          "sign": "Libra",
+          "degree": "15°04'08\" Libra"
+        }
+      },
+      "planets": {
+        "Sun": {
+          "tropical": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 19,
+            "minute": 45,
+            "second": 54,
+            "formatted": "19°45'54\" Pisces",
+            "total_longitude": 349.7651,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 25,
+            "minute": 54,
+            "second": 19,
+            "formatted": "25°54'19\" Aquarius",
+            "total_longitude": 325.9053,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Purva Bhadrapada",
+            "ruler": "Jupiter",
+            "quality": "Transformative fire, spiritual warrior",
+            "pada": 2,
+            "degree_in_nakshatra": 5.91
+          },
+          "dignity": "neutral",
+          "house_western": 5,
+          "house_vedic": 5,
+          "retrograde": false,
+          "speed_deg_per_day": 0.9993,
+          "latitude": -0.0002
+        },
+        "Moon": {
+          "tropical": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 7,
+            "minute": 28,
+            "second": 29,
+            "formatted": "7°28'29\" Taurus",
+            "total_longitude": 37.4748,
+            "element": "Earth",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 13,
+            "minute": 36,
+            "second": 54,
+            "formatted": "13°36'54\" Aries",
+            "total_longitude": 13.615,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Bharani",
+            "ruler": "Venus",
+            "quality": "Transformation, bearing responsibility",
+            "pada": 1,
+            "degree_in_nakshatra": 0.28
+          },
+          "dignity": "exaltation",
+          "house_western": 7,
+          "house_vedic": 7,
+          "retrograde": false,
+          "speed_deg_per_day": 13.853224,
+          "latitude": -5.1147
+        },
+        "Mercury": {
+          "tropical": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 4,
+            "minute": 0,
+            "second": 50,
+            "formatted": "4°00'50\" Pisces",
+            "total_longitude": 334.0141,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 10,
+            "minute": 9,
+            "second": 15,
+            "formatted": "10°09'15\" Aquarius",
+            "total_longitude": 310.1544,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Shatabhisha",
+            "ruler": "Rahu",
+            "quality": "Hundred healers, mystical healing",
+            "pada": 2,
+            "degree_in_nakshatra": 3.49
+          },
+          "dignity": "detriment",
+          "house_western": 5,
+          "house_vedic": 5,
+          "retrograde": true,
+          "speed_deg_per_day": -0.518787,
+          "latitude": 2.4193
+        },
+        "Venus": {
+          "tropical": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 25,
+            "minute": 44,
+            "second": 50,
+            "formatted": "25°44'50\" Aquarius",
+            "total_longitude": 325.7474,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 1,
+            "minute": 53,
+            "second": 15,
+            "formatted": "1°53'15\" Aquarius",
+            "total_longitude": 301.8877,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Dhanishtha",
+            "ruler": "Mars",
+            "quality": "Wealth, music, adaptability",
+            "pada": 3,
+            "degree_in_nakshatra": 8.55
+          },
+          "dignity": "neutral",
+          "house_western": 5,
+          "house_vedic": 5,
+          "retrograde": false,
+          "speed_deg_per_day": 1.235689,
+          "latitude": -0.9453
+        },
+        "Mars": {
+          "tropical": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 20,
+            "minute": 21,
+            "second": 53,
+            "formatted": "20°21'53\" Aries",
+            "total_longitude": 20.3647,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "sidereal": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 26,
+            "minute": 30,
+            "second": 18,
+            "formatted": "26°30'18\" Pisces",
+            "total_longitude": 356.505,
+            "element": "Water",
+            "modality": "Mutable"
+          },
+          "nakshatra": {
+            "name": "Revati",
+            "ruler": "Mercury",
+            "quality": "Journey's end, compassion",
+            "pada": 3,
+            "degree_in_nakshatra": 9.84
+          },
+          "dignity": "domicile",
+          "house_western": 7,
+          "house_vedic": 6,
+          "retrograde": false,
+          "speed_deg_per_day": 0.745247,
+          "latitude": -0.186
+        },
+        "Jupiter": {
+          "tropical": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 4,
+            "minute": 27,
+            "second": 1,
+            "formatted": "4°27'01\" Taurus",
+            "total_longitude": 34.4504,
+            "element": "Earth",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 10,
+            "minute": 35,
+            "second": 26,
+            "formatted": "10°35'26\" Aries",
+            "total_longitude": 10.5907,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Ashwini",
+            "ruler": "Ketu",
+            "quality": "Swift, healing, new beginnings",
+            "pada": 4,
+            "degree_in_nakshatra": 10.59
+          },
+          "dignity": "neutral",
+          "house_western": 7,
+          "house_vedic": 7,
+          "retrograde": false,
+          "speed_deg_per_day": 0.203034,
+          "latitude": -0.9771
+        },
+        "Saturn": {
+          "tropical": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 13,
+            "minute": 12,
+            "second": 7,
+            "formatted": "13°12'07\" Taurus",
+            "total_longitude": 43.202,
+            "element": "Earth",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 19,
+            "minute": 20,
+            "second": 32,
+            "formatted": "19°20'32\" Aries",
+            "total_longitude": 19.3423,
+            "element": "Fire",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Bharani",
+            "ruler": "Venus",
+            "quality": "Transformation, bearing responsibility",
+            "pada": 2,
+            "degree_in_nakshatra": 6.01
+          },
+          "dignity": "neutral",
+          "house_western": 8,
+          "house_vedic": 7,
+          "retrograde": false,
+          "speed_deg_per_day": 0.093495,
+          "latitude": -2.1314
+        },
+        "Uranus": {
+          "tropical": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 18,
+            "minute": 37,
+            "second": 58,
+            "formatted": "18°37'58\" Aquarius",
+            "total_longitude": 318.6328,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 24,
+            "minute": 46,
+            "second": 23,
+            "formatted": "24°46'23\" Capricorn",
+            "total_longitude": 294.7731,
+            "element": "Earth",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Dhanishtha",
+            "ruler": "Mars",
+            "quality": "Wealth, music, adaptability",
+            "pada": 1,
+            "degree_in_nakshatra": 1.44
+          },
+          "dignity": "neutral",
+          "house_western": 4,
+          "house_vedic": 4,
+          "retrograde": false,
+          "speed_deg_per_day": 0.051747,
+          "latitude": -0.6614
+        },
+        "Neptune": {
+          "tropical": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 5,
+            "minute": 38,
+            "second": 45,
+            "formatted": "5°38'45\" Aquarius",
+            "total_longitude": 305.646,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 11,
+            "minute": 47,
+            "second": 10,
+            "formatted": "11°47'10\" Capricorn",
+            "total_longitude": 281.7863,
+            "element": "Earth",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Shravana",
+            "ruler": "Moon",
+            "quality": "Listening, learning, connection",
+            "pada": 1,
+            "degree_in_nakshatra": 1.79
+          },
+          "dignity": "neutral",
+          "house_western": 4,
+          "house_vedic": 4,
+          "retrograde": false,
+          "speed_deg_per_day": 0.029353,
+          "latitude": 0.2242
+        },
+        "Pluto": {
+          "tropical": {
+            "sign": "Sagittarius",
+            "sign_index": 8,
+            "degree": 12,
+            "minute": 53,
+            "second": 36,
+            "formatted": "12°53'36\" Sagittarius",
+            "total_longitude": 252.8936,
+            "element": "Fire",
+            "modality": "Mutable"
+          },
+          "sidereal": {
+            "sign": "Scorpio",
+            "sign_index": 7,
+            "degree": 19,
+            "minute": 2,
+            "second": 1,
+            "formatted": "19°02'01\" Scorpio",
+            "total_longitude": 229.0339,
+            "element": "Water",
+            "modality": "Fixed"
+          },
+          "nakshatra": {
+            "name": "Jyeshtha",
+            "ruler": "Mercury",
+            "quality": "Seniority, protective, chief",
+            "pada": 1,
+            "degree_in_nakshatra": 2.37
+          },
+          "dignity": "neutral",
+          "house_western": 2,
+          "house_vedic": 2,
+          "retrograde": false,
+          "speed_deg_per_day": 0.003082,
+          "latitude": 11.1078
+        },
+        "Rahu": {
+          "tropical": {
+            "sign": "Leo",
+            "sign_index": 4,
+            "degree": 1,
+            "minute": 24,
+            "second": 39,
+            "formatted": "1°24'39\" Leo",
+            "total_longitude": 121.4109,
+            "element": "Fire",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 7,
+            "minute": 33,
+            "second": 4,
+            "formatted": "7°33'04\" Cancer",
+            "total_longitude": 97.5512,
+            "element": "Water",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Pushya",
+            "ruler": "Saturn",
+            "quality": "Nourishing, most auspicious",
+            "pada": 2,
+            "degree_in_nakshatra": 4.22
+          },
+          "dignity": "neutral",
+          "house_western": 10,
+          "house_vedic": 10,
+          "retrograde": true,
+          "speed_deg_per_day": -0.052978,
+          "latitude": 0
+        },
+        "Ketu": {
+          "tropical": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 1,
+            "minute": 24,
+            "second": 39,
+            "formatted": "1°24'39\" Aquarius",
+            "total_longitude": 301.4109,
+            "element": "Air",
+            "modality": "Fixed"
+          },
+          "sidereal": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 7,
+            "minute": 33,
+            "second": 4,
+            "formatted": "7°33'04\" Capricorn",
+            "total_longitude": 277.5512,
+            "element": "Earth",
+            "modality": "Cardinal"
+          },
+          "nakshatra": {
+            "name": "Uttara Ashadha",
+            "ruler": "Sun",
+            "quality": "Final victory, universal",
+            "pada": 4,
+            "degree_in_nakshatra": 10.88
+          },
+          "dignity": "neutral",
+          "house_western": 4,
+          "house_vedic": 4,
+          "retrograde": true,
+          "speed_deg_per_day": 0,
+          "latitude": 0
+        }
+      },
+      "houses": {
+        "1": {
+          "cusp_longitude": 195.0692,
+          "sign": {
+            "sign": "Libra",
+            "sign_index": 6,
+            "degree": 15,
+            "minute": 4,
+            "second": 8,
+            "formatted": "15°04'08\" Libra",
+            "total_longitude": 195.0692,
+            "element": "Air",
+            "modality": "Cardinal"
+          }
+        },
+        "2": {
+          "cusp_longitude": 222.241,
+          "sign": {
+            "sign": "Scorpio",
+            "sign_index": 7,
+            "degree": 12,
+            "minute": 14,
+            "second": 27,
+            "formatted": "12°14'27\" Scorpio",
+            "total_longitude": 222.241,
+            "element": "Water",
+            "modality": "Fixed"
+          }
+        },
+        "3": {
+          "cusp_longitude": 253.4732,
+          "sign": {
+            "sign": "Sagittarius",
+            "sign_index": 8,
+            "degree": 13,
+            "minute": 28,
+            "second": 23,
+            "formatted": "13°28'23\" Sagittarius",
+            "total_longitude": 253.4732,
+            "element": "Fire",
+            "modality": "Mutable"
+          }
+        },
+        "4": {
+          "cusp_longitude": 287.5405,
+          "sign": {
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 17,
+            "minute": 32,
+            "second": 25,
+            "formatted": "17°32'25\" Capricorn",
+            "total_longitude": 287.5405,
+            "element": "Earth",
+            "modality": "Cardinal"
+          }
+        },
+        "5": {
+          "cusp_longitude": 320.9121,
+          "sign": {
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 20,
+            "minute": 54,
+            "second": 43,
+            "formatted": "20°54'43\" Aquarius",
+            "total_longitude": 320.9121,
+            "element": "Air",
+            "modality": "Fixed"
+          }
+        },
+        "6": {
+          "cusp_longitude": 350.414,
+          "sign": {
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 20,
+            "minute": 24,
+            "second": 50,
+            "formatted": "20°24'50\" Pisces",
+            "total_longitude": 350.414,
+            "element": "Water",
+            "modality": "Mutable"
+          }
+        },
+        "7": {
+          "cusp_longitude": 15.0692,
+          "sign": {
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 15,
+            "minute": 4,
+            "second": 8,
+            "formatted": "15°04'08\" Aries",
+            "total_longitude": 15.0692,
+            "element": "Fire",
+            "modality": "Cardinal"
+          }
+        },
+        "8": {
+          "cusp_longitude": 42.241,
+          "sign": {
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 12,
+            "minute": 14,
+            "second": 27,
+            "formatted": "12°14'27\" Taurus",
+            "total_longitude": 42.241,
+            "element": "Earth",
+            "modality": "Fixed"
+          }
+        },
+        "9": {
+          "cusp_longitude": 73.4732,
+          "sign": {
+            "sign": "Gemini",
+            "sign_index": 2,
+            "degree": 13,
+            "minute": 28,
+            "second": 23,
+            "formatted": "13°28'23\" Gemini",
+            "total_longitude": 73.4732,
+            "element": "Air",
+            "modality": "Mutable"
+          }
+        },
+        "10": {
+          "cusp_longitude": 107.5405,
+          "sign": {
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 17,
+            "minute": 32,
+            "second": 25,
+            "formatted": "17°32'25\" Cancer",
+            "total_longitude": 107.5405,
+            "element": "Water",
+            "modality": "Cardinal"
+          }
+        },
+        "11": {
+          "cusp_longitude": 140.9121,
+          "sign": {
+            "sign": "Leo",
+            "sign_index": 4,
+            "degree": 20,
+            "minute": 54,
+            "second": 43,
+            "formatted": "20°54'43\" Leo",
+            "total_longitude": 140.9121,
+            "element": "Fire",
+            "modality": "Fixed"
+          }
+        },
+        "12": {
+          "cusp_longitude": 170.414,
+          "sign": {
+            "sign": "Virgo",
+            "sign_index": 5,
+            "degree": 20,
+            "minute": 24,
+            "second": 50,
+            "formatted": "20°24'50\" Virgo",
+            "total_longitude": 170.414,
+            "element": "Earth",
+            "modality": "Mutable"
+          }
+        }
+      },
+      "ascendant": {
+        "sign": "Libra",
+        "sign_index": 6,
+        "degree": 15,
+        "minute": 4,
+        "second": 8,
+        "formatted": "15°04'08\" Libra",
+        "total_longitude": 195.0692,
+        "element": "Air",
+        "modality": "Cardinal"
+      },
+      "midheaven": {
+        "sign": "Cancer",
+        "sign_index": 3,
+        "degree": 17,
+        "minute": 32,
+        "second": 25,
+        "formatted": "17°32'25\" Cancer",
+        "total_longitude": 107.5405,
+        "element": "Water",
+        "modality": "Cardinal"
+      },
+      "aspects": [
+        {
+          "planet1": "Rahu",
+          "planet2": "Ketu",
+          "aspect": "opposition",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 0,
+          "strength": 1
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Jupiter",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 0.44,
+          "strength": 0.913
+        },
+        {
+          "planet1": "Saturn",
+          "planet2": "Pluto",
+          "aspect": "quincunx",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 0.31,
+          "strength": 0.897
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Jupiter",
+          "aspect": "semi_square",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 0.31,
+          "strength": 0.843
+        },
+        {
+          "planet1": "Jupiter",
+          "planet2": "Neptune",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 1.2,
+          "strength": 0.829
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Neptune",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 1.83,
+          "strength": 0.739
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Mars",
+          "aspect": "semi_sextile",
+          "nature": "minor",
+          "harmony": "neutral",
+          "orb": 0.6,
+          "strength": 0.7
+        },
+        {
+          "planet1": "Mars",
+          "planet2": "Uranus",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 1.73,
+          "strength": 0.654
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Jupiter",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 3.02,
+          "strength": 0.622
+        },
+        {
+          "planet1": "Jupiter",
+          "planet2": "Rahu",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 3.04,
+          "strength": 0.566
+        },
+        {
+          "planet1": "Jupiter",
+          "planet2": "Ketu",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 3.04,
+          "strength": 0.566
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Neptune",
+          "aspect": "semi_square",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 0.88,
+          "strength": 0.56
+        },
+        {
+          "planet1": "Neptune",
+          "planet2": "Rahu",
+          "aspect": "opposition",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 4.24,
+          "strength": 0.471
+        },
+        {
+          "planet1": "Neptune",
+          "planet2": "Ketu",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 4.24,
+          "strength": 0.471
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Uranus",
+          "aspect": "semi_sextile",
+          "nature": "minor",
+          "harmony": "neutral",
+          "orb": 1.13,
+          "strength": 0.434
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Mars",
+          "aspect": "semi_square",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 1.35,
+          "strength": 0.325
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Mercury",
+          "aspect": "sextile",
+          "nature": "major",
+          "harmony": "soft",
+          "orb": 3.46,
+          "strength": 0.308
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Saturn",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 5.73,
+          "strength": 0.284
+        },
+        {
+          "planet1": "Saturn",
+          "planet2": "Uranus",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 5.43,
+          "strength": 0.224
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Neptune",
+          "aspect": "semi_sextile",
+          "nature": "minor",
+          "harmony": "neutral",
+          "orb": 1.63,
+          "strength": 0.184
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Rahu",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 6.06,
+          "strength": 0.134
+        },
+        {
+          "planet1": "Moon",
+          "planet2": "Ketu",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 6.06,
+          "strength": 0.134
+        },
+        {
+          "planet1": "Mercury",
+          "planet2": "Rahu",
+          "aspect": "quincunx",
+          "nature": "minor",
+          "harmony": "hard",
+          "orb": 2.6,
+          "strength": 0.132
+        },
+        {
+          "planet1": "Venus",
+          "planet2": "Uranus",
+          "aspect": "conjunction",
+          "nature": "major",
+          "harmony": "neutral",
+          "orb": 7.11,
+          "strength": 0.111
+        },
+        {
+          "planet1": "Sun",
+          "planet2": "Pluto",
+          "aspect": "square",
+          "nature": "major",
+          "harmony": "hard",
+          "orb": 6.87,
+          "strength": 0.018
+        }
+      ],
+      "stelliums": [
+        {
+          "sign": "Taurus",
+          "planets": [
+            "Moon",
+            "Jupiter",
+            "Saturn"
+          ],
+          "count": 3
+        },
+        {
+          "sign": "Aquarius",
+          "planets": [
+            "Venus",
+            "Uranus",
+            "Neptune",
+            "Ketu"
+          ],
+          "count": 4
+        }
+      ],
+      "elements": {
+        "counts": {
+          "Fire": 3,
+          "Earth": 5,
+          "Air": 7,
+          "Water": 5
+        },
+        "dominant": "Air"
+      },
+      "modalities": {
+        "counts": {
+          "Cardinal": 5,
+          "Fixed": 9,
+          "Mutable": 6
+        },
+        "dominant": "Fixed"
+      }
+    }
+  }
+]

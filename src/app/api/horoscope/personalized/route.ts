@@ -78,6 +78,10 @@ Other rules:
 - daily_tip: plain English, no astrology terms — like advice from a wise friend`;
 }
 
+import {customerMarket} from "@/lib/customer-market";
+import {loadWesternAccountChart} from "@/lib/us-main/western-chart";
+import {WESTERN_REPORT_INSTRUCTIONS} from "@/lib/us-main/western-report";
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const userId = searchParams.get("userId");
@@ -113,7 +117,9 @@ export async function GET(request: NextRequest) {
 
   try {
     // 1. Check cache first
-    const cacheDocId = `personalized_${period}_${userId}_${cacheTimeKey}`;
+    const western = await customerMarket(userId) === "US";
+    const westernResult = western ? await loadWesternAccountChart(userId) : null;
+    const cacheDocId = `personalized_${period}_${userId}_${cacheTimeKey}${western ? "_" + westernResult?.id : ""}`;
     const { data: cached } = await supabase.from("horoscope_cache").select("*").eq("id", cacheDocId).single();
 
     if (cached) {
@@ -171,7 +177,7 @@ export async function GET(request: NextRequest) {
     // 3. Call astro-engine to get natal chart + transits
     let natalData: NatalPromptData;
     try {
-      natalData = await fetchFromAstroEngine("/calculate", {
+      natalData = western ? {} : await fetchFromAstroEngine("/calculate", {
         year: parseInt(birthYear),
         month: monthNum,
         day: parseInt(birthDay),
@@ -196,7 +202,7 @@ export async function GET(request: NextRequest) {
     const periodLabel = period === "weekly" ? "weekly" : period === "monthly" ? "monthly" : period === "tomorrow" ? "tomorrow's daily" : "today's daily";
     const timeRef = period === "weekly" ? "this week" : period === "monthly" ? "this month" : period === "tomorrow" ? "tomorrow" : "today";
 
-    const userMessage = `Generate ${periodLabel} personalized horoscope for this user.
+    const userMessage = western ? `Generate ${periodLabel} personalized horoscope JSON for ${cacheTimeKey}. Use natal themes only; current transits have not been supplied. ${JSON.stringify(westernResult?.data)}` : `Generate ${periodLabel} personalized horoscope for this user.
 
 PERIOD: ${period}
 DATE: ${cacheTimeKey}
@@ -227,7 +233,7 @@ Generate the personalized ${periodLabel} horoscope JSON now. Remember: DO NOT st
     const response = await anthropic.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: maxTokens,
-      system: getSystemPrompt(period === "tomorrow" ? "daily" : period),
+      system: getSystemPrompt(period === "tomorrow" ? "daily" : period) + (western ? "\n" + WESTERN_REPORT_INSTRUCTIONS : ""),
       messages: [{ role: "user", content: userMessage }],
     });
 
@@ -268,6 +274,12 @@ Generate the personalized ${periodLabel} horoscope JSON now. Remember: DO NOT st
     horoscopeData.moon_sign = bigThree.moon?.sign || "Unknown";
     horoscopeData.rising_sign = bigThree.rising?.sign || "Unknown";
     horoscopeData.current_dasha = currentDasha.label || "Unknown";
+    if(westernResult) {
+      horoscopeData.sun_sign = westernResult.data.sun_sign;
+      horoscopeData.moon_sign = westernResult.data.moon_sign || "Birth time needed";
+      horoscopeData.rising_sign = westernResult.data.ascendant || "Birth time needed";
+      delete horoscopeData.current_dasha;
+    }
     horoscopeData.date = cacheTimeKey;
     horoscopeData.period = period;
 
@@ -275,7 +287,7 @@ Generate the personalized ${periodLabel} horoscope JSON now. Remember: DO NOT st
     await supabase.from("horoscope_cache").upsert({
       id: cacheDocId,
       horoscope: horoscopeData,
-      sign: bigThree.sun?.sign?.toLowerCase() || "aries",
+      sign: westernResult?.data.sun_sign.toLowerCase() || bigThree.sun?.sign?.toLowerCase() || "aries",
       period,
       cache_key: cacheTimeKey,
       fetched_at: new Date().toISOString(),

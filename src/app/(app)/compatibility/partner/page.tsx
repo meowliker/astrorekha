@@ -1,4 +1,6 @@
 "use client";
+import {accountWesternSigns} from "@/lib/account-zodiac-client";
+import type {WesternChart} from "@/lib/western-zodiac";
 import type { BirthChartData } from "@/lib/birth-chart-data";
 
 
@@ -108,6 +110,10 @@ type FullResult = {
   };
 };
 
+function westernMoonPhase(chart:WesternChart) {
+  const utc = new Date((chart.birthDetails.julianDay - 2440587.5)*86400000);
+  return calculateMoonPhase({year:utc.getUTCFullYear(),month:utc.getUTCMonth()+1,day:utc.getUTCDate(),hour:utc.getUTCHours(),minute:utc.getUTCMinutes(),timezoneOffsetHours:0});
+}
 function monthToNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   const raw = String(value).trim();
@@ -338,6 +344,8 @@ function MoonMergePanel({ moonMerge }: { moonMerge: NonNullable<FullResult["moon
 
 export default function PartnerCompatibilityPage() {
   const router = useRouter();
+  const [western,setWestern] = useState(false);
+  const [partnerPlace,setPartnerPlace] = useState("");
   const [userMoonSign, setUserMoonSign] = useState<string | null>(null);
   const [userMoonPhase, setUserMoonPhase] = useState<MoonPhaseReport | null>(null);
   const [userMoonLoading, setUserMoonLoading] = useState(true);
@@ -356,6 +364,15 @@ export default function PartnerCompatibilityPage() {
     const loadUserMoonSign = async () => {
       setUserMoonLoading(true);
       try {
+        const signs = await accountWesternSigns();
+        if(signs) {
+          setWestern(true); setUserMoonSign(signs.moon);
+          if(!signs.moon) {setError("Add your birth time in Profile to calculate Moon compatibility.");return;}
+          const response = await fetch("/api/us/main/astrology/chart",{cache:"no-store"});
+          const result = await response.json();
+          if(!response.ok) throw new Error(result.error);
+          setUserMoonPhase(westernMoonPhase(result.data)); return;
+        }
         const userId = localStorage.getItem("astrorekha_user_id");
         if (!userId) {
           setUserMoonSign(null);
@@ -439,14 +456,14 @@ export default function PartnerCompatibilityPage() {
   }, []);
 
   const canSubmit = useMemo(
-    () => !!partnerBirthDate && !!partnerBirthTime && !!userMoonSign && !loading,
-    [partnerBirthDate, partnerBirthTime, userMoonSign, loading]
+    () => !!partnerBirthDate && !!partnerBirthTime && !!userMoonSign && (!western || !!partnerPlace.trim()) && !loading,
+    [partnerBirthDate, partnerBirthTime, userMoonSign, loading, western, partnerPlace]
   );
 
   const buildResult = async (sign1: string, sign2: string) => {
-    const cached = await getCompatibilityResult(sign1, sign2);
+    const cached = western ? null : await getCompatibilityResult(sign1, sign2);
     const data = cached || getInstantCompatibility(sign1, sign2);
-    if (!cached) saveCompatibilityResult(data).catch(console.error);
+    if (!cached && !western) saveCompatibilityResult(data).catch(console.error);
     return buildFullResult({ ...data, sign1, sign2 });
   };
 
@@ -468,6 +485,21 @@ export default function PartnerCompatibilityPage() {
 
     try {
       const partnerTime = parseTimeValue(partnerBirthTime);
+      if(western) {
+        const response = await fetch("/api/us/main/astrology/chart",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+          birthYear:parts.year,birthMonth:parts.month,birthDay:parts.day,
+          birthHour:partnerTime.hour%12||12,birthMinute:partnerTime.minute,birthPeriod:partnerTime.hour>=12?"PM":"AM",
+          birthPlace:partnerPlace,knowsBirthTime:true,
+        })});
+        const body = await response.json();
+        if(!response.ok || !body.data?.moon_sign) throw new Error(body.error || "Moon calculation unavailable");
+        const chart:WesternChart=body.data;
+        const phase=westernMoonPhase(chart);
+        setPartnerMoonSign(chart.moon_sign);
+        const match=await buildResult(userMoonSign,chart.moon_sign!);
+        setResult(userMoonPhase ? {...match,moonMerge:{user:userMoonPhase,partner:phase,merge:calculateMoonMerge(userMoonPhase,phase)}} : match);
+        return;
+      }
       const nextPartnerMoonPhase = calculateMoonPhase({
         year: Number(parts.year),
         month: Number(parts.month),
@@ -515,6 +547,7 @@ export default function PartnerCompatibilityPage() {
       );
     } catch (err) {
       console.error("Moon compatibility error:", err);
+      if(western) {setError(err instanceof Error ? err.message : "Unable to calculate Moon signs. Please try again.");return;}
       const fallback = approximateMoonSign(parts.month, parts.day, parts.year);
       const partnerTime = parseTimeValue(partnerBirthTime);
       const nextPartnerMoonPhase = calculateMoonPhase({
@@ -615,6 +648,7 @@ export default function PartnerCompatibilityPage() {
                 </label>
               </div>
 
+              {western && <label className="block mt-4"><span className="block text-sm text-white/70 mb-2">Partner birthplace (city, state, country)</span><input value={partnerPlace} onChange={e=>setPartnerPlace(e.target.value)} placeholder="New York, NY, USA" className="w-full rounded-xl border border-white/10 bg-[#0A0E1A] px-4 py-3 text-white" /></label>}
               {error && (
                 <div className="rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
                   {error}

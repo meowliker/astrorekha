@@ -1,4 +1,5 @@
 "use client";
+import {accountWesternSigns} from "@/lib/account-zodiac-client";
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
@@ -138,7 +139,8 @@ export default function DashboardPage() {
             loadVastuGuidePurchaseTime(userId, userData.email || null);
           }
           
-          let sunSignName = extractStoredSignName(userData.sun_sign);
+          const westernSigns = await accountWesternSigns();
+          let sunSignName = westernSigns?.sun || extractStoredSignName(userData.sun_sign);
 
           if (!sunSignName && userId) {
             try {
@@ -179,6 +181,8 @@ export default function DashboardPage() {
       }
     } catch (error) {
       console.error("Error loading user zodiac:", error);
+      setUserZodiac({sign:"Unavailable",symbol:"✦",color:"from-slate-500 to-slate-700"});
+      return;
     }
     
     // Fallback to onboarding store sun sign or calculate from birth date

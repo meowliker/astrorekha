@@ -1,4 +1,5 @@
 "use client";
+import {accountWesternSigns} from "@/lib/account-zodiac-client";
 
 import ReportInfoButton from "@/components/ReportInfoButton";
 
@@ -324,6 +325,9 @@ export default function CompatibilityPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<FullResult | null>(null);
+  const [western, setWestern] = useState(false);
+  const [signReady, setSignReady] = useState(false);
+  const [signError, setSignError] = useState(false);
   const [userSign, setUserSign] = useState<string>("Sagittarius");
   const [userSignFromBirthDate, setUserSignFromBirthDate] = useState<string | null>(null);
   const [selectedSign, setSelectedSign] = useState<string | null>(null);
@@ -359,6 +363,10 @@ export default function CompatibilityPage() {
 
     const loadUserMoonSign = async () => {
       try {
+        const signs = await accountWesternSigns();
+        if(signs) {
+          setWestern(true); setUserSign(signs.sun); setUserSignFromBirthDate(signs.sun); return;
+        }
         const userId = localStorage.getItem("astrorekha_user_id");
         if (!userId) {
           fallbackFromLocalBirthDate();
@@ -405,21 +413,21 @@ export default function CompatibilityPage() {
         fallbackFromLocalBirthDate();
       } catch (error) {
         console.error("Failed to load user moon sign:", error);
-        fallbackFromLocalBirthDate();
-      }
+        setSignError(true);
+      } finally { setSignReady(true); }
     };
 
     loadUserMoonSign();
   }, []);
 
   const handleCheckCompatibility = async () => {
-    if (!selectedSign) return;
+    if (!selectedSign || !signReady || signError) return;
     
     setLoading(true);
     
     try {
       // First, try to get cached result from Firestore
-      const cachedResult = await getCompatibilityResult(userSign, selectedSign);
+      const cachedResult = western ? null : await getCompatibilityResult(userSign, selectedSign);
       
       if (cachedResult) {
         // Use cached result - instant!
@@ -484,7 +492,7 @@ export default function CompatibilityPage() {
       setResult(fullResult);
       
       // Save to Firestore in background for future instant access
-      saveCompatibilityResult(instantData).catch(console.error);
+      if(!western) saveCompatibilityResult(instantData).catch(console.error);
       
     } catch (error) {
       console.error("Compatibility error:", error);
@@ -715,7 +723,7 @@ export default function CompatibilityPage() {
 
                 {/* Selection indicator */}
                 <p className="text-center text-[#D4B896]/60 text-sm">
-                  {selectingFor === "user" ? "Select your sign" : "Select partner's moon sign"}
+                  {signError ? "Check your saved birth details to load your sign" : !signReady ? "Loading your sign…" : selectingFor === "user" ? (western ? "Select your Sun sign" : "Select your sign") : (western ? "Select partner's Sun sign" : "Select partner's moon sign")}
                 </p>
 
                 {/* Zodiac Grid */}
@@ -757,7 +765,7 @@ export default function CompatibilityPage() {
                 {/* Check Compatibility Button */}
                 <Button
                   onClick={handleCheckCompatibility}
-                  disabled={loading || !selectedSign}
+                  disabled={loading || !selectedSign || !signReady || signError}
                   className="w-full bg-rose-600 hover:bg-rose-700 text-white py-6 rounded-full text-lg font-medium"
                 >
                   {loading ? (

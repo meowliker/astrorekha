@@ -1,3 +1,6 @@
+import {customerMarket} from "@/lib/customer-market";
+import {loadWesternAccountChart} from "@/lib/us-main/western-chart";
+import {WESTERN_CHART_VERSION} from "@/lib/western-zodiac";
 import { NextRequest, NextResponse } from "next/server";
 import {
   buildAstrocartographyReport,
@@ -243,6 +246,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "feature_locked" }, { status: 403 });
     }
 
+    const westernResult = await customerMarket(userId) === "US" ? await loadWesternAccountChart(userId) : null;
+    if(westernResult && !westernResult.data.knowsBirthTime) return NextResponse.json({error:"birth_time_required",message:"Add your birth time before generating location lines."},{status:400});
     if (!force) {
       const { data: existingComplete } = await supabase
         .from("astrocartography_reports")
@@ -251,7 +256,7 @@ export async function POST(request: NextRequest) {
         .eq("status", "complete")
         .maybeSingle();
 
-      if (existingComplete?.report_data) {
+      if (existingComplete?.report_data && (!westernResult || (existingComplete.report_data._zodiac_system === WESTERN_CHART_VERSION && existingComplete.report_data._birth_chart_id === westernResult.id))) {
         return NextResponse.json({
           id: existingComplete.id,
           status: "complete",
@@ -269,12 +274,20 @@ export async function POST(request: NextRequest) {
       .eq("id", userId)
       .maybeSingle();
 
-    const partialBirthData = buildBirthData(userProfile || null, user || null);
+    const westernBirth = westernResult?.data.birthDetails;
+    const partialBirthData = westernBirth ? (() => {
+      const [year,month,day] = westernBirth.date.split("-").map(Number);
+      const [hour,minute] = westernBirth.time.split(":").map(Number);
+      return {year,month,day,hour,minute,place:westernBirth.place};
+    })() : buildBirthData(userProfile || null, user || null);
     if (!partialBirthData) {
       return NextResponse.json({ error: "missing_birth_details" }, { status: 400 });
     }
 
-    const place = await geocodePlace(partialBirthData.place);
+    const place = westernBirth ? {placeName:westernBirth.place,latitude:westernBirth.latitude,longitude:westernBirth.longitude,
+      timezone: Math.round((Date.UTC(partialBirthData.year,partialBirthData.month-1,partialBirthData.day,partialBirthData.hour,partialBirthData.minute) - (westernBirth.julianDay - 2440587.5)*86400000)/60000)/60
+    } : await geocodePlace(partialBirthData.place);
+    if(westernBirth && !Number.isFinite(place.timezone)) throw new Error("Historical timezone unavailable");
     const birthData: AstrocartographyBirthData = {
       ...partialBirthData,
       place: place.placeName,
@@ -325,7 +338,7 @@ export async function POST(request: NextRequest) {
           birth_data: birthData,
           provider: "astrologyapi",
           provider_response: providerResponse,
-          report_data: report,
+          report_data: {...report,...(westernResult ? {_zodiac_system:WESTERN_CHART_VERSION,_birth_chart_id:westernResult.id} : {})},
           generated_at: report.generatedAt,
           updated_at: report.generatedAt,
         },

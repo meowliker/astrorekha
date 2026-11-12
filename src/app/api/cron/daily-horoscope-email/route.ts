@@ -1,3 +1,5 @@
+import {customerMarket} from "@/lib/customer-market";
+import {loadWesternAccountChart} from "@/lib/us-main/western-chart";
 
 import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
@@ -231,7 +233,10 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
-      let sunSign = extractStoredSignName(userData.sun_sign);
+      const western = await customerMarket(userData.id) === "US";
+      const westernResult = western ? await loadWesternAccountChart(userData.id).catch(() => null) : null;
+      if(western && !westernResult) continue;
+      let sunSign = westernResult?.data.sun_sign || extractStoredSignName(userData.sun_sign);
 
       // Fallback: check user_profiles
       if (!sunSign) {

@@ -1,4 +1,5 @@
 "use client";
+import {accountWesternSigns} from "@/lib/account-zodiac-client";
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -60,11 +61,16 @@ export default function HoroscopePage() {
   const currentSignData = ZODIAC_SIGNS.find((z) => z.sign === selectedSign) || ZODIAC_SIGNS[0];
 
   useEffect(() => {
-    loadUserSign().finally(() => setSignLoaded(true));
+    loadUserSign();
   }, []);
 
+  const [signError, setSignError] = useState<string | null>(null);
   const loadUserSign = async () => {
+    setSignError(null);
+    let resolved = true;
     try {
+      const westernSigns = await accountWesternSigns();
+      if(westernSigns){setSelectedSign(westernSigns.sun);setUserSign(westernSigns.sun);return;}
       const sessionUser = await resolveStoredUserSession();
       const userId = sessionUser?.id || localStorage.getItem("astrorekha_user_id");
 
@@ -112,8 +118,11 @@ export default function HoroscopePage() {
         setUserSign(sign);
       }
     } catch (error) {
+      resolved = false;
+      setSignError("Unable to load your sign. Check your saved birth details and try again.");
+      setLoading(false);
       console.error("Error loading user sign:", error);
-    }
+    } finally { setSignLoaded(resolved); }
   };
 
   useEffect(() => {
@@ -155,6 +164,8 @@ export default function HoroscopePage() {
   });
 
   const periodTitle = selectedPeriod === "tomorrow" ? "Tomorrow's" : "Daily";
+
+  if(signError) return <div className="p-8 text-center"><p>{signError}</p><button onClick={loadUserSign}>Try again</button><a className="block mt-4" href="/profile/edit">Edit birth details</a></div>;
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
