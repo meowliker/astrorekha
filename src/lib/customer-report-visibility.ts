@@ -16,5 +16,7 @@ export function isCustomerReportVisible(
   feature: keyof NormalizedUnlockedFeatures,
   unlockedFeatures: Partial<NormalizedUnlockedFeatures>,
 ): boolean {
+  // Retired products stay hidden even for previous buyers and test accounts.
+  if (feature === "vastuShastraGuide") return false;
   return unlockedFeatures[feature] === true || isReportAvailableForPurchase(feature);
 }

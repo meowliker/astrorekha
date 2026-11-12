@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
         compatibilityTest: true,
         soulmateSketch: true,
         futurePartnerReport: true,
-        vastuShastraGuide: true,
+        vastuShastraGuide: false,
       },
       updated_at: now,
     }, { onConflict: "id" });

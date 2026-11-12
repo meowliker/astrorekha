@@ -22,7 +22,6 @@ const FEATURE_LABELS: Record<string, string> = {
   prediction2026: "2026 Predictions",
   soulmateSketch: "Soulmate Sketch",
   futurePartnerReport: "Future Partner Report",
-  vastuShastraGuide: "Complete Vastu Shastra Guide Ebook",
   auraColorReport: "Aura Color Quiz",
   astrocartographyReport: "Astrocartography",
   pastLifeReport: "Past Life Report",
@@ -63,7 +62,7 @@ export default function ManageSubscriptionPage() {
   }, []);
 
   const unlockedList = Object.entries(unlockedFeatures)
-    .filter(([, v]) => v)
+    .filter(([key, enabled]) => enabled && key !== "vastuShastraGuide")
     .map(([k]) => k);
 
   return (

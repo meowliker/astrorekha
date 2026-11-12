@@ -168,8 +168,10 @@ export function normalizePricing(raw?: Partial<PricingConfig> | null): PricingCo
 
   return {
     bundles: applyBundleOverrides(mergedBundles),
-    upsells: mergeById(DEFAULT_PRICING.upsells, raw.upsells as UpsellPlan[] | undefined),
-    reports: mergeById(DEFAULT_PRICING.reports, raw.reports as ReportPlan[] | undefined),
+    upsells: mergeById(DEFAULT_PRICING.upsells, raw.upsells as UpsellPlan[] | undefined)
+      .filter((offer) => offer.feature !== "vastuShastraGuide" && !["vastu-shastra-guide", "report-vastu-shastra-guide"].includes(offer.id)),
+    reports: mergeById(DEFAULT_PRICING.reports, raw.reports as ReportPlan[] | undefined)
+      .filter((report) => report.id !== "report-vastu-shastra-guide" && report.feature !== "vastuShastraGuide"),
     coinPackages: mergeById(DEFAULT_PRICING.coinPackages, raw.coinPackages as CoinPackage[] | undefined),
   };
 }
@@ -434,14 +436,6 @@ export const DEFAULT_PRICING: PricingConfig = {
       price: 582,
       originalPrice: 999,
       feature: "spiritAnimalReport",
-      active: true,
-    },
-    {
-      id: "report-vastu-shastra-guide",
-      name: "Complete Vastu Shastra Guide Ebook",
-      price: 297,
-      originalPrice: 999,
-      feature: "vastuShastraGuide",
       active: true,
     },
     {
