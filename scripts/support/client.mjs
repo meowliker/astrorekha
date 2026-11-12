@@ -37,6 +37,11 @@ if (!/^ar_support_[a-zA-Z0-9_-]+$/.test(token))
   throw new Error("The local support token is invalid");
 const tokenHash = createHash("sha256").update(token).digest("hex");
 const statePath = ".support-rules-session.json";
+// A failed refresh must not leave an older receipt available as an offline fallback.
+if (start)
+  await unlink(statePath).catch((error) => {
+    if (error.code !== "ENOENT") throw error;
+  });
 let receipt;
 if (
   !start &&

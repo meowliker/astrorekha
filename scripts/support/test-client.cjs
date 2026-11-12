@@ -65,6 +65,9 @@ try {
   r = run(["start"], true);
   assert.equal(r.status, 1);
   assert.ok(!r.stdout.includes("Live workflow instructions"));
+  r = run(["GET", "search?q=fixture"]);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /current rules first/);
   console.log(
     "PASS: local token loading, required live-rules start, private receipt, API header, stale-rule error and no offline fallback.",
   );
