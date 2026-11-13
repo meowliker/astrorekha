@@ -1,6 +1,6 @@
 import {withAdminAccess} from "@/lib/admin-access";
 import { parseAdSource } from "@/lib/admin-acquisition";
-import { savedRevenueReport } from "@/lib/revenue-cache";
+import { savedRevenueReport, RevenueRefreshBusy } from "@/lib/revenue-cache";
 import { filterAndSortOrders } from "@/lib/revenue-table";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -17,7 +17,7 @@ export const maxDuration = 300;
 const headers = { "Cache-Control": "private, no-store, max-age=0" };
 async function handle(request: NextRequest, refresh = false) {
   try {
-    const db = getSupabaseAdmin();
+    const db = getSupabaseAdmin({fresh: true});
     const token =
       request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
       request.nextUrl.searchParams.get("token");
@@ -110,6 +110,7 @@ async function handle(request: NextRequest, refresh = false) {
       { headers },
     );
   } catch (error) {
+    if (error instanceof RevenueRefreshBusy) return NextResponse.json({error: "Revenue refresh is in progress.", code: "REFRESH_BUSY"}, {status: 409, headers: {...headers, "Retry-After": "5"}});
     console.error(
       "[admin/revenue] Complete report failed:",
       error instanceof Error ? error.message : "Unknown error",

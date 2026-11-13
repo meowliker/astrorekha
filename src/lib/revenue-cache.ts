@@ -58,6 +58,7 @@ async function readPages<T extends { id: string }>(
     after: T | null,
   ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
   ceiling: number,
+  expectedCount?: number,
 ): Promise<T[]> {
   const rows: T[] = [];
   let after: T | null = null;
@@ -81,6 +82,8 @@ async function readPages<T extends { id: string }>(
       throw new Error(
         "Range exceeds the safe read limit. No partial totals returned.",
       );
+    // A primary-key batch is complete once every requested ID is present.
+    if (expectedCount !== undefined && rows.length === expectedCount) return rows;
     const next = data[data.length - 1];
     if (next.id === after?.id)
       throw new Error(
@@ -189,11 +192,11 @@ async function readRows<T extends { id: string }>(
   const result: T[] = [];
   // Explicit ID batches use the primary key and stay within URL limits.
   const batches = ids
-    ? Array.from({ length: Math.ceil(ids.length / 100) }, (_, i) =>
-        ids.slice(i * 100, i * 100 + 100),
+    ? Array.from({ length: Math.ceil(ids.length / 200) }, (_, i) =>
+        ids.slice(i * 200, i * 200 + 200),
       )
     : [null];
-  for (const batch of batches) {
+  const readBatch = async (batch: string[] | null) => {
     const rows = await readPages<T>(async (after) => {
       let q = db
         .from(table)
@@ -212,8 +215,16 @@ async function readRows<T extends { id: string }>(
               : (row as unknown as T),
           ) || null,
       };
-    }, 500000);
-    result.push(...rows);
+    }, 500000, batch?.length);
+    return rows;
+  };
+  for (let i = 0; i < batches.length; i += 6) {
+    // Settle the whole batch before releasing the refresh lease on error.
+    const group = await Promise.allSettled(batches.slice(i, i + 6).map(readBatch));
+    for (const rows of group) {
+      if (rows.status === "rejected") throw rows.reason;
+      result.push(...rows.value);
+    }
   }
   return result;
 }
@@ -292,27 +303,31 @@ async function readManifest(db: SupabaseClient): Promise<Manifest | null> {
     : null;
 }
 
+export class RevenueRefreshBusy extends Error {}
+
 async function syncSource(db: SupabaseClient): Promise<Source> {
   const lock = await db.rpc("admin_revenue_begin_sync");
-  if (lock.error || !lock.data)
-    throw new Error(
-      "A revenue refresh is already running or could not start. Please retry shortly.",
+  if (lock.error && !/already running|refresh in progress/i.test(lock.error.message)) throw new Error("Revenue refresh could not start.");
+  if (!lock.data)
+    throw new RevenueRefreshBusy(
+      "A revenue refresh is already running. Please retry shortly.",
     );
   const state = lock.data as SyncState;
   try {
     await ensurePrivateBucket(db);
     const previous =
-      state.snapshot_id && state.source_version === VERSION
+      state.snapshot_id && [3, VERSION].includes(state.source_version || 0)
         ? await read<Source>(db, `sources/${state.snapshot_id}.json.gz`)
         : null;
     if (
       state.snapshot_id &&
-      state.source_version === VERSION &&
+      [3, VERSION].includes(state.source_version || 0) &&
       (!previous || previous.id !== state.snapshot_id)
     )
       throw new Error(
         "Saved history is unavailable. No partial refresh was published.",
       );
+    const rebuildPayments = !previous || previous.version !== VERSION;
     const generatedAt = state.sync_at;
     const recentFrom = new Date(
       Date.parse(generatedAt) - 48 * 3600000,
@@ -330,7 +345,7 @@ async function syncSource(db: SupabaseClient): Promise<Source> {
       changes.filter((c) => c.table_name === table).map((c) => c.record_id);
     // Wait for every read to settle before releasing the lease, including on failure.
     const reads = await Promise.allSettled([
-      previous
+      !rebuildPayments
         ? readDated<PaymentRow>(
             db,
             "payments",
@@ -350,7 +365,7 @@ async function syncSource(db: SupabaseClient): Promise<Source> {
         db,
         "payments",
         PAYMENT_FIELDS,
-        changedIds("payments"),
+        rebuildPayments ? [] : changedIds("payments"),
       ),
       readRows<OfferEvent>(
         db,
@@ -406,9 +421,9 @@ async function syncSource(db: SupabaseClient): Promise<Source> {
       id: randomUUID(),
       generatedAt,
       payments: mergeRows(
-        previous?.payments || [],
+        rebuildPayments ? [] : previous?.payments || [],
         [
-          ...recentPayments.filter((p) => !paymentChanges.has(p.id)),
+          ...recentPayments.filter((p) => rebuildPayments || !paymentChanges.has(p.id)),
           ...changedPayments,
         ],
         changedIds("payments"),

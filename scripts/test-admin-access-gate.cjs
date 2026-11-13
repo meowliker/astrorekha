@@ -137,3 +137,18 @@ test('cross-tab logout immediately hides protected data and redirects', async t 
   assert.doesNotMatch(app.text(), /Protected content/);
   assert.deepEqual(redirects, ['/admin/login']);
 });
+
+test('idle transient failures retain verified content and recover without remounting', async t => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  let count = 0;
+  const app = setup(t, async () => ++count === 2 ? response(503, {}) : response(200));
+  await app.mount();
+  await act(async () => t.mock.timers.tick(30000));
+  assert.match(app.text(), /Protected content/);
+  assert.doesNotMatch(app.text(), /Try again/);
+  assert.equal(app.saved.get('admin_session_token'), token);
+  await act(async () => t.mock.timers.tick(30000));
+  assert.equal(count, 3);
+  assert.match(app.text(), /Protected content/);
+  assert.equal(redirects.length, 0);
+});

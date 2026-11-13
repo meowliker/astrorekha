@@ -1,5 +1,5 @@
 "use client";
-import AcquisitionView, { useAdSource } from "@/components/admin/AcquisitionView";
+import AcquisitionView, { useAdSource, sourceUrl } from "@/components/admin/AcquisitionView";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -563,7 +563,7 @@ function TrackingPage() {
       <div className="mx-auto max-w-[1800px] px-4 py-6 lg:px-8">
         <header className="mb-6 flex flex-wrap items-start justify-between gap-4 border-b border-white/10 pb-6">
           <div>
-            <button onClick={() => router.push("/admin")} className="mb-3 inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white"><ArrowLeft size={15} /> Admin</button>
+            <button onClick={() => router.push(sourceUrl("/admin", adSource))} className="mb-3 inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white"><ArrowLeft size={15} /> Admin</button>
             <h1 className="text-3xl font-semibold tracking-tight">Tracking</h1>
             <p className="mt-1 text-sm text-slate-400">Campaign performance and AstroRekha paid orders, joined by saved attribution.</p>
           </div>

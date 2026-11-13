@@ -3,6 +3,10 @@ export type Workspace = keyof typeof WORKSPACES;
 export type AdminAccess = {id:string;name:string;isAdministrator:boolean;workspaces:Workspace[]};
 export function workspaceForPath(path:string):Workspace|'administrator'|null {
  if(path==='/admin'||path==='/admin/login'||path==='/api/admin/session'||path==='/api/admin/logout')return null;
+ if(path==='/admin/google')return null;
+ const google = path.match(/^\/admin\/google\/(astrorekha|soulmate|us-soulmate|us-main)(?:\/|$)/);
+ if(google)return google[1] as Workspace;
+ if(path.startsWith('/admin/google/'))return 'administrator';
  if(/^\/(?:api\/)?admin\/access(?:\/|$)/.test(path))return 'administrator';
  for(const key of ['us-main','us-soulmate','soulmate'] as const)if(new RegExp(`^/(?:api/)?admin/${key}(?:/|$)`).test(path))return key;
  if(/^\/(?:api\/)?admin\/(?:monitoring|analytics-access|payment-gateway|backfill|sync-sheets)/.test(path)||path==='/support')return 'operations';

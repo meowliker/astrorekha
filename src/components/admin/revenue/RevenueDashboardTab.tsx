@@ -543,12 +543,24 @@ export default function RevenueDashboardTab({
           attribution,
           adSource,
         });
-        const response = await fetch(`/api/admin/revenue-dashboard?${params}`, {
-          method: refreshPending.current ? "POST" : "GET",
+        const request = (refresh: boolean) => fetch(`/api/admin/revenue-dashboard?${params}`, {
+          method: refresh ? "POST" : "GET",
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
           signal: controller.signal,
         });
+        let response = await request(refreshPending.current);
+        for (let attempt = 0; response.status === 409 && attempt < 12; attempt++) {
+          const busy = await response.clone().json().catch(() => null);
+          if (busy?.code !== "REFRESH_BUSY") break;
+          await new Promise<void>((resolve, reject) => {
+            const abort = () => {clearTimeout(timer); reject(new Error("Aborted"));};
+            const timer = setTimeout(() => {controller.signal.removeEventListener("abort", abort); resolve();}, 5000);
+            controller.signal.addEventListener("abort", abort, {once: true});
+          });
+          if (controller.signal.aborted) return;
+          response = await request(false);
+        }
         if (response.status === 401) {
           localStorage.removeItem("admin_session_token");
           router.replace("/admin/login");
@@ -778,10 +790,7 @@ export default function RevenueDashboardTab({
           <div className={styles.loading} role="status">
             <Loader2 className={styles.spin} size={24} />
             <h2>Loading revenue data</h2>
-            <p>
-              Reading the saved snapshot. First load and Refresh sync payment
-              history.
-            </p>
+
           </div>
         )}
         {error && (

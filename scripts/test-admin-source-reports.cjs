@@ -50,3 +50,11 @@ test('source gateway breakdown reconciles receipts and inherited refunds without
  assert.deepEqual(day.gateways.pinelabs,{received:65962,refunds:1000,salesCount:1,refundCount:1});
  assert.deepEqual(day.gateways.paytm,{received:99002,refunds:0,salesCount:1,refundCount:0});
 });
+
+test('verified Paytm refunds retain their saved source without a PayU parent ID', async () => {
+ const refund = {id:'pay_refund_ptm_verified',amount:-65962,currency:'INR',type:'bundle',payment_status:'refunded',gateway:'paytm',payment_mode:'live',created_at:'2026-11-03T08:30:54Z',last_touch:{landing_path:'/'}};
+ const tables={payments:[refund,{...refund,id:'pay_refund_test',payment_mode:'test'},{...refund,id:'pay_refund_unverified',payment_mode:null}]};
+ const meta=(await readAdSourceFinance(db(tables),'astrorekha','meta','2026-11-03','2026-11-03'))[0];
+ assert.equal(meta.refund,65962);assert.equal(meta.bundleRefund,65962);assert.equal(meta.refunds,1);
+ assert.equal((await readAdSourceFinance(db(tables),'astrorekha','google','2026-11-03','2026-11-03'))[0].refund,0);
+});

@@ -216,7 +216,7 @@ const fakeDb = {
               mode === "invalid"
                 ? null
                 : {
-                    id: "fake",
+                    id: "fake", admin_id: "fixture-admin",
                     expires_at:
                       mode === "expired"
                         ? "2020-01-01"
@@ -226,6 +226,7 @@ const fakeDb = {
                   },
             error: null,
           };
+        else if (table === "admin_workspace_members") result = {data: {id: "fixture-admin", name: "QA", active: true, is_administrator: true, workspaces: ["astrorekha"]}, error: null};
         else if (table === "settings")
           result = {
             data: { value: require("../src/lib/pricing").DEFAULT_PRICING },
@@ -312,7 +313,7 @@ const request = (
   auth = true,
 ) =>
   new NextRequest(`http://localhost/api/admin/revenue-dashboard?${query}`, {
-    headers: auth ? { Authorization: "Bearer fake-test-only" } : {},
+    headers: auth ? { Authorization: `Bearer ${"a".repeat(64)}` } : {},
   });
 (async () => {
   assert.equal((await GET(request("", false))).status, 401);
@@ -548,7 +549,7 @@ const request = (
     const failure = await POST(request());
     assert.equal(
       failure.status,
-      503,
+      mode === "busy" ? 409 : 503,
       "failed refresh must not replace a complete snapshot",
     );
     assert.equal((await failure.json()).totals, undefined);
@@ -703,6 +704,17 @@ const request = (
     assert.ok(!gunzipSync(bytes).toString("utf8").includes("PRIVATE QUESTION"));
   assert.equal(syncState.lease_token, null);
   assert.ok(writes > 0);
+  oldSource.version = 3;
+  objects.set(sourcePath, gzipSync(JSON.stringify(oldSource)));
+  syncState.source_version = 3;
+  const upgradeQueries = queries.length;
+  const migrated = await GET(request());
+  assert.equal(migrated.status, 200);
+  assert.equal(syncState.source_version, 4);
+  for (const query of queries.slice(upgradeQueries).filter(q => ["users", "chat_messages"].includes(q.table))) {
+    assert(query.filters.some(f => f[0] === "id" && f[1] === "in"), "v3 migration must reuse usage history and only read changed IDs");
+  }
+
   console.log(
     "Revenue API: auth, pagination, cache-only loads, incremental refresh, historical refunds/deletes, usage changes, race-safe acknowledgment, failure retention, sorting, filters and snapshot consistency passed.",
   );

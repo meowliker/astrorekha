@@ -1,6 +1,6 @@
 "use client";
 import AdSourceBadge from "@/components/admin/AdSourceBadge";
-import AcquisitionView, { useAdSource } from "@/components/admin/AcquisitionView";
+import AcquisitionView, { useAdSource, sourceUrl } from "@/components/admin/AcquisitionView";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -429,7 +429,7 @@ function AdminOrdersContent() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => router.push("/admin")}
+              onClick={() => router.push(sourceUrl("/admin", adSource))}
               className="grid h-9 w-9 place-items-center rounded-lg bg-white/10 text-white/70 transition-colors hover:bg-white/15 hover:text-white"
               aria-label="Back to admin"
             >

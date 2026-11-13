@@ -916,6 +916,7 @@ async function handleGET(request: NextRequest) {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
     const supabase = createClient(url, serviceKey, {
+      global: {fetch: (input, init) => fetch(input, {...init, cache: "no-store"})},
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
@@ -963,6 +964,22 @@ async function handleGET(request: NextRequest) {
         refunds: day.refund / 100, revenue: (day.received - day.refund) / 100, fetchedAt: new Date().toISOString() }, { headers: { "Cache-Control": "no-store" } });
     }
     if (adSource !== "all" && !searchParams.has("breakdownDate")) {
+      let syncedRange: {start: string; end: string} | null = null;
+      let syncWarning: string | null = null;
+      const sync = searchParams.get("sync");
+      if (adSource === "meta" && (sync === "range" || sync === "last2")) {
+        const from = sync === "range" ? searchParams.get("syncStartDate") || startDate : addDaysToIsoDate(businessToday, -1);
+        const to = minIsoDate(sync === "range" ? searchParams.get("syncEndDate") || endDate : businessToday, businessToday);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to || from < APP_LAUNCH_DATE) return NextResponse.json({error: "Choose a valid refresh range."}, {status: 400});
+        try {
+          const rate = Number(searchParams.get("exchangeRate")) || await fetchExchangeRate();
+          await syncProfitSheetRows(supabase, from, to, rate, dayMode);
+          syncedRange = {start: from, end: to};
+        } catch (error) {
+          if (sync === "range") throw error;
+          syncWarning = "Refresh unavailable. Showing the last saved ad spend.";
+        }
+      }
       const [saved, finance] = await Promise.all([readProfitSheetRows(supabase, startDate, endDate, dayMode), readAdSourceFinance(supabase, "astrorekha", adSource, startDate, endDate, dayMode)]);
       const googleRate = Number(searchParams.get("exchangeRate")) || await fetchExchangeRate();
       const google = adSource === "google" ? await readGoogleSpend("astrorekha", startDate, endDate, dayMode, googleRate) : null;
@@ -985,8 +1002,8 @@ async function handleGET(request: NextRequest) {
           accountBalance: adSource === "meta" && spendKnown ? baseline!.accountBalance : undefined, spendUnavailable: !spendKnown };
       });
       return NextResponse.json({ rows, adSource, dayMode, exchangeRate: googleRate,
-        source: "source_filtered_payments", dateRange: { start: startDate, end: endDate }, missingRanges: [], syncedRange: null,
-        syncWarning: adSource === "google" ? google?.warnings.join(" ") || "Google Ads spend uses reported funnel destinations and exact reporting windows." : "Meta spend uses the saved Profit Sheet; sales and refunds use saved order attribution." }, { headers: { "Cache-Control": "no-store" } });
+        source: "source_filtered_payments", dateRange: { start: startDate, end: endDate }, missingRanges: [], syncedRange,
+        syncWarning: adSource === "google" ? google?.warnings.join(" ") || null : syncWarning }, { headers: { "Cache-Control": "no-store" } });
     }
 
     const revenueDate = searchParams.get("revenueBreakdownDate");
