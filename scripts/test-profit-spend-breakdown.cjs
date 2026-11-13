@@ -78,6 +78,11 @@ function fixture(options = {}) {
     return { ok: true, json: async () => ({ data: rows, ...(options.paginated && hourly ? { paging: { next: 'more' } } : {}) }) };
   };
   const route = loadTS('src/app/api/admin/profit-sheet/route.ts', (name) => {
+    // Workspace authorization is exercised separately by test-admin-access-gate.cjs.
+    if (name === '@/lib/admin-access') return { withAdminAccess: handler => handler };
+    if (name === '@/lib/admin-acquisition') return { parseAdSource: params => params.get('adSource') || 'all' };
+    if (name === '@/lib/admin-source-finance') return { readAdSourceFinance: async () => { if (!options.finance) throw new Error('Unexpected source-finance call'); return options.finance; } };
+    if (name === '@/lib/google-ads-reporting') return { readGoogleSpend: async () => ({complete:!options.googleError,accounts:[],warnings:options.googleError?['Google unavailable']:[]}), googleSpendForDay: () => options.googleError ? null : ({total:options.googleCost||0,indian:0}) };
     if (name === '@supabase/supabase-js') return { createClient: () => db };
     if (name === '@/lib/meta-ad-accounts') return helpers;
     if (name === '@/lib/finance-events') return financeEvents;
@@ -88,7 +93,7 @@ function fixture(options = {}) {
     return require(name);
   }, { Date: FixedDate, fetch, console: { ...console, error() {} } });
   return { requests, storedRows, get: async (query = 'token=test&breakdownDate=2026-09-07') => {
-    const response = await route.GET({ url: `http://localhost/api/admin/profit-sheet?${query}` });
+    const response = await route.GET({ url: `http://localhost/api/admin/profit-sheet?${query}`, headers: new Headers() });
     return { status: response.status, body: await response.json() };
   } };
 }
@@ -297,4 +302,23 @@ test('Pine Labs verified revenue and refunds use the same day boundaries and she
   const {body,status}=await f.get('token=test&revenueBreakdownDate=2026-10-28');assert.equal(status,200);
   assert.equal(body.gateways[2].gateway,'pinelabs');assert.equal(body.gateways[2].received,659.62);assert.equal(body.gateways[2].refunds,59.62);assert.equal(body.revenue,600);
   const synced=await f.get('token=test&startDate=2026-10-28&endDate=2026-10-28&sync=range&exchangeRate=85');assert.equal(synced.body.rows[0].revenue,600);
+});
+
+// Google reporting overlays must never rewrite the saved Meta ledger or duplicate spend.
+test('Google costs overlay combined profit exactly once, without writes', async () => {
+ const saved={date:'2026-09-07',revenue:1000,gross_revenue:1000,ads_cost_inr:100,ads_cost_usd:1,bundle_revenue:1000,transaction_count:1};
+ const f=fixture({savedRows:[saved],googleCost:200});
+ const query='token=test&startDate=2026-09-07&endDate=2026-09-07&exchangeRate=100';
+ for(let i=0;i<2;i++){const {status,body}=await f.get(query);assert.equal(status,200);assert.equal(body.rows[0].adsCostINR,300);assert.equal(body.rows[0].adsCostUSD,3);assert.equal(body.rows[0].netRevenue,650);}
+ assert.equal(f.storedRows.length,1);assert.equal(f.storedRows[0].ads_cost_inr,100);
+});
+test('missing Google costs preserve sales and withhold combined profit',async()=>{
+ const f=fixture({savedRows:[{date:'2026-09-07',revenue:1000,ads_cost_inr:100}],googleError:true});
+ const {status,body}=await f.get('token=test&startDate=2026-09-07&endDate=2026-09-07&exchangeRate=100');
+ assert.equal(status,200);assert.equal(body.rows[0].revenue,1000);assert.equal(body.rows[0].adsCostINR,null);assert.equal(body.rows[0].netRevenue,null);assert.equal(body.totals.roas,null);assert.equal(f.storedRows.length,1);
+});
+test('Google-only profit uses source sales and Google spend, excluding saved Meta spend',async()=>{
+ const f=fixture({savedRows:[{date:'2026-09-07',revenue:9000,ads_cost_inr:500}],googleCost:200,finance:[{date:'2026-09-07',received:100000,refund:0,bundleReceived:100000,bundleRefund:0,orders:1,refunds:0,bundleOrders:1}]});
+ const {status,body}=await f.get('token=test&adSource=google&startDate=2026-09-07&endDate=2026-09-07&exchangeRate=100');
+ assert.equal(status,200);assert.equal(body.rows[0].revenue,1000);assert.equal(body.rows[0].adsCostINR,200);assert.equal(body.rows[0].netRevenue,750);assert.equal(body.rows[0].roas,5);assert.equal(f.requests.length,0);assert.equal(f.storedRows.length,1);
 });

@@ -53,7 +53,7 @@ export function SoulmateProfitPanel() {
     }).then(async (response) => {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Unable to load profit sheet.");
-      if (!abort.signal.aborted) { setRows(result.rows); setUpdatedAt(result.updatedAt || ""); setMissing(result.missing); setAccountCount(result.accountCount); setRevision(result.revision); setAppliedRate(result.exchangeRate); setRate(result.exchangeRate ? String(result.exchangeRate) : ""); }
+      if (!abort.signal.aborted) { setRows(result.rows); setNotice((result.warnings || []).join(" ")); setUpdatedAt(result.updatedAt || ""); setMissing(result.missing); setAccountCount(result.accountCount); setRevision(result.revision); setAppliedRate(result.exchangeRate); setRate(result.exchangeRate ? String(result.exchangeRate) : ""); }
     }).catch((cause) => { if (!abort.signal.aborted) setError(cause.message); })
       .finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();

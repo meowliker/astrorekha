@@ -28,8 +28,8 @@ export default function AcquisitionView({ children, standalone = false }: { funn
         {([["all", "All sources"], ["meta", "Meta Ads"], ["google", "Google Ads"]] as const).map(([key, label]) => <button key={key} type="button" title={key === "all" ? "Meta, Google, direct and other/unattributed sources" : undefined} aria-pressed={source === key} onClick={() => choose(key)} className={`rounded-lg border px-4 py-2 text-sm ${source === key ? "border-cyan-400/60 bg-cyan-400/15 text-cyan-200" : "border-white/10 text-slate-300 hover:bg-white/5"}`}>{label}</button>)}
       </div>
       <p className="mt-2 text-xs text-slate-400">Untagged landing pages follow your mapping: Discover → Google Ads; normal funnel entry pages → Meta Ads. Saved source tags take priority.</p>
-      {source === "all" && <p className="mt-2 text-xs text-slate-400">All sources includes direct and other traffic. Ad spend is from connected Meta accounts only; combined profit and ROAS exclude Google Ads spend.</p>}
-      {source === "google" && <p className="mt-2 text-xs text-slate-400">Google Ads spend is not connected. Spend-dependent figures show —.</p>}
+      {source === "all" && <p className="mt-2 text-xs text-slate-400">All sources includes direct and other traffic. Spend uses connected ad accounts and the funnel destination. Missing or incompatible reporting windows show —.</p>}
+      {source === "google" && <p className="mt-2 text-xs text-slate-400">Google Ads reporting is read-only. Sales use saved attribution; ad spend uses the reported funnel destination.</p>}
     </div>
     {ready ? children : <p className="p-4 text-sm text-slate-400">Loading report…</p>}
   </div></SourceContext.Provider>;

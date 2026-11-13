@@ -28,12 +28,12 @@ export function buildTrackingHourlyTable(
   const totalOrders = Array<number>(count).fill(0);
   const matchedOrders = Array<number>(count).fill(0);
   const totalVisits = Array<number>(count).fill(0);
-  const unknownMeta = summary?.spendUnavailable || !spendReady || campaigns.some((row) => row.accountId && (row.spendInr == null || failedAccountIds.has(row.accountId)));
+  const unknownMeta = summary?.spendUnavailable || !spendReady || campaigns.some((row) => row.accountId && (row.spendInr == null || row.hourlySpendUnavailable || failedAccountIds.has(row.accountId)));
   const sortable = campaigns.map((campaign) => {
     const sale = sales.get(campaign.key) || { orders: Array(count).fill(0), revenue: Array(count).fill(0) };
     const spend = summary?.hourlySpendInr?.[campaign.key]?.[day] || [];
     const visits = summary?.hourlyUtmVisits[campaign.key]?.[day] || [];
-    const available = spendReady && !!campaign.accountId && campaign.spendInr != null && !failedAccountIds.has(campaign.accountId);
+    const available = spendReady && !campaign.hourlySpendUnavailable && !!campaign.accountId && campaign.spendInr != null && !failedAccountIds.has(campaign.accountId);
     const details = Array.from({ length: count }, (_, hour): TrackingHourlyCell => {
       const cost = spend[hour] || 0;
       const visitCount = visits[hour] || 0;

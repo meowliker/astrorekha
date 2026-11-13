@@ -28,7 +28,7 @@ const decimal = (value: number) => value.toLocaleString("en-US", { maximumFracti
 const ratio = (numerator: number, denominator: number | null) => denominator && denominator > 0 ? `${decimal(numerator / denominator)}×` : "—";
 const businessRoas = (row: TrackingCampaign) => {
   const value = ratio(row.revenue, row.spendInr);
-  return value !== "—" && !row.metaPurchaseWindowAligned ? `≈${value}` : value;
+  return value !== "—" && row.network !== "google" && !row.metaPurchaseWindowAligned ? `≈${value}` : value;
 };
 const pct = (numerator: number, denominator: number) => denominator > 0 ? `${decimal(numerator / denominator * 100)}%` : "—";
 const labels = (values: string[]) => values.length ? values.slice(0, 2).join(", ") + (values.length > 2 ? ` +${values.length - 2}` : "") : "—";
@@ -41,7 +41,7 @@ const COLUMNS: Column[] = [
   { id: "budget", label: "Budget", group: "Meta", value: (r) => r.dailyBudget != null ? `${amount(r.dailyBudget, r.currency)} / day` : r.lifetimeBudget != null ? `${amount(r.lifetimeBudget, r.currency)} lifetime` : "—", sort: (r) => r.dailyBudget ?? r.lifetimeBudget ?? 0, align: "right" },
   { id: "bid", label: "Bid", group: "Meta", value: (r) => r.bidAmount == null ? "—" : amount(r.bidAmount, r.currency), sort: (r) => r.bidAmount ?? 0, align: "right" },
   { id: "objective", label: "Objective", group: "Identity", value: (r) => r.objective?.replace(/_/g, " ") || "—", sort: (r) => r.objective || "" },
-  { id: "spend", label: "Meta spend", group: "Meta", value: (r) => r.accountId ? amount(r.spend, r.currency) : "—", sort: (r) => r.spend, align: "right" },
+  { id: "spend", label: "Meta spend", group: "Meta", value: (r) => r.accountId && r.spendInr !== null ? amount(r.spend, r.currency) : "—", sort: (r) => r.spend, align: "right" },
   { id: "spendInr", label: "Spend USD", group: "Meta", value: (r) => r.spendInr == null ? "—" : inr(r.spendInr), sort: (r) => r.spendInr || 0, align: "right" },
   { id: "dailyBudget", label: "Daily budget", group: "Meta", value: (r) => r.dailyBudget == null ? "—" : amount(r.dailyBudget, r.currency), sort: (r) => r.dailyBudget || 0, align: "right" },
   { id: "lifetimeBudget", label: "Lifetime budget", group: "Meta", value: (r) => r.lifetimeBudget == null ? "—" : amount(r.lifetimeBudget, r.currency), sort: (r) => r.lifetimeBudget || 0, align: "right" },
@@ -426,7 +426,8 @@ function TrackingPage() {
     next.splice(next.indexOf(toId) + (before ? 0 : 1), 0, fromId);
     setColumns(next);
   };
-  const activeColumns = columnIds.map((id) => COLUMNS.find((column) => column.id === id)).filter((column): column is Column => !!column).map(column => adSource === "google" && (column.group === "Meta" || ["utmRoas", "cpa"].includes(column.id)) ? { ...column, label: column.label.replace("Meta", "Google"), value: () => "—" } : column);
+  const activeColumns = columnIds.map((id) => COLUMNS.find((column) => column.id === id)).filter((column): column is Column => !!column).map(column => ({ ...column, label: adSource === "google" ? column.label.replace("Meta", "Google") : adSource === "all" ? column.label.replace("Meta spend", "Ad spend").replace("Meta CPC", "Ad CPC") : column.label,
+    value: (row: TrackingCampaign) => (adSource === "google" && row.key !== "total" && !row.accountId && column.group === "Meta") || row.network === "google" && ["reach", "frequency", "landingPageViews", "addToCarts", "checkouts", "metaPurchases", "metaCostPerPurchase", "metaPurchaseValue", "metaRoas", "leads"].includes(column.id) ? "—" : column.value(row) }));
   const selectedView = savedViews.find((view) => view.id === selectedViewId);
   const changeAccountTiming = (id: string, timing: AccountTiming) => {
     const defaultMode = accountTrackingDayMode(knownAccounts.find((account) => account.id === id)?.timezone);
@@ -532,17 +533,17 @@ function TrackingPage() {
   }
 
   const summaryCards = (dayMode: TrackingDayMode, data: TrackingSummary | null, totals: ReturnType<typeof totalsFor>, profit: number | null) => {
-    const estimated = (data?.campaigns || []).some((row) => row.accountId && (accountId === "all" || row.accountId === accountId) && !row.metaPurchaseWindowAligned && (row.spendInr || 0) > 0);
+    const estimated = (data?.campaigns || []).some((row) => row.accountId && (accountId === "all" || row.accountId === accountId) && row.network !== "google" && !row.metaPurchaseWindowAligned && (row.spendInr || 0) > 0);
     return <div key={dayMode} className="mb-6">
       {showBoth && <h2 className="mb-2 text-sm font-semibold text-cyan-200">{trackingWindowLabel(dayMode)}</h2>}
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/10 bg-white/10 md:grid-cols-3 xl:grid-cols-6">
         {[
-          [adSource === "google" ? "Google spend · USD" : "Meta spend · USD", adSource === "google" ? "—" : data ? data.accounts.length ? inr(totals.spend) : "—" : "…"],
+          [adSource === "google" ? "Google spend · USD" : adSource === "all" ? "Ad spend · USD" : "Meta spend · USD", data?.spendUnavailable ? "—" : data ? data.accounts.length ? inr(totals.spend) : "—" : "…"],
           ["Paid orders", data ? count(totals.orders) : "…"],
           ["Net sales", data ? inr(totals.revenue) : "…"],
           ["Profit after ads", data ? profit == null ? "—" : inr(profit) : "…"],
-          ["Blended ROAS", adSource === "google" ? "—" : data ? `${estimated ? "≈" : ""}${ratio(totals.revenue, totals.spend)}` : "…"],
-          [adSource === "google" ? "Matched to Google account" : "Matched to Meta", adSource === "google" ? "Unavailable" : data ? `${totals.matched} / ${totals.orders}` : "…"],
+          ["Blended ROAS", data?.spendUnavailable ? "—" : data ? `${estimated ? "≈" : ""}${ratio(totals.revenue, totals.spend)}` : "…"],
+          [adSource === "google" ? "Matched to Google account" : adSource === "all" ? "Matched to ad account" : "Matched to Meta", data ? `${totals.matched} / ${totals.orders}` : "…"],
         ].map(([label, value]) => <div key={label} className="bg-[#141b2b] px-4 py-4"><div className="text-xs uppercase tracking-wider text-slate-500">{label}</div><div className="mt-2 text-xl font-semibold tabular-nums">{value}</div></div>)}
       </div>
     </div>;
@@ -551,7 +552,7 @@ function TrackingPage() {
   return (
     <div className="min-h-screen bg-[#0A0E1A] text-slate-100">
       {campaignsOpen && <SoulmateAdAccountsDialog close={() => setCampaignsOpen(false)} saved={() => { setCampaignsOpen(false); window.location.reload(); }} />}
-      {hourCampaign && hourSelection && <TrackingHourlyModal campaign={hourCampaign} day={hourDate} dayMode={hourSelection.dayMode} hours={modalSummary?.hourly || []} spend={hourSpend} visits={hourVisits} error={adSource === "google" ? "Google Ads spend is not connected" : !hourCampaign.accountId ? "No matched Meta campaign for this row" : exactHourlyError[hourSelection.dayMode] || ""} onClose={() => setHourSelection(null)} />}
+      {hourCampaign && hourSelection && <TrackingHourlyModal campaign={hourCampaign} day={hourDate} dayMode={hourSelection.dayMode} hours={modalSummary?.hourly || []} spend={hourSpend} visits={hourVisits} error={hourCampaign.hourlySpendUnavailable ? "Google clock hours do not align with these hourly cells; spend is unavailable." : !hourCampaign.accountId ? "No matched ad campaign for this row" : exactHourlyError[hourSelection.dayMode] || ""} onClose={() => setHourSelection(null)} />}
       <div aria-live="polite" className="pointer-events-none fixed right-4 top-4 z-50 flex w-[min(380px,calc(100vw-2rem))] flex-col gap-2">
         <AnimatePresence initial={false}>{toastSales.map((sale) => <motion.div key={sale.id} role="status" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 40 }} transition={{ duration: 0.2 }} className="pointer-events-auto rounded-xl border border-emerald-400/35 bg-[#1b2437] p-4 shadow-2xl shadow-black/50">
           <div className="flex items-start gap-3"><div className="rounded-full bg-emerald-400/15 p-2 text-emerald-300"><ShoppingBag size={17} /></div><div className="min-w-0 flex-1"><div className="text-xs font-semibold uppercase tracking-wide text-emerald-300">New sale · {sale.productType}</div><p className="mt-1 break-all text-sm font-medium">{sale.email}</p><p className="mt-1 text-xs text-slate-300">bought {sale.productName}</p>{sale.campaign && <p className="mt-2 whitespace-normal break-words text-xs text-slate-400">Campaign: {sale.campaign}</p>}<div className="mt-2 flex items-center justify-between gap-2 text-xs"><span className="text-slate-500">{displayIst(sale.at)} IST</span><span className="font-semibold text-emerald-300">{inr(sale.amount)}</span></div></div><button aria-label="Dismiss sale notification" onClick={() => { const timer = toastTimers.current.get(sale.id); if (timer) window.clearTimeout(timer); toastTimers.current.delete(sale.id); setToastSales((current) => current.filter((item) => item.id !== sale.id)); }} className="text-slate-500 hover:text-white"><X size={16} /></button></div>
@@ -576,23 +577,23 @@ function TrackingPage() {
 
         {summaryCards(primaryMode, summary, visibleTotals, visibleProfit)}
         {showBoth && summaryCards(secondaryMode, secondarySummary, secondaryTotals, secondaryProfit)}
-        <p className="-mt-4 mb-6 text-xs text-slate-500">{adSource === "google" ? "Google orders and revenue use verified payments and saved attribution. Spend and profit are unavailable until Google Ads is connected." : "Profit deducts ad spend from US receipts after refunds. Matched to Meta counts paid orders whose campaign ID or unique UTM name matches a Meta campaign; unmatched orders still count in US AstroRekha sales."}</p>
+        <p className="-mt-4 mb-6 text-xs text-slate-500">{adSource === "google" ? "Google orders and revenue use verified payments and saved attribution. Spend, clicks and impressions come from the Google Ads API, grouped by the reported landing destination." : "Profit deducts ad spend from US receipts after refunds. Matched to Meta counts paid orders whose campaign ID or unique UTM name matches a Meta campaign; unmatched orders still count in US AstroRekha sales."}</p>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_330px]">
           <main className="min-w-0 space-y-7">
             <section>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <div><h2 className="text-lg font-semibold">Ad accounts</h2><p className="text-xs text-slate-500">Each account starts with its Meta timezone. Choose either reporting window below.</p></div>
-                <span className="text-xs text-slate-500">{summary ? `${adSource === "google" ? "Recorded site visits and orders" : "Direct Meta API"} · fetched ${displayIst(summary.fetchedAt)} IST` : "Loading Meta"}</span>
+                <span className="text-xs text-slate-500">{summary ? `${adSource === "google" ? "Direct Google Ads API · read-only" : adSource === "all" ? "Meta + Google Ads APIs" : "Direct Meta API"} · fetched ${displayIst(summary.fetchedAt)} IST` : "Loading Meta"}</span>
               </div>
               <div className="overflow-x-auto border-y border-white/10">
                 <div className="flex min-w-max gap-0">
-                  <button onClick={() => setAccountId("all")} className={`min-w-48 border-r border-white/10 px-4 py-3 text-left ${accountId === "all" ? "bg-white/10" : "hover:bg-white/5"}`}><div className="text-sm font-medium">All accounts</div><div className="mt-1 text-xs text-slate-400">{adSource === "google" ? "Google account data not connected" : `${knownAccounts.length} connected`}</div></button>
+                  <button onClick={() => setAccountId("all")} className={`min-w-48 border-r border-white/10 px-4 py-3 text-left ${accountId === "all" ? "bg-white/10" : "hover:bg-white/5"}`}><div className="text-sm font-medium">All accounts</div><div className="mt-1 text-xs text-slate-400">{`${knownAccounts.length} connected`}</div></button>
                   {knownAccounts.map((account) => {
                     const rows = summary?.campaigns.filter((row) => row.accountId === account.id) || [];
                     const spend = rows.reduce((sum, row) => sum + (row.spendInr || 0), 0);
                     const orders = rows.reduce((sum, row) => sum + row.orders, 0);
-                    return <button key={account.id} onClick={() => setAccountId(account.id)} className={`min-w-56 border-r border-white/10 px-4 py-3 text-left ${accountId === account.id ? "bg-white/10" : "hover:bg-white/5"}`}><div className="truncate text-sm font-medium">{account.name}</div><div className="mt-1 text-xs text-cyan-300">Default: {accountTrackingDayMode(account.timezone) === "calendar_ist" ? "Indian timing" : "US timing"}</div><div className="mt-1 text-xs tabular-nums text-slate-400">{summary ? `${inr(spend)} · ${orders} orders · ${account.currency}` : "Loading selected timing…"}</div>{account.error && <div className="mt-1 text-xs text-rose-300">Meta unavailable</div>}</button>;
+                    return <button key={account.id} onClick={() => setAccountId(account.id)} className={`min-w-56 border-r border-white/10 px-4 py-3 text-left ${accountId === account.id ? "bg-white/10" : "hover:bg-white/5"}`}><div className="truncate text-sm font-medium">{account.name}</div><div className="mt-1 text-xs text-cyan-300">Default: {accountTrackingDayMode(account.timezone) === "calendar_ist" ? "Indian timing" : "US timing"}</div><div className="mt-1 text-xs tabular-nums text-slate-400">{summary ? `${inr(spend)} · ${orders} orders · ${account.currency}` : "Loading selected timing…"}</div>{account.error && <div className="mt-1 text-xs text-rose-300">Account data unavailable</div>}</button>;
                   })}
                 </div>
               </div>
@@ -621,14 +622,14 @@ function TrackingPage() {
                     <button onClick={() => setColumnsOpen(!columnsOpen)} className="flex items-center gap-2 rounded-lg border border-white/10 bg-[#141b2b] px-3 py-2 text-sm hover:bg-white/5"><Columns3 size={15} /> Columns <ChevronDown size={14} /></button>
                     {columnsOpen && <div className="absolute right-0 top-11 z-30 max-h-[70vh] w-80 overflow-y-auto rounded-xl border border-white/15 bg-[#1b2437] p-3 shadow-2xl">
                       <div className="mb-3 flex gap-1">{Object.keys(PRESETS).map((name) => <button key={name} onClick={() => setColumns(PRESETS[name])} className="rounded-md bg-white/5 px-2 py-1 text-xs hover:bg-white/10">{name}</button>)}</div>
-                      {(["Identity", "Meta", "AstroRekha"] as const).map((group) => <div key={group} className="mb-3"><div className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{group}</div>{COLUMNS.filter((column) => column.group === group).map((column) => <div key={column.id} className="flex items-center gap-2 rounded px-1 py-1 hover:bg-white/5"><label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm"><input type="checkbox" checked={columnIds.includes(column.id)} onChange={() => toggleColumn(column.id)} className="accent-[#e51b50]" /><span className="truncate">{column.label}</span></label>{columnIds.includes(column.id) && <><button aria-label={`Move ${column.label} left`} onClick={() => moveColumn(column.id, -1)} className="text-slate-500 hover:text-white"><ArrowUp size={13} /></button><button aria-label={`Move ${column.label} right`} onClick={() => moveColumn(column.id, 1)} className="text-slate-500 hover:text-white"><ArrowDown size={13} /></button></>}</div>)}</div>)}
+                      {(["Identity", "Meta", "AstroRekha"] as const).map((group) => <div key={group} className="mb-3"><div className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{group === "Meta" ? adSource === "google" ? "Google" : adSource === "all" ? "Ad metrics" : group : group}</div>{COLUMNS.filter((column) => column.group === group).map((column) => <div key={column.id} className="flex items-center gap-2 rounded px-1 py-1 hover:bg-white/5"><label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm"><input type="checkbox" checked={columnIds.includes(column.id)} onChange={() => toggleColumn(column.id)} className="accent-[#e51b50]" /><span className="truncate">{adSource === "google" ? column.label.replace("Meta", "Google") : column.label}</span></label>{columnIds.includes(column.id) && <><button aria-label={`Move ${column.label} left`} onClick={() => moveColumn(column.id, -1)} className="text-slate-500 hover:text-white"><ArrowUp size={13} /></button><button aria-label={`Move ${column.label} right`} onClick={() => moveColumn(column.id, 1)} className="text-slate-500 hover:text-white"><ArrowDown size={13} /></button></>}</div>)}</div>)}
                     </div>}
                   </div>
                 </div>
               </div>
               {(showBoth ? [{ dayMode: primaryMode, data: summary, rows: filtered }, { dayMode: secondaryMode, data: secondarySummary, rows: secondaryFiltered }] : [{ dayMode: primaryMode, data: summary, rows: filtered }]).map(({ dayMode, data, rows }) => <div key={dayMode} className="mb-6">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold text-cyan-200">{trackingWindowLabel(dayMode)}</h3><span className="text-xs text-slate-500">{rows.length} campaigns</span></div>
-              {rows.some((row) => row.accountId && !row.metaPurchaseWindowAligned) && <p className="mb-3 rounded-lg border border-cyan-400/20 bg-cyan-400/5 px-3 py-2 text-xs text-cyan-100">Meta purchase figures show “—” for accounts whose Meta reporting day does not match this window. US AstroRekha sales use exact payment times; “≈” marks ROAS with spend allocated across a Meta clock-hour boundary.</p>}
+              {rows.some((row) => row.network !== "google" && row.accountId && !row.metaPurchaseWindowAligned) && <p className="mb-3 rounded-lg border border-cyan-400/20 bg-cyan-400/5 px-3 py-2 text-xs text-cyan-100">Meta purchase figures show “—” for accounts whose Meta reporting day does not match this window. US AstroRekha sales use exact payment times; “≈” marks ROAS with spend allocated across a Meta clock-hour boundary.</p>}
               <div className="overflow-x-auto rounded-xl border border-white/10 bg-[#141b2b]">
                 <table className="w-full min-w-max border-collapse text-sm">
                   <thead className="sticky top-0 bg-[#1b2437] text-xs text-slate-400">
@@ -663,7 +664,7 @@ function TrackingPage() {
               {(showBoth ? [{ dayMode: primaryMode, data: summary, table: primaryHourly }, { dayMode: secondaryMode, data: secondarySummary, table: secondaryHourly }] : [{ dayMode: primaryMode, data: summary, table: primaryHourly }]).map(({ dayMode, data, table }) => <div key={dayMode} className="mb-6">
                 <h3 className="mb-2 text-sm font-semibold text-cyan-200">{trackingWindowLabel(dayMode)}</h3>
                 {exactHourlyError[dayMode] && <p className="mb-2 text-xs text-amber-300">{exactHourlyError[dayMode]}</p>}
-                {data && !table?.exact && !exactHourlyError[dayMode] && <p className="mb-2 text-xs text-cyan-300">Loading selected-day Meta spend…</p>}
+                {data && !table?.exact && !exactHourlyError[dayMode] && <p className="mb-2 text-xs text-cyan-300">Loading selected-day ad spend…</p>}
                 {data && table ? <TrackingHourlyTable rows={table.hourly.campaigns} totals={table.hourly.totals} totalDetails={table.hourly.totalDetails} metric={hourMetric} dayMode={dayMode} budgetMarkers={hourlyBudgetMarkers(visibleActivities, dayMode === primaryMode ? filtered : secondaryFiltered, hourDate, dayMode)} onOpen={(key) => setHourSelection({ key, dayMode })} /> : <div className="rounded-xl border border-white/10 bg-[#141b2b] p-8 text-center text-sm text-slate-500">Loading hourly results…</div>}
               </div>)}
             </section>

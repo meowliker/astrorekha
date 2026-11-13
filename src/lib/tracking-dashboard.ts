@@ -28,6 +28,8 @@ export type TrackingPayment = {
 };
 
 export type TrackingCampaign = {
+  network?: "meta" | "google";
+  hourlySpendUnavailable?: boolean;
   key: string;
   accountId: string | null;
   accountName: string;

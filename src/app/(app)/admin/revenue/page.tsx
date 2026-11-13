@@ -1614,8 +1614,7 @@ function ProfitSheetTab({
   onRefresh: () => void;
   onRefreshWithRate: (rate: number) => void;
 }) {
-  const adSource = useAdSource();
-  const costsUnavailable = adSource === "google" || data.some(row => row.spendUnavailable);
+  const costsUnavailable = data.some(row => row.spendUnavailable);
   const formatCurrency = (value: number) => {
     if (value == null || !Number.isFinite(value)) return "—";
     return new Intl.NumberFormat("en-IN", {

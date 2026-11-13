@@ -1,3 +1,4 @@
+import { readGoogleSpend, matchGoogleCampaign, googleHourlySpendForDay } from "@/lib/google-ads-reporting";
 import {isStandaloneSoulmatePayment} from "@/lib/admin-order-funnel";
 import {withAdminAccess} from "@/lib/admin-access";
 import { parseAdSource, matchesAdSource, type AdSource } from "@/lib/admin-acquisition";
@@ -80,7 +81,7 @@ async function fxRate(supabase: ReturnType<typeof getSupabaseAdmin>): Promise<{ 
 
 function emptyUtmCampaign(key: string, id: string | null, name: string, source: TrackingCampaign["attribution"]): TrackingCampaign {
   return {
-    key, accountId: null, accountName: key.startsWith("utm-name:google:") ? "Google Ads · saved attribution" : "UTM only / unmatched", currency: "INR", campaignId: id,
+    key, network: key.startsWith("utm-name:google:") ? "google" : undefined, accountId: null, accountName: key.startsWith("utm-name:google:") ? "Google Ads · saved attribution" : "UTM only / unmatched", currency: "INR", campaignId: id,
     campaignName: name, objective: null, status: null, dailyBudget: null, lifetimeBudget: null, bidAmount: null, bidStrategy: null,
     spend: 0, spendInr: null, impressions: 0, reach: 0, clicks: 0, linkClicks: 0,
     landingPageViews: 0, addToCarts: 0, checkouts: 0, metaPurchases: 0,
@@ -91,9 +92,9 @@ function emptyUtmCampaign(key: string, id: string | null, name: string, source: 
 }
 
 function attachOrders(campaigns: TrackingCampaign[], sales: TrackingPayment[], refunds: TrackingPayment[], parents: Map<string, TrackingPayment>, dayMode: TrackingDayMode) {
-  const byId = new Map(campaigns.filter((row) => row.campaignId).map((row) => [row.campaignId!, row]));
+  const byId = new Map(campaigns.filter((row) => row.campaignId && row.network !== "google").map((row) => [row.campaignId!, row]));
   const byName = new Map<string, TrackingCampaign[]>();
-  for (const row of campaigns) {
+  for (const row of campaigns.filter(row => row.network !== "google")) {
     const key = campaignNameKey(row.campaignName);
     if (!key) continue;
     byName.set(key, [...(byName.get(key) || []), row]);
@@ -105,6 +106,8 @@ function attachOrders(campaigns: TrackingCampaign[], sales: TrackingPayment[], r
 
   function campaignFor(payment: TrackingPayment): TrackingCampaign {
     const google = matchesAdSource(payment, "google");
+    const googleMatch = google ? matchGoogleCampaign(campaigns, payment.utm_campaign) : undefined;
+    if (googleMatch) { googleMatch.attribution = "utm_id"; return googleMatch; }
     const id = google ? null : payment.meta_campaign_id || payment.fb_campaign_id;
     if (id) {
       const found = byId.get(id);
@@ -196,9 +199,9 @@ function attachOrders(campaigns: TrackingCampaign[], sales: TrackingPayment[], r
 }
 
 function attachUtmVisits(campaigns: TrackingCampaign[], visits: TrackingUtmVisit[], dayMode: TrackingDayMode) {
-  const byId = new Map(campaigns.filter((row) => row.campaignId).map((row) => [row.campaignId!, row]));
+  const byId = new Map(campaigns.filter((row) => row.campaignId && row.network !== "google").map((row) => [row.campaignId!, row]));
   const byName = new Map<string, TrackingCampaign[]>();
-  for (const row of campaigns.filter((item) => item.accountId)) {
+  for (const row of campaigns.filter((item) => item.accountId && item.network !== "google")) {
     const key = campaignNameKey(row.campaignName);
     byName.set(key, [...(byName.get(key) || []), row]);
   }
@@ -208,7 +211,7 @@ function attachUtmVisits(campaigns: TrackingCampaign[], visits: TrackingUtmVisit
   for (const visit of visits) {
     // Use the tags on the actual landing URL, never attribution inherited from a later page view.
     const campaignId = visit.channel === "google" ? null : visit.campaignId || (/^\d{8,24}$/.test(visit.campaignName || "") ? visit.campaignName : null);
-    let row = campaignId ? byId.get(campaignId) : undefined;
+    let row = visit.channel === "google" ? matchGoogleCampaign(campaigns, visit.campaignName) : campaignId ? byId.get(campaignId) : undefined;
     if (!row && campaignId) {
       const key = `utm-id:${campaignId}`;
       row = byKey.get(key);
@@ -264,16 +267,18 @@ async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { s
   const meta = await Promise.all(distinct.map(async (credential) => {
     return fetchMetaTrackingAccount(credential, dates, rate.rate, dayMode);
   }));
+  const google = adSource === "meta" ? null : await readGoogleSpend("astrorekha", dates.start, dates.end, dayMode, rate.rate);
+  meta.push(...(google?.accounts || []));
   const campaigns = meta.flatMap((result) => result.campaigns);
   const joined = attachOrders(campaigns, sales, refunds, parents, dayMode);
   const hourlyUtmVisits = visitResult.error ? {} : attachUtmVisits(joined.campaigns, visitResult.visits, dayMode);
   const grossRevenue = sales.reduce((sum, row) => sum + Number(row.amount || 0) / 100, 0);
   const refundAmount = refunds.reduce((sum, row) => sum + Math.abs(Number(row.amount || 0)) / 100, 0);
   const warnings = meta.flatMap((result) => result.warnings);
-  if (adSource === "google") warnings.push("Google Ads account data is not connected. Campaign sales and visits use saved Google attribution; spend, budgets, clicks and ROAS are unavailable.");
+
   if (visitResult.error) warnings.push(`${visitResult.error}. AR CVR is unavailable.`);
   if (adSource !== "google" && !credentials.length) warnings.push("No Meta ad accounts are configured for this range. UTM orders are still shown.");
-  if (adSource !== "google" && joined.attributedOrders < sales.length) warnings.push(`${sales.length - joined.attributedOrders} paid orders could not be matched to a unique Meta campaign.`);
+  if (adSource !== "google" && joined.attributedOrders < sales.length) warnings.push(`${sales.length - joined.attributedOrders} paid orders could not be matched to a unique ad campaign.`);
   // Apply the Profit Sheet's GST formula to each selected reporting day.
   const spendInr = campaigns.reduce((sum, row) => sum + (row.spendInr || 0), 0);
   const indianSpendInr = campaigns.reduce((sum, row) => sum + (row.currency === "INR" ? row.spendInr || 0 : 0), 0);
@@ -284,9 +289,9 @@ async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { s
       const dailyIndianSpend = meta.reduce((sum, account) => sum + (account.dailySpendInr[day]?.indian || 0), 0);
       return indianAdGstApplies(day) ? calculateProfitSheetGst(dailyRevenue, 0.18, dailyIndianSpend).gst : dailyRevenue * 0.05;
     }).reduce((sum, value) => sum + value, 0);
-  const profitAvailable = adSource !== "google" && meta.every((result) => !result.account.error) && campaigns.every((row) => row.spendInr !== null || row.spend === 0);
+  const profitAvailable = meta.every((result) => !result.account.error) && campaigns.every((row) => row.spendInr !== null || row.spend === 0);
   return {
-    spendUnavailable: adSource === "google",
+    spendUnavailable: !!google && !google.complete,
     accounts: meta.map((result) => result.account), campaigns: joined.campaigns, hourly: joined.hourly,
     hourlyUtmVisits, utmVisitsAvailable: !visitResult.error,
     hourlySpendInr: Object.assign({}, ...meta.map((result) => result.hourlySpendInr)),
@@ -337,9 +342,13 @@ async function handleGET(request: NextRequest) {
     const dayMode: TrackingDayMode = dayModeParam === "calendar_ist" ? "calendar_ist" : "business_1130_ist";
     if (params.get("mode") === "live") return json(await live(supabase, dayMode, adSource));
     if (params.get("mode") === "hourly-spend") {
-      if (adSource === "google") return json({ hourlySpendInr: {}, failedAccountIds: [], warnings: ["Google Ads spend is not connected."] });
+
       const day = params.get("day");
       if (!validDate(day) || day > trackingDate(new Date(), dayMode)) return json({ error: "Choose a valid IST day." }, 400);
+      const googleRate = adSource === "meta" ? null : await fxRate(supabase);
+      const googleHourly = googleRate ? await readGoogleSpend("astrorekha", day, day, dayMode, googleRate.rate) : null;
+      const googleFailed = googleHourly?.accounts.filter(r => r.account.error || r.campaigns.some(c => c.hourlySpendUnavailable)).map(r => r.account.id) || [];
+      if (adSource === "google") return json({ hourlySpendInr: googleHourlySpendForDay(googleHourly, day), failedAccountIds: googleFailed, warnings: googleHourly?.warnings || [], fetchedAt: googleHourly?.fetchedAt });
       const accountRange = { startMillis: Date.parse(trackingDayStartUtc(day, dayMode)), endMillis: Date.parse(nextTrackingDayStartUtc(day, dayMode)) };
       const configured = await getMetaAccountCredentialsForRange(supabase, accountRange);
       const credentials = configured.length ? configured : getMetaAccountCredentialsFromEnv(accountRange);
@@ -348,9 +357,9 @@ async function handleGET(request: NextRequest) {
         try { return { accountId: credential.accountId, spend: await fetchMetaTrackingExactHourlySpend(credential, day, rate.rate, dayMode), warning: null }; }
         catch (error) { return { accountId: credential.accountId, spend: { hourlySpendInr: {} }, warning: `${credential.label || credential.accountId}: ${error instanceof Error ? error.message : "Meta hourly spend unavailable"}` }; }
       }));
-      return json({ hourlySpendInr: Object.assign({}, ...results.map((result) => result.spend.hourlySpendInr)),
-        failedAccountIds: results.filter((result) => result.warning).map((result) => result.accountId),
-        warnings: results.map((result) => result.warning).filter(Boolean), fetchedAt: new Date().toISOString() });
+      return json({ hourlySpendInr: Object.assign({}, ...results.map((result) => result.spend.hourlySpendInr), googleHourlySpendForDay(googleHourly, day)),
+        failedAccountIds: [...results.filter((result) => result.warning).map((result) => result.accountId), ...googleFailed],
+        warnings: [...results.map((result) => result.warning).filter(Boolean), ...(googleHourly?.warnings || [])], fetchedAt: new Date().toISOString() });
     }
     const defaults = defaultDates(dayMode);
     const start = params.get("start") || defaults.start;

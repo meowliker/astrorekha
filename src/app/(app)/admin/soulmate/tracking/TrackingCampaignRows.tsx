@@ -84,7 +84,7 @@ function CampaignRow({ row, columns, token, dates, dayMode, refreshKey, activeOn
   }
 
   useEffect(() => {
-    if (!open || !token || !row.accountId || !row.campaignId) return;
+    if (row.network === "google" || !open || !token || !row.accountId || !row.campaignId) return;
     if (cached && Date.now() - cached.fetchedAt < CACHE_TTL && loadedRetry === retry) return;
     const controller = new AbortController();
     if (!cached) setLoading(true);
@@ -98,7 +98,7 @@ function CampaignRow({ row, columns, token, dates, dayMode, refreshKey, activeOn
       })
       .catch((cause) => { if (!controller.signal.aborted) { setError(cause instanceof Error ? cause.message : "Meta details unavailable"); setLoading(false); } });
     return () => controller.abort();
-  }, [open, cached, refreshKey, token, row.accountId, row.campaignId, dates, dayMode, retry, loadedRetry, cacheKey]);
+  }, [open, cached, refreshKey, token, row.network, row.accountId, row.campaignId, dates, dayMode, retry, loadedRetry, cacheKey]);
 
   const hierarchy = useMemo(() => {
     const children = cached?.data;
@@ -133,7 +133,7 @@ function CampaignRow({ row, columns, token, dates, dayMode, refreshKey, activeOn
   ) || [];
 
   const cells = (item: TrackingCampaign, level: 0 | 1 | 2) => columns.map((column) => <td key={column.id} title={column.id === "bid" ? level === 0 ? "Meta bids are set on ad sets. Expand this campaign to view or edit them." : level === 1 && item.bidAmount == null ? "This ad set has no manual bid." : column.value(item) : META_PURCHASE_COLUMNS.has(column.id) && !item.metaPurchaseWindowAligned ? META_WINDOW_UNAVAILABLE : column.value(item)} className={`max-w-[240px] px-3 py-3 tabular-nums ${column.align === "right" ? "text-right" : "text-left"} ${column.id === "campaign" ? "font-medium text-white" : "text-slate-300"}`}>
-    {column.id === "budget" ? <span className="inline-flex items-center gap-2 whitespace-nowrap">{column.value(item) === "—" ? (!item.accountId || level === 2 ? "—" : level === 0 ? "At ad set" : "At campaign") : column.value(item)}{token && item.accountId && (level === 1 || (level === 0 && item.campaignId)) && (item.dailyBudget != null || item.lifetimeBudget != null) && <button type="button" aria-label={`Edit ${level === 0 ? "campaign" : "ad set"} budget for ${item.campaignName}`} title="Edit budget in Meta" onClick={(event) => { event.stopPropagation(); setBudgetTarget({ accountId: item.accountId!, id: level === 0 ? item.campaignId! : (item as TrackingChild).id, level: level === 0 ? "campaign" : "adset", name: item.campaignName }); }} className="rounded border border-cyan-400/30 p-1 text-cyan-300 hover:bg-cyan-400/10"><Pencil size={12} /></button>}</span> : column.id === "bid" ? <span className="inline-flex items-center gap-2 whitespace-nowrap">{!item.accountId ? "—" : level === 0 || level === 2 ? "At ad set" : item.bidAmount == null ? "Automatic" : column.value(item)}{token && level === 1 && item.accountId && item.bidAmount != null && <button type="button" aria-label={`Edit bid for ad set ${item.campaignName}`} title="Edit bid in Meta" onClick={(event) => { event.stopPropagation(); setBidTarget({ accountId: item.accountId!, adsetId: (item as TrackingChild).id, name: item.campaignName }); }} className="rounded border border-cyan-400/30 p-1 text-cyan-300 hover:bg-cyan-400/10"><Pencil size={12} /></button>}</span> :
+    {item.network === "google" && column.id === "bid" ? "—" : column.id === "budget" ? <span className="inline-flex items-center gap-2 whitespace-nowrap">{column.value(item) === "—" ? (!item.accountId || level === 2 ? "—" : level === 0 ? "At ad set" : "At campaign") : column.value(item)}{item.network !== "google" && token && item.accountId && (level === 1 || (level === 0 && item.campaignId)) && (item.dailyBudget != null || item.lifetimeBudget != null) && <button type="button" aria-label={`Edit ${level === 0 ? "campaign" : "ad set"} budget for ${item.campaignName}`} title="Edit budget in Meta" onClick={(event) => { event.stopPropagation(); setBudgetTarget({ accountId: item.accountId!, id: level === 0 ? item.campaignId! : (item as TrackingChild).id, level: level === 0 ? "campaign" : "adset", name: item.campaignName }); }} className="rounded border border-cyan-400/30 p-1 text-cyan-300 hover:bg-cyan-400/10"><Pencil size={12} /></button>}</span> : column.id === "bid" ? <span className="inline-flex items-center gap-2 whitespace-nowrap">{!item.accountId ? "—" : level === 0 || level === 2 ? "At ad set" : item.bidAmount == null ? "Automatic" : column.value(item)}{item.network !== "google" && token && level === 1 && item.accountId && item.bidAmount != null && <button type="button" aria-label={`Edit bid for ad set ${item.campaignName}`} title="Edit bid in Meta" onClick={(event) => { event.stopPropagation(); setBidTarget({ accountId: item.accountId!, adsetId: (item as TrackingChild).id, name: item.campaignName }); }} className="rounded border border-cyan-400/30 p-1 text-cyan-300 hover:bg-cyan-400/10"><Pencil size={12} /></button>}</span> :
     <span className={column.id === "campaign" ? "flex items-center gap-2" : "block truncate"} style={column.id === "campaign" ? { paddingLeft: `${level * 22}px` } : undefined}>
       {column.id === "campaign" && level > 0 && <span className="shrink-0 rounded border border-cyan-400/25 px-1 text-[10px] uppercase text-cyan-300">{level === 1 ? "Set" : "Ad"}</span>}
       <span className="truncate">{column.value(item)}</span>
@@ -144,9 +144,10 @@ function CampaignRow({ row, columns, token, dates, dayMode, refreshKey, activeOn
     <tr onClick={() => setOpen(!open)} className="cursor-pointer border-b border-white/5 transition-colors hover:bg-white/5">
       <td className="px-2 py-3 text-slate-500"><button type="button" aria-label={`${open ? "Collapse" : "Expand"} ${row.campaignName}`} onClick={(event) => { event.stopPropagation(); setOpen(!open); }}>{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button></td>{cells(row, 0)}
     </tr>
+    {open && row.network === "google" && <tr><td colSpan={columns.length + 1} className="px-8 py-4 text-xs text-slate-400">Google Ads is read-only. Campaign metrics use the selected reporting window; orders match only a saved campaign ID or a unique campaign name.</td></tr>}
     {open && loading && !cached && <tr><td colSpan={columns.length + 1} className="bg-[#111827] px-8 py-4 text-xs text-slate-400">Loading Meta ad sets and ads…</td></tr>}
     {open && error && <tr><td colSpan={columns.length + 1} className="bg-[#111827] px-8 py-4 text-xs text-rose-300">{error} <button onClick={() => { setError(""); setRetry((value) => value + 1); }} className="ml-2 underline">Retry</button></td></tr>}
-    {open && !row.accountId && <tr><td colSpan={columns.length + 1} className="bg-[#111827] px-8 py-4 text-xs text-slate-400">This UTM campaign has no unique Meta match, so Meta ad sets and ads cannot be loaded.</td></tr>}
+    {open && row.network !== "google" && !row.accountId && <tr><td colSpan={columns.length + 1} className="bg-[#111827] px-8 py-4 text-xs text-slate-400">This UTM campaign has no unique Meta match, so Meta ad sets and ads cannot be loaded.</td></tr>}
     {open && hierarchy && !shownAdsets.length && <tr><td colSpan={columns.length + 1} className="bg-[#111827] px-8 py-4 text-xs text-slate-400">{activeOnly && activeScope !== "campaign" ? "No matching active ad sets or ads in this campaign." : "No ad sets were returned by Meta for this campaign."}</td></tr>}
     {open && shownAdsets.map((adset) => {
       const ads = shownAds.filter((ad) => ad.parentId === adset.id);
@@ -171,12 +172,12 @@ export default function TrackingCampaignRows({ rows, columns, token, dates, dayM
   const total = useMemo(() => rows.reduce<TrackingCampaign>((sum, row) => {
     for (const key of ["spend", "metaCalendarSpend", "impressions", "reach", "clicks", "linkClicks", "landingPageViews", "addToCarts", "checkouts", "metaPurchases", "metaPurchaseValue", "leads", "orders", "grossRevenue", "refunds", "refundAmount", "revenue"] as const) sum[key] = (sum[key] || 0) + (row[key] || 0);
     if (row.utmVisits != null) sum.utmVisits = (sum.utmVisits || 0) + row.utmVisits;
-    sum.spendInr = (sum.spendInr || 0) + (row.spendInr || 0);
+    sum.spendInr = sum.spendInr === null || row.accountId && row.spendInr === null ? null : (sum.spendInr || 0) + (row.spendInr || 0);
     sum.dailyBudget = (sum.dailyBudget || 0) + (row.dailyBudget || 0);
     sum.lifetimeBudget = (sum.lifetimeBudget || 0) + (row.lifetimeBudget || 0);
     return sum;
   }, {
-    key: "total", accountId: null, accountName: "All shown", currency: currencies[0] || "INR", campaignId: null,
+    key: "total", network: rows.length && rows.every(row => row.network === "google") ? "google" : undefined, accountId: null, accountName: "All shown", currency: currencies[0] || "INR", campaignId: null,
     campaignName: "Overall result", objective: null, status: null, dailyBudget: null, lifetimeBudget: null, bidAmount: null, bidStrategy: null,
     spend: 0, metaCalendarSpend: 0, spendInr: 0, impressions: 0, reach: 0, clicks: 0, linkClicks: 0,
     landingPageViews: 0, addToCarts: 0, checkouts: 0, metaPurchases: 0, metaPurchaseValue: 0, metaPurchaseWindowAligned,

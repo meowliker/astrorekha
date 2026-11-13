@@ -89,6 +89,9 @@ test('failed refresh never replaces saved ledger; oversized backfills are reject
  await assert.rejects(syncSoulmateProfitLedger(db,'2026-10-15','2026-10-23',Date.parse('2026-10-24T12:00Z')),/seven days/);
 });
 const admin=require.resolve('../src/lib/soulmate-admin');require.cache[admin]={id:admin,filename:admin,loaded:true,exports:{soulmateAdmin:async req=>req.headers.get('authorization')==='Bearer fixture'?db:null}};
+// Workspace access has its own tests; this fixture tests the route's session/ledger behavior.
+const access=require.resolve('../src/lib/admin-access');require.cache[access]={id:access,filename:access,loaded:true,exports:{withAdminAccess:handler=>handler}};
+const google=require.resolve('../src/lib/google-ads-reporting');require.cache[google]={id:google,filename:google,loaded:true,exports:{readGoogleSpend:async()=>({complete:true,accounts:[],warnings:[]}),googleSpendForDay:()=>({total:0,indian:0})}};
 const {NextRequest}=require('next/server'),{GET,POST}=require('../src/app/api/admin/soulmate/profit/route');
 test('routes reject unauthorized access and pre-launch dates, default to launch',async()=>{
  assert.equal((await GET(new NextRequest('http://localhost/api/admin/soulmate/profit'))).status,401);

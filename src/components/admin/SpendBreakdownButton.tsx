@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useAdSource } from "./AcquisitionView";
 import { Info, Loader2, X } from "lucide-react";
 import type { DailySpendBreakdown } from "@/lib/profit-sheet-types";
 
@@ -14,6 +15,7 @@ export default function SpendBreakdownButton({ date, savedTotalINR, dayMode = "b
   savedTotalINR: number;
   dayMode?: "business_1130_ist" | "calendar_ist";
 }) {
+  const adSource = useAdSource();
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<DailySpendBreakdown | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +43,7 @@ export default function SpendBreakdownButton({ date, savedTotalINR, dayMode = "b
       try {
         const token = localStorage.getItem("admin_session_token");
         if (!token) throw new Error("Your admin session has expired. Please sign in again.");
-        const params = new URLSearchParams({ token, breakdownDate: date, dayMode });
+        const params = new URLSearchParams({ token, breakdownDate: date, dayMode, adSource });
         const response = await fetch(`/api/admin/profit-sheet?${params}`, {
           cache: "no-store", signal: controller.signal,
         });
@@ -55,7 +57,7 @@ export default function SpendBreakdownButton({ date, savedTotalINR, dayMode = "b
     }
     void load();
     return () => controller.abort();
-  }, [open, date, dayMode, attempt]);
+  }, [open, date, dayMode, adSource, attempt]);
 
   function close() {
     dialogRef.current?.close();

@@ -1,3 +1,4 @@
+import { readGoogleSpend, googleSpendForDay } from "@/lib/google-ads-reporting";
 import {withAdminAccess} from "@/lib/admin-access";
 import { parseAdSource } from "@/lib/admin-acquisition";
 import { readAdSourceFinance } from "@/lib/admin-source-finance";
@@ -19,19 +20,33 @@ async function handleGET(request: NextRequest) {
   try {
     const result = await readSoulmateProfitLedger(db, start, end);
     const adSource = parseAdSource(request.nextUrl.searchParams);
-    if (adSource === "all") return json(result);
+    const google = adSource === "meta" ? null : await readGoogleSpend("soulmate", start, end, "business_1130_ist", Number(result.exchangeRate));
+    if (adSource === "all") {
+      const rows = result.rows.map(saved => {
+        const cost = google ? googleSpendForDay(google, saved.date) : null;
+        const adsInr = cost && saved.adsInr !== null && !saved.stale ? saved.adsInr + Math.round(cost.total * 100) : null;
+        const extraTax = cost ? Math.round(cost.indian * 18) : null;
+        const adGst = extraTax !== null && saved.adGst !== null && !saved.stale ? saved.adGst + extraTax : null;
+        return { ...saved, adsInr, adsUsd: cost && saved.adsUsd !== null ? saved.adsUsd + Math.round(cost.total * 100 / Number(result.exchangeRate)) : null, adGst,
+          profit: adsInr === null || adGst === null || saved.revenue === null ? null : saved.revenue - saved.salesGst - adsInr - adGst,
+          roas: adsInr && saved.revenue !== null ? saved.revenue / adsInr : null };
+      });
+      return json({ ...result, rows, warnings: google?.warnings || [] });
+    }
     const finance = await readAdSourceFinance(db, "soulmate", adSource, start, end);
     const rows = finance.map((day) => {
       const saved = result.rows.find((row) => row.date === day.date);
-      const known = adSource === "meta" && !!saved && !saved.stale;
-      const adsInr = known ? saved!.adsInr : null, adGst = known ? saved!.adGst : null;
+      const cost = google ? googleSpendForDay(google, day.date) : null;
+      const known = adSource === "meta" ? !!saved && !saved.stale : cost !== null;
+      const adsInr = adSource === "google" ? cost ? Math.round(cost.total * 100) : null : known ? saved!.adsInr : null;
+      const adGst = adSource === "google" ? cost ? Math.round(cost.indian * 18) : null : known ? saved!.adGst : null;
       const revenue = day.received - day.refund;
       return { ...saved, date: day.date, orders: day.orders, received: day.received, refund: day.refund, revenue,
-        salesGst: day.salesTax, adsUsd: known ? saved!.adsUsd : null, adsInr, adGst, balance: null, balanceCapturedAt: null,
+        salesGst: day.salesTax, adsUsd: adSource === "google" ? cost ? Math.round(cost.total * 100 / Number(result.exchangeRate)) : null : known ? saved!.adsUsd : null, adsInr, adGst, balance: null, balanceCapturedAt: null,
         profit: adsInr === null || adGst === null ? null : revenue - day.salesTax - adsInr - adGst,
-        roas: adsInr ? revenue / adsInr : null, accounts: known ? saved!.accounts : [], stale: false };
+        roas: adsInr ? revenue / adsInr : null, accounts: adSource === "meta" && known ? saved!.accounts : [], stale: false };
     });
-    return json({ ...result, rows, adSource, missing: [] });
+    return json({ ...result, rows, adSource, missing: [], warnings: google?.warnings || [] });
   } catch { return json({ error: "Unable to load saved Soulmate profit rows." }, 503); }
 }
 async function handlePOST(request: NextRequest) {
