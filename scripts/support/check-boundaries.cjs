@@ -42,6 +42,7 @@ for (const [id, role, kind] of [
   ["owner", "owner", "api"],
   ["browser", "owner", "browser"],
   ["disabled", "support", "api"],
+  ["delegated", "owner", "api"],
 ]) {
   rows.support_sessions.push({
     token_hash: digest("ar_support_" + id),
@@ -57,13 +58,17 @@ for (const [id, role, kind] of [
     active: id !== "disabled",
   });
 }
+rows.support_staff.find(x=>x.id==="delegated").api_owner_access=true;
 rows.support_staff[0].password_hash = require("bcryptjs").hashSync(
   "test-only-correct-password",
   12,
 );
 function query(table) {
-  let filters = [];
+  let filters = [], patch = null;
+  const found = () => { const matches=(rows[table]||[]).filter(r=>filters.every(f=>f(r))); if(patch) matches.forEach(r=>Object.assign(r,patch)); return matches; };
   const q = {
+    update(value) { patch=value;return q; },
+    then(resolve,reject) { return Promise.resolve({data:found(),error:null}).then(resolve,reject); },
     insert(row) {
       (rows[table] ||= []).push(row);
       return Promise.resolve({ data: null, error: null });
@@ -87,7 +92,7 @@ function query(table) {
     maybeSingle() {
       return Promise.resolve({
         data:
-          (rows[table] || []).find((r) => filters.every((f) => f(r))) || null,
+          found()[0] || null,
         error: null,
       });
     },
@@ -275,6 +280,29 @@ async function request(
     { token: "owner", body: { content: "Cannot publish from API" } },
     403,
   );
+  const authority=await request("rules",{token:"delegated",rulesReceipt:null},200);
+  assert.equal(authority.actorAuthority.canApproveRepairs,true);
+  assert.equal(authority.actorAuthority.canManageWorkspace,true);
+  assert.equal(authority.actorAuthority.delegatedOwnerApi,true);
+  assert.equal((await request("rules",{token:"owner",rulesReceipt:null},200)).actorAuthority.canApproveRepairs,false);
+  await request("team",{token:"delegated"},200);
+  await request("rules",{token:"delegated",body:{baseVersion:2,content:"too short"}},400); // passes owner gate, then validates payload
+  rows.support_actions=[{id:"delegated-approval-test",status:"awaiting_approval",kind:"add_questions",customer_id:"customer",actor_id:"delegated",payload:{questions:10}}];
+  const approval=await request("actions/delegated-approval-test",{token:"delegated",body:{decision:"approve"}},200);
+  assert.equal(approval.status,"complete");
+  assert.equal(rows.support_actions[0].approved_by,"delegated");
+  assert.ok(rows.support_audit.some(x=>x.event==="repair_approved" && x.detail.delegatedOwnerApi===true));
+  await request("actions/delegated-approval-test",{token:"delegated",body:{decision:"approve"}},409);
+  rows.support_actions.push({id:"delegated-reject-test",status:"awaiting_approval",kind:"change_email",customer_id:"customer"});
+  await request("actions/delegated-reject-test",{token:"delegated",body:{decision:"reject"}},200);
+  assert.equal(rows.support_actions[1].status,"rejected");
+  const delegate=rows.support_staff.find(x=>x.id==="delegated");delegate.api_owner_access=false;
+  await request("actions/delegated-reject-test",{token:"delegated",body:{decision:"reject"}},403);
+  assert.equal((await request("rules",{token:"delegated",rulesReceipt:null},200)).actorAuthority.canApproveRepairs,false);
+  delegate.api_owner_access=true;delegate.active=false;
+  await request("team",{token:"delegated"},403);delegate.active=true;
+  rows.support_staff.find(x=>x.id==="staff").api_owner_access=true;
+  await request("team",{token:"staff"},403);
   const receipt = rulesModule.issueRulesReceipt(
     digest("ar_support_staff"),
     2,

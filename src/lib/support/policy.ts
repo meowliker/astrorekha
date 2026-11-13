@@ -136,9 +136,27 @@ export function reportReady(
   if (key === "witchArchetypeReport") return !!row.generated_at;
   return row.status === "complete";
 }
-export function requireBrowserOwner(actor: { role: string; kind: string }) {
-  if (actor.role !== "owner" || actor.kind !== "browser")
-    throw new SupportError("Owner browser approval is required", 403);
+export function hasOwnerAccess(actor: {
+  role: string;
+  kind: string;
+  api_owner_access?: boolean;
+}) {
+  return (
+    actor.role === "owner" &&
+    (actor.kind === "browser" ||
+      (actor.kind === "api" && actor.api_owner_access === true))
+  );
+}
+export function requireOwnerAccess(actor: {
+  role: string;
+  kind: string;
+  api_owner_access?: boolean;
+}) {
+  if (!hasOwnerAccess(actor))
+    throw new SupportError(
+      "An authorized owner session or delegated owner API token is required",
+      403,
+    );
 }
 export function validateDraft(
   text: string,

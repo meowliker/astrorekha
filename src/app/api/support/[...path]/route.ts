@@ -17,7 +17,8 @@ import {
   requireText,
   emailAddress,
   identifier,
-  requireBrowserOwner,
+  requireOwnerAccess,
+  hasOwnerAccess,
   makeReply,
   validateDraft,
 } from "@/lib/support/policy";
@@ -124,7 +125,7 @@ async function handle(request: NextRequest) {
         const row = checked(
           await db()
             .from("support_staff")
-            .select("id,name,email,role,password_hash,active")
+            .select("id,name,email,role,password_hash,active,api_owner_access")
             .eq("email", email)
             .maybeSingle(),
         );
@@ -140,6 +141,7 @@ async function handle(request: NextRequest) {
           name: row.name,
           email: row.email,
           role: row.role,
+          api_owner_access: row.api_owner_access === true,
         };
       }
       if (!staff) throw new SupportError("Staff account not found", 404);
@@ -191,6 +193,11 @@ async function handle(request: NextRequest) {
           ...(await readRules(actor)),
           safeguards: SUPPORT_SAFEGUARDS,
           capabilities: SUPPORT_CAPABILITIES,
+          actorAuthority: {
+            canApproveRepairs: hasOwnerAccess(actor),
+            canManageWorkspace: hasOwnerAccess(actor),
+            delegatedOwnerApi: actor.kind === "api" && hasOwnerAccess(actor),
+          },
         });
       }
       if (path[0] === "me")
@@ -200,6 +207,7 @@ async function handle(request: NextRequest) {
             name: actor.name,
             email: actor.email,
             role: actor.role,
+            api_owner_access: actor.api_owner_access === true,
           },
           mailbox: SUPPORT_MAILBOX,
         });
@@ -256,12 +264,12 @@ async function handle(request: NextRequest) {
         });
       }
       if (path[0] === "team") {
-        requireBrowserOwner(actor);
+        requireOwnerAccess(actor);
         return reply({
           staff: checked(
             await db()
               .from("support_staff")
-              .select("id,name,email,role,active,created_at")
+              .select("id,name,email,role,active,created_at,api_owner_access")
               .order("created_at"),
           ),
         });
@@ -277,7 +285,7 @@ async function handle(request: NextRequest) {
           ),
         });
       if (path[0] === "audit") {
-        requireBrowserOwner(actor);
+        requireOwnerAccess(actor);
         return reply({
           events: checked(
             await db()
@@ -310,7 +318,7 @@ async function handle(request: NextRequest) {
             : await createAction(actor, body),
         );
       if (path[0] === "team") {
-        requireBrowserOwner(actor);
+        requireOwnerAccess(actor);
         if (body.staffId) {
           const id = identifier(body.staffId);
           if (id === actor.id)
@@ -347,9 +355,9 @@ async function handle(request: NextRequest) {
         });
       }
       if (path[0] === "tokens") {
-        if (actor.kind !== "browser")
+        if (actor.kind !== "browser" && !hasOwnerAccess(actor))
           throw new SupportError(
-            "Manage API tokens from your browser session",
+            "Manage API tokens from your browser session or delegated owner API",
             403,
           );
         if (body.revoke) {
@@ -380,7 +388,11 @@ async function handle(request: NextRequest) {
           const patch: Record<string, unknown> = {
             updated_at: new Date().toISOString(),
           };
-          if (body.status === "resolved" && actor.kind !== "browser")
+          if (
+            body.status === "resolved" &&
+            actor.kind !== "browser" &&
+            !hasOwnerAccess(actor)
+          )
             throw new SupportError(
               "A staff member must resolve the case after review in the browser",
               403,

@@ -72,3 +72,5 @@ DEPLOYMENT_CHECKLIST.md
 # Local support operator credentials and short-lived policy receipt
 .env.support
 .support-rules-session.json*
+
+.support-issued-token-*

@@ -10,6 +10,7 @@ export type Actor = {
   name: string;
   email: string;
   role: "owner" | "support";
+  api_owner_access?: boolean;
   kind: "browser" | "api";
   tokenHash: string;
 };
@@ -72,7 +73,7 @@ export async function actorFor(request: NextRequest): Promise<Actor> {
   const staff = checked(
     await db()
       .from("support_staff")
-      .select("id,name,email,role,active")
+      .select("id,name,email,role,active,api_owner_access")
       .eq("id", session.staff_id)
       .maybeSingle(),
   );

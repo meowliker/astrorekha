@@ -26,6 +26,7 @@ type Staff = {
   email: string;
   role: string;
   active?: boolean;
+  api_owner_access?: boolean;
 };
 type Case = {
   id: string;
@@ -1402,9 +1403,11 @@ export default function SupportWorkspace() {
                   <KeyRound size={20} /> Codex access
                 </h2>
                 <p>
-                  Use a personal support token with the support API. It cannot
-                  approve sensitive repairs or access production credentials.
-                  Tokens expire after 30 days.
+                  {staff.role === "owner" && staff.api_owner_access
+                    ? "Your Codex tokens have owner permissions: approve repairs, manage support rules and team access, and review activity."
+                    : "Use a personal support token with the support API. This account’s tokens cannot approve restricted repairs or manage owner settings."}{" "}
+                  Tokens expire after 30 days. Production credentials are never
+                  exposed.
                 </p>
                 <form
                   onSubmit={(e) => {

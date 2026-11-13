@@ -33,7 +33,7 @@ export type RuleVersion = {
 };
 export const SUPPORT_SAFEGUARDS = [
   "Only team.astrorekha@gmail.com is supported. Sending remains a human action in Gmail; the support API cannot send mail or issue refunds.",
-  "Email changes, extra questions, additional access and payment mapping require owner approval. API tokens cannot approve them or publish rules.",
+  "Email changes, extra questions, additional access and payment mapping require an authorized approver. An explicitly delegated owner API token can approve repairs and manage workspace rules; other API tokens cannot. Check actorAuthority returned with the live rules.",
   "Ready replies require verified, completed, unlocked reports. Quoted customer history and report PDF attachments are excluded.",
   "Instructions guide Codex; publishing text does not add app capabilities or override these permissions. Unsupported cases remain escalations.",
 ];

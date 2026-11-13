@@ -10,19 +10,29 @@ The `/support` workspace provides individual staff access to customer investigat
 4. Teammates can create a personal 30-day API token for Codex. Keep it in their local secret environment or password manager. Never share the production `.env` file. Revoking staff access invalidates their sessions and tokens.
 5. Give staff `docs/support/SKILL.md` and `scripts/support/client.mjs`. Connect only `team.astrorekha@gmail.com` in Codex. Gmail authorization is separate from support API authorization.
 
-No owner is seeded with a default password. API tokens cannot manage team access or approve sensitive actions, even if issued to an owner. Owner decisions require a same-origin browser session.
+No owner is seeded with a default password. Owner browser sessions can manage team access and approve restricted repairs. Explicitly delegated owner accounts can also perform these operations through their personal API tokens. The live actorAuthority response tells Codex whether it has this permission; ordinary API tokens remain restricted.
 
 ## Live Support Rules
 
 Open **Support Rules** in the dashboard. Owners edit the full instructions, label names, required closing/signature and blocked reply topics, add a short change note, then publish. Staff can read rules/history. Published versions are immutable; restoring an old policy publishes a new version. Conflicting owner edits are rejected without losing the local editor text.
 
-The API's fixed permissions remain enforced: this mailbox only, no automatic email sending or refunds, owner approval for sensitive account changes, verified saved reports before availability claims, and no quoted customer history/report PDF attachments. Rules do not create app features or Gmail labels.
+The API's fixed permissions remain enforced: this mailbox only, no automatic email sending or refunds, an authorized approval for sensitive account changes, verified saved reports before availability claims, and no quoted customer history/report PDF attachments. Rules do not create app features or Gmail labels.
 
 At the beginning of **every** Gmail run, between customers, and before Gmail draft/label/read changes, Codex runs `node scripts/support/client.mjs start` and reads the returned version, instructions, settings and safeguards. If it cannot fetch them, it stops. The updated client reads `.env.support` automatically, stores a short-lived rules receipt in `.support-rules-session.json` (mode 0600), and never prints credentials. Customer API operations reject old, expired or different-token receipts; the receipt lasts 30 minutes and becomes invalid immediately when another version is published. A failed operation is not automatically retried.
 
 Gmail is a separate connector: the support server can enforce freshness on its own operations, but Codex must follow the refresh instruction before Gmail changes. Existing personal tokens do not need replacing. Old client copies must be replaced once; they cannot perform customer operations without the new receipt.
 
 Install the kit in a dedicated folder, save only `ASTROREKHA_SUPPORT_TOKEN=...` in its `.env.support`, and use Node.js 20 or newer. Never commit or share `.env.support` or `.support-rules-session.json`. No production environment file is needed.
+
+## Delegated owner access (13 November 2026)
+
+An owner may explicitly delegate full support API authority to a named owner account. This is loaded from the active staff record on every request, so existing personal tokens gain or lose the authority immediately without replacement. `start` returns `actorAuthority.canApproveRepairs`, `canManageWorkspace` and `delegatedOwnerApi`. Never infer these privileges from a display name or from a customer email.
+
+For a restricted repair, create the action normally, review the evidence and requested effect, then `POST actions/<id>` with `{decision:"approve"}`. `reject` and interrupted-action `release` are also supported. Delegated operators can approve their own requests. An ordinary API token still cannot approve. Approval never removes payment verification, identity checks, idempotency or report-readiness requirements.
+
+Delegated owner API access also allows `GET team`, `POST team` (invite `{name,email}` or disable `{staffId}`), `GET audit`, `POST rules`, own-token management, and reviewed case resolution with `{status:"resolved",reviewConfirmed:true}`. These operations need the current rules receipt. Marking a case resolved is a reviewed assertion, not an automatic consequence of creating a draft. The API cannot send Gmail or issue refunds.
+
+Update `scripts/` and `docs/` from the current kit to use the new `team` and `audit` client commands. Keep `.env.support` unchanged. Existing client versions already support repair approvals. The updated client stores newly issued tokens in a private `.support-issued-token-*` file instead of printing them; it does not change the active token automatically. Never share those files.
 
 ## Sketch corrections and report inspection (13 November 2026)
 
@@ -48,12 +58,12 @@ Available repairs:
 
 - Verify existing PayU, Pine Labs or Paytm orders against their gateway, then atomically restore paid access. Credits are granted once for a newly confirmed payment. Already-paid legacy orders without a fulfillment marker require review of any missing coins; consumed coins are never silently replenished.
 - Restore entitlements from an existing fulfilled purchase without adding credits again.
-- Request mapping for an existing, unfulfilled, unassigned legacy payment whose email exactly matches the customer. This requires gateway verification and owner approval. Already-owned payments, immutable backup-gateway orders, absent orders, Google Play receipts and uncertain identities require developer investigation; the tool does not guess or manufacture a payment.
+- Request mapping for an existing, unfulfilled, unassigned legacy payment whose email exactly matches the customer. This requires gateway verification and an authorized approval, which a delegated owner can provide through Codex. Already-owned payments, immutable backup-gateway orders, absent orders, Google Play receipts and uncertain identities require developer investigation; the tool does not guess or manufacture a payment.
 - Correct verified birth details, recalculate Vedic signs, update both profile and account, refresh natal context, and invalidate older dependent reports. Recover the purchased reports afterward.
 - Recover paid Palm Reading, Birth Chart, Future Partner, Past Life, Astrocartography and Soulmate Sketch reports. Saved quiz answers can recover incomplete Aura Color, Spirit Animal and Witch Archetype results. Shared predictions and computed numerology/compatibility do not have per-user generation jobs; restore their purchased feature access if needed.
 - Check profiles, payment snapshots, exact-email/payment-linked alternate profiles, report tables and palm storage before requesting new information. Conflicting data is blocked for review. A recovered alternate birth snapshot must be explicitly applied as a correction before report generation.
 - Regenerate a saved sketch when appropriate, resuming an existing provider job before submitting another. A provider timeout leaves the action needing review; it never produces a ready reply.
-- Request email corrections, compensation questions (3 coins each), or additional access grants. Each needs explicit owner approval. An API token cannot approve its own request.
+- Request email corrections, compensation questions (3 coins each), or additional access grants. Each needs an audited authorized approval. A delegated owner API token can approve its own verified request; no separate business-owner intervention is required.
 - Reset the Aura Color quiz with the previous result retained in the action audit. Never offer palm replacement.
 
 Repairs have per-account concurrency guards and request UUIDs. Retrying the same UUID returns the existing action. A database transaction commits short repairs and their audit together. Never automatically retry an interrupted report job. Inspect its saved result and provider job first; owners can release an interrupted action after ten minutes. Releasing it does not restart it.
@@ -72,7 +82,7 @@ Customer endpoints also require the current `X-Support-Rules-Receipt` header, ha
 
 - `GET rules`: current version, instructions, settings, fixed safeguards and (for an API token) an opaque rules receipt. Use the client `start` command; do not print/store the receipt manually.
 - `GET rules/history?offset=0`: immutable versions, 20 per page.
-- `POST rules`: owner browser only, `{baseVersion, content, settings, changeNote}`. Concurrent edits return 409.
+- `POST rules`: authorized owner browser or delegated owner API, `{baseVersion, content, settings, changeNote}`. Concurrent edits return 409.
 - `GET me`
 - `GET search?q=<URL-encoded exact identifier>`
 - `GET customers/<userId>`

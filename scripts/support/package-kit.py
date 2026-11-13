@@ -7,7 +7,7 @@ output = root / "public/downloads/astrorekha-support-kit.zip"
 files = {name: (root / name).read_text() for name in ["docs/support/README.md", "docs/support/SKILL.md", "scripts/support/client.mjs"]}
 files["AGENTS.md"] = (root / "docs/support/TEAM-AGENTS.md").read_text()
 files[".env.support.example"] = "ASTROREKHA_SUPPORT_TOKEN=\n"
-files[".gitignore"] = ".env.support\n.support-rules-session.json*\n"
+files[".gitignore"] = ".env.support\n.support-rules-session.json*\n.support-issued-token-*\n"
 files["START-HERE.txt"] = """AstroRekha Support Kit — live rules edition
 
 Existing operators: replace AGENTS.md, docs/ and scripts/ in your existing Support Kit folder. Keep your existing .env.support unchanged. Your current token still works. Never replace .env.support with the empty example file.

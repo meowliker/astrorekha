@@ -10,7 +10,7 @@ import {
   identifier,
   emailAddress,
   requireText,
-  requireBrowserOwner,
+  requireOwnerAccess,
 } from "./policy";
 import { customerSnapshot } from "./customer";
 import { calculateBirth, recoverReport } from "./reports";
@@ -348,7 +348,7 @@ export async function executeAction(action: Action) {
   }
 }
 export async function decideAction(actor: Actor, id: string, decision: string) {
-  requireBrowserOwner(actor);
+  requireOwnerAccess(actor);
   if (!["approve", "reject", "release"].includes(decision))
     throw new SupportError("Invalid decision");
   const action = checked(
@@ -373,7 +373,7 @@ export async function decideAction(actor: Actor, id: string, decision: string) {
           status: "needs_review",
           result: {
             message:
-              "Owner released interrupted repair. Inspect saved state before retrying.",
+              "Authorized operator released interrupted repair. Inspect saved state before retrying.",
           },
         })
         .eq("id", id)
@@ -401,7 +401,10 @@ export async function decideAction(actor: Actor, id: string, decision: string) {
       .maybeSingle(),
   );
   if (!claimed) throw new SupportError("Request already handled", 409);
-  await audit(actor.id, `repair_${decision}d`, id);
+  await audit(actor.id, `repair_${decision}d`, id, {
+    via: actor.kind,
+    delegatedOwnerApi: actor.kind === "api" && actor.api_owner_access === true,
+  });
   return decision === "approve"
     ? executeAction(claimed)
     : { id, status: "rejected" };
