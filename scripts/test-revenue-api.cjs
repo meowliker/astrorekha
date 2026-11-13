@@ -20,6 +20,7 @@ let mode = "ok",
   paymentReads = 0;
 let usageReads = 0;
 let transientTimeouts = 0;
+let transientStorageFailures = 0;
 const rows = Array.from({ length: 1601 }, (_, i) => ({
   id: `order-${String(i).padStart(5, "0")}`,
   payu_txn_id: `order-${i}`,
@@ -147,6 +148,7 @@ const fakeDb = {
         },
         async upload(path, data) {
           writes++;
+          if (mode === "storage-transient" && transientStorageFailures++ === 0) return {error: {message: "Temporary storage outage"}};
           if (mode === "save-error")
             return { error: { message: "Storage unavailable" } };
           objects.set(path, data);
@@ -216,7 +218,7 @@ const fakeDb = {
               mode === "invalid"
                 ? null
                 : {
-                    id: "fake",
+                    id: "fake", admin_id: "fixture-admin",
                     expires_at:
                       mode === "expired"
                         ? "2020-01-01"
@@ -226,6 +228,7 @@ const fakeDb = {
                   },
             error: null,
           };
+        else if (table === "admin_workspace_members") result = {data: {id: "fixture-admin", name: "QA", active: true, is_administrator: true, workspaces: ["astrorekha"]}, error: null};
         else if (table === "settings")
           result = {
             data: { value: require("../src/lib/pricing").DEFAULT_PRICING },
@@ -312,7 +315,7 @@ const request = (
   auth = true,
 ) =>
   new NextRequest(`http://localhost/api/admin/revenue-dashboard?${query}`, {
-    headers: auth ? { Authorization: "Bearer fake-test-only" } : {},
+    headers: auth ? { Authorization: `Bearer ${"a".repeat(64)}` } : {},
   });
 (async () => {
   assert.equal((await GET(request("", false))).status, 401);
@@ -548,7 +551,7 @@ const request = (
     const failure = await POST(request());
     assert.equal(
       failure.status,
-      503,
+      mode === "busy" ? 409 : 503,
       "failed refresh must not replace a complete snapshot",
     );
     assert.equal((await failure.json()).totals, undefined);
@@ -701,8 +704,26 @@ const request = (
   assert.equal(JSON.parse(gunzipSync(objects.get(sourcePath)).toString("utf8")).pricing.reports[0].price, savedPrice);
   for (const bytes of objects.values())
     assert.ok(!gunzipSync(bytes).toString("utf8").includes("PRIVATE QUESTION"));
+  mode = "storage-transient";
+  const afterStorageRetry = await POST(request());
+  assert.equal(afterStorageRetry.status, 200, "one transient storage failure must recover within the same refresh");
+  assert(transientStorageFailures >= 2);
+  mode = "ok";
   assert.equal(syncState.lease_token, null);
   assert.ok(writes > 0);
+  const migrationPath = `sources/${syncState.snapshot_id}.json.gz`;
+  const migrationSource = JSON.parse(gunzipSync(objects.get(migrationPath)).toString("utf8"));
+  migrationSource.version = 3;
+  objects.set(migrationPath, gzipSync(JSON.stringify(migrationSource)));
+  syncState.source_version = 3;
+  const upgradeQueries = queries.length;
+  const migrated = await GET(request());
+  assert.equal(migrated.status, 200);
+  assert.equal(syncState.source_version, 4);
+  for (const query of queries.slice(upgradeQueries).filter(q => ["users", "chat_messages"].includes(q.table))) {
+    assert(query.filters.some(f => f[0] === "id" && f[1] === "in"), "v3 migration must reuse usage history and only read changed IDs");
+  }
+
   console.log(
     "Revenue API: auth, pagination, cache-only loads, incremental refresh, historical refunds/deletes, usage changes, race-safe acknowledgment, failure retention, sorting, filters and snapshot consistency passed.",
   );

@@ -91,11 +91,16 @@ export default function AdminAccessGate({children}: {children: ReactNode}) {
     };
     void load();
     window.addEventListener('storage', onStorage);
+    const recheck = () => void load();
+    window.addEventListener('focus', recheck);
+    window.addEventListener('online', recheck);
     return () => {
       active = false;
       clearTimeout(timer);
       controller?.abort();
       window.removeEventListener('storage', onStorage);
+      window.removeEventListener('focus', recheck);
+      window.removeEventListener('online', recheck);
     };
     // The shared admin layout retains verified access during page navigation.
     // Each page is still checked against its workspace below, and every API
@@ -103,7 +108,7 @@ export default function AdminAccessGate({children}: {children: ReactNode}) {
   }, [isLogin, router, retry]);
 
   if (isLogin) return <>{children}</>;
-  if (error) return (
+  if (error && !access) return (
     <main className="p-8 text-white/70" role="alert">
       <p>{error}</p>
       <button className="mt-4 rounded-lg border border-white/20 px-4 py-2 text-white" onClick={() => setRetry(value => value + 1)}>Try again</button>

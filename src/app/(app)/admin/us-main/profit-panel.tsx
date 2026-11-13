@@ -61,6 +61,7 @@ export function SoulmateProfitPanel() {
 
   const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem("admin_session_token") || ""}`, "Content-Type": "application/json" });
   async function sync(mode: "last2" | "range", first?: string, last?: string) {
+    if (adSource === "google") {setRefresh(n => n + 1); return;}
     setSyncing(true); setNotice("");
     try {
       const res = await fetch("/api/admin/us-main/profit", { method: "POST", headers: authHeaders(), body: JSON.stringify({ mode, start: first, end: last }) });
@@ -104,7 +105,7 @@ export function SoulmateProfitPanel() {
   const backfillEnd = backfillStart ? [rangeEnd, shiftProfitDate(backfillStart, 6)].sort()[0] : "";
 
   return <section className="space-y-4 py-6" aria-label="US AstroRekha profit sheet">
-    <div className="flex justify-end"><button type="button" disabled={syncing} onClick={() => setAccountsOpen(true)} className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-primary hover:bg-white/5 disabled:opacity-40"><Settings size={15} />Accounts &amp; Campaigns<span className="rounded-full bg-primary px-1.5 text-xs text-white">{accountCount}</span></button></div>
+    {adSource !== "google" && <div className="flex justify-end"><button type="button" disabled={syncing} onClick={() => setAccountsOpen(true)} className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-primary hover:bg-white/5 disabled:opacity-40"><Settings size={15} />Accounts &amp; Campaigns<span className="rounded-full bg-primary px-1.5 text-xs text-white">{accountCount}</span></button></div>}
     {accountsOpen && <SoulmateAdAccountsDialog close={() => setAccountsOpen(false)} saved={() => { setAccountsOpen(false); setRefresh((n) => n + 1); setNotice("US AstroRekha campaign selection saved for Tracking and Profit Sheet. Refresh updates the latest two days; use Backfill for older dates."); }} />}
     <div className="rounded-xl border border-white/10 bg-[#1A2235] p-4">
       <div className="flex flex-wrap items-end gap-4">
@@ -119,15 +120,14 @@ export function SoulmateProfitPanel() {
         <div className="text-xs text-white/50">Reporting currency: USD</div>
         <button type="button" disabled={loading || syncing} onClick={() => sync("last2")} className="flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm text-white transition-colors hover:bg-primary/80 disabled:opacity-50"><RefreshCw size={15} className={syncing ? "animate-spin" : ""} />{syncing ? "Refreshing…" : "Refresh"}</button>
       </div>
-      <p className="mt-3 text-xs leading-relaxed text-white/40">Reporting begins October 28, 2026 at 11:30 AM IST. Each reporting day covers 11:30 AM IST to 11:29 AM IST the next day. Only verified live Soulmate purchases made in production are included. Advertising costs include only your selected US AstroRekha campaigns.</p>
-      <p className="mt-2 text-xs text-white/40">Saved rows load from Supabase. Refresh updates only the latest two reporting days.</p>
+      <p className="mt-3 text-xs text-white/40">Reporting day: 11:30 AM IST – 11:29 AM IST the next day.</p>
     </div>
     {notice && <p role="status" className="text-sm text-amber-200">{notice}</p>}
-    {!loading && needsSync.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-sm"><span className="text-amber-200">{needsSync.length} dates need an initial sync or recalculation.</span><button type="button" disabled={syncing} className={control} onClick={() => sync("range", backfillStart, backfillEnd)}>Backfill {formatDate(backfillStart)} – {formatDate(backfillEnd)}</button></div>}
+    {adSource !== "google" && !loading && needsSync.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-sm"><span className="text-amber-200">{needsSync.length} dates need an initial sync or recalculation.</span><button type="button" disabled={syncing} className={control} onClick={() => sync("range", backfillStart, backfillEnd)}>Backfill {formatDate(backfillStart)} – {formatDate(backfillEnd)}</button></div>}
 
     {picker && <ProfitDatePicker key={picker} mode={picker} start={start} end={end} days={days} max={today} close={() => setPicker(null)} apply={(first, last, selection) => { setStart(first); setEnd(last); setDays(selection); setPeriod("custom"); setPicker(null); }} />}
     <div className="overflow-hidden rounded-xl border border-white/10 bg-[#1A2235]">
-      <div className="border-b border-white/10 px-4 py-3"><h2 className="text-sm font-semibold">US AstroRekha Profit Sheet — {days.length ? `${days.length} selected days` : `${formatDate(start)} – ${formatDate(end, { day: "numeric", month: "short", year: "numeric" })}`}</h2><p className="mt-1 text-xs text-white/45">Profit = receipts − confirmed refunds − tax − ad spend, before processing and fulfilment costs. ROAS = net receipts ÷ ad spend.{!accountCount ? " Add US AstroRekha ad accounts to calculate spend, profit and ROAS." : ""}</p></div>
+      <div className="border-b border-white/10 px-4 py-3"><h2 className="text-sm font-semibold">US AstroRekha Profit Sheet — {days.length ? `${days.length} selected days` : `${formatDate(start)} – ${formatDate(end, { day: "numeric", month: "short", year: "numeric" })}`}</h2></div>
       {error && <p role="alert" className="px-4 py-4 text-sm text-red-300">{error}</p>}
       <div className="overflow-x-auto"><table className="w-full min-w-[1450px] text-sm">
         <caption className="sr-only">Soulmate daily receipts and profit. A dash means the data is unavailable.</caption>
@@ -140,7 +140,7 @@ export function SoulmateProfitPanel() {
         {!loading && !error && visible.length > 0 && <tfoot className="bg-white/5 font-medium"><tr>{columns.map(({ key }, i) => <td key={key} className={`px-4 py-4 ${i ? "text-right" : "text-left"} text-white/80`}>{key === "date" ? `Total · ${visible.length} days` : key === "orders" ? total(key) : key === "balance" ? "—" : key === "roas" ? total("adsInr") && total("revenue") !== null ? `${(total("revenue")! / total("adsInr")!).toFixed(2)}×` : "—" : money(total(key), key === "adsUsd" ? "USD" : "USD")}</td>)}</tr></tfoot>}
       </table></div>
     </div>
-    {updatedAt && <p className="text-xs text-white/35">Last refreshed {new Date(updatedAt).toLocaleString("en-US", { timeZone: "Asia/Kolkata" })} IST. Amounts received include tax. Shared account balances cannot be allocated to individual campaigns and are not included.</p>}
+    {updatedAt && <p className="text-xs text-white/35">Last refreshed {new Date(updatedAt).toLocaleString("en-US", { timeZone: "Asia/Kolkata" })} IST.</p>}
   </section>;
 }
 

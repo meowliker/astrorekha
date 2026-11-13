@@ -1,3 +1,4 @@
+import {readGoogleSpend, googleSpendForDay} from "@/lib/google-ads-reporting";
 import {withAdminAccess} from "@/lib/admin-access";
 import { parseAdSource, matchesAdSource, gaSourceFilter, type AdSource } from "@/lib/admin-acquisition";
 import { readAdSourceFinance } from "@/lib/admin-source-finance";
@@ -870,17 +871,24 @@ async function handleGET(request: NextRequest) {
     async function sourceProfitRows(mode: MatrixDayMode) {
       const saved = mode === dayMode ? savedRows : await readProfitSheetRows(supabase, startDate, endDate, mode);
       const finance = await readAdSourceFinance(supabase, "astrorekha", adSource, startDate, endDate, mode);
-      let unavailable = adSource === "google";
+      const savedRate = saved.find(row => row.adsCostUSD > 0 && row.adsCostINR > 0);
+      const rate = savedRate ? savedRate.adsCostINR / savedRate.adsCostUSD : await fetchExchangeRate();
+      const googleSpend = adSource === "google" ? await readGoogleSpend("astrorekha", startDate, endDate, mode, rate) : null;
+      let unavailable = false;
       const rows = finance.map(day => {
         const baseline = saved.find(r => r.date === day.date);
-        const known = adSource === "meta" && !!baseline;
+        const googleCost = googleSpend ? googleSpendForDay(googleSpend, day.date) : null;
+        const known = adSource === "meta" ? !!baseline : googleCost !== null;
+        const adsInr = adSource === "google" ? googleCost?.total || 0 : baseline?.adsCostINR || 0;
+        const adsUsd = adSource === "google" ? adsInr / rate : baseline?.adsCostUSD || 0;
+        const indianSpend = adSource === "google" ? googleCost?.indian || 0 : baseline?.indianAdSpendInr || 0;
         if (!known) unavailable = true;
         const revenue = (day.received - day.refund) / 100;
-        const gst = indianAdGstApplies(day.date) ? calculateProfitSheetGst(revenue, .18, known ? baseline!.indianAdSpendInr || 0 : 0).gst : revenue * .05;
+        const gst = indianAdGstApplies(day.date) ? calculateProfitSheetGst(revenue, .18, known ? indianSpend : 0).gst : revenue * .05;
         return { date: day.date, day: new Date(day.date).toLocaleDateString("en", { weekday: "short", timeZone: "UTC" }),
           revenue, grossRevenue: day.received / 100, refundAmount: day.refund / 100, gst,
-          adsCostUSD: known ? baseline!.adsCostUSD : 0, adsCostINR: known ? baseline!.adsCostINR : 0,
-          netRevenue: known ? revenue - gst - baseline!.adsCostINR : 0, profitPercent: 0, roas: 0,
+          adsCostUSD: known ? adsUsd : 0, adsCostINR: known ? adsInr : 0,
+          netRevenue: known ? revenue - gst - adsInr : 0, profitPercent: 0, roas: 0,
           bundleRevenue: (day.bundleReceived - day.bundleRefund) / 100, transactionCount: day.orders,
           bundlePurchases: day.bundleOrders, salesCount: day.orders, refundCount: day.refunds };
       });

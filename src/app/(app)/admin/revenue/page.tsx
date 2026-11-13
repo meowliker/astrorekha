@@ -870,9 +870,6 @@ function AdminRevenuePage() {
       if (!token) return;
 
       let url = `/api/admin/profit-sheet?token=${encodeURIComponent(token)}&startDate=${encodeURIComponent(requestedStartDate)}&endDate=${encodeURIComponent(requestedEndDate)}&dayMode=${dayMode}`;
-      if (syncLastTwoDays && adSource === "all") {
-        url += "&sync=last2";
-      }
 
       // Use custom exchange rate if provided
       const rateToUse = customRate || (rateInput ? parseFloat(rateInput) : undefined);
@@ -880,7 +877,19 @@ function AdminRevenuePage() {
         url += `&exchangeRate=${rateToUse}`;
       }
 
-      const res = await fetch(sourceUrl(url, adSource));
+      if (syncLastTwoDays && adSource !== "google") {
+        // Refresh the selected dates in bounded requests, including older incomplete days.
+        const last = requestedEndDate < getCurrentBusinessDateIso() ? requestedEndDate : getCurrentBusinessDateIso();
+        for (let from = requestedStartDate; from <= last;) {
+          const end = new Date(Date.parse(from) + 6 * 86400000).toISOString().slice(0, 10);
+          const to = end < last ? end : last;
+          const response = await fetch(sourceUrl(`${url}&sync=range&syncStartDate=${from}&syncEndDate=${to}`, adSource), {cache: "no-store"});
+          if (requestId !== profitSheetRequestIdRef.current) return;
+          if (!response.ok) throw new Error((await response.json()).error || "Unable to refresh selected dates.");
+          from = new Date(Date.parse(to) + 86400000).toISOString().slice(0, 10);
+        }
+      }
+      const res = await fetch(sourceUrl(url, adSource), {cache: "no-store"});
       if (requestId !== profitSheetRequestIdRef.current) return;
       if (res.status === 401) {
         localStorage.removeItem("admin_session_token");
@@ -998,7 +1007,7 @@ function AdminRevenuePage() {
       const token = localStorage.getItem("admin_session_token");
       if (!token) return;
 
-      if (syncLastTwoDays && adSource === "all") {
+      if (syncLastTwoDays && adSource !== "google") {
         const syncUrl = `/api/admin/profit-sheet?token=${encodeURIComponent(token)}&startDate=${encodeURIComponent(
           analyticsStartDate
         )}&endDate=${encodeURIComponent(analyticsEndDate)}&sync=last2`;
@@ -1387,14 +1396,14 @@ function AdminRevenuePage() {
         <div className={activeTab === "dashboard" ? "max-w-[1500px] mx-auto" : "max-w-6xl mx-auto"}>
           <div className="flex items-center justify-between mb-4">
             <button
-                onClick={() => router.push("/admin")}
+                onClick={() => router.push(sourceUrl("/admin", adSource))}
                 className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-white/70 text-sm"
               >
                 ←
               </button>
             <h1 className="text-2xl font-bold text-white">Revenue Dashboard</h1>
             <div className="flex items-center gap-2">
-              {activeTab !== "dashboard" && (
+              {activeTab !== "dashboard" && adSource !== "google" && (
               <button
                 onClick={() => {
                   setMetaAccountSettingsMessage(null);
@@ -1453,7 +1462,7 @@ function AdminRevenuePage() {
               Profit Sheet
             </button>
             <button
-              onClick={() => setActiveTab("meta-details")}
+              onClick={() => adSource === "google" ? router.push(sourceUrl("/admin/tracking", adSource)) : setActiveTab("meta-details")}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 activeTab === "meta-details"
                   ? "bg-primary text-white shadow-lg"
@@ -2633,7 +2642,7 @@ function ProfitSheetTab({
         </div>
         {gstRefreshError && <p role="alert" className="mt-3 text-xs text-red-300">{gstRefreshError}</p>}
 	        <p className="text-white/30 text-xs mt-3">
-	          Each date covers 11:30 AM IST to 11:29 AM IST the next day. Revenue and ad spend use the same reporting window; each account&apos;s configured start and end times still apply.
+	          Reporting day: 11:30 AM IST – 11:29 AM IST the next day.
 	        </p>
 	        {selectedDates.length > 0 && (
 	          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2">
@@ -3642,11 +3651,7 @@ function MetaBreakdownTab({
         </div>
       )}
 
-      {data?.attribution?.note && (
-        <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
-          <p className="text-blue-200 text-sm">{data.attribution.note}</p>
-        </div>
-      )}
+
 
       <div className="space-y-4">
         {breakdownSections.map((section) => renderBreakdownSection(section))}

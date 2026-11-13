@@ -2,7 +2,8 @@
 
 import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
+import {reportSource, reportWorkspaceUrl} from "@/lib/admin-report-workspace";
 import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
 import type { SoulmateOrderView } from "@/lib/soulmate-order-view";
 import { soulmateOrderStage, type SoulmateOrderStage } from "@/lib/soulmate-order-status";
@@ -19,6 +20,7 @@ const stageStyle: Record<SoulmateOrderStage, string> = {
 export default function SoulmateOrderPage({ params: paramsPromise }: { params: Promise<{ id: string }> }) {
   const params = use(paramsPromise);
   const router=useRouter();
+  const adSource = reportSource(usePathname());
   const [order,setOrder]=useState<SoulmateOrderView|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState("");
 
   const load=useCallback(async()=>{
@@ -45,7 +47,7 @@ export default function SoulmateOrderPage({ params: paramsPromise }: { params: P
     <header className="border-b border-white/10 bg-[#111827]">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4">
         <div className="flex min-w-0 items-center gap-3">
-          <Link href="/admin/soulmate/orders" aria-label="Back to Soulmate orders" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white/10 text-white/70 transition-colors hover:bg-white/15 hover:text-white"><ArrowLeft className="h-4 w-4" /></Link>
+          <Link href={reportWorkspaceUrl("/admin/soulmate/orders", adSource)} aria-label="Back to Soulmate orders" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white/10 text-white/70 transition-colors hover:bg-white/15 hover:text-white"><ArrowLeft className="h-4 w-4" /></Link>
           <div className="min-w-0"><h1 className="truncate text-xl font-semibold">{order?.customer_name || "Soulmate order"}</h1><p className="truncate text-xs text-white/45">{params.id}</p></div>
           {stage && <span className={`hidden rounded-full border px-2.5 py-1 text-xs font-medium sm:inline-flex ${stageStyle[stage.id]}`}>{stage.label}</span>}
         </div>

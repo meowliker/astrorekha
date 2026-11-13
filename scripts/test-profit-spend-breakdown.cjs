@@ -322,3 +322,11 @@ test('Google-only profit uses source sales and Google spend, excluding saved Met
  const {status,body}=await f.get('token=test&adSource=google&startDate=2026-09-07&endDate=2026-09-07&exchangeRate=100');
  assert.equal(status,200);assert.equal(body.rows[0].revenue,1000);assert.equal(body.rows[0].adsCostINR,200);assert.equal(body.rows[0].netRevenue,750);assert.equal(body.rows[0].roas,5);assert.equal(f.requests.length,0);assert.equal(f.storedRows.length,1);
 });
+
+test('Meta selected-range refresh updates the canonical ledger before projecting source sales',async()=>{
+ const f=fixture({finance:[{date:'2026-09-07',received:100000,refund:0,bundleReceived:100000,bundleRefund:0,orders:1,refunds:0,bundleOrders:1}]});
+ const {status,body}=await f.get('token=test&adSource=meta&startDate=2026-09-07&endDate=2026-09-07&sync=range&exchangeRate=100');
+ assert.equal(status,200);assert.equal(f.storedRows.length,1);assert.equal(body.rows[0].revenue,1000);
+ assert.equal(body.rows[0].adsCostINR,f.storedRows[0].ads_cost_inr);assert.ok(body.rows[0].adsCostINR>0);
+ assert.equal(body.syncedRange.start,'2026-09-07');assert.equal(body.syncWarning,null);
+});

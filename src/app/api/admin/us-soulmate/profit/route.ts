@@ -44,9 +44,9 @@ async function handleGET(request: NextRequest) {
       return { ...saved, date: day.date, orders: day.orders, received: day.received, refund: day.refund, revenue,
         salesGst: day.salesTax, adsUsd: adSource === "google" ? cost ? Math.round(cost.total * 100 / 1) : null : known ? saved!.adsUsd : null, adsInr, adGst, balance: null, balanceCapturedAt: null,
         profit: adsInr === null || adGst === null ? null : revenue - day.salesTax - adsInr - adGst,
-        roas: adsInr ? revenue / adsInr : null, accounts: adSource === "meta" && known ? saved!.accounts : [], stale: false };
+        roas: adsInr ? revenue / adsInr : null, accounts: adSource === "meta" && known ? saved!.accounts : [], stale: adSource === "meta" ? !saved || saved.stale : false };
     });
-    return json({ ...result, rows, adSource, missing: [], warnings: google?.warnings || [] });
+    return json({ ...result, rows, adSource, missing: adSource === "meta" ? result.missing : [], warnings: google?.warnings || [] });
   } catch { return json({ error: "Unable to load saved Soulmate profit rows." }, 503); }
 }
 async function handlePOST(request: NextRequest) {
