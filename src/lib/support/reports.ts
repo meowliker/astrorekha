@@ -1,3 +1,4 @@
+import { resolveSketchImage, sketchImageReference } from "@/lib/sketch-image";
 import { sketchPatch } from "./sketch-options";
 import { NextRequest } from "next/server";
 import sharp from "sharp";
@@ -324,7 +325,9 @@ export async function recoverReport(
   );
   if (!force && reportReady(key, old, true)) {
     if (key === "soulmateSketch")
-      await downloadImage(String(old.sketch_image_url));
+      await downloadImage(
+        await resolveSketchImage(String(old.sketch_image_url), userId),
+      );
     return { ready: true, report: key, reused: true };
   }
   // Keep the previous saved content for traceability. Never remove an existing palm image.
@@ -724,18 +727,9 @@ export async function recoverReport(
         upsert: false,
       }),
     );
-    const savedUrl = db().storage.from("palm-images").getPublicUrl(assetPath)
-      .data.publicUrl;
-    const accessible = await fetch(savedUrl, {
-      method: "HEAD",
-      redirect: "error",
-      cache: "no-store",
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!accessible.ok)
-      throw new SupportError(
-        "The saved sketch image is not accessible. Keep the case open.",
-      );
+    const savedUrl = sketchImageReference(assetPath, userId);
+    // Verify the exact private object using the same signed-link path as app/support reads.
+    await downloadImage(await resolveSketchImage(savedUrl, userId));
     checked(
       await db().from(spec.table).upsert(
         {

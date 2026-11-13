@@ -36,6 +36,8 @@ If the customer reports a wrong image despite matching saved preferences, use `r
 
 After completion, inspect the saved answers and image, verify app availability, then save the specific Gmail draft and apply the current labels/read state. Do not claim that an image visually matches unless it was viewed. If required answers are missing or another operator changed the record, review the latest data rather than inventing values or overwriting it.
 
+Recovered sketch files stay private. App and support reads issue fresh, temporary viewing links; never paste those links into customer emails. For a prior inaccessible-image recovery, resume with `recover_report` and `force:false`. No kit or token change is needed for this server fix.
+
 ## Workflow
 
 Find the customer by exact email, phone number in payment records, user ID, internal payment ID, PayU ID, or gateway transaction reference. Read the full email conversation, including previous replies. Create a support case with the Gmail thread ID, customer ID and evidence. Search by other references if the first search finds nothing; a missing account match does not establish that the customer did not pay.
