@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { audit, checked, db, type Actor } from "./auth";
-import { requireBrowserOwner, requireText, SupportError } from "./policy";
+import { requireOwnerAccess, requireText, SupportError } from "./policy";
 import {
   REPLY_TOPICS,
   type RuleSettings,
@@ -130,7 +130,7 @@ export async function publishRules(
   actor: Actor,
   body: Record<string, unknown>,
 ) {
-  requireBrowserOwner(actor);
+  requireOwnerAccess(actor);
   const baseVersion = Number(body.baseVersion);
   if (!Number.isSafeInteger(baseVersion) || baseVersion < 1)
     throw new SupportError("Reload the current rules before publishing");

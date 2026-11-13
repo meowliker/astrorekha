@@ -1,7 +1,26 @@
 import { sketchFields } from "./sketch-options";
 // Returned alongside live rules so installed clients discover new server capabilities without a kit upgrade.
 export const SUPPORT_CAPABILITIES = {
-  version: "2026-11-13-private-sketch-images",
+  version: "2026-11-13-delegated-owner-access",
+  clientUpdate: {
+    url: "https://astrorekha.com/downloads/astrorekha-support-kit.zip",
+    instructions:
+      "Existing clients support repair approvals. Update scripts/ and docs/ from the current kit for team and audit commands. Preserve .env.support and all local secrets. Read the new docs and run start again after updating.",
+  },
+  ownerOperations: {
+    authority:
+      "Read actorAuthority from this response. Only canApproveRepairs=true authorizes approval; only canManageWorkspace=true authorizes owner operations.",
+    decision: {
+      method: "POST",
+      path: "actions/<actionId>",
+      body: { decision: "approve" },
+    },
+    instructions: [
+      "For a verified repair returning awaiting_approval, a delegated owner operator may approve it through POST actions/<actionId> with decision approve after reviewing the customer evidence and requested effect. Decisions reject and release are also supported. Release is only for interrupted actions older than ten minutes; inspect saved state before retrying.",
+      "When actorAuthority.delegatedOwnerApi is true, no separate business-owner intervention is required. Follow the current delegation rule; preserve an audited request and approval. If clarification is necessary, ask the support operator in this Codex session, not the business owner.",
+      "Delegated owner API access also permits team invitations/management, rule publication, audit inspection, own-token management and reviewed case resolution. Use the documented API contracts. It does not introduce refund, mail-sending, raw database or unsupported repair endpoints.",
+    ],
+  },
   reportInspection: {
     method: "GET",
     path: "customers/<userId>/reports/<reportKey>",
@@ -33,6 +52,6 @@ export const SUPPORT_CAPABILITIES = {
     "Continue routine verified recovery autonomously using supported actions. A generic needs_review is not proof that owner approval is needed: inspect result.message and saved report state for a safe resume step.",
     "For corrected birth details, recover each affected unlocked birth-based report with saved inputs before a ready reply. Do not regenerate unrelated reports.",
     "For a pending provider job, continue bounded checks during the run instead of immediately abandoning the customer. If progress stalls or inputs/ownership conflict, leave an accurate blocker; never fabricate a successful fix.",
-    "Email corrections, extra questions, unpurchased access and payment mapping still need owner approval. Refunds, Android migrations and unimplemented application fixes remain outside this API.",
+    "Email corrections, extra questions, unpurchased access and payment mapping need approval by an authorized operator. A delegated owner API token can provide it directly; check actorAuthority. Refunds, Android migrations and unimplemented application fixes remain outside this API.",
   ],
 };

@@ -9,7 +9,7 @@ const [method = "GET", endpoint = "me", bodyFile] = start
   : args;
 if (
   !["GET", "POST"].includes(method) ||
-  !/^\/?(me|rules|search|customers|cases|actions|tokens)([/?][a-zA-Z0-9_?=&%@.+/-]*)?$/.test(
+  !/^\/?(me|rules|search|customers|cases|actions|tokens|team|audit)([/?][a-zA-Z0-9_?=&%@.+/-]*)?$/.test(
     endpoint,
   )
 )
@@ -110,4 +110,10 @@ if (!response.ok) {
       2,
     ),
   );
+} else if (typeof data.token === "string" && data.token.startsWith("ar_support_")) {
+  const tokenFile = ".support-issued-token-" + randomBytes(6).toString("hex");
+  await writeFile(tokenFile, data.token + "\n", { mode: 0o600, flag: "wx" });
+  const { token: privateToken, ...metadata } = data;
+  void privateToken;
+  console.log(JSON.stringify({ ...metadata, tokenFile, instruction: "New token saved locally with private permissions. Never paste it into chat. The current .env.support was not changed." }, null, 2));
 } else console.log(JSON.stringify(data, null, 2));

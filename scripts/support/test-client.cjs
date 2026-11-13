@@ -18,7 +18,7 @@ try {
   );
   writeFileSync(
     path.join(dir, "fixture.mjs"),
-    `import{writeFileSync}from'node:fs';globalThis.fetch=async(url,options)=>{if(options.headers.Authorization!=='Bearer ar_support_fixturetoken')throw Error('Token not loaded');writeFileSync('request.json',JSON.stringify({url,receipt:options.headers['x-support-rules-receipt']}));if(process.env.FIXTURE_FAIL)return new Response(JSON.stringify({error:'Reload current rules'}),{status:409});return new Response(JSON.stringify(url.endsWith('/rules')?{version:7,content:'Live workflow instructions',settings:{},receipt:'private-fixture-receipt',safeguards:[],capabilities:{correctSketch:{kind:"correct_sketch"}}}:{}),{status:200});};`,
+    `import{writeFileSync}from'node:fs';globalThis.fetch=async(url,options)=>{if(options.headers.Authorization!=='Bearer ar_support_fixturetoken')throw Error('Token not loaded');writeFileSync('request.json',JSON.stringify({url,receipt:options.headers['x-support-rules-receipt']}));if(process.env.FIXTURE_FAIL)return new Response(JSON.stringify({error:'Reload current rules'}),{status:409});return new Response(JSON.stringify(url.endsWith('/rules')?{version:7,content:'Live workflow instructions',settings:{},receipt:'private-fixture-receipt',safeguards:[],actorAuthority:{canApproveRepairs:true,delegatedOwnerApi:true},capabilities:{correctSketch:{kind:"correct_sketch"}}}:(url.endsWith("/tokens") && options.method==="POST"?{token:"ar_support_newprivate",expiresInDays:30}:{})),{status:200});};`,
   );
   const env = { ...process.env };
   delete env.ASTROREKHA_SUPPORT_TOKEN;
@@ -46,6 +46,7 @@ try {
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /Live workflow instructions/);
   assert.match(r.stdout, /correct_sketch/);
+  assert.equal(JSON.parse(r.stdout).actorAuthority.canApproveRepairs,true);
   assert.ok(
     !r.stdout.includes("private-fixture-receipt") &&
       !r.stdout.includes("ar_support_fixturetoken"),
@@ -60,6 +61,15 @@ try {
     JSON.parse(readFileSync(path.join(dir, "request.json"), "utf8")).receipt,
     "private-fixture-receipt",
   );
+  assert.equal(run(["GET","team"]).status,0);
+  assert.equal(run(["GET","audit"]).status,0);
+  writeFileSync(path.join(dir,"token-request.json"),JSON.stringify({name:"replacement"}));
+  r=run(["POST","tokens",path.join(dir,"token-request.json")]);assert.equal(r.status,0,r.stderr);
+  assert.ok(!r.stdout.includes("ar_support_newprivate"));
+  const issued=JSON.parse(r.stdout).tokenFile;
+  assert.equal(readFileSync(path.join(dir,issued),"utf8").trim(),"ar_support_newprivate");
+  assert.equal(statSync(path.join(dir,issued)).mode & 0o777,0o600);
+  assert.match(readFileSync(path.join(dir,".env.support"),"utf8"),/fixturetoken/);
   r = run(["GET", "search?q=fixture"], true);
   assert.equal(r.status, 1);
   assert.match(r.stdout, /Reload current rules/);
