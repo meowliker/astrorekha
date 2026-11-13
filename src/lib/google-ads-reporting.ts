@@ -24,7 +24,7 @@ export type GoogleAccountReport = {
   hourlySpendInr: Record<string, Record<string, number[]>>;
   warnings: string[];
 };
-export type GoogleSpendReport = { accounts: GoogleAccountReport[]; complete: boolean; warnings: string[]; fetchedAt: string };
+export type GoogleSpendReport = { failedAccountIds?: string[]; accounts: GoogleAccountReport[]; complete: boolean; warnings: string[]; fetchedAt: string };
 const cache = new Map<string, { until: number; promise: Promise<Snapshot> }>();
 let auth: InstanceType<typeof google.auth.GoogleAuth> | undefined;
 
@@ -179,7 +179,10 @@ export async function readGoogleSpend(funnel: AcquisitionFunnel, start: string, 
     try { const raw = await snapshot(id, shift(start, -1), shift(end, 2)); return { report: aggregateGoogleSnapshot(raw, funnel, start, end, mode, rate), fetchedAt: raw.fetchedAt }; }
     catch (error) { return { report: { account: { id: `google:${id}`, name: `Google · ${id}`, currency: '', timezone: '', error: error instanceof Error ? error.message : 'Google Ads unavailable' }, campaigns: [], dailySpendInr: {}, hourlySpendInr: {}, warnings: [error instanceof Error ? error.message : 'Google Ads unavailable'] } satisfies GoogleAccountReport, fetchedAt: new Date().toISOString() }; }
   }));
-  return { accounts: results.map(r => r.report), complete: results.every(r => !r.report.account.error), warnings: results.flatMap(r => r.report.warnings), fetchedAt: results.map(r => r.fetchedAt).sort()[0] };
+  return googleSpendReport(results);
+}
+export function googleSpendReport(results: {report: GoogleAccountReport; fetchedAt: string}[]): GoogleSpendReport {
+  return { failedAccountIds: results.filter(r => r.report.account.error).map(r => r.report.account.id), accounts: results.map(r => r.report).filter(r => r.campaigns.length > 0), complete: results.every(r => !r.report.account.error), warnings: results.flatMap(r => r.report.warnings), fetchedAt: results.map(r => r.fetchedAt).sort()[0] };
 }
 /** Saved Google campaign IDs/names only. A click ID by itself cannot identify a campaign. */
 export function matchGoogleCampaign(campaigns: TrackingCampaign[], campaign: string | null | undefined) {

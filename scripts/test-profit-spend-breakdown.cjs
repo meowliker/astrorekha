@@ -69,6 +69,7 @@ function fixture(options = {}) {
     if (options.fail && id === 'inr') return { ok: false, json: async () => ({ error: { message: 'Token failed' } }) };
     if (options.permissionDenied && id === 'inr') return { ok: false, json: async () => ({ error: { code: 200, message: 'Ad account owner has NOT grant ads_read permission' } }) };
     if (!url.pathname.endsWith('/insights')) return { ok: true, json: async () => ({ name: id, currency: id === 'inr' ? 'INR' : 'USD', timezone_offset_hours_utc: id === 'inr' ? 5.5 : -6 }) };
+    assert.deepEqual(JSON.parse(url.searchParams.get('filtering')), [{field:'campaign.id',operator:'IN',value:['111111']}]);
     const hourly = url.searchParams.has('breakdowns');
     const rows = options.zero ? [] : hourly
       ? (options.hourlyByAccount?.[id] || (id === 'inr' ? [[11, 200], [12, 300]] : [[0, 5], [1, 10], [2, 20]])).map(([hour, spend]) => ({
@@ -79,6 +80,7 @@ function fixture(options = {}) {
   };
   const route = loadTS('src/app/api/admin/profit-sheet/route.ts', (name) => {
     // Workspace authorization is exercised separately by test-admin-access-gate.cjs.
+    if (name === '@/lib/normal-meta-campaigns') return { scopeNormalMetaCredentials: async (_db, accounts) => accounts.map(a => ({...a,campaignIds:['111111']})), normalCampaignFilter: () => JSON.stringify([{field:'campaign.id',operator:'IN',value:['111111']}]) };
     if (name === '@/lib/admin-access') return { withAdminAccess: handler => handler };
     if (name === '@/lib/admin-acquisition') return { parseAdSource: params => params.get('adSource') || 'all' };
     if (name === '@/lib/admin-source-finance') return { readAdSourceFinance: async () => { if (!options.finance) throw new Error('Unexpected source-finance call'); return options.finance; } };

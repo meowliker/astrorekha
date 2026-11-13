@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import crypto from "crypto";
 import { classifyPayUEvent, classifyStoredPaymentEvent } from "@/lib/finance-events";
-import { getMetaAccountCredentialsForRange } from "@/lib/meta-ad-accounts";
+import { normalMetaCredentials, normalCampaignFilter } from "@/lib/normal-meta-campaigns";
 
 export const dynamic = "force-dynamic";
 
@@ -713,7 +713,8 @@ function buildInsightsUrl(
   accessToken: string,
   fields: string,
   accountWindow: ClippedAccountWindow,
-  level?: "campaign" | "adset" | "ad"
+  level?: "campaign" | "adset" | "ad",
+  campaignFilter?: string
 ): string {
   const params = new URLSearchParams({
     fields,
@@ -725,6 +726,7 @@ function buildInsightsUrl(
   if (level) {
     params.set("level", level);
   }
+  if (campaignFilter) params.set("filtering", campaignFilter);
   return `${META_BASE_URL}/act_${accountId}/insights?${params.toString()}`;
 }
 
@@ -774,7 +776,7 @@ async function handleGET(request: NextRequest) {
       ? resolveCustomBusinessWindow(customStartDateValue, customEndDate, now)
       : resolvePresetBusinessWindow(datePreset, now);
 
-    const credentials = await getMetaAccountCredentialsForRange(supabase, {
+    const credentials = await normalMetaCredentials(supabase, {
       startDate: businessWindow.startDateIso,
       endDate: businessWindow.endDateIso,
       startMillis: businessWindow.start.getTime(),
@@ -897,7 +899,10 @@ async function handleGET(request: NextRequest) {
     const insightFields = "spend,impressions,clicks,reach,actions,purchase_roas,website_purchase_roas";
     const accountBreakdowns = (
       await Promise.all(
-        credentials.map(async ({ accountId: adAccountId, accessToken, startDate, startTime, endDate, endTime }) => {
+        credentials.map(async (credential) => {
+          const { accountId: adAccountId, accessToken, startDate, startTime, endDate, endTime } = credential;
+          const campaignFilter = normalCampaignFilter(credential);
+          const allowed = new Set(credential.campaignIds);
           const normalizedAdAccountId = normalizeAdAccountId(adAccountId);
           if (!normalizedAdAccountId) return null;
 
@@ -914,7 +919,7 @@ async function handleGET(request: NextRequest) {
             normalizedAdAccountId,
             accessToken,
             insightFields,
-            accountWindow
+            accountWindow, undefined, campaignFilter
           );
           const campaignsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget&limit=200&access_token=${accessToken}`;
           const campaignInsightsUrl = buildInsightsUrl(
@@ -922,21 +927,21 @@ async function handleGET(request: NextRequest) {
             accessToken,
             `campaign_id,campaign_name,${insightFields}`,
             accountWindow,
-            "campaign"
+            "campaign", campaignFilter
           );
           const adsetInsightsUrl = buildInsightsUrl(
             normalizedAdAccountId,
             accessToken,
             `adset_id,adset_name,campaign_id,${insightFields}`,
             accountWindow,
-            "adset"
+            "adset", campaignFilter
           );
           const adInsightsUrl = buildInsightsUrl(
             normalizedAdAccountId,
             accessToken,
             `ad_id,ad_name,adset_id,campaign_id,${insightFields}`,
             accountWindow,
-            "ad"
+            "ad", campaignFilter
           );
           const adsetsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/adsets?fields=id,name,status,campaign_id,daily_budget,lifetime_budget&limit=500&access_token=${accessToken}`;
           const adsUrl = `${META_BASE_URL}/act_${normalizedAdAccountId}/ads?fields=id,name,status,adset_id&limit=500&access_token=${accessToken}`;
@@ -998,7 +1003,7 @@ async function handleGET(request: NextRequest) {
             adsByAdset.get(adsetId)!.push(ad);
           });
 
-          const campaigns: CampaignData[] = campaignsData.map((campaign: MetaReportingRow) => {
+          const campaigns: CampaignData[] = campaignsData.filter((campaign: MetaReportingRow) => allowed.has(campaign.id)).map((campaign: MetaReportingRow) => {
             const metrics = aggregateInsightRows(
               campaignInsightsMap.get(campaign.id) || [],
               accountWindow,

@@ -17,7 +17,7 @@ import {
   META_TRACKING_URL_PARAMETERS,
   type MarketingEventName,
 } from "@/lib/marketing-events";
-import { getMetaAccountCredentialsForRange } from "@/lib/meta-ad-accounts";
+import { normalMetaCredentials, normalCampaignFilter } from "@/lib/normal-meta-campaigns";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -200,7 +200,7 @@ async function fetchMetaSpend(supabase: ReturnType<typeof getSupabaseAdmin>, sta
   adsetSpend: Map<string, SpendMetrics>;
   campaignSpend: Map<string, SpendMetrics>;
 }> {
-  const credentials = await getMetaAccountCredentialsForRange(supabase, { startDate, endDate });
+  const credentials = await normalMetaCredentials(supabase, { startDate, endDate });
   const adSpend = new Map<string, SpendMetrics>();
   const adsetSpend = new Map<string, SpendMetrics>();
   const campaignSpend = new Map<string, SpendMetrics>();
@@ -212,7 +212,8 @@ async function fetchMetaSpend(supabase: ReturnType<typeof getSupabaseAdmin>, sta
   const usdInrRate = await fetchUsdInrRate();
 
   await Promise.all(
-    credentials.map(async ({ accountId, accessToken }) => {
+    credentials.map(async (credential) => {
+      const { accountId, accessToken } = credential;
       try {
         const accountBase = `${META_BASE_URL}/act_${accountId}`;
         const accountResponse = await fetch(`${accountBase}?fields=currency&access_token=${accessToken}`, {
@@ -222,7 +223,7 @@ async function fetchMetaSpend(supabase: ReturnType<typeof getSupabaseAdmin>, sta
         const currency = String(account?.currency || "INR").toUpperCase();
         const multiplier = currency === "INR" ? 1 : currency === "USD" ? usdInrRate : 1;
         const dateParams = `time_range=${encodeURIComponent(JSON.stringify({ since: startDate, until: endDate }))}`;
-        let nextUrl: string | null = `${accountBase}/insights?fields=campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks&level=ad&${dateParams}&limit=500&access_token=${accessToken}`;
+        let nextUrl: string | null = `${accountBase}/insights?fields=campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks&level=ad&${dateParams}&filtering=${encodeURIComponent(normalCampaignFilter(credential))}&limit=500&access_token=${accessToken}`;
         let pageCount = 0;
 
         while (nextUrl && pageCount < 20) {
