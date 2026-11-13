@@ -127,17 +127,22 @@ async function read<T>(db: SupabaseClient, path: string): Promise<T | null> {
   ) as T;
 }
 async function write(db: SupabaseClient, path: string, value: unknown) {
-  const { error } = await db.storage
-    .from(REVENUE_BUCKET)
-    .upload(path, gzipSync(Buffer.from(JSON.stringify(value))), {
-      contentType: "application/gzip",
-      cacheControl: "0",
-      upsert: true,
-    });
-  if (error)
-    throw new Error(
+  const bytes = gzipSync(Buffer.from(JSON.stringify(value)));
+  // Upserting the same snapshot bytes is idempotent. A transient storage outage
+  // must not discard a completed sync or force the user to start it again.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { error } = await db.storage
+      .from(REVENUE_BUCKET)
+      .upload(path, bytes, {
+        contentType: "application/gzip",
+        cacheControl: "0",
+        upsert: true,
+      });
+    if (!error) return;
+    if (attempt === 2) throw new Error(
       "Unable to save revenue data in Supabase. Previous data has been retained.",
     );
+  }
 }
 async function ensurePrivateBucket(db: SupabaseClient) {
   const { data, error } = await db.storage.getBucket(REVENUE_BUCKET);
