@@ -566,7 +566,7 @@ function TrackingPage() {
             <p className="mt-1 text-sm text-slate-400">Soulmate campaign performance and verified paid orders, joined by saved UTMs.</p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
-            <button onClick={() => setCampaignsOpen(true)} className="rounded-lg border border-white/10 px-3 py-2 text-sm hover:bg-white/5">Campaigns</button>
+            {adSource !== "google" && <button onClick={() => setCampaignsOpen(true)} className="rounded-lg border border-white/10 px-3 py-2 text-sm hover:bg-white/5">Campaigns</button>}
             <TrackingDateRangePicker value={dates} maxDate={maxDate} onChange={(range) => { setDatesCustomized(true); applyDates(range); }} />
             <button onClick={() => token && void Promise.all((showBoth ? ["business_1130_ist", "calendar_ist"] as TrackingDayMode[] : [primaryMode]).map((mode) => fetchSummary(token, dates, mode, true)))} title="Refresh tracking data" className="rounded-lg border border-white/10 p-2 hover:bg-white/5"><RefreshCw size={18} className={refreshing ? "animate-spin" : ""} /></button>
           </div>
