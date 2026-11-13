@@ -5,8 +5,9 @@ const original = Module._resolveFilename;
 Module._resolveFilename = function(r,p,...rest) { return original.call(this,r.startsWith('@/')?path.join(process.cwd(),'src',r.slice(2)):r,p,...rest); };
 require('ts-node').register({transpileOnly:true,compilerOptions:{module:'CommonJS',moduleResolution:'node',jsx:'react-jsx'}});
 process.env.ANTHROPIC_API_KEY='fixture-only';
+process.env.REPORT_SESSION_SECRET='test-only-report-signature';
 const uid='support-test';
-let rows, submissions=0, mode='success', providerState='success';
+let rows, submissions=0, mode='success', providerState='success', signingFails=false, signedCount=0;
 const copy=x=>JSON.parse(JSON.stringify(x));
 function query(table) {
  let filters=[],operation=null,patch=null,single=false,ignore=false;
@@ -27,7 +28,7 @@ const fakeDb={from:query,rpc:async(name,{p_action})=>{
  a.before_data={report:'soulmateSketch',record:copy(s)};
  Object.assign(s,{question_answers:{...s.question_answers,...a.payload.answers},status:'pending',provider_job_id:null,sketch_image_url:null,support_recovery_action_id:a.id,updated_at:new Date().toISOString()});
  return {data:{answers:s.question_answers},error:null};
-},storage:{from:()=>({upload:async()=>({data:{},error:null}),getPublicUrl:()=>({data:{publicUrl:'https://storage.example.invalid/corrected.jpg'}})})}};
+},storage:{from:()=>({upload:async()=>({data:{},error:null}),createSignedUrl:async(path,ttl)=>{assert.match(path,/^recovered_sketches\/support-test\/action-/);assert.equal(ttl,3600);signedCount++;return signingFails?{data:null,error:'object unavailable'}:{data:{signedUrl:'https://storage.example.invalid/corrected.jpg?signature='+signedCount},error:null}}})}};
 require('../../src/lib/supabase-admin').getSupabaseAdmin=()=>fakeDb;
 const provider=require('../../src/lib/soulmate-sketch');
 const realGenerate=provider.generateSoulmateSketchFromKie;
@@ -42,7 +43,7 @@ require('../../src/lib/soulmate-fulfillment').downloadImage=async()=>({buffer:Bu
 global.fetch=async()=>({ok:true});
 const {validatedPayload,executeAction}=require('../../src/lib/support/actions');
 const {inspectReport}=require('../../src/lib/support/customer');
-function reset(){submissions=0;mode='success';providerState='success';rows={
+function reset(){submissions=0;mode='success';providerState='success';signingFails=false;signedCount=0;rows={
  users:[{id:uid,email:'fixture@example.invalid',gender:'female',unlocked_features:{soulmateSketch:true}}],user_profiles:[],payments:[],settings:[],support_audit:[],
  soulmate_sketches:[{id:'sketch-id',user_id:uid,status:'complete',generation_count:1,question_answers:{attracted_to:'female',age_group:'40-45',vibe:'bold',future_goal:'career',appearance:'indian'},sketch_image_url:'https://storage.example.invalid/old.jpg',created_at:'2026-11-12T00:00:00Z',updated_at:'2026-11-12T00:00:00Z'}],support_actions:[]};}
 function action(kind='correct_sketch',payload={answers:{attracted_to:'male',age_group:'35-40'},expectedUpdatedAt:rows.soulmate_sketches[0].updated_at}){const a={id:'action-'+rows.support_actions.length,customer_id:uid,actor_id:'staff',kind,payload,status:'running'};rows.support_actions.push(a);return a;}
@@ -51,18 +52,21 @@ function action(kind='correct_sketch',payload={answers:{attracted_to:'male',age_
  reset();const a=action();let r=await executeAction(a);assert.equal(r.status,'complete');assert.equal(submissions,1);
  const s=rows.soulmate_sketches[0];assert.equal(s.generation_count,1);assert.equal(s.question_answers.vibe,'bold');assert.equal(s.question_answers.appearance,'indian');assert.equal(s.question_answers.attracted_to,'male');assert.equal(s.question_answers.age_group,'35-40');assert.equal(a.before_data.record.question_answers.age_group,'40-45');assert.equal(a.before_data.record.sketch_image_url,'https://storage.example.invalid/old.jpg');
  const {NextRequest}=require('next/server');
- const request=(endpoint,body)=>new NextRequest('https://astrorekha.com/api/soulmate-sketch/'+endpoint,{method:body?'POST':'GET',headers:{cookie:'ar_access='+uid,'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
+ const request=(endpoint,body)=>new NextRequest('https://astrorekha.com/api/soulmate-sketch/'+endpoint,{method:body?'POST':'GET',headers:{cookie:'ar_access='+uid+'; ar_report_session='+require('../../src/lib/report-session').createReportSession(uid),'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
  const staleSave=await require('../../src/app/api/soulmate-sketch/answers/route').POST(request('answers',{answers:{attracted_to:'female',age_group:'40-45'}}));
  assert.equal((await staleSave.json()).saved,false);assert.equal(rows.soulmate_sketches[0].question_answers.attracted_to,'male');
  const duplicate=await require('../../src/app/api/soulmate-sketch/generate/route').POST(request('generate',{answers:{age_group:'40-45'}}));assert.equal(duplicate.status,409);assert.equal(submissions,1);
- const status=await require('../../src/app/api/soulmate-sketch/status/route').GET(request('status'));assert.equal((await status.json()).status,'complete');
- const inspected=await inspectReport(uid,'soulmateSketch');assert.equal(inspected.ready,true);assert.equal(inspected.answers.age_group,'35-40');assert.equal(inspected.content,'https://storage.example.invalid/corrected.jpg');assert.equal(inspected.provider_job_id,undefined);
+ const status=await require('../../src/app/api/soulmate-sketch/status/route').GET(request('status'));const statusData=await status.json();assert.equal(statusData.status,'complete');assert.match(statusData.sketch_image_url,/^https:.*signature=/);assert.equal(status.headers.get('cache-control'),'no-store');
+ const forged=new NextRequest('https://astrorekha.com/api/soulmate-sketch/status',{headers:{cookie:'ar_access='+uid}});const denied=await require('../../src/app/api/soulmate-sketch/status/route').GET(forged);assert.equal(denied.status,401);
+ const privateImages=require('../../src/lib/sketch-image');assert.match(s.sketch_image_url,/^storage:\/\/palm-images\//);await assert.rejects(privateImages.resolveSketchImage(s.sketch_image_url,'different-user'));await assert.rejects(privateImages.resolveSketchImage('storage://palm-images/recovered_sketches/support-test/../other.jpg',uid));await assert.rejects(privateImages.resolveSketchImage('storage://other/recovered_sketches/support-test/a.jpg',uid));
+ const inspected=await inspectReport(uid,'soulmateSketch');assert.equal(inspected.ready,true);assert.equal(inspected.answers.age_group,'35-40');assert.match(inspected.content,/^https:.*signature=/);assert.notEqual(inspected.content,statusData.sketch_image_url,'fresh signed URL issued for each read');assert.equal(inspected.provider_job_id,undefined);
  reset();r=await executeAction(action('correct_sketch',{answers:{age_group:'35-40'},expectedUpdatedAt:'2026-10-12T00:00:00Z'}));assert.equal(r.status,'needs_review');assert.equal(submissions,0);assert.equal(rows.soulmate_sketches[0].question_answers.age_group,'40-45');
  reset();delete rows.soulmate_sketches[0].question_answers.attracted_to;r=await executeAction(action('correct_sketch',{answers:{age_group:'35-40'},expectedUpdatedAt:rows.soulmate_sketches[0].updated_at}));assert.equal(r.status,'needs_review');assert.equal(rows.soulmate_sketches[0].status,'complete');assert.equal(submissions,0);
  reset();rows.users[0].unlocked_features.soulmateSketch=false;r=await executeAction(action());assert.equal(r.status,'needs_review');assert.equal(submissions,0);
  reset();mode='timeout';r=await executeAction(action());assert.equal(r.status,'needs_review');assert.equal(rows.soulmate_sketches[0].status,'generating');assert.equal(rows.soulmate_sketches[0].provider_job_id,'saved-job');
  providerState='waiting';r=await executeAction(action('recover_report',{report:'soulmateSketch',force:false}));assert.equal(r.status,'needs_review');assert.equal(submissions,1);
  providerState='success';r=await executeAction(action('recover_report',{report:'soulmateSketch',force:false}));assert.equal(r.status,'complete');assert.equal(submissions,1);assert.equal(rows.soulmate_sketches[0].question_answers.age_group,'35-40');
+ reset();signingFails=true;r=await executeAction(action());assert.equal(r.status,'needs_review');assert.equal(rows.soulmate_sketches[0].status,'generating');assert.equal(rows.soulmate_sketches[0].provider_job_id,'saved-job');signingFails=false;r=await executeAction(action('recover_report',{report:'soulmateSketch',force:false}));assert.equal(r.status,'complete');assert.equal(submissions,1,'private storage retry must not resubmit generation');
  reset();rows.soulmate_sketches[0].status='generating';r=await executeAction(action());assert.equal(r.status,'needs_review');assert.equal(submissions,0);
  process.env.KIE_API_KEY='fixture-only';process.env.KIE_INITIAL_POLL_ATTEMPTS='1';process.env.KIE_INITIAL_POLL_INTERVAL_MS='1';
  let jobPersisted=false;

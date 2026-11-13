@@ -1,7 +1,7 @@
 import { sketchFields } from "./sketch-options";
 // Returned alongside live rules so installed clients discover new server capabilities without a kit upgrade.
 export const SUPPORT_CAPABILITIES = {
-  version: "2026-11-13-sketch-corrections",
+  version: "2026-11-13-private-sketch-images",
   reportInspection: {
     method: "GET",
     path: "customers/<userId>/reports/<reportKey>",
@@ -25,6 +25,7 @@ export const SUPPORT_CAPABILITIES = {
       "If answers already match but the image is wrong, use recover_report with report soulmateSketch and force true once. Never repeatedly regenerate to guess the customer's wishes.",
       "After complete, inspect the saved sketch, verify the corrected answers and view the image through the supported image-viewing tool. Do not infer age precisely from appearance or claim a visual check you did not perform.",
       "For needs_review with a saved provider job, wait 30 seconds and create a recover_report action for soulmateSketch with force false to check the SAME job. Repeat bounded status checks while it progresses; never submit duplicate provider jobs or claim readiness before complete. If submitting was interrupted without a job ID, escalate instead of guessing.",
+      "Private recovered sketch images are returned as temporary signed viewing links. Re-inspect to refresh an expired link; customer replies should link to the app, not the temporary image URL. If an earlier recovery reported an inaccessible saved image, use recover_report with force false to finish its existing provider job using private storage access.",
       "Only after verification: save the specific Gmail draft, apply current specificLabel, remove completedLabel from the thread, and mark handled messages read. Preserve teammate edits. Never send automatically.",
     ],
   },

@@ -1,3 +1,5 @@
+import { isPrivateSketchImage, resolveSketchImage } from "@/lib/sketch-image";
+import { reportSessionUser } from "@/lib/report-session";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_LAYOUT_B_CONFIG, normalizeLayoutBConfig } from "@/lib/layout-b-funnel";
@@ -134,11 +136,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const privateImage = data.sketch_image_url && isPrivateSketchImage(data.sketch_image_url);
+    if (privateImage && reportSessionUser(request) !== userId) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+    }
     return NextResponse.json({
       ...data,
+      sketch_image_url: privateImage ? await resolveSketchImage(data.sketch_image_url, userId) : data.sketch_image_url,
       maxSketchPerUser: config.maxSketchPerUser,
       remaining: Math.max(0, config.maxSketchPerUser - (data.generation_count || 0)),
-    });
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("[soulmate-sketch/status] unexpected", error);
     return NextResponse.json({ error: "status_fetch_failed" }, { status: 500 });

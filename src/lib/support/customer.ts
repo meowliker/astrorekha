@@ -1,3 +1,4 @@
+import { resolveSketchImage } from "@/lib/sketch-image";
 import { safeSketchAnswers } from "./sketch-options";
 import { db, checked } from "./auth";
 import {
@@ -214,7 +215,10 @@ export async function inspectReport(userId: string, key: string) {
     ready: reportReady(report, row, !!user.unlocked_features?.[report]),
     status: row?.status || (row ? "saved" : "missing"),
     updatedAt: row?.updated_at || null,
-    content: row?.[spec.content] || null,
+    content:
+      report === "soulmateSketch" && row?.sketch_image_url
+        ? await resolveSketchImage(row.sketch_image_url, userId)
+        : row?.[spec.content] || null,
     ...(report === "soulmateSketch"
       ? {
           answers: safeSketchAnswers(row?.question_answers),

@@ -1,3 +1,4 @@
+import { resolveSketchImage } from "@/lib/sketch-image";
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import {
@@ -433,7 +434,12 @@ async function handle(request: NextRequest) {
               try {
                 await (
                   await import("@/lib/soulmate-fulfillment")
-                ).downloadImage(sketch.sketch_image_url);
+                ).downloadImage(
+                  await resolveSketchImage(
+                    sketch.sketch_image_url,
+                    current.customer_id,
+                  ),
+                );
               } catch {
                 throw new SupportError(
                   "The sketch image is not accessible. Recover it before preparing a ready reply.",
