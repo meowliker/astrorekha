@@ -1,4 +1,7 @@
 import {withAdminAccess} from "@/lib/admin-access";
+import { parseAdSource, matchesAdSource, gaSourceFilter, type AdSource } from "@/lib/admin-acquisition";
+import { readAdSourceFinance } from "@/lib/admin-source-finance";
+import { calculateProfitSheetGst, indianAdGstApplies } from "@/lib/profit-sheet-gst";
 
 import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
@@ -43,6 +46,7 @@ interface HourlyProfitabilityPoint {
 }
 
 interface ProfitSheetRow {
+  indianAdSpendInr?: number;
   date: string;
   day: string;
   revenue: number;
@@ -116,6 +120,7 @@ function fromProfitSheetDbRow(row: Record<string, unknown>): ProfitSheetRow {
     grossRevenue: toNumber(row.gross_revenue),
     refundAmount: toNumber(row.refund_amount),
     gst: toNumber(row.gst),
+    indianAdSpendInr: toNumber(row.indian_ad_spend_inr),
     adsCostUSD: toNumber(row.ads_cost_usd),
     adsCostINR: toNumber(row.ads_cost_inr),
     netRevenue: toNumber(row.net_revenue),
@@ -129,9 +134,9 @@ function fromProfitSheetDbRow(row: Record<string, unknown>): ProfitSheetRow {
   };
 }
 
-async function readProfitSheetRows(supabase: ReturnType<typeof getSupabaseAdmin>, startDate: string, endDate: string): Promise<ProfitSheetRow[]> {
+async function readProfitSheetRows(supabase: ReturnType<typeof getSupabaseAdmin>, startDate: string, endDate: string, mode: MatrixDayMode = "business_1130_ist"): Promise<ProfitSheetRow[]> {
   const { data, error } = await supabase
-    .from("profit_sheet")
+    .from(mode === "calendar_ist" ? "profit_sheet_calendar" : "profit_sheet")
     .select("*")
     .gte("date", startDate)
     .lte("date", endDate)
@@ -152,7 +157,7 @@ async function readPaymentRows(supabase: ReturnType<typeof getSupabaseAdmin>, st
     const to = from + pageSize - 1;
     const { data, error } = await supabase
       .from("payments")
-      .select("id, amount, payment_status, created_at, type, bundle_id, currency, user_id, customer_email, payu_txn_id")
+      .select("id, amount, payment_status, created_at, type, bundle_id, currency, user_id, customer_email, payu_txn_id, landing_url, landing_path, utm_source, utm_medium, utm_campaign, last_touch, meta_campaign_id, meta_adset_id, meta_ad_id")
       .gte("created_at", startIso)
       .lte("created_at", endIso)
       .order("created_at", { ascending: false })
@@ -526,7 +531,8 @@ function addSalesEntry(
 async function fetchGoogleAnalyticsData(
   startDate: string,
   endDate: string,
-  dayMode: MatrixDayMode
+  dayMode: MatrixDayMode,
+  adSource: AdSource
 ): Promise<{
   routeMetrics: RouteMetric[];
   peakTrafficHour: PeakTrafficMetric;
@@ -589,6 +595,10 @@ async function fetchGoogleAnalyticsData(
         property: `properties/${propertyId}`,
         requestBody: {
           dateRanges: trafficRange,
+          dimensionFilter: { andGroup: { expressions: [
+            ...(gaSourceFilter(adSource) ? [gaSourceFilter(adSource)!] : []),
+            { notExpression: { filter: { fieldName: "landingPage", stringFilter: { matchType: "FULL_REGEXP", value: "/(us/)?soulmate(/.*)?" } } } },
+          ] } },
           dimensions: [{ name: "dateHour" }],
           metrics: [{ name: "sessions" }],
           limit: "10000",
@@ -598,6 +608,10 @@ async function fetchGoogleAnalyticsData(
         property: `properties/${propertyId}`,
         requestBody: {
           dateRanges: routeRange,
+          dimensionFilter: { andGroup: { expressions: [
+            ...(gaSourceFilter(adSource) ? [gaSourceFilter(adSource)!] : []),
+            { notExpression: { filter: { fieldName: "landingPage", stringFilter: { matchType: "FULL_REGEXP", value: "/(us/)?soulmate(/.*)?" } } } },
+          ] } },
           dimensions: [{ name: "pagePath" }],
           metrics: [
             { name: "sessions" },
@@ -812,7 +826,7 @@ async function handleGET(request: NextRequest) {
     const supabase = getSupabaseAdmin();
 
     const { searchParams } = new URL(request.url);
-    const token = searchParams.get("token");
+    const token = request.headers.get("x-admin-session") || searchParams.get("token");
 
     const today = new Date();
     const defaultStart = new Date(today);
@@ -851,13 +865,38 @@ async function handleGET(request: NextRequest) {
     const endIso = `${endDateForMode}T23:59:59.999Z`;
     const paymentFetchStart = `${shiftIsoDate(startDate, -1)}T00:00:00.000Z`;
     const paymentFetchEnd = `${shiftIsoDate(endDate, 1)}T23:59:59.999Z`;
-    const profitSheetRows = await readProfitSheetRows(supabase, startDate, endDate);
+    const adSource = parseAdSource(searchParams);
+    const savedRows = await readProfitSheetRows(supabase, startDate, endDate, adSource === "all" ? "business_1130_ist" : dayMode);
+    async function sourceProfitRows(mode: MatrixDayMode) {
+      const saved = mode === dayMode ? savedRows : await readProfitSheetRows(supabase, startDate, endDate, mode);
+      const finance = await readAdSourceFinance(supabase, "astrorekha", adSource, startDate, endDate, mode);
+      let unavailable = adSource === "google";
+      const rows = finance.map(day => {
+        const baseline = saved.find(r => r.date === day.date);
+        const known = adSource === "meta" && !!baseline;
+        if (!known) unavailable = true;
+        const revenue = (day.received - day.refund) / 100;
+        const gst = indianAdGstApplies(day.date) ? calculateProfitSheetGst(revenue, .18, known ? baseline!.indianAdSpendInr || 0 : 0).gst : revenue * .05;
+        return { date: day.date, day: new Date(day.date).toLocaleDateString("en", { weekday: "short", timeZone: "UTC" }),
+          revenue, grossRevenue: day.received / 100, refundAmount: day.refund / 100, gst,
+          adsCostUSD: known ? baseline!.adsCostUSD : 0, adsCostINR: known ? baseline!.adsCostINR : 0,
+          netRevenue: known ? revenue - gst - baseline!.adsCostINR : 0, profitPercent: 0, roas: 0,
+          bundleRevenue: (day.bundleReceived - day.bundleRefund) / 100, transactionCount: day.orders,
+          bundlePurchases: day.bundleOrders, salesCount: day.orders, refundCount: day.refunds };
+      });
+      return { rows, unavailable };
+    }
+    const scopedFinance = adSource === "all" ? { rows: savedRows, unavailable: false } : await sourceProfitRows(dayMode);
+    const profitSheetRows = scopedFinance.rows;
+    const matrixFinance = adSource !== "all" && matrixDayMode !== dayMode ? await sourceProfitRows(matrixDayMode) : scopedFinance;
+    const spendUnavailable = matrixFinance.unavailable;
     const profitTotals = sumProfitSheetRows(profitSheetRows);
     const inRange = (dayKey: string) => dayKey >= startDate && dayKey <= endDate;
 
     const paymentRows = await readPaymentRows(supabase, paymentFetchStart, paymentFetchEnd);
 
     const selectedPaymentRows = paymentRows.filter((row) => {
+      if (!matchesAdSource(row, adSource)) return false;
       if (!row.created_at) return false;
       const createdAt = new Date(row.created_at);
       if (Number.isNaN(createdAt.getTime())) return false;
@@ -892,7 +931,7 @@ async function handleGET(request: NextRequest) {
       salesWeekdayMap.set(weekday, weekdayEntry);
     }
 
-    for (const row of selectedPaymentRows) {
+    for (const row of adSource === "all" ? selectedPaymentRows : paymentRows.filter(row => matchesAdSource(row, adSource))) {
       if (!row.created_at) continue;
       const financial = classifyStoredPaymentEvent(row.payment_status, row.amount);
       if (financial.kind !== "sale") continue;
@@ -900,10 +939,10 @@ async function handleGET(request: NextRequest) {
       const createdAt = new Date(row.created_at);
       if (Number.isNaN(createdAt.getTime())) continue;
       const grouped = getMatrixDateGroup(createdAt, dayMode);
-      if (!inRange(grouped.dayKey)) continue;
+      if (!inRange(grouped.dayKey) && adSource === "all") continue;
 
       const hourLabel = formatHourLabel(grouped.hour, dayMode);
-      addSalesEntry(salesHourlyMap, hourLabel, 1, financial.amount);
+      if (inRange(grouped.dayKey)) addSalesEntry(salesHourlyMap, hourLabel, 1, financial.amount);
 
       const matrixGrouped = getMatrixDateGroup(createdAt, matrixDayMode);
       if (!inRange(matrixGrouped.dayKey)) continue;
@@ -927,7 +966,7 @@ async function handleGET(request: NextRequest) {
       : await fetchExchangeRate();
     const hasMetaSpend = profitTotals.adsCostINR > 0;
     const hourlyProfitabilityRows: HourlyProfitabilityPoint[] = [];
-    for (const row of profitSheetRows) {
+    for (const row of matrixFinance.rows) {
       if (!inRange(row.date)) continue;
       const dailyPaymentRevenue = matrixDailyPaymentRevenueMap.get(row.date) || 0;
       const weekday = getWeekdayFromIsoDate(row.date);
@@ -955,12 +994,12 @@ async function handleGET(request: NextRequest) {
       }
     }
 
-    const gaData = await fetchGoogleAnalyticsData(startDate, endDate, dayMode);
+    const gaData = await fetchGoogleAnalyticsData(startDate, endDate, dayMode, adSource);
     const internalRouteData = await fetchInternalRouteAnalytics(startIso, endIso, dayMode, startDate, endDate);
 
     const useGaRouteData = gaData.sourceStatus.connected && gaData.routeMetrics.length > 0;
 
-    const selectedRouteData = useGaRouteData ? gaData : {
+    const selectedRouteData = useGaRouteData || adSource !== "all" ? gaData : {
       ...internalRouteData,
       sourceStatus: {
         configured: true,
@@ -975,14 +1014,15 @@ async function handleGET(request: NextRequest) {
     const totalRevenueInr = profitTotals.revenue;
     const ledgerBundlePurchaseCount = profitTotals.bundlePurchases || paidOrders;
     const paywallSignal = inferPaywallVisitors(selectedRouteData.routeMetrics);
-    const totalVisitors = selectedRouteData.totalSessions > 0 ? selectedRouteData.totalSessions : paymentStarts;
-    const paywallVisitors = paywallSignal.visitors > 0 ? paywallSignal.visitors : paymentStarts;
+    const totalVisitors = selectedRouteData.totalSessions > 0 ? selectedRouteData.totalSessions : adSource === "all" ? paymentStarts : 0;
+    const paywallVisitors = paywallSignal.visitors > 0 ? paywallSignal.visitors : adSource === "all" ? paymentStarts : 0;
     const exitedWithoutPaying = Math.max(totalVisitors - ledgerBundlePurchaseCount, 0);
     const conversionRateRaw = totalVisitors > 0 ? (ledgerBundlePurchaseCount / totalVisitors) * 100 : 0;
     const conversionRate = Math.min(conversionRateRaw, 100);
     const dropOffRate = totalVisitors > 0 ? (exitedWithoutPaying / totalVisitors) * 100 : 0;
 
     return NextResponse.json({
+      adSource, spendUnavailable,
       range: {
         startDate,
         endDate,
@@ -1030,7 +1070,7 @@ async function handleGET(request: NextRequest) {
         },
       },
       hourlyProfitability: {
-        rows: hourlyProfitabilityRows,
+        rows: hourlyProfitabilityRows.map(row => spendUnavailable ? { ...row, profitInr: null, roas: null } : row),
         exchangeRate: Number(exchangeRate.toFixed(2)),
         adsSource: hasMetaSpend ? "meta" : "none",
         dayMode: matrixDayMode,
@@ -1066,18 +1106,20 @@ async function handleGET(request: NextRequest) {
         internal: {
           configured: true,
           connected: true,
-          message: "Internal fallback route metrics are active when GA4 is unavailable.",
+          message: adSource === "all" ? "Internal fallback route metrics are active when GA4 is unavailable." : "Unfiltered fallback traffic is excluded from this source view.",
         },
       },
       notes: [
+        ...(adSource === "all" ? [] : ["Sales and refunds are filtered by saved purchase attribution. Traffic uses GA4 session source and medium; unfiltered fallback traffic is excluded."]),
+        ...(spendUnavailable ? ["Ad spend for this source and reporting window is unavailable. Profit and ROAS are unavailable."] : []),
         useGaRouteData
           ? "Traffic, route viewers, and bounce rates are sourced from GA4."
-          : "Traffic and route stats are currently sourced from internal fallback events. GA4 data unavailable.",
+          : adSource === "all" ? "Traffic and route stats are currently sourced from internal fallback events. GA4 data unavailable." : "GA4 traffic is unavailable for this source; no fallback traffic is assigned.",
         paywallSignal.matchedRoute
           ? `Paywall audience inferred from route: ${paywallSignal.matchedRoute}.`
-          : "Paywall audience inferred from payment starts because paywall route traffic was unavailable.",
-        "Checkout funnel conversion uses route viewers and bundle purchases from the synced profit_sheet ledger.",
-        "Sales, revenue, refunds, and paid-order KPIs are sourced from Supabase profit_sheet, not the live PayU API.",
+          : adSource === "all" ? "Paywall audience inferred from payment starts because paywall route traffic was unavailable." : "Paywall audience is unavailable because route traffic was unavailable.",
+        adSource === "all" ? "Checkout funnel conversion uses route viewers and bundle purchases from the synced profit_sheet ledger." : "Checkout funnel conversion uses source-filtered route viewers and paid bundle orders.",
+        adSource === "all" ? "Sales, revenue, refunds, and paid-order KPIs are sourced from Supabase profit_sheet, not the live PayU API." : "Sales, revenue, refunds and paid-order KPIs use saved payments and the original purchase attribution.",
         refundedOrders > 0
           ? "Refund and chargeback events are subtracted from revenue metrics."
           : "No refund events were detected in this range.",

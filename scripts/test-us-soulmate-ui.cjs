@@ -55,8 +55,10 @@ test('US tagged landings never overwrite the original UTM cookies', async () => 
   for (const route of ['/us/soulmate','/us/soulmate/checkout']) {
     assert.equal((await middleware(new NextRequest('https://example.com'+route+'?utm_campaign=US'))).cookies.get('ar_utm_last'),undefined);
   }
-  for (const route of ['/','/soulmate']) {
-    assert.match((await middleware(new NextRequest('https://example.com'+route+'?utm_campaign=Original'))).cookies.get('ar_utm_last').value,/Original/);
+  for (const [route,prefix] of [['/','ar_utm'],['/soulmate','ar_soulmate_utm'],['/us','ar_us_main_utm'],['/us/onboarding/birthday','ar_us_main_utm']]) {
+    const response=await middleware(new NextRequest('https://example.com'+route+'?utm_campaign=Original'));
+    assert.match(response.cookies.get(`${prefix}_last`).value,/Original/);
+    if(prefix!=='ar_utm')assert.equal(response.cookies.get('ar_utm_last'),undefined);
   }
 });
 test('US checkout analytics queues before GA loads and targets only the US property', () => {
@@ -77,4 +79,16 @@ test('US checkout analytics queues before GA loads and targets only the US prope
     assert.equal(event[2].items[0].item_id, 'us_soulmate_standard');
     window.location.hostname='127.0.0.1'; trackSoulmate('chat_start'); assert.equal(requests.length,1);
   } finally { process.env.NODE_ENV = previousEnv; global.fetch = previousFetch; delete global.window; delete global.sessionStorage; }
+});
+
+test('shared Reports, report detail and Elysia use account market tracking', t => {
+  const commerce=require('../src/hooks/useCustomerCommerce'), us=require('../src/components/us-main/Marketing');
+  let current={ready:true,isUS:true};
+  t.mock.method(commerce,'useCustomerCommerce',()=>current);
+  t.mock.method(us,'USMainMarketing',()=>React.createElement('span',null,'US-main-account'));
+  for(pathname of ['/reports','/numerology','/birth-chart/report','/chat','/profile']){
+    current={ready:true,isUS:true};assert.equal(render(React.createElement(MarketingBoundary)),'<span>US-main-account</span>');
+    current={ready:true,isUS:false};assert.match(render(React.createElement(MarketingBoundary)),/existing-MetaPixel/);
+    current={ready:false,isUS:false};assert.equal(render(React.createElement(MarketingBoundary)),'');
+  }
 });

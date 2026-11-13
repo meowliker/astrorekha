@@ -1,5 +1,7 @@
 "use client";
+import AdSourceBadge from "@/components/admin/AdSourceBadge";
 
+import { useAdSource } from "@/components/admin/AcquisitionView";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Loader2, PackageOpen, RefreshCw, Search, X } from "lucide-react";
@@ -20,14 +22,16 @@ const stageStyle: Record<SoulmateOrderStage, string> = {
 
 export function SoulmateOrdersPanel() {
   const router = useRouter();
+  const adSource = useAdSource();
+  useEffect(() => { setPage(0); }, [adSource]);
   const [mode,setMode]=useState("all"),[search,setSearch]=useState(""),[query,setQuery]=useState("");
   const [page,setPage]=useState(0),[revision,setRevision]=useState(0),[orders,setOrders]=useState<SoulmateOrderView[]>([]),[total,setTotal]=useState(0),[error,setError]=useState(""),[loading,setLoading]=useState(true);
 
   useEffect(()=>{
     const abort=new AbortController();setLoading(true);setError("");
-    fetch(`/api/admin/us-soulmate/orders?${new URLSearchParams({ mode,search:query,page:String(page) })}`,{headers:auth(),cache:"no-store",signal:abort.signal}).then(async(response)=>{const result=await response.json();if(!response.ok)throw new Error(result.error);if(!abort.signal.aborted){setOrders(result.orders);setTotal(result.total);setError(result.deliverySyncWarning || "");}}).catch((cause)=>{if(!abort.signal.aborted)setError(cause.message||"Unable to load orders");}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});
+    fetch(`/api/admin/us-soulmate/orders?${new URLSearchParams({ mode,search:query,page:String(page),adSource })}`,{headers:auth(),cache:"no-store",signal:abort.signal}).then(async(response)=>{const result=await response.json();if(!response.ok)throw new Error(result.error);if(!abort.signal.aborted){setOrders(result.orders);setTotal(result.total);setError(result.deliverySyncWarning || "");}}).catch((cause)=>{if(!abort.signal.aborted)setError(cause.message||"Unable to load orders");}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});
     return()=>abort.abort();
-  },[mode,query,page,revision]);
+  },[mode,query,page,revision,adSource]);
 
   useEffect(() => { const timer = setInterval(() => { if (document.visibilityState === "visible") setRevision((value) => value + 1); }, 60000); return () => clearInterval(timer); }, []);
 
@@ -65,12 +69,12 @@ export function SoulmateOrdersPanel() {
           </tr></thead>
           <tbody>
             {loading ? <tr><td colSpan={7} className="px-4 py-14 text-center text-white/50"><Loader2 className="mx-auto mb-3 h-6 w-6 animate-spin text-primary" />Loading Soulmate orders…</td></tr>
-              : orders.length === 0 ? <tr><td colSpan={7} className="px-4 py-14 text-center text-white/45"><PackageOpen className="mx-auto mb-3 h-7 w-7 text-white/25" />No orders match these filters.</td></tr>
+              : orders.length === 0 ? <tr><td colSpan={7} className="px-4 py-14 text-center text-white/45"><PackageOpen className="mx-auto mb-3 h-7 w-7 text-white/25" />No US Soulmate orders match these filters.{adSource === "google" && <p className="mt-3 text-sm">This list only includes purchases through the US Soulmate funnel. Purchases through /discover appear in <a className="text-cyan-300 underline" href="/admin/orders">AstroRekha Orders</a>.</p>}</td></tr>
               : orders.map((order)=>{
                 const stage=soulmateOrderStage(order);
                 const itemCount=order.line_items?.length||1;
                 return <tr key={order.id} role="link" tabIndex={0} onClick={()=>router.push(`/admin/us-soulmate/orders/${order.id}`)} onKeyDown={(event)=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();router.push(`/admin/us-soulmate/orders/${order.id}`);}}} className="group cursor-pointer border-b border-white/[0.07] transition-colors hover:bg-white/[0.035] focus:outline-none focus-visible:bg-white/[0.05]">
-                  <td className="max-w-[220px] px-4 py-3"><p className="truncate font-medium text-white/85">{order.id}</p><p className="mt-1 truncate text-xs text-white/35">{order.checkout_environment} · {order.payment_mode}</p></td>
+                  <td className="max-w-[220px] px-4 py-3"><p className="truncate font-medium text-white/85">{order.id}</p><p className="mt-1 truncate text-xs text-white/35">{order.checkout_environment} · {order.payment_mode} · <AdSourceBadge source={order.ad_source} /></p></td>
                   <td className="max-w-[230px] px-4 py-3"><p className="truncate text-white/80">{order.customer_name}</p><p className="mt-1 truncate text-xs text-white/40">{order.customer_email}</p></td>
                   <td className="whitespace-nowrap px-4 py-3 text-white/65">{date(order.paid_at || order.created_at)}</td>
                   <td className="max-w-[260px] px-4 py-3"><p className="truncate text-white/75">{order.plan === "express" ? "Complete Soulmate Vision" : "Soulmate Sketch"}</p><p className="mt-1 truncate text-xs text-white/35">{itemCount} {itemCount === 1 ? "item" : "items"} · {order.entitlements?.delivery || order.plan}</p></td>

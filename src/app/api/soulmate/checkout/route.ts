@@ -1,7 +1,7 @@
 import { pineLabsConfig, initiatePineLabsCheckout } from "@/lib/pinelabs-api";
 import { activePaymentGateway } from "@/lib/payment-gateway";
 import { initiatePaytmCheckout, paytmConfig } from "@/lib/paytm-api";
-import { sanitizePaymentAttribution } from "@/lib/attribution";
+import { resolvePaymentAttribution } from "@/lib/attribution";
 import { buildSoulmateCart } from "@/lib/soulmate-cart";
 import crypto from "crypto";
 import { chooseSoulmateGaIdentity } from "@/lib/soulmate-ga-identity";
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     const fingerprintFor = (savedGateway: string, savedMode: string) => crypto.createHash("sha256").update(JSON.stringify({ answers, plan: plan.id, email, phone, mode: savedMode, cart, ...(savedGateway !== "payu" ? { gateway: savedGateway } : {}) })).digest("hex");
     const fingerprint = fingerprintFor(gateway, mode);
     const db = getSupabaseAdmin();
-    const attribution = await readOrderAttribution();
+    const attribution = await readOrderAttribution("soulmate");
     const record = {
       id: `${SOULMATE_ORDER_PREFIX}${crypto.randomBytes(10).toString("hex")}`,
       session_id: session?.id || null,
@@ -55,8 +55,8 @@ export async function POST(request: NextRequest) {
       delivery_hours: cart.entitlements.scheduled_hours,
       ...(gateway !== "payu" ? { gateway } : {}),
       product_info: soulmatePayUProductInfo(cart.productInfo), payment_mode: mode,
-      attribution: { ...attribution, ...chooseSoulmateGaIdentity(body.tracking, attribution), landing_path: "/soulmate",
-        marketing: sanitizePaymentAttribution(body.tracking?.attribution),
+      attribution: { ...attribution, ...chooseSoulmateGaIdentity(body.tracking, attribution), landing_path: resolvePaymentAttribution(attribution.lastTouch, body.tracking?.attribution).landing_path || "/soulmate",
+        marketing: resolvePaymentAttribution(attribution.lastTouch, body.tracking?.attribution),
         sessionId: /^[a-f0-9-]{36}$/i.test(body.tracking?.sessionId || "") ? body.tracking.sessionId : null,
         trackingEnvironment: ["localhost", "127.0.0.1", "[::1]"].includes(originUrl.hostname) ? "local" : process.env.VERCEL_ENV === "production" && ["astrorekha.com", "www.astrorekha.com"].includes(originUrl.hostname) ? "production" : "preview",
         userAgent: request.headers.get("user-agent")?.slice(0, 512) || null,

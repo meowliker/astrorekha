@@ -2,16 +2,23 @@ import { type NextRequest, NextResponse } from "next/server";
 
 const ATTRIBUTION_KEYS = [
   "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
-  "campaign_id", "adset_id", "ad_id", "fbclid",
+  "campaign_id", "adset_id", "ad_id", "fbclid", "gclid", "gbraid", "wbraid", "gad_campaignid",
+  "meta_campaign_id", "meta_adset_id", "meta_ad_id",
 ] as const;
 const ATTRIBUTION_COOKIE_AGE = 30 * 24 * 60 * 60;
 
 function withAttribution(request: NextRequest, response: NextResponse): NextResponse {
-  if (request.nextUrl.pathname === "/us/soulmate" || request.nextUrl.pathname.startsWith("/us/soulmate/")) return response;
-  const prefix = /^\/us(?:\/|$)/.test(request.nextUrl.pathname) ? "ar_us_main_utm" : "ar_utm";
+  const pathname = request.nextUrl.pathname;
+  const prefix = /^\/us\/soulmate(?:\/|$)/.test(pathname) ? "ar_us_soulmate_utm" : /^\/soulmate(?:\/|$)/.test(pathname) ? "ar_soulmate_utm" : /^\/us(?:\/|$)/.test(pathname) ? "ar_us_main_utm" : "ar_utm";
   const params = request.nextUrl.searchParams;
   // A touch is a tagged landing, not every later navigation without campaign parameters.
-  if (!ATTRIBUTION_KEYS.some((key) => params.has(key))) return response;
+  const tagged = ATTRIBUTION_KEYS.some((key) => params.has(key));
+  const entry = ["/", "/discover", "/soulmate", "/soulmate/discover", "/us", "/us/soulmate", "/us/soulmate/discover"].includes(pathname.replace(/\/+$/, "") || "/");
+  if (!tagged) {
+    if (!entry) return response;
+    // Reloading the same landing preserves its tags. A different entry starts a new touch.
+    try { if (JSON.parse(request.cookies.get(`${prefix}_last`)?.value || "null")?.landing_path === pathname) return response; } catch { /* Replace malformed cookies. */ }
+  }
 
   const touch: Record<string, string | null> = {
     landing_path: request.nextUrl.pathname.slice(0, 512),

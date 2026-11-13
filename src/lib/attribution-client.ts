@@ -1,6 +1,6 @@
 "use client";
 
-import type { PaymentAttributionPayload } from "@/lib/attribution";
+import { sanitizePaymentAttribution, type PaymentAttributionPayload } from "@/lib/attribution";
 
 const ATTRIBUTION_STORAGE_KEY = "astrorekha_attribution";
 
@@ -62,7 +62,11 @@ export function captureAttributionFromPage(): PaymentAttributionPayload {
 
   const url = new URL(window.location.href);
   const params = url.searchParams;
-  const existing = readStoredAttribution();
+  const taggedArrival = [...params.keys()].some((key) => /^(utm_|meta_|campaign_id|adset_id|ad_id|fbclid|gclid|gbraid|wbraid|gad_campaignid)/.test(key));
+  const stored = readStoredAttribution();
+  const entry = ["/", "/discover"].includes(url.pathname.replace(/\/+$/, "") || "/");
+  const oldPath = (stored.landing_path || "").split("?")[0];
+  const existing = taggedArrival || (entry && oldPath !== url.pathname) ? {} : stored;
 
   const fbclid = getParamValue(params, ["fbclid"]);
   const campaignId = getParamValue(params, [
@@ -87,7 +91,11 @@ export function captureAttributionFromPage(): PaymentAttributionPayload {
 
   const nowIso = new Date().toISOString();
 
-  const merged: PaymentAttributionPayload = {
+  const merged: PaymentAttributionPayload = sanitizePaymentAttribution({
+    google_campaign_id: getParamValue(params, ["gad_campaignid"]) || existing.google_campaign_id,
+    gclid: getParamValue(params, ["gclid"]) || existing.gclid,
+    gbraid: getParamValue(params, ["gbraid"]) || existing.gbraid,
+    wbraid: getParamValue(params, ["wbraid"]) || existing.wbraid,
     fbclid: fbclid || existing.fbclid,
     fbc: nextFbc,
     fbp: fbpFromCookie || existing.fbp,
@@ -104,8 +112,8 @@ export function captureAttributionFromPage(): PaymentAttributionPayload {
     landing_path: existing.landing_path || `${url.pathname}${url.search}`,
     landing_url: existing.landing_url || url.href,
     referrer_url: document.referrer || existing.referrer_url,
-    captured_at: nowIso,
-  };
+    captured_at: existing.captured_at || nowIso,
+  });
 
   writeStoredAttribution(merged);
   return merged;
@@ -114,6 +122,10 @@ export function captureAttributionFromPage(): PaymentAttributionPayload {
 export function getPaymentAttributionPayload(): PaymentAttributionPayload {
   const latest = captureAttributionFromPage();
   return {
+    google_campaign_id: latest.google_campaign_id,
+    gclid: latest.gclid,
+    gbraid: latest.gbraid,
+    wbraid: latest.wbraid,
     fbclid: latest.fbclid,
     fbc: latest.fbc,
     fbp: latest.fbp,

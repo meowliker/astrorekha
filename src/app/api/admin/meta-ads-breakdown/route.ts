@@ -1,4 +1,6 @@
 import {withAdminAccess} from "@/lib/admin-access";
+import { parseAdSource } from "@/lib/admin-acquisition";
+import { readAdSourceFinance } from "@/lib/admin-source-finance";
 
 import type { MetaActionValue, MetaReportingRow, MetaReportingResponse } from "@/lib/meta-api-types";
 
@@ -731,7 +733,7 @@ async function handleGET(request: NextRequest) {
     const supabase = getSupabaseAdmin();
 
     const { searchParams } = new URL(request.url);
-    const token = searchParams.get("token");
+    const token = request.headers.get("x-admin-session") || searchParams.get("token");
     const datePreset = searchParams.get("datePreset") || "last_7d";
     const customStartDate = searchParams.get("startDate");
     const customEndDate = searchParams.get("endDate");
@@ -751,6 +753,9 @@ async function handleGET(request: NextRequest) {
     if (!sessionData || new Date(sessionData.expires_at) < new Date()) {
       return NextResponse.json({ error: "Session expired" }, { status: 401 });
     }
+
+    const adSource = parseAdSource(searchParams);
+    if (adSource === "google") return NextResponse.json({ configured: false, error: "Google Ads account reporting is not connected. Google-attributed sales are available in Dashboard, Profit Sheet and Analytics." }, { headers: { "Cache-Control": "no-store" } });
 
     // Get exchange rate
     const exchangeRate = customExchangeRate ? parseFloat(customExchangeRate) : await fetchExchangeRate();
@@ -834,6 +839,14 @@ async function handleGET(request: NextRequest) {
       }
     }
 
+    if (adSource === "meta") {
+      const finance = await readAdSourceFinance(supabase, "astrorekha", adSource, businessWindow.startDateIso, businessWindow.endDateIso);
+      grossRevenue = finance.reduce((sum, day) => sum + day.received / 100, 0);
+      refundAmount = finance.reduce((sum, day) => sum + day.refund / 100, 0);
+      totalSales = finance.reduce((sum, day) => sum + day.orders, 0);
+      totalRefunds = finance.reduce((sum, day) => sum + day.refunds, 0);
+      bundleSales = finance.reduce((sum, day) => sum + day.bundleOrders, 0);
+    }
     const totalRevenue = grossRevenue - refundAmount;
 
     type PaymentAttributionRow = {

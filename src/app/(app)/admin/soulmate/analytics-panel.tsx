@@ -1,9 +1,11 @@
 "use client";
+import { useAdSource } from "@/components/admin/AcquisitionView";
 import { useEffect, useState } from "react";
 import type { summarizeSoulmateAnalytics } from "@/lib/soulmate-analytics";
 type Report = ReturnType<typeof summarizeSoulmateAnalytics> & { bounce: { value: number | null; status: string }; startDate: string; endDate: string };
 const percent = (value: number | null) => value === null ? "—" : `${value.toFixed(1)}%`;
 export function SoulmateAnalyticsPanel() {
+  const adSource = useAdSource();
   const [start, setStart] = useState(() => new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10));
   const [end, setEnd] = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }));
   const [report, setReport] = useState<Report | null>(null);
@@ -15,14 +17,14 @@ export function SoulmateAnalyticsPanel() {
     async function load() {
       try {
         const token = localStorage.getItem("admin_session_token");
-        const response = await fetch(`/api/admin/soulmate/analytics?${new URLSearchParams({ start, end })}`, { headers: { Authorization: `Bearer ${token || ""}` }, cache: "no-store", signal: abort.signal });
+        const response = await fetch(`/api/admin/soulmate/analytics?${new URLSearchParams({ start, end, adSource })}`, { headers: { Authorization: `Bearer ${token || ""}` }, cache: "no-store", signal: abort.signal });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Unable to load analytics");
         if (!abort.signal.aborted) setReport(data);
       } catch (cause) { if (!abort.signal.aborted) setError(cause instanceof Error ? cause.message : "Unable to load analytics"); }
     }
     void load(); return () => abort.abort();
-  }, [start, end, refresh]);
+  }, [start, end, refresh, adSource]);
   return <section className="py-8" aria-label="Soulmate analytics">
     <div className="flex flex-wrap items-end gap-4">
       <label className="text-sm text-white/60">From<input className="mt-2 block rounded-lg border border-white/10 bg-[#0F1626] p-2 text-white" type="date" value={start} max={end} onChange={(event) => setStart(event.target.value)} /></label>

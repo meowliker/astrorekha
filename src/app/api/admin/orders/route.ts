@@ -1,5 +1,7 @@
 import {withAdminAccess} from "@/lib/admin-access";
+import { parseAdSource, matchesAdSource, acquisitionChannel, acquisitionTouch, isAcquisitionTest } from "@/lib/admin-acquisition";
 import { NextRequest, NextResponse } from "next/server";
+import { isStandaloneSoulmatePayment } from "@/lib/admin-order-funnel";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing, type PricingConfig } from "@/lib/pricing";
 import { CHAT_UNLIMITED_PASS_NAME, CHAT_UNLIMITED_PASS_TYPE } from "@/lib/chat-unlimited-pass";
@@ -9,6 +11,7 @@ export const revalidate = 0;
 
 type PaymentRow = {
   id: string;
+  payu_txn_id: string | null;
   user_id: string | null;
   type: string | null;
   bundle_id: string | null;
@@ -186,7 +189,7 @@ async function handleGET(request: NextRequest) {
   try {
     const supabase = getSupabaseAdmin();
     const { searchParams } = new URL(request.url);
-    const token = searchParams.get("token");
+    const token = request.headers.get("x-admin-session") || searchParams.get("token");
 
     if (!token) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -202,6 +205,7 @@ async function handleGET(request: NextRequest) {
       return NextResponse.json({ error: "Session expired" }, { status: 401 });
     }
 
+    const adSource = parseAdSource(searchParams);
     const search = searchParams.get("search")?.trim() || "";
     const typeFilter = normalizeType(searchParams.get("type") || "all");
     let startDate = searchParams.get("startDate") || "";
@@ -220,41 +224,69 @@ async function handleGET(request: NextRequest) {
       [startDate, endDate] = [endDate, startDate];
     }
 
-    let paymentsQuery = supabase
-      .from("payments")
-      .select("id, user_id, type, bundle_id, feature, coins, customer_email, amount, currency, created_at")
-      .in("payment_status", PAID_PAYMENT_STATUSES);
-
-    if (startDate) {
-      paymentsQuery = paymentsQuery.gte("created_at", getIstBoundaryUtcIso(startDate, false));
+    const pricing = await getPricingConfig(supabase);
+    const names = Object.fromEntries([
+      ...pricing.bundles, ...pricing.upsells, ...pricing.reports,
+      ...pricing.coinPackages.map(pkg => ({id:pkg.id,name:`${coinsToQuestionCount(pkg.coins)} Questions`})),
+    ].map(item => [item.id, item.name]));
+    for (const feature of ["palmReading","birthChart","prediction2026","compatibilityTest","soulmateSketch","futurePartnerReport","vastuShastraGuide","auraColorReport","astrocartographyReport","pastLifeReport","numerologyReport","spiritAnimalReport","witchArchetypeReport"]) names[feature] = featureToName(feature);
+    // Supabase filters and paginates the authoritative records; no stale copies or payment hooks.
+    const fast = await supabase.rpc("read_admin_main_orders", {
+      p_source:adSource, p_start:startDate ? getIstBoundaryUtcIso(startDate) : null,
+      p_end:endDate ? getIstBoundaryUtcIso(endDate,true) : null,
+      p_type:typeFilter, p_search:search, p_page:page, p_size:pageSize, p_names:names,
+    });
+    if (!fast.error) {
+      const total = Number(fast.data.total);
+      const orders = (fast.data.rows as (PaymentRow & {email:string;customer_name:string;ad_source:string})[]).map(payment => {
+        const items=resolveItems(payment,pricing), type=normalizeType(payment.type);
+        return {id:payment.id,userId:payment.user_id || "-",email:payment.email,customerName:payment.customer_name,
+          dateOfPurchase:payment.created_at,type,typeLabel:formatType(type),amount:amountPaiseToInr(payment.amount),
+          currency:payment.currency || "INR",items,itemCount:items.length,ad_source:payment.ad_source};
+      });
+      return NextResponse.json({orders,total,page,pageSize,totalPages:Math.max(1,Math.ceil(total/pageSize))});
     }
-    if (endDate) {
-      paymentsQuery = paymentsQuery.lte("created_at", getIstBoundaryUtcIso(endDate, true));
+    // Allows safe code rollback/rolling deploy. Other DB errors must not masquerade as empty orders.
+    if (!["PGRST202","42883"].includes(fast.error.code)) throw fast.error;
+    // Read all matching pages before filtering/counting; Supabase caps each response.
+    async function readPayments(): Promise<PaymentRow[]> {
+      const rows: PaymentRow[] = [];
+      for (let offset = 0; ; offset += 1000) {
+        if (offset >= 100000) throw new Error("Choose a shorter date range to view these orders.");
+        let query = supabase.from("payments")
+          .select("id, payu_txn_id, user_id, type, bundle_id, feature, coins, customer_email, amount, currency, created_at, landing_url, landing_path, utm_source, utm_medium, utm_campaign, meta_campaign_id, meta_adset_id, meta_ad_id, last_touch")
+          .in("payment_status", PAID_PAYMENT_STATUSES);
+        if (startDate) query = query.gte("created_at", getIstBoundaryUtcIso(startDate, false));
+        if (endDate) query = query.lte("created_at", getIstBoundaryUtcIso(endDate, true));
+        const result = await query.order("created_at", { ascending: false }).order("id")
+          .range(offset, offset + 999);
+        if (result.error) throw result.error;
+        rows.push(...(result.data as PaymentRow[]).filter((row) => !isStandaloneSoulmatePayment(row) && matchesAdSource(row, adSource)));
+        if (result.data.length < 1000) return rows;
+      }
     }
 
-    const [pricing, paymentsResult, usersResult] = await Promise.all([
-      getPricingConfig(supabase),
-      paymentsQuery
-        .order("created_at", { ascending: false })
-        .limit(5000),
-      supabase.from("users").select("id, email, name"),
-    ]);
+    const payments = await readPayments();
 
-    if (paymentsResult.error) {
-      throw paymentsResult.error;
+    const users: UserRow[] = [];
+    const userIds = [...new Set(payments.map(p=>p.user_id).filter((id): id is string=>!!id))];
+    for(let i=0;i<userIds.length;i+=200) {
+      const result=await supabase.from("users").select("id,email,name").in("id",userIds.slice(i,i+200));
+      if(result.error) throw result.error;
+      users.push(...(result.data || []));
     }
-
     const userMap = new Map<string, UserRow>();
-    for (const user of (usersResult.data || []) as UserRow[]) {
+    for (const user of users) {
       userMap.set(user.id, user);
     }
 
-    const orders = ((paymentsResult.data || []) as PaymentRow[])
+    const orders = payments
       .map((payment) => {
         const user = payment.user_id ? userMap.get(payment.user_id) : null;
         const items = resolveItems(payment, pricing);
         const type = normalizeType(payment.type);
         return {
+          ad_source: isAcquisitionTest(payment) ? "test" : acquisitionChannel(acquisitionTouch(payment)),
           id: payment.id,
           userId: payment.user_id || "-",
           email: user?.email || payment.customer_email || "Unknown",

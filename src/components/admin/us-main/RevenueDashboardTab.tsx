@@ -1,4 +1,5 @@
 "use client";
+import {useAdSource} from "@/components/admin/AcquisitionView";
 
 import {
   Children,
@@ -462,6 +463,7 @@ async function readOrderPage(
     startDate: data.range.start,
     endDate: data.range.end,
     attribution: data.attribution,
+    adSource: data.adSource || "all",
     asOf: data.generatedAt,
     snapshot: data.snapshot,
     view: "orders",
@@ -492,6 +494,7 @@ export default function RevenueDashboardTab({
 }: {
   refreshSignal?: number;
 }) {
+  const adSource = useAdSource();
   const router = useRouter();
   const [range, setRange] = useState(() => {
     const today = istDate(new Date());
@@ -537,7 +540,7 @@ export default function RevenueDashboardTab({
         const params = new URLSearchParams({
           startDate: range.start,
           endDate: range.end,
-          attribution,
+          attribution, adSource,
         });
         const response = await fetch(`/api/admin/us-main/revenue?${params}`, {
           method: refreshPending.current ? "POST" : "GET",
@@ -568,7 +571,7 @@ export default function RevenueDashboardTab({
     }
     void read();
     return () => controller.abort();
-  }, [range, attribution, revision, refreshSignal, router]);
+  }, [range, attribution, revision, refreshSignal, router, adSource]);
   const filteredProducts = useMemo(
     () =>
       data?.products.filter(

@@ -1,4 +1,5 @@
 import {withAdminAccess} from "@/lib/admin-access";
+import { parseAdSource, matchesAdSource, filterSourceEvents, gaSourceFilter, type AdSource } from "@/lib/admin-acquisition";
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -6,7 +7,7 @@ import { summarizeSoulmateAnalytics, type SoulmateAnalyticsEvent, type SoulmateA
 import { SOULMATE_FUNNEL, SOULMATE_ORDERS_TABLE } from "@/lib/soulmate-orders";
 export const dynamic = "force-dynamic";
 
-async function bounceRate(startDate: string, endDate: string) {
+async function bounceRate(startDate: string, endDate: string, source: AdSource) {
   const property = process.env.GA4_PROPERTY_ID || process.env.GOOGLE_ANALYTICS_PROPERTY_ID;
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const key = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
@@ -16,7 +17,7 @@ async function bounceRate(startDate: string, endDate: string) {
     const api = google.analyticsdata({ version: "v1beta", auth });
     const { data } = await api.properties.runReport({ property: `properties/${property}`, requestBody: {
       dateRanges: [{ startDate, endDate }], metrics: [{ name: "bounceRate" }, { name: "sessions" }],
-      dimensionFilter: { filter: { fieldName: "landingPage", inListFilter: { values: ["/soulmate", "/soulmate/"] } } },
+      dimensionFilter: { andGroup: { expressions: [{ filter: { fieldName: "landingPage", inListFilter: { values: ["/soulmate", "/soulmate/", "/soulmate/discover", "/soulmate/discover/"] } } }, ...(gaSourceFilter(source) ? [gaSourceFilter(source)!] : [])] } },
     } }, { timeout: 8000 });
     const values = data.rows?.[0]?.metricValues;
     return { value: values && Number(values[1]?.value) > 0 ? Number(values[0]?.value) * 100 : null, sessions: Number(values?.[1]?.value || 0), status: "GA4; dates follow the property's timezone. Reporting may be delayed." };
@@ -35,11 +36,12 @@ async function handleGET(request: NextRequest) {
   const start = Date.parse(`${startDate}T00:00:00+05:30`), end = Date.parse(`${endDate}T00:00:00+05:30`) + 86400000;
   if (![startDate, endDate].every((date) => /^\d{4}-\d{2}-\d{2}$/.test(date)) || !Number.isFinite(start + end) || end <= start || end - start > 93 * 86400000) return NextResponse.json({ error: "Choose a valid range of up to 93 days." }, { status: 400 });
   try {
+    const adSource = parseAdSource(request.nextUrl.searchParams);
     const events: SoulmateAnalyticsEvent[] = [], orders: SoulmateAnalyticsOrder[] = [];
     await Promise.all([
       (async () => { for (let offset = 0; ; offset += 1000) {
         if (offset >= 100000) throw new Error("Choose a smaller date range.");
-        const result = await db.from("marketing_events").select("event_name,session_id,utm_source,utm_campaign,created_at")
+        const result = await db.from("marketing_events").select("event_name,session_id,utm_source,utm_medium,utm_campaign,created_at,url")
           .eq("product_type", SOULMATE_FUNNEL).gte("created_at", new Date(start).toISOString()).lt("created_at", new Date(end).toISOString())
           .order("created_at").order("id").range(offset, offset + 999);
         if (result.error) throw new Error("Unable to read soulmate events.");
@@ -56,7 +58,7 @@ async function handleGET(request: NextRequest) {
         orders.push(...result.data); if (result.data.length < 1000) break;
       } })(),
     ]);
-    return NextResponse.json({ ...summarizeSoulmateAnalytics(events, orders), bounce: await bounceRate(startDate, endDate), startDate, endDate }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ...summarizeSoulmateAnalytics(filterSourceEvents(events, adSource), orders.filter(order => matchesAdSource(order, adSource))), bounce: await bounceRate(startDate, endDate, adSource), startDate, endDate }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load report" }, { status: 503 }); }
 }
 

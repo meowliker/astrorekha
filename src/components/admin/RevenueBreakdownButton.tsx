@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Info, Loader2, X } from "lucide-react";
+import { useAdSource } from "@/components/admin/AcquisitionView";
 import type { GatewayRevenueBreakdown } from "@/lib/profit-sheet-types";
 
 const money = (value: number) => new Intl.NumberFormat("en-IN", {
@@ -14,6 +15,7 @@ export default function RevenueBreakdownButton({ date, savedRevenue, dayMode }: 
   savedRevenue: number;
   dayMode: "business_1130_ist" | "calendar_ist";
 }) {
+  const adSource = useAdSource();
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<GatewayRevenueBreakdown | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +43,7 @@ export default function RevenueBreakdownButton({ date, savedRevenue, dayMode }: 
       try {
         const token = localStorage.getItem("admin_session_token");
         if (!token) throw new Error("Your admin session has expired. Please sign in again.");
-        const params = new URLSearchParams({ token, revenueBreakdownDate: date, dayMode });
+        const params = new URLSearchParams({ token, revenueBreakdownDate: date, dayMode, adSource });
         const response = await fetch(`/api/admin/profit-sheet?${params}`, { cache: "no-store", signal: controller.signal });
         if (response.status === 401) throw new Error("Your admin session has expired. Please sign in again.");
         const result = await response.json();
@@ -53,7 +55,7 @@ export default function RevenueBreakdownButton({ date, savedRevenue, dayMode }: 
     }
     void load();
     return () => controller.abort();
-  }, [open, date, dayMode, attempt]);
+  }, [open, date, dayMode, adSource, attempt]);
 
   function close() {
     dialogRef.current?.close();

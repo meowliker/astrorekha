@@ -9,7 +9,7 @@ import crypto from "crypto";
 import { readOrderAttribution } from "@/lib/order-attribution";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing, type PricingConfig } from "@/lib/pricing";
-import { sanitizePaymentAttribution, type PaymentAttributionPayload } from "@/lib/attribution";
+import { sanitizePaymentAttribution, resolvePaymentAttribution, type PaymentAttributionPayload } from "@/lib/attribution";
 import { recordMarketingEvent } from "@/lib/marketing-events";
 import { normalizeIndianWhatsappNumber, toPayUPhoneNumber } from "@/lib/whatsapp";
 import { upsertWhatsappSubscriber } from "@/lib/whatsapp-subscriber";
@@ -86,6 +86,7 @@ function extractAttributionFromReferer(referer: string | undefined): PaymentAttr
     const get = (key: string) => url.searchParams.get(key)?.trim() || undefined;
     return sanitizePaymentAttribution({
       fbclid: get("fbclid"),
+      gclid: get("gclid"), gbraid: get("gbraid"), wbraid: get("wbraid"),
       utm_source: get("utm_source"),
       utm_medium: get("utm_medium"),
       utm_campaign: get("utm_campaign"),
@@ -150,25 +151,13 @@ export async function POST(request: NextRequest) {
       const birthDetailsSnapshot = normalizeBirthDetailsSnapshot(birthDetails, "payu_initiate");
     const requestReferrer = request.headers.get("referer") || undefined;
     const refererAttribution = extractAttributionFromReferer(requestReferrer);
-    const finalAttribution: PaymentAttributionPayload = {
-      ...refererAttribution,
-      ...sanitizedAttribution,
-    };
     const { firstTouch, lastTouch, gaClientId, gaSessionId } = await readOrderAttribution();
-    // The server-side last-touch cookie takes precedence over browser-supplied attribution.
-    if (lastTouch) {
-      finalAttribution.utm_source = lastTouch.utm_source || undefined;
-      finalAttribution.utm_medium = lastTouch.utm_medium || undefined;
-      finalAttribution.utm_campaign = lastTouch.utm_campaign || undefined;
-      finalAttribution.utm_term = lastTouch.utm_term || undefined;
-      finalAttribution.utm_content = lastTouch.utm_content || undefined;
-      finalAttribution.meta_campaign_id = lastTouch.campaign_id || undefined;
-      finalAttribution.meta_adset_id = lastTouch.adset_id || undefined;
-      finalAttribution.meta_ad_id = lastTouch.ad_id || undefined;
-      finalAttribution.fbclid = lastTouch.fbclid || undefined;
-      finalAttribution.landing_path = lastTouch.landing_path || undefined;
-      finalAttribution.captured_at = lastTouch.captured_at || undefined;
+    // Pick a whole touch. Never combine an older Meta campaign with a newer Google click.
+    const finalAttribution = resolvePaymentAttribution(lastTouch, sanitizedAttribution, refererAttribution);
+    if (lastTouch?.landing_path?.startsWith("/") && !lastTouch.landing_path.startsWith("//")) {
+      try { finalAttribution.landing_url = new URL(lastTouch.landing_path, request.url).href; } catch { /* Invalid optional attribution must not block checkout. */ }
     }
+    const savedLastTouch = lastTouch || (finalAttribution.utm_source || finalAttribution.gclid || finalAttribution.gbraid || finalAttribution.wbraid || finalAttribution.meta_campaign_id ? finalAttribution : null);
 
     const gateway = await activePaymentGateway();
     const backup = gateway === "pinelabs" ? pineLabsConfig() : gateway === "paytm" ? paytmConfig() : null;
@@ -412,7 +401,7 @@ export async function POST(request: NextRequest) {
       fb_adset_id: finalAttribution.meta_adset_id || null,
       fb_ad_id: finalAttribution.meta_ad_id || null,
       first_touch: firstTouch,
-      last_touch: lastTouch,
+      last_touch: savedLastTouch,
       ga_client_id: gaClientId,
       ga_session_id: gaSessionId,
       landing_path: finalAttribution.landing_path || null,

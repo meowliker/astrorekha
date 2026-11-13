@@ -1,4 +1,6 @@
 "use client";
+import AdSourceBadge from "@/components/admin/AdSourceBadge";
+import AcquisitionView, { useAdSource } from "@/components/admin/AcquisitionView";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -18,6 +20,7 @@ import {
 } from "lucide-react";
 
 type OrderRow = {
+  ad_source?: string;
   id: string;
   userId: string;
   email: string;
@@ -202,6 +205,11 @@ function formatDateTime(value: string | null) {
 }
 
 export default function AdminOrdersPage() {
+  return <AcquisitionView standalone><AdminOrdersContent /></AcquisitionView>;
+}
+function AdminOrdersContent() {
+  const adSource = useAdSource();
+  const requestSequence = useRef(0);
   const router = useRouter();
   const initialDateRange = useMemo(() => getPresetCalendarRange("maximum"), []);
   const [orders, setOrders] = useState<OrderRow[]>([]);
@@ -233,6 +241,8 @@ export default function AdminOrdersPage() {
     }, 250);
     return () => window.clearTimeout(timeout);
   }, [search]);
+
+  useEffect(() => { setPage(1); }, [adSource]);
 
   const activeFilterCount = useMemo(() => {
     return [typeFilter !== "all", datePreset !== "maximum"].filter(Boolean).length;
@@ -273,12 +283,13 @@ export default function AdminOrdersPage() {
       return;
     }
 
+    const sequence = ++requestSequence.current;
     setLoading(true);
     setError("");
 
     try {
       const params = new URLSearchParams({
-        token,
+        adSource,
         page: String(page),
         pageSize: String(pageSize),
         search: debouncedSearch,
@@ -289,8 +300,10 @@ export default function AdminOrdersPage() {
 
       const response = await fetch(`/api/admin/orders?${params.toString()}`, {
         cache: "no-store",
+        headers: {"x-admin-session": token},
       });
 
+      if (sequence !== requestSequence.current) return;
       if (response.status === 401) {
         localStorage.removeItem("admin_session_token");
         localStorage.removeItem("admin_session_expiry");
@@ -299,6 +312,7 @@ export default function AdminOrdersPage() {
       }
 
       const json = (await response.json()) as Partial<OrdersResponse> & { error?: string };
+      if (sequence !== requestSequence.current) return;
       if (!response.ok) {
         throw new Error(json.error || "Failed to fetch orders");
       }
@@ -307,14 +321,15 @@ export default function AdminOrdersPage() {
       setTotal(json.total || 0);
       setTotalPages(json.totalPages || 1);
     } catch (err) {
+      if (sequence !== requestSequence.current) return;
       setError(err instanceof Error ? err.message : "Failed to fetch orders");
       setOrders([]);
       setTotal(0);
       setTotalPages(1);
     } finally {
-      setLoading(false);
+      if (sequence === requestSequence.current) setLoading(false);
     }
-  }, [debouncedSearch, endDate, page, pageSize, router, startDate, typeFilter]);
+  }, [adSource, debouncedSearch, endDate, page, pageSize, router, startDate, typeFilter]);
 
   useEffect(() => {
     fetchOrders();
@@ -421,7 +436,7 @@ export default function AdminOrdersPage() {
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div>
-              <h1 className="text-xl font-semibold">Orders</h1>
+              <h1 className="text-xl font-semibold">AstroRekha Orders</h1>
               <p className="text-xs text-white/45">Payment records from AstroRekha checkout</p>
             </div>
           </div>
@@ -693,6 +708,7 @@ export default function AdminOrdersPage() {
                       <td className="max-w-[220px] px-4 py-3">
                         <p className="truncate font-medium text-white/85">{order.userId}</p>
                         <p className="truncate text-xs text-white/35">{order.id}</p>
+                        <AdSourceBadge source={order.ad_source} />
                       </td>
                       <td className="max-w-[240px] px-4 py-3">
                         <p className="truncate text-white/80">{order.email}</p>

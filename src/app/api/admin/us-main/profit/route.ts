@@ -1,3 +1,5 @@
+import { parseAdSource } from "@/lib/admin-acquisition";
+import { readAdSourceFinance } from "@/lib/admin-source-finance";
 import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { soulmateAdmin } from "@/lib/us-main-admin";
@@ -15,7 +17,21 @@ async function handleGET(request: NextRequest) {
   const end = request.nextUrl.searchParams.get("end") || profitDay(Date.now());
   if (!validProfitDate(start) || !validProfitDate(end) || start < US_MAIN_PROFIT_START || end > profitDay(Date.now()) || end < start || Date.parse(end) - Date.parse(start) >= 366 * DAY_MS) return json({ error: "Choose valid dates from 12 November 2026, up to 366 days at a time." }, 400);
   try {
-    return json(await readSoulmateProfitLedger(db, start, end));
+    const result = await readSoulmateProfitLedger(db, start, end);
+    const adSource = parseAdSource(request.nextUrl.searchParams);
+    if (adSource === "all") return json(result);
+    const finance = await readAdSourceFinance(db, "us-main", adSource, start, end);
+    const rows = finance.map((day) => {
+      const saved = result.rows.find((row) => row.date === day.date);
+      const known = adSource === "meta" && !!saved && !saved.stale;
+      const adsInr = known ? saved!.adsInr : null, adGst = known ? saved!.adGst : null;
+      const revenue = day.received - day.refund;
+      return { ...saved, date: day.date, orders: day.orders, received: day.received, refund: day.refund, revenue,
+        salesGst: day.salesTax, adsUsd: known ? saved!.adsUsd : null, adsInr, adGst, balance: null, balanceCapturedAt: null,
+        profit: adsInr === null || adGst === null ? null : revenue - day.salesTax - adsInr - adGst,
+        roas: adsInr ? revenue / adsInr : null, accounts: known ? saved!.accounts : [], stale: false };
+    });
+    return json({ ...result, rows, adSource, missing: [] });
   } catch { return json({ error: "Unable to load saved US AstroRekha profit rows." }, 503); }
 }
 async function handlePOST(request: NextRequest) {

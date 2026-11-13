@@ -6,7 +6,7 @@ type HourRow = { key: string; name: string; hours: Array<number | null>; details
 
 /** Join exact payment and tagged-arrival times with Meta's separately reported spend. */
 export function buildTrackingHourlyTable(
-  summary: Pick<TrackingSummary, "hourly" | "hourlySpendInr" | "hourlyUtmVisits" | "utmVisitsAvailable"> | null,
+  summary: Pick<TrackingSummary, "spendUnavailable" | "hourly" | "hourlySpendInr" | "hourlyUtmVisits" | "utmVisitsAvailable"> | null,
   campaigns: TrackingCampaign[],
   day: string,
   metric: TrackingHourlyMetric,
@@ -28,7 +28,7 @@ export function buildTrackingHourlyTable(
   const totalOrders = Array<number>(count).fill(0);
   const matchedOrders = Array<number>(count).fill(0);
   const totalVisits = Array<number>(count).fill(0);
-  const unknownMeta = !spendReady || campaigns.some((row) => row.accountId && (row.spendInr == null || failedAccountIds.has(row.accountId)));
+  const unknownMeta = summary?.spendUnavailable || !spendReady || campaigns.some((row) => row.accountId && (row.spendInr == null || failedAccountIds.has(row.accountId)));
   const sortable = campaigns.map((campaign) => {
     const sale = sales.get(campaign.key) || { orders: Array(count).fill(0), revenue: Array(count).fill(0) };
     const spend = summary?.hourlySpendInr?.[campaign.key]?.[day] || [];

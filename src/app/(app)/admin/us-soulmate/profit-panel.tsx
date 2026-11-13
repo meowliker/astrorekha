@@ -1,4 +1,5 @@
 "use client";
+import { useAdSource } from "@/components/admin/AcquisitionView";
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, RefreshCw, Settings, X } from "lucide-react";
@@ -19,6 +20,7 @@ const columns: { key: ColumnKey; label: string; hint?: string }[] = [
 ];
 
 export function SoulmateProfitPanel() {
+  const adSource = useAdSource();
   const [today] = useState(() => profitDay(Date.now()));
   const [start, setStart] = useState(US_SOULMATE_PROFIT_START);
   const [end, setEnd] = useState(today);
@@ -45,8 +47,8 @@ export function SoulmateProfitPanel() {
 
   useEffect(() => {
     const abort = new AbortController();
-    setLoading(true); setError("");
-    fetch(`/api/admin/us-soulmate/profit?${new URLSearchParams({ start: rangeStart, end: rangeEnd })}`, {
+    setLoading(true); setRows([]); setError("");
+    fetch(`/api/admin/us-soulmate/profit?${new URLSearchParams({ start: rangeStart, end: rangeEnd, adSource })}`, {
       headers: { Authorization: `Bearer ${localStorage.getItem("admin_session_token") || ""}` }, signal: abort.signal, cache: "no-store",
     }).then(async (response) => {
       const result = await response.json();
@@ -55,7 +57,7 @@ export function SoulmateProfitPanel() {
     }).catch((cause) => { if (!abort.signal.aborted) setError(cause.message); })
       .finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();
-  }, [rangeStart, rangeEnd, refresh]);
+  }, [rangeStart, rangeEnd, refresh, adSource]);
 
   const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem("admin_session_token") || ""}`, "Content-Type": "application/json" });
   async function sync(mode: "last2" | "range", first?: string, last?: string) {

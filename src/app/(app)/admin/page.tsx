@@ -1,5 +1,6 @@
 "use client";
 
+import AcquisitionView, { useAdSource, sourceUrl } from "@/components/admin/AcquisitionView";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -162,7 +163,9 @@ const usSoulmateOptions: AdminOption[] = soulmateOptions.map((option) => ({
   href: option.href.replace("/admin/soulmate", "/admin/us-soulmate"),
 }));
 
-export default function AdminDashboardPage() {
+function AdminDashboardPage() {
+  const adSource = useAdSource();
+  const reportLink = (href: string) => (/\/(revenue|tracking|analytics|profit)$/.test(href) || /\/orders$/.test(href)) ? sourceUrl(href, adSource) : href;
   const router = useRouter();
   const access=useAdminAccess();
   const [loading, setLoading] = useState(true);
@@ -255,7 +258,7 @@ export default function AdminDashboardPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1 }}
-              onClick={() => router.push(option.href)}
+              onClick={() => router.push(reportLink(option.href))}
               className="bg-[#1A2235] border border-white/10 rounded-2xl p-6 cursor-pointer hover:border-primary/50 hover:bg-[#1A2235]/80 transition-all group"
             >
               <div className="flex items-start justify-between">
@@ -287,7 +290,7 @@ export default function AdminDashboardPage() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.08 * index }}
-              onClick={() => router.push(option.href)}
+              onClick={() => router.push(reportLink(option.href))}
               className="group flex items-start gap-4 rounded-2xl border border-white/10 bg-[#1A2235] p-6 text-left transition-colors hover:border-primary/45 hover:bg-[#1A2235]/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
             >
               <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${option.bgColor}`}><option.icon className={`h-6 w-6 ${option.color}`} aria-hidden="true" /></span>
@@ -306,7 +309,7 @@ export default function AdminDashboardPage() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.08 * index }}
-              onClick={() => router.push(option.href)}
+              onClick={() => router.push(reportLink(option.href))}
               className="group flex items-start gap-4 rounded-2xl border border-white/10 bg-[#1A2235] p-6 text-left transition-colors hover:border-primary/45 hover:bg-[#1A2235]/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
             >
               <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${option.bgColor}`}><option.icon className={`h-6 w-6 ${option.color}`} aria-hidden="true" /></span>
@@ -316,7 +319,7 @@ export default function AdminDashboardPage() {
           </div>
         </section>}
 
-        {access&&canAccess(access,'us-main')&&<section className="mt-8"><h2 className="mb-3 text-sm font-medium text-white/50">US AstroRekha workspace</h2><div className="grid grid-cols-1 md:grid-cols-2 gap-4">{adminOptions.filter(o=>['revenue','orders','tracking','pricing','ab-tests'].includes(o.id)).map(o=><button key={o.id} onClick={()=>router.push('/admin/us-main/'+o.id)} className="group flex gap-4 text-left bg-[#1A2235] border border-white/10 rounded-2xl p-6 hover:border-primary/50"><span className={`w-12 h-12 shrink-0 rounded-xl flex items-center justify-center ${o.bgColor}`}><o.icon className={`w-6 h-6 ${o.color}`}/></span><span><span className="block text-lg font-semibold">{o.title}</span><span className="block text-sm text-white/50">{o.description}</span></span><ChevronRight className="w-5 h-5 shrink-0 ml-auto"/></button>)}</div></section>}
+        {access&&canAccess(access,'us-main')&&<section className="mt-8"><h2 className="mb-3 text-sm font-medium text-white/50">US AstroRekha workspace</h2><div className="grid grid-cols-1 md:grid-cols-2 gap-4">{adminOptions.filter(o=>['revenue','orders','tracking','pricing','ab-tests'].includes(o.id)).map(o=><button key={o.id} onClick={()=>router.push(reportLink('/admin/us-main/'+o.id))} className="group flex gap-4 text-left bg-[#1A2235] border border-white/10 rounded-2xl p-6 hover:border-primary/50"><span className={`w-12 h-12 shrink-0 rounded-xl flex items-center justify-center ${o.bgColor}`}><o.icon className={`w-6 h-6 ${o.color}`}/></span><span><span className="block text-lg font-semibold">{o.title}</span><span className="block text-sm text-white/50">{o.description}</span></span><ChevronRight className="w-5 h-5 shrink-0 ml-auto"/></button>)}</div></section>}
         {access?.isAdministrator&&<button onClick={()=>router.push('/admin/access')} className="mt-8 p-6 w-full text-left bg-[#1A2235] border border-white/10 rounded-2xl"><h2 className="text-lg font-semibold">Workspace access</h2><p className="text-sm text-white/50">Manage which workspaces each admin can view and edit.</p></button>}
         {/* Footer */}
         <motion.p
@@ -331,3 +334,5 @@ export default function AdminDashboardPage() {
     </div>
   );
 }
+
+export default function AdminWithSource() { return <AcquisitionView standalone><AdminDashboardPage /></AcquisitionView>; }

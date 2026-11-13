@@ -1,4 +1,5 @@
 "use client";
+import AcquisitionView, { useAdSource, sourceUrl } from "@/components/admin/AcquisitionView";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -50,6 +51,7 @@ type ProfitSheetDayMode = "business_1130_ist" | "calendar_ist";
 
 // Profit Sheet row interface
 interface ProfitSheetRow {
+  spendUnavailable?: boolean;
   date: string;           // Costa Rica date (e.g., "2026-03-13")
   day: string;            // Day of week (e.g., "Sat")
   revenue: number;        // Net revenue after refunds for that Costa Rica day
@@ -124,6 +126,7 @@ interface MetaSourceBreakdown {
 }
 
 interface MetaBreakdownData {
+  error?: string;
   configured: boolean;
   account?: {
     id: string;
@@ -220,6 +223,7 @@ interface AnalyticsSourceStatus {
 }
 
 interface AnalyticsData {
+  spendUnavailable?: boolean;
   range: {
     startDate: string;
     endDate: string;
@@ -607,7 +611,10 @@ function mapMetaAccountForAdmin(account: Partial<MetaAdAccountAdminRow> & { acco
   };
 }
 
-export default function AdminRevenuePage() {
+function AdminRevenuePage() {
+  const adSource = useAdSource();
+  const sourceRef = useRef(adSource);
+  sourceRef.current = adSource;
   const router = useRouter();
   const [showMetaAccountSettings, setShowMetaAccountSettings] = useState(false);
   const [metaAccountRows, setMetaAccountRows] = useState<MetaAdAccountAdminRow[]>([]);
@@ -635,7 +642,7 @@ export default function AdminRevenuePage() {
   const [analyticsDayMode, setAnalyticsDayMode] = useState<"calendar_ist" | "business_1130_ist">(
     () => getStoredAnalyticsRange()?.dayMode || "calendar_ist"
   );
-  
+
   // Profit Sheet state
   const [profitSheetData, setProfitSheetData] = useState<ProfitSheetRow[]>([]);
   const [profitSheetLoadedMode, setProfitSheetLoadedMode] = useState<ProfitSheetDayMode | null>(null);
@@ -861,19 +868,19 @@ export default function AdminRevenuePage() {
       setProfitSheetError(null);
       const token = localStorage.getItem("admin_session_token");
       if (!token) return;
-      
+
       let url = `/api/admin/profit-sheet?token=${encodeURIComponent(token)}&startDate=${encodeURIComponent(requestedStartDate)}&endDate=${encodeURIComponent(requestedEndDate)}&dayMode=${dayMode}`;
-      if (syncLastTwoDays) {
+      if (syncLastTwoDays && adSource === "all") {
         url += "&sync=last2";
       }
-      
+
       // Use custom exchange rate if provided
       const rateToUse = customRate || (rateInput ? parseFloat(rateInput) : undefined);
       if (rateToUse) {
         url += `&exchangeRate=${rateToUse}`;
       }
-      
-      const res = await fetch(url);
+
+      const res = await fetch(sourceUrl(url, adSource));
       if (requestId !== profitSheetRequestIdRef.current) return;
       if (res.status === 401) {
         localStorage.removeItem("admin_session_token");
@@ -890,7 +897,7 @@ export default function AdminRevenuePage() {
       let result = await res.json();
       if (requestId !== profitSheetRequestIdRef.current) return;
       let gstWarning: string | null = null;
-      const missingOctoberDates: string[] = (result.rows || [])
+      const missingOctoberDates: string[] = (adSource === "all" ? result.rows || [] : [])
         .filter((row: ProfitSheetRow) => row.date >= INDIAN_AD_GST_START_DATE && !row.gstBreakdown)
         .map((row: ProfitSheetRow) => row.date)
         .sort();
@@ -919,6 +926,7 @@ export default function AdminRevenuePage() {
         }
       }
       if (requestId !== profitSheetRequestIdRef.current) return;
+      if (sourceRef.current !== adSource) return;
       setProfitSheetData(result.rows || []);
       setProfitSheetError(gstWarning || result.syncWarning || null);
       setProfitSheetLoadedMode(dayMode);
@@ -946,7 +954,7 @@ export default function AdminRevenuePage() {
       setMetaBreakdownLoading(true);
       const token = localStorage.getItem("admin_session_token");
       if (!token) return;
-      
+
       let url = `/api/admin/meta-ads-breakdown?token=${token}`;
 
       const hasExplicitCustomDates = typeof startDate === "string" && startDate.length > 0;
@@ -961,15 +969,16 @@ export default function AdminRevenuePage() {
       } else {
         url += `&datePreset=${metaBreakdownDatePreset}`;
       }
-      
+
       const rateToUse = customRate || (metaBreakdownExchangeRate ? parseFloat(metaBreakdownExchangeRate) : undefined);
       if (rateToUse) {
         url += `&exchangeRate=${rateToUse}`;
       }
-      
-      const res = await fetch(url);
+
+      const res = await fetch(sourceUrl(url, adSource));
       if (res.ok) {
         const result = await res.json();
+        if (sourceRef.current !== adSource) return;
         setMetaBreakdown(result);
         if (result.exchangeRate && !metaBreakdownExchangeRate) {
           setMetaBreakdownExchangeRate(result.exchangeRate.toFixed(2));
@@ -989,7 +998,7 @@ export default function AdminRevenuePage() {
       const token = localStorage.getItem("admin_session_token");
       if (!token) return;
 
-      if (syncLastTwoDays) {
+      if (syncLastTwoDays && adSource === "all") {
         const syncUrl = `/api/admin/profit-sheet?token=${encodeURIComponent(token)}&startDate=${encodeURIComponent(
           analyticsStartDate
         )}&endDate=${encodeURIComponent(analyticsEndDate)}&sync=last2`;
@@ -1004,7 +1013,7 @@ export default function AdminRevenuePage() {
         analyticsStartDate
       )}&endDate=${encodeURIComponent(analyticsEndDate)}&dayMode=${encodeURIComponent(analyticsDayMode)}`;
 
-      const res = await fetch(url, { cache: "no-store" });
+      const res = await fetch(sourceUrl(url, adSource), { cache: "no-store" });
       if (res.status === 401) {
         localStorage.removeItem("admin_session_token");
         localStorage.removeItem("admin_session_expiry");
@@ -1016,6 +1025,7 @@ export default function AdminRevenuePage() {
         throw new Error(err.error || "Failed to fetch analytics");
       }
       const result = await res.json();
+      if (sourceRef.current !== adSource) return;
       setAnalyticsData(result);
     } catch (err) {
       console.error("Analytics fetch error:", err);
@@ -1066,20 +1076,20 @@ export default function AdminRevenuePage() {
     if (activeTab === "profit-sheet") {
       fetchProfitSheet();
     }
-  }, [activeTab, profitSheetStartDate, profitSheetEndDate]);
+  }, [activeTab, profitSheetStartDate, profitSheetEndDate, adSource]);
 
   // Fetch meta breakdown when tab changes or date preset changes
   useEffect(() => {
     if (activeTab === "meta-details") {
       fetchMetaBreakdown();
     }
-  }, [activeTab, metaBreakdownDatePreset]);
+  }, [activeTab, metaBreakdownDatePreset, adSource]);
 
   useEffect(() => {
     if (activeTab === "analytics") {
       fetchAnalytics();
     }
-  }, [activeTab, analyticsStartDate, analyticsEndDate, analyticsDayMode]);
+  }, [activeTab, analyticsStartDate, analyticsEndDate, analyticsDayMode, adSource]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1091,7 +1101,11 @@ export default function AdminRevenuePage() {
         dayMode: analyticsDayMode,
       })
     );
-  }, [analyticsStartDate, analyticsEndDate, analyticsDayMode]);
+  }, [analyticsStartDate, analyticsEndDate, analyticsDayMode, adSource]);
+
+  useEffect(() => {
+    setProfitSheetData([]); setMetaBreakdown(null); setAnalyticsData(null);
+  }, [adSource]);
 
   const configuredMetaAccountCount = metaAccountRows.filter((row) => row.accountId.trim()).length;
   const activeMetaAccountCount = metaAccountRows.filter((row) => getMetaAccountRuntimeStatus(row) === "active").length;
@@ -1413,7 +1427,7 @@ export default function AdminRevenuePage() {
               </button>
             </div>
           </div>
-          
+
           {/* Tab Navigation */}
           <div className="flex flex-wrap items-center gap-2 bg-white/5 rounded-xl p-1">
             <button
@@ -1447,7 +1461,7 @@ export default function AdminRevenuePage() {
               }`}
             >
               <Facebook className="w-4 h-4" />
-              Meta Details
+              {adSource === "google" ? "Google Details" : "Meta Details"}
             </button>
             <button
               onClick={() => setActiveTab("analytics")}
@@ -1471,6 +1485,7 @@ export default function AdminRevenuePage() {
 
         {/* Profit Sheet Tab Content */}
         {activeTab === "profit-sheet" && (
+
           <ProfitSheetTab
             dayMode="business_1130_ist"
             data={profitSheetLoadedMode === "business_1130_ist" ? profitSheetData : []}
@@ -1491,10 +1506,12 @@ export default function AdminRevenuePage() {
             onRefresh={() => fetchProfitSheet(undefined, true)}
             onRefreshWithRate={(rate) => fetchProfitSheet(rate, true)}
           />
+
         )}
 
         {/* Meta Details Tab Content */}
         {activeTab === "meta-details" && (
+
           <MetaBreakdownTab
             data={metaBreakdown}
             loading={metaBreakdownLoading}
@@ -1516,9 +1533,11 @@ export default function AdminRevenuePage() {
             onRefreshWithRate={(rate) => fetchMetaBreakdown(rate)}
             onCustomDateRefresh={(start, end) => fetchMetaBreakdown(undefined, start, end)}
           />
+
         )}
 
         {activeTab === "analytics" && (
+
           <AnalyticsTab
             data={analyticsData}
             loading={analyticsLoading}
@@ -1531,6 +1550,7 @@ export default function AdminRevenuePage() {
             setDayMode={setAnalyticsDayMode}
             onRefresh={() => fetchAnalytics(true)}
           />
+
         )}
       </div>
     </div>
@@ -1594,7 +1614,10 @@ function ProfitSheetTab({
   onRefresh: () => void;
   onRefreshWithRate: (rate: number) => void;
 }) {
+  const adSource = useAdSource();
+  const costsUnavailable = adSource === "google" || data.some(row => row.spendUnavailable);
   const formatCurrency = (value: number) => {
+    if (value == null || !Number.isFinite(value)) return "—";
     return new Intl.NumberFormat("en-IN", {
       style: "currency",
       currency: "INR",
@@ -2232,22 +2255,22 @@ function ProfitSheetTab({
                         {formatCurrency(row.revenue)}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-right text-sm text-red-400/50">${row.adsCostUSD.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right text-sm text-red-400/50">{row.adsCostUSD == null ? "—" : formatUsd(row.adsCostUSD)}</td>
                     <td className="px-4 py-3 text-right text-sm text-red-400/70">
                       <div className="flex items-center justify-end gap-1 whitespace-nowrap">
                         {formatCurrency(row.adsCostINR)}
-                        <SpendBreakdownButton date={row.date} savedTotalINR={row.adsCostINR} dayMode={dayMode} />
+                        {!row.spendUnavailable && <SpendBreakdownButton date={row.date} savedTotalINR={row.adsCostINR} dayMode={dayMode} />}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right text-sm text-amber-400/70">
                       <div className="flex items-center justify-end gap-1 whitespace-nowrap">
                         {formatCurrency(row.gst)}
-                        {row.date >= gstChangeDate && <GstBreakdownButton date={row.date} revenue={row.revenue} breakdown={row.gstBreakdown} rate={18} />}
+                        {!row.spendUnavailable && row.date >= gstChangeDate && <GstBreakdownButton date={row.date} revenue={row.revenue} breakdown={row.gstBreakdown} rate={18} />}
                       </div>
                     </td>
                     {showAccountBalance && renderBalanceCell(row.accountBalance)}
                     <td className={`px-4 py-3 text-right text-sm font-medium ${row.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{formatCurrency(row.netRevenue)}</td>
-                    <td className={`px-4 py-3 text-right text-sm font-medium ${(row.profitPercent || 0) >= 0 ? "text-green-400" : "text-red-400"}`}>{(row.profitPercent || 0).toFixed(2)}%</td>
+                    <td className={`px-4 py-3 text-right text-sm font-medium ${(row.profitPercent || 0) >= 0 ? "text-green-400" : "text-red-400"}`}>{row.spendUnavailable ? "—" : `${(row.profitPercent || 0).toFixed(2)}%`}</td>
                     <td className={`px-4 py-3 text-right text-sm font-medium ${row.roas >= 1 ? "text-green-400" : row.roas > 0 ? "text-amber-400" : "text-white/30"}`}>{row.roas > 0 ? row.roas.toFixed(2) : "-"}</td>
                     <td className="px-4 py-3 text-right text-sm text-white/80">{row.bundlePurchases}</td>
                     <td className="px-4 py-3 text-right text-sm text-white/60">{row.transactionCount}</td>
@@ -2259,13 +2282,13 @@ function ProfitSheetTab({
               <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(tableTotals.grossRevenue)}</td>
               <td className="px-4 py-3 text-right text-sm text-red-400">-{formatCurrency(tableTotals.refundAmount)}</td>
               <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(tableTotals.revenue)}</td>
-              <td className="px-4 py-3 text-right text-sm text-red-400/70">${tableTotals.adsCostUSD.toFixed(2)}</td>
-              <td className="px-4 py-3 text-right text-sm text-red-400">{formatCurrency(tableTotals.adsCostINR)}</td>
-              <td className="px-4 py-3 text-right text-sm text-amber-400">{formatCurrency(tableTotals.gst)}</td>
+              <td className="px-4 py-3 text-right text-sm text-red-400/70">{costsUnavailable ? "—" : formatUsd(tableTotals.adsCostUSD)}</td>
+              <td className="px-4 py-3 text-right text-sm text-red-400">{costsUnavailable ? "—" : formatCurrency(tableTotals.adsCostINR)}</td>
+              <td className="px-4 py-3 text-right text-sm text-amber-400">{costsUnavailable ? "—" : formatCurrency(tableTotals.gst)}</td>
               {showAccountBalance && renderBalanceTotalCell()}
-              <td className={`px-4 py-3 text-right text-sm ${tableTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{formatCurrency(tableTotals.netRevenue)}</td>
-              <td className={`px-4 py-3 text-right text-sm ${tableTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{tableTotals.profitPercent.toFixed(2)}%</td>
-              <td className={`px-4 py-3 text-right text-sm ${tableTotals.roas >= 1 ? "text-green-400" : "text-amber-400"}`}>{tableTotals.roas > 0 ? tableTotals.roas.toFixed(2) : "-"}</td>
+              <td className={`px-4 py-3 text-right text-sm ${tableTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{costsUnavailable ? "—" : formatCurrency(tableTotals.netRevenue)}</td>
+              <td className={`px-4 py-3 text-right text-sm ${tableTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{costsUnavailable ? "—" : `${tableTotals.profitPercent.toFixed(2)}%`}</td>
+              <td className={`px-4 py-3 text-right text-sm ${tableTotals.roas >= 1 ? "text-green-400" : "text-amber-400"}`}>{costsUnavailable ? "—" : tableTotals.roas > 0 ? tableTotals.roas.toFixed(2) : "-"}</td>
               <td className="px-4 py-3 text-right text-sm text-white">{tableTotals.bundlePurchases}</td>
               <td className="px-4 py-3 text-right text-sm text-white">{tableTotals.transactionCount}</td>
             </tr>
@@ -2275,13 +2298,13 @@ function ProfitSheetTab({
                 <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(overallTotals.grossRevenue)}</td>
                 <td className="px-4 py-3 text-right text-sm text-red-400">-{formatCurrency(overallTotals.refundAmount)}</td>
                 <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(overallTotals.revenue)}</td>
-                <td className="px-4 py-3 text-right text-sm text-red-400/70">${overallTotals.adsCostUSD.toFixed(2)}</td>
-                <td className="px-4 py-3 text-right text-sm text-red-400">{formatCurrency(overallTotals.adsCostINR)}</td>
-                <td className="px-4 py-3 text-right text-sm text-amber-400">{formatCurrency(overallTotals.gst)}</td>
+                <td className="px-4 py-3 text-right text-sm text-red-400/70">{costsUnavailable ? "—" : formatUsd(overallTotals.adsCostUSD)}</td>
+                <td className="px-4 py-3 text-right text-sm text-red-400">{costsUnavailable ? "—" : formatCurrency(overallTotals.adsCostINR)}</td>
+                <td className="px-4 py-3 text-right text-sm text-amber-400">{costsUnavailable ? "—" : formatCurrency(overallTotals.gst)}</td>
                 {showAccountBalance && renderBalanceTotalCell()}
-                <td className={`px-4 py-3 text-right text-sm ${overallTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{formatCurrency(overallTotals.netRevenue)}</td>
-                <td className={`px-4 py-3 text-right text-sm ${overallTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{overallTotals.profitPercent.toFixed(2)}%</td>
-                <td className={`px-4 py-3 text-right text-sm ${overallTotals.roas >= 1 ? "text-green-400" : "text-amber-400"}`}>{overallTotals.roas > 0 ? overallTotals.roas.toFixed(2) : "-"}</td>
+                <td className={`px-4 py-3 text-right text-sm ${overallTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{costsUnavailable ? "—" : formatCurrency(overallTotals.netRevenue)}</td>
+                <td className={`px-4 py-3 text-right text-sm ${overallTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{costsUnavailable ? "—" : `${overallTotals.profitPercent.toFixed(2)}%`}</td>
+                <td className={`px-4 py-3 text-right text-sm ${overallTotals.roas >= 1 ? "text-green-400" : "text-amber-400"}`}>{costsUnavailable ? "—" : overallTotals.roas > 0 ? overallTotals.roas.toFixed(2) : "-"}</td>
                 <td className="px-4 py-3 text-right text-sm text-white">{overallTotals.bundlePurchases}</td>
                 <td className="px-4 py-3 text-right text-sm text-white">{overallTotals.transactionCount}</td>
               </tr>
@@ -2666,32 +2689,32 @@ function ProfitSheetTab({
         </div>
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Combined GST</p>
-          <p className="text-amber-400 text-xl font-bold">{formatCurrency(totals.gst)}</p>
+          <p className="text-amber-400 text-xl font-bold">{costsUnavailable ? "—" : formatCurrency(totals.gst)}</p>
         </div>
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Ads Cost (USD)</p>
-          <p className="text-red-400/70 text-lg font-bold">${totals.adsCostUSD.toFixed(2)}</p>
+          <p className="text-red-400/70 text-lg font-bold">{costsUnavailable ? "—" : formatUsd(totals.adsCostUSD)}</p>
         </div>
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Ads Cost (INR)</p>
-          <p className="text-red-400 text-xl font-bold">{formatCurrency(totals.adsCostINR)}</p>
+          <p className="text-red-400 text-xl font-bold">{costsUnavailable ? "—" : formatCurrency(totals.adsCostINR)}</p>
         </div>
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Profit</p>
           <p className={`text-xl font-bold ${totals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>
-            {formatCurrency(totals.netRevenue)}
+            {costsUnavailable ? "—" : formatCurrency(totals.netRevenue)}
           </p>
         </div>
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Overall Profit %</p>
           <p className={`text-xl font-bold ${totals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>
-            {totals.profitPercent.toFixed(2)}%
+            {costsUnavailable ? "—" : `${totals.profitPercent.toFixed(2)}%`}
           </p>
         </div>
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Overall ROAS</p>
           <p className={`text-xl font-bold ${totals.roas >= 1 ? "text-green-400" : totals.roas > 0 ? "text-amber-400" : "text-white/40"}`}>
-            {totals.roas > 0 ? totals.roas.toFixed(2) : "-"}
+            {costsUnavailable ? "—" : totals.roas > 0 ? totals.roas.toFixed(2) : "-"}
           </p>
         </div>
           </div>
@@ -3578,6 +3601,7 @@ function MetaBreakdownTab({
         </p>
       </div>
 
+      {data?.error && <p role="status" className="rounded-xl border border-white/10 p-4 text-sm text-slate-300">{data.error}</p>}
       {/* Revenue & Profit Summary */}
       {data?.revenue && (
         <div className="bg-gradient-to-r from-[#1A2235] to-[#1E2942] rounded-xl p-5 border border-white/10">
@@ -3655,6 +3679,9 @@ function AnalyticsTab({
   setDayMode: (value: "calendar_ist" | "business_1130_ist") => void;
   onRefresh: () => void;
 }) {
+  const adSource = useAdSource();
+  const analyticsSourceRef = useRef(adSource);
+  analyticsSourceRef.current = adSource;
   type AnalyticsChartKey = "traffic-hourly" | "sales-hourly" | "traffic-daily" | "sales-daily";
   type ProfitMetric = "profit" | "roas";
   type ProfitView = "table" | "graph";
@@ -3721,9 +3748,11 @@ function AnalyticsTab({
     return local.toISOString().split("T")[0];
   });
   const [matrixLoading, setMatrixLoading] = useState(false);
+  const [matrixUnavailable, setMatrixUnavailable] = useState(!!data?.spendUnavailable);
   const [matrixRows, setMatrixRows] = useState<AnalyticsHourlyProfitabilityPoint[]>(() => data?.hourlyProfitability?.rows || []);
   const [matrixAdsSource, setMatrixAdsSource] = useState<"meta" | "none">(() => data?.hourlyProfitability?.adsSource || "none");
   const matrixFetchSeq = useRef(0);
+  useEffect(() => { matrixFetchSeq.current++; setMatrixRows([]); setMatrixUnavailable(true); }, [adSource]);
   const [chartStyleByKey, setChartStyleByKey] = useState<Record<string, ChartStyle>>({
     "traffic-hourly": "bar",
     "sales-hourly": "bar",
@@ -4409,7 +4438,7 @@ function AnalyticsTab({
     if (!profitabilityRows.length) return null;
 
     const getMetricValue = (row: AnalyticsHourlyProfitabilityPoint) =>
-      profitMetric === "profit" ? row.profitInr : row.roas;
+      (profitMetric === "profit" ? row.profitInr : row.roas) ?? 0;
 
     const rangeStart = new Date(`${matrixStartDate}T00:00:00`);
     const rangeEnd = new Date(`${matrixEndDate}T00:00:00`);
@@ -4716,11 +4745,13 @@ function AnalyticsTab({
   const getMetricLabel = () => (profitMetric === "profit" ? "Profit / Loss (INR)" : "ROAS");
 
   const getMetricFormattedValue = (value: number) => {
+    if (matrixUnavailable) return "—";
     if (profitMetric === "profit") return formatCurrency(value);
     return `${value.toFixed(2)}x`;
   };
 
   const getHeatCellStyle = (value: number) => {
+    if (matrixUnavailable) return { backgroundColor: "transparent" };
     if (profitMetric === "roas") {
       const normalized = Math.min(Math.abs(value) / 3, 1);
       const alpha = 0.08 + normalized * 0.28;
@@ -4758,11 +4789,12 @@ function AnalyticsTab({
       const url = `/api/admin/analytics?token=${encodeURIComponent(token)}&startDate=${encodeURIComponent(
         useStart
       )}&endDate=${encodeURIComponent(useEnd)}&matrixDayMode=${encodeURIComponent(useDayMode)}&_matrixTs=${Date.now()}`;
-      const res = await fetch(url, { cache: "no-store" });
+      const res = await fetch(sourceUrl(url, adSource), { cache: "no-store" });
       const result = await res.json();
       if (!res.ok) throw new Error(result?.error || "Failed to fetch matrix data");
-      if (requestSeq !== matrixFetchSeq.current) return;
+      if (requestSeq !== matrixFetchSeq.current || analyticsSourceRef.current !== adSource) return;
 
+      setMatrixUnavailable(!!result.spendUnavailable);
       setMatrixRows(result?.hourlyProfitability?.rows || []);
       setMatrixAdsSource(result?.hourlyProfitability?.adsSource === "meta" ? "meta" : "none");
     } catch (err) {
@@ -4921,11 +4953,12 @@ function AnalyticsTab({
 
   useEffect(() => {
     if (data?.hourlyProfitability?.rows?.length && matrixRows.length === 0) {
+      setMatrixUnavailable(!!data.spendUnavailable);
       setMatrixRows(data.hourlyProfitability.rows);
       setMatrixAdsSource(data.hourlyProfitability.adsSource === "meta" ? "meta" : "none");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.hourlyProfitability?.rows?.length]);
+  }, [data, adSource]);
 
   const moveCustomRoute = (route: string, direction: "up" | "down") => {
     setCustomRouteOrder((prev) => {
@@ -5467,7 +5500,7 @@ function AnalyticsTab({
                                   : "text-cyan-200"
                               }`}
                             >
-                              {profitMetric === "profit" ? value.toFixed(2) : `${value.toFixed(2)}x`}
+                              {matrixUnavailable ? "—" : profitMetric === "profit" ? value.toFixed(2) : `${value.toFixed(2)}x`}
                             </td>
                           ))}
                         </tr>
@@ -5485,13 +5518,15 @@ function AnalyticsTab({
                                 : "text-cyan-200"
                             }`}
                           >
-                            {profitMetric === "profit" ? value.toFixed(2) : `${value.toFixed(2)}x`}
+                            {matrixUnavailable ? "—" : profitMetric === "profit" ? value.toFixed(2) : `${value.toFixed(2)}x`}
                           </td>
                         ))}
                       </tr>
                     </tbody>
                   </table>
                 </div>
+              ) : matrixUnavailable ? (
+                <p className="text-white/40 text-sm">Ad spend is unavailable for this source and reporting window. Profit and ROAS graphs cannot be calculated.</p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="bg-[#141C2F] rounded-lg border border-white/10 p-3">
@@ -5976,3 +6011,5 @@ function MetricCard({ title, value, subtitle, color, tooltip }: { title: string;
     </div>
   );
 }
+
+export default function RevenueWithSource() { return <AcquisitionView standalone><AdminRevenuePage /></AcquisitionView>; }

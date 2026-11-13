@@ -1,3 +1,4 @@
+import { gaSourceFilter, type AdSource } from "./admin-acquisition";
 import { google } from "googleapis";
 
 export function usGAReportingConfig(env: NodeJS.ProcessEnv = process.env) {
@@ -11,7 +12,7 @@ export function usGAReportingConfig(env: NodeJS.ProcessEnv = process.env) {
   const key = (dedicatedCredentials ? env.US_SOULMATE_GOOGLE_PRIVATE_KEY : env.GOOGLE_PRIVATE_KEY)?.replace(/\\n/g, "\n");
   return { property, email, key };
 }
-export async function usGABounceRate(startDate: string, endDate: string) {
+export async function usGABounceRate(startDate: string, endDate: string, source: AdSource = "all") {
   const { property, email, key } = usGAReportingConfig();
   const scope = "full_days" as const;
   if (!property || !email || !key) return { value: null, sessions: null, scope, status: "GA4 reporting is not configured for the US stream. A matching property ID and service-account read access are required." };
@@ -21,7 +22,8 @@ export async function usGABounceRate(startDate: string, endDate: string) {
     const { data } = await api.properties.runReport({ property: `properties/${property}`, requestBody: {
       dateRanges: [{ startDate, endDate }], metrics: [{ name: "bounceRate" }, { name: "sessions" }],
       dimensionFilter: { andGroup: { expressions: [
-        { filter: { fieldName: "landingPage", inListFilter: { values: ["/us/soulmate", "/us/soulmate/"] } } },
+        ...(gaSourceFilter(source) ? [gaSourceFilter(source)!] : []),
+        { filter: { fieldName: "landingPage", inListFilter: { values: ["/us/soulmate", "/us/soulmate/", "/us/soulmate/discover", "/us/soulmate/discover/"] } } },
         { notExpression: { filter: { fieldName: "sessionSource", stringFilter: { matchType: "EXACT", value: "codex_qa" } } } },
       ] } },
     } }, { timeout: 8000 });

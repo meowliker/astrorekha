@@ -2,6 +2,7 @@ import { CHAT_UNLIMITED_PASS_NAME, CHAT_UNLIMITED_PASS_TYPE } from "./chat-unlim
 import type { PricingConfig } from "@/lib/pricing";
 
 export type TrackingPayment = {
+  last_touch?: Record<string, unknown> | null;
   id: string;
   payu_txn_id: string | null;
   customer_email: string | null;
@@ -97,6 +98,7 @@ export function accountTrackingDayMode(timezone: string | null | undefined): Tra
 }
 
 export type TrackingSummary = {
+  spendUnavailable?: boolean;
   accounts: Array<{ id: string; name: string; currency: string; timezone: string | null; error?: string }>;
   campaigns: TrackingCampaign[];
   hourly: TrackingHour[];

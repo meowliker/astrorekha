@@ -40,6 +40,8 @@ function cleanId(value: unknown): string | null {
 
 export function sanitizePaymentAttribution(input: unknown): PaymentAttributionPayload {
   const raw = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  let landingParams: URLSearchParams | undefined;
+  try { landingParams = new URL(cleanText(raw.landing_url, 2048) || cleanText(raw.landing_path, 2048) || "", "https://astrorekha.com").searchParams; } catch { /* Optional malformed URL. */ }
   const rawCapturedAt = cleanText(raw.captured_at, 64);
   const normalizedCapturedAt =
     rawCapturedAt && !Number.isNaN(new Date(rawCapturedAt).getTime())
@@ -47,10 +49,10 @@ export function sanitizePaymentAttribution(input: unknown): PaymentAttributionPa
       : undefined;
 
   const payload: PaymentAttributionPayload = {
-    google_campaign_id: cleanId(raw.google_campaign_id) || undefined,
-    gclid: cleanText(raw.gclid, 512) || undefined,
-    gbraid: cleanText(raw.gbraid, 512) || undefined,
-    wbraid: cleanText(raw.wbraid, 512) || undefined,
+    google_campaign_id: cleanId(raw.google_campaign_id || raw.gad_campaignid || landingParams?.get("gad_campaignid")) || undefined,
+    gclid: cleanText(raw.gclid || landingParams?.get("gclid"), 512) || undefined,
+    gbraid: cleanText(raw.gbraid || landingParams?.get("gbraid"), 512) || undefined,
+    wbraid: cleanText(raw.wbraid || landingParams?.get("wbraid"), 512) || undefined,
     fbclid: cleanText(raw.fbclid, 256) || undefined,
     fbc: cleanText(raw.fbc, 256) || undefined,
     fbp: cleanText(raw.fbp, 256) || undefined,
@@ -70,9 +72,31 @@ export function sanitizePaymentAttribution(input: unknown): PaymentAttributionPa
     captured_at: normalizedCapturedAt,
   };
 
+  // Auto-tagged Google clicks need no manually configured UTM parameters.
+  if (payload.gclid || payload.gbraid || payload.wbraid) {
+    payload.utm_source ||= "google";
+    payload.utm_medium ||= "cpc";
+  }
+  if (!payload.click_id) payload.click_id = payload.gclid || payload.gbraid || payload.wbraid;
   if (!payload.click_id && payload.fbclid) {
     payload.click_id = payload.fbclid;
   }
 
   return payload;
+}
+
+/** Prefer a server-captured whole touch; preserve matching cookies without mixing campaigns. */
+export function resolvePaymentAttribution(serverTouch: unknown, browserInput: unknown, refererInput: unknown = {}): PaymentAttributionPayload {
+  const browser = sanitizePaymentAttribution(browserInput);
+  if (serverTouch && typeof serverTouch === "object") {
+    const touch = serverTouch as Record<string, unknown>;
+    return sanitizePaymentAttribution({
+      fbc: browser.fbc, fbp: browser.fbp, ...touch,
+      meta_campaign_id: touch.meta_campaign_id || touch.campaign_id,
+      meta_adset_id: touch.meta_adset_id || touch.adset_id,
+      meta_ad_id: touch.meta_ad_id || touch.ad_id,
+    });
+  }
+  return sanitizePaymentAttribution({ ...sanitizePaymentAttribution(refererInput),
+    ...Object.fromEntries(Object.entries(browser).filter(([, value]) => value !== undefined)) });
 }

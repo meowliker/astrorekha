@@ -16,7 +16,7 @@ export type SoulmateTrackingOrder = {
 const FIELDS="id,customer_email,type,bundle_id,amount_cents,paid_amount_cents,payment_status,created_at,paid_at,line_items,attribution";
 export function trackingPayment(order:SoulmateTrackingOrder):TrackingPayment {
  const tags=order.attribution?.marketing||{};
- return {taxAmount:0,id:order.id,payu_txn_id:order.id,customer_email:order.customer_email,
+ return {...tags,taxAmount:0,id:order.id,payu_txn_id:order.id,customer_email:order.customer_email,
  type:order.type,bundle_id:order.bundle_id,feature:order.line_items.map(x=>x.name).join(' + '),coins:null,
  amount:order.paid_amount_cents??order.amount_cents,payment_status:order.payment_status,created_at:order.created_at,fulfilled_at:order.paid_at,
  utm_source:tags.utm_source||null,utm_medium:tags.utm_medium||null,utm_campaign:tags.utm_campaign||null,utm_term:tags.utm_term||null,utm_content:tags.utm_content||null,
@@ -87,7 +87,7 @@ export async function readSoulmateUtmVisits(db:SupabaseClient,start:string,end:s
  for(let offset=0;offset<100000;offset+=1000){
   const {data,error}=await db.from('us_main_events').select('id,created_at,session_id,path,attribution').eq('environment','production').eq('event_name','page_view').eq('path','/us').gte('created_at',start).lt('created_at',end).order('created_at').order('id').range(offset,offset+999);
   if(error)throw new Error('Unable to read US main arrivals');
-  for(const row of data){const tags=row.attribution||{};const url=new URL('https://astrorekha.com/us');for(const key of ['utm_source','utm_medium','utm_campaign','utm_term','utm_content','meta_campaign_id','meta_adset_id','meta_ad_id'])if(tags[key])url.searchParams.set(key,String(tags[key]));
+  for(const row of data){const tags=row.attribution||{};const url=new URL('https://astrorekha.com/us');for(const key of ['utm_source','utm_medium','utm_campaign','utm_term','utm_content','meta_campaign_id','meta_adset_id','meta_ad_id','gclid','gbraid','wbraid','gad_campaignid'])if(tags[key])url.searchParams.set(key,String(tags[key]));
    const visit=parseTrackedUtmVisit({created_at:row.created_at,url:url.href});
    const key=`${row.session_id}:${visit?.campaignId}:${visit?.campaignName}`;if(visit&&!seen.has(key)){seen.add(key);visits.push(visit);}
   }

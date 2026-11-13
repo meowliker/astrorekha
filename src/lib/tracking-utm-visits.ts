@@ -1,9 +1,11 @@
+import { acquisitionChannel } from "./admin-acquisition";
 import { trackingHourBucket, isMetaSource, type TrackingDayMode } from "./tracking-dashboard";
 import type { getSupabaseAdmin } from "./supabase-admin";
 
 type LandingRow = { created_at: string; url: string | null };
 
 export type TrackingUtmVisit = {
+  channel?: "meta" | "google" | "other";
   at: string;
   campaignId: string | null;
   campaignName: string | null;
@@ -22,7 +24,7 @@ const value = (params: URLSearchParams, ...keys: string[]) => {
   return null;
 };
 
-/** Only count page views whose actual arrival URL carries campaign tags; stored attribution persists on later pages. */
+/** Count tagged arrivals and configured untagged entry pages; never later untagged checkout steps. */
 export function parseTrackedUtmVisit(row: LandingRow): TrackingUtmVisit | null {
   if (!row.url || !Number.isFinite(Date.parse(row.created_at))) return null;
   let url: URL;
@@ -31,9 +33,12 @@ export function parseTrackedUtmVisit(row: LandingRow): TrackingUtmVisit | null {
   const campaignId = value(params, "meta_campaign_id", "campaign_id", "campaignid", "utm_campaign_id");
   const campaignName = value(params, "utm_campaign");
   const source = value(params, "utm_source");
-  if (!campaignId && !/^\d{8,24}$/.test(campaignName || "") && (!campaignName || !isMetaSource(source))) return null;
+  const channel = acquisitionChannel({ url: row.url });
+  const mappedEntry = ["/", "/us", "/discover", "/soulmate", "/soulmate/discover", "/us/soulmate", "/us/soulmate/discover"].includes(url.pathname.replace(/\/+$/, "") || "/");
+  if (channel === "other" || (!params.size && !mappedEntry)) return null;
+  if (!mappedEntry && channel !== "google" && !campaignId && !/^\d{8,24}$/.test(campaignName || "") && (!campaignName || !isMetaSource(source))) return null;
   return {
-    at: row.created_at, campaignId, campaignName, source,
+    channel, at: row.created_at, campaignId, campaignName: campaignName || (channel === "google" ? "Google Ads · campaign not provided" : channel === "meta" ? "Meta Ads · campaign not provided" : null), source,
     adsetId: value(params, "meta_adset_id", "adset_id", "adsetid"),
     adId: value(params, "meta_ad_id", "ad_id", "adid"),
     term: value(params, "utm_term"), content: value(params, "utm_content"),
@@ -47,11 +52,14 @@ export async function readTrackedUtmVisits(
   for (let offset = 0; ; offset += 1000) {
     const { data, error } = await supabase.from("marketing_events")
       .select("created_at,url").eq("event_name", "page_view")
-      .or("url.ilike.%utm_campaign=%,url.ilike.%campaign_id=%")
+      .or("url.ilike.%utm_campaign=%,url.ilike.%campaign_id=%,url.ilike.%gclid=%,url.ilike.%gbraid=%,url.ilike.%wbraid=%,path.in.(/,/discover,/discover/),route.in.(/,/discover,/discover/)")
       .gte("created_at", start).lt("created_at", end)
       .order("created_at", { ascending: true }).range(offset, offset + 999);
     if (error) throw new Error(`Unable to read UTM arrivals: ${error.message}`);
     for (const row of (data || []) as LandingRow[]) {
+      let entryPath = "";
+      try { entryPath = new URL(row.url || "").pathname; } catch { continue; }
+      if (/^\/(?:soulmate|us)(?:\/|$)/.test(entryPath)) continue;
       const visit = parseTrackedUtmVisit(row);
       if (visit) visits.push(visit);
     }

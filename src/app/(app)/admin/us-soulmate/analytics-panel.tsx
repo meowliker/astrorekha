@@ -1,4 +1,5 @@
 "use client";
+import { useAdSource } from "@/components/admin/AcquisitionView";
 import { useEffect, useState } from "react";
 import type { summarizeSoulmateAnalytics } from "@/lib/us-soulmate-analytics";
 import TrackingDateRangePicker from "./tracking/TrackingDateRangePicker";
@@ -7,6 +8,7 @@ type Report = ReturnType<typeof summarizeSoulmateAnalytics> & { bounce: { value:
 const usd = (cents: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
 const percent = (value: number | null) => value === null ? "—" : `${value.toFixed(1)}%`;
 export function SoulmateAnalyticsPanel() {
+  const adSource = useAdSource();
   const [dates, setDates] = useState(() => { const today = analyticsToday(); return { start: defaultAnalyticsStart(today), end: today }; });
   const { start, end } = dates;
   const [tab, setTab] = useState<"overview" | "reports">("overview");
@@ -19,14 +21,14 @@ export function SoulmateAnalyticsPanel() {
     async function load() {
       try {
         const token = localStorage.getItem("admin_session_token");
-        const response = await fetch(`/api/admin/us-soulmate/analytics?${new URLSearchParams({ start, end })}`, { headers: { Authorization: `Bearer ${token || ""}` }, cache: "no-store", signal: abort.signal });
+        const response = await fetch(`/api/admin/us-soulmate/analytics?${new URLSearchParams({ start, end, adSource })}`, { headers: { Authorization: `Bearer ${token || ""}` }, cache: "no-store", signal: abort.signal });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Unable to load analytics");
         if (!abort.signal.aborted) setReport(data);
       } catch (cause) { if (!abort.signal.aborted) setError(cause instanceof Error ? cause.message : "Unable to load analytics"); }
     }
     void load(); return () => abort.abort();
-  }, [start, end, refresh]);
+  }, [start, end, refresh, adSource]);
   return <section className="py-8" aria-label="Soulmate analytics">
     <div className="flex flex-wrap items-end gap-4">
       <div><p className="mb-2 text-sm text-white/60">Date range · IST</p><TrackingDateRangePicker value={dates} onChange={setDates} minDate={US_ANALYTICS_LAUNCH_DATE} maxDate={analyticsToday()} maxDays={93} align="left" /></div>

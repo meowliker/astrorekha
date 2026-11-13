@@ -11,7 +11,7 @@ function stub(file, exports) { const id = require.resolve(file); require.cache[i
 let tables, reads, mutations, metaResult;
 const field = (row, key) => key.includes('->>') ? row[key.split('->>')[0]]?.[key.split('->>')[1]] : row[key];
 const db = { from(table) {
-  assert.ok(['us_soulmate_orders','us_soulmate_refund_events','us_soulmate_marketing_events','us_soulmate_admin_settings','settings','admin_sessions','us_soulmate_tracking_views','soulmate_admin_settings'].includes(table), `Unexpected table ${table}`);
+  assert.ok(['us_soulmate_orders','us_soulmate_refund_events','us_soulmate_marketing_events','us_soulmate_admin_settings','settings','admin_sessions','admin_workspace_members','us_soulmate_tracking_views','soulmate_admin_settings'].includes(table), `Unexpected table ${table}`);
   reads.push(table); let filters = [], single = false, range = [0, Infinity], operation, payload;
   const q = {
     select() { return q; }, eq(k,v) { filters.push(row => field(row,k) === v); return q; },
@@ -45,7 +45,7 @@ const views=require('../src/app/api/admin/us-soulmate/tracking/views/route');
 const {NextRequest}=require('next/server');
 const range={start:'2026-10-15T06:00:00.000Z',end:'2026-10-18T06:00:00.000Z'};
 const base={id:'sm_fixture',customer_email:'fixture@example.com',plan:'express',product_info:'Complete Soulmate Vision: Fast Delivery + Description + Color Upgrade',amount:176882,payment_status:'paid',payment_mode:'live',funnel:'us_soulmate_standalone',created_at:'2026-10-16T06:30:00Z',paid_at:'2026-10-16T07:00:00Z',attribution:{trackingEnvironment:'production',marketing:{utm_source:'meta',utm_campaign:'Soulmate A',meta_campaign_id:'123456789',meta_adset_id:'987654321',meta_ad_id:'123456780'}}};
-function req(url='',method='GET',body,auth=true) {return new NextRequest(`http://localhost/api/admin/us-soulmate/tracking${url}`,{method,headers:{...(auth?{'x-admin-session':'fixture-session'}:{}),'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});}
+function req(url='',method='GET',body,auth=true) {return new NextRequest(`http://localhost/api/admin/us-soulmate/tracking${url}`,{method,headers:{...(auth?{'x-admin-session':'a'.repeat(64)}:{}),'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});}
 beforeEach(()=>{
   reads=[];mutations=[];metaResult=null;
   process.env.META_AD_ACCOUNT_IDS='999999'; delete process.env.META_AD_ACCOUNT_ID;
@@ -54,7 +54,8 @@ beforeEach(()=>{
     us_soulmate_orders:[base,{...base,id:'test',payment_mode:'test'},{...base,id:'local',attribution:{trackingEnvironment:'local'}},{...base,id:'other',funnel:'main'},{...base,id:'failed',payment_status:'failed'}],
     us_soulmate_admin_settings:[{id:true,accounts:[],exchange_rate:95,revision:1}],
     settings:[{key:'meta_ad_accounts',value:{accounts:[{accountId:'888888',accessToken:'DO-NOT-USE'}]}}],
-    admin_sessions:[{id:'fixture-session',expires_at:'2099-01-01T00:00:00Z'}],
+    admin_workspace_members:[{admin_id:'fixture-admin',active:true,is_administrator:false,workspaces:['us-soulmate']}],
+    admin_sessions:[{admin_id:'fixture-admin',id:'a'.repeat(64),expires_at:'2099-01-01T00:00:00Z'}],
     us_soulmate_marketing_events:[{id:'landing',event_name:'us_soulmate_landing_view',product_type:'us_soulmate_standalone',session_id:'visitor',created_at:'2026-10-16T06:50:00Z',url:'https://astrorekha.com/us/soulmate?utm_source=meta&utm_campaign=Soulmate+A&meta_campaign_id=123456789'}, {id:'normal',event_name:'page_view',product_type:'main',session_id:'other',created_at:'2026-10-16T06:50:00Z',url:'https://astrorekha.com/welcome?meta_campaign_id=123456789'}],
   };
   global.fetch=async()=>{throw new Error('External network is forbidden in this test');};
@@ -127,7 +128,8 @@ test('US credentials never fall back to other flows and shared accounts retain c
 test('arrival URLs take precedence over old attribution and reloads do not inflate visits',async()=>{
   tables.us_soulmate_marketing_events.push({...tables.us_soulmate_marketing_events[0],id:'reload'});
   assert.equal((await helpers.readSoulmateUtmVisits(db,range.start,range.end)).length,1);
-  assert.equal(helpers.soulmateLandingVisit({created_at:base.paid_at,url:'https://astrorekha.com/us/soulmate',landing_url:'https://astrorekha.com/us/soulmate?meta_campaign_id=123456789'}),null);
+  const mapped=helpers.soulmateLandingVisit({created_at:base.paid_at,url:'https://astrorekha.com/us/soulmate',landing_url:'https://astrorekha.com/us/soulmate?meta_campaign_id=123456789'});
+  assert.equal(mapped.channel,'meta');assert.equal(mapped.campaignId,null,'route fallback must not inherit an old campaign');
   assert.equal(helpers.soulmateLandingVisit({created_at:base.paid_at,url:null,landing_url:'https://astrorekha.com/welcome?meta_campaign_id=123456789'}),null);
 });
 test('saved view CRUD stays in its own table and preserves every column including bid',async()=>{

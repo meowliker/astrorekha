@@ -1,3 +1,5 @@
+import {isStandaloneSoulmatePayment} from "./admin-order-funnel";
+import { filterSourcePayments, filterSourceEvents, type AdSource } from "./admin-acquisition";
 import type { UsageSource, UsageUser, UsageChat } from "@/lib/revenue-usage";
 import { createHash, randomUUID } from "node:crypto";
 import { gzipSync, gunzipSync } from "node:zlib";
@@ -16,9 +18,9 @@ import {
 
 // Private Storage persists across deployments. No public URLs or browser credentials.
 export const REVENUE_BUCKET = "admin-revenue-cache";
-const VERSION = 3;
+const VERSION = 4;
 // Recalculate reports after formula changes without rereading source payment history.
-const REPORT_VERSION = 6;
+const REPORT_VERSION = 8;
 type Manifest = { version: number; id: string; generatedAt: string };
 type Source = Manifest & {
   payments: PaymentRow[];
@@ -46,7 +48,7 @@ type SyncState = {
   sync_at: string;
 };
 const PAYMENT_FIELDS =
-  "id,payu_txn_id,razorpay_order_id,user_id,customer_email,type,bundle_id,feature,amount,currency,payment_status,coins,created_at,fulfilled_at,utm_source,utm_medium,utm_campaign,utm_content,utm_term,first_touch,last_touch";
+  "id,payu_txn_id,landing_url,landing_path,razorpay_order_id,user_id,customer_email,type,bundle_id,feature,amount,currency,payment_status,coins,created_at,fulfilled_at,utm_source,utm_medium,utm_campaign,utm_content,utm_term,first_touch,last_touch";
 const EVENT_FIELDS =
   "id,event_name,product_type,product_id,user_id,email,visitor_id,created_at";
 
@@ -467,6 +469,7 @@ export async function savedRevenueReport(
   range: RevenueDashboard["range"],
   attribution: "first" | "last",
   refresh: boolean,
+  adSource: AdSource = "all",
 ) {
   let source: Source | null = null;
   let manifest = await readManifest(db);
@@ -474,7 +477,7 @@ export async function savedRevenueReport(
     source = await syncSource(db);
     manifest = source;
   }
-  const path = `reports/v${REPORT_VERSION}/${range.start}_${range.end}_${attribution}.json.gz`;
+  const path = `reports/v${REPORT_VERSION}/${range.start}_${range.end}_${attribution}_${adSource}.json.gz`;
   const saved = await read<RevenueDashboard & { sourceId: string }>(db, path);
   if (saved?.sourceId === manifest.id) return saved;
   source ||= await read<Source>(db, `sources/${manifest.id}.json.gz`);
@@ -489,9 +492,10 @@ export async function savedRevenueReport(
       ),
     ).toISOString(),
   };
+  const scopedEvents = adSource === "all" ? source.events : filterSourceEvents(await readDated<OfferEvent>(db, "marketing_events", `${EVENT_FIELDS},session_id,utm_source,utm_medium,utm_campaign,url,landing_url`, storedRange.from, storedRange.to), adSource);
   const result = buildRevenueDashboard({
-    payments: source.payments,
-    events: source.events,
+    payments: filterSourcePayments(source.payments.filter(row=>!isStandaloneSoulmatePayment(row)), adSource, attribution),
+    events: scopedEvents,
     // Stored snapshots can predate a newly added report. Merge the current catalog
     // while preserving saved prices and computing all metrics from saved records.
     pricing: normalizePricing(source.pricing),
@@ -502,12 +506,13 @@ export async function savedRevenueReport(
   });
   const report = {
     ...result,
+    adSource,
     generatedAt: source.generatedAt,
     sourceId: source.id,
     sync: source.sync,
     snapshot: createHash("sha256")
       .update(
-        `${REPORT_VERSION}:${source.id}:${range.start}:${range.end}:${attribution}`,
+        `${REPORT_VERSION}:${source.id}:${range.start}:${range.end}:${attribution}:${adSource}`,
       )
       .digest("hex"),
     orderPage: {

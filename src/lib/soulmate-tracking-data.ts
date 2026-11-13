@@ -1,3 +1,4 @@
+import {acquisitionTouch,acquisitionTags} from "./admin-acquisition";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getMetaAccountCredentialsFromSettings, type MetaAdAccountCredentialRange } from "./meta-ad-accounts";
 import { selectedCampaignIds, type SoulmateCredential } from "./soulmate-campaigns";
@@ -15,8 +16,9 @@ export type SoulmateTrackingOrder = {
 const FIELDS = "id,customer_email,plan,product_info,amount,payment_status,payment_mode,funnel,created_at,paid_at,attribution";
 
 export function trackingPayment(order: SoulmateTrackingOrder): TrackingPayment {
-  const tags = order.attribution?.marketing || {};
+  const tags = acquisitionTags(acquisitionTouch(order as unknown as Record<string,unknown>)) as PaymentAttributionPayload;
   return {
+    last_touch: tags as Record<string, unknown>,
     id: order.id, payu_txn_id: order.id, customer_email: order.customer_email,
     type: order.plan === "express" ? "Bundle" : "Sketch", bundle_id: null,
     feature: order.product_info, coins: null, amount: order.amount,

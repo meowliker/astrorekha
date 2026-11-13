@@ -105,13 +105,14 @@ test('the Ads paywall copies the original layout and keeps its section order rat
   assert.equal((revised.match(/<ProductOfferTracker/g) || []).length, 1);
   assert.ok(!revised.includes('fetch('), 'presentation must keep the existing payment and tracking handlers');
 });
-test('the payment/tracking implementation and all shared post-payment destinations remain byte-identical', () => {
+test('payment delivery, event senders and shared post-payment destinations remain byte-identical', () => {
   const protectedFiles = [
     'src/app/(onboarding)/onboarding/bundle-upsell/page.tsx',
     'src/app/(onboarding)/onboarding/step-19/page.tsx', 'src/app/(onboarding)/onboarding/step-20/page.tsx',
     'src/app/api/payments/initiate/route.ts',
     'src/lib/payu-fulfillment.ts', 'src/lib/ga4-purchase.ts', 'src/lib/meta-purchase.ts',
-    'src/lib/attribution-client.ts', 'src/components/MarketingBoundary.tsx',
+    // Attribution capture intentionally changed; behavioral coverage is in test-google-attribution.cjs.
+    'src/components/MarketingBoundary.tsx',
     'src/app/soulmate/soulmate-landing.tsx', 'src/app/us/soulmate/soulmate-landing.tsx',
   ];
   for (const file of protectedFiles) {

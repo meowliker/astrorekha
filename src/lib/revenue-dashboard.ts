@@ -1,3 +1,4 @@
+import { acquisitionChannel } from "./admin-acquisition";
 import { buildRevenueUsage, type UsageSource } from "./revenue-usage";
 import { buildUpsellCohorts } from "./revenue-upsells";
 import type { PricingConfig } from "./pricing";
@@ -29,6 +30,7 @@ export type PaymentRow = {
   last_touch?: Record<string, unknown> | null;
 };
 export type OfferEvent = {
+  session_id?: string | null;
   id: string;
   event_name: string;
   product_type?: string | null;
@@ -360,7 +362,7 @@ function touch(p: PaymentRow, mode: "first" | "last") {
       ? String((source as Record<string, unknown>)[key]).trim()
       : "";
   return {
-    source: field("utm_source") || "Unattributed",
+    source: field("utm_source") || ({ google: "Google Ads · landing page", meta: "Meta Ads · landing page", other: "Unattributed" }[acquisitionChannel(source as Record<string, unknown>)]),
     medium: field("utm_medium"),
     campaign: field("utm_campaign"),
     content: field("utm_content"),
@@ -796,6 +798,7 @@ export function buildRevenueDashboard(input: {
   };
 }
 export type RevenueDashboard = ReturnType<typeof buildRevenueDashboard> & {
+  adSource?: "all" | "meta" | "google";
   filters?: { sources: string[]; campaigns: string[] };
   generatedAt: string;
   snapshot: string;

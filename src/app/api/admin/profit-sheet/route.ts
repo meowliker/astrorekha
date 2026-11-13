@@ -1,4 +1,6 @@
 import {withAdminAccess} from "@/lib/admin-access";
+import { parseAdSource } from "@/lib/admin-acquisition";
+import { readAdSourceFinance } from "@/lib/admin-source-finance";
 import { isSoulmateTransaction } from "@/lib/soulmate-orders";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -626,7 +628,7 @@ type FinancialRow = {
   amount: number;
   signedAmount: number;
   type: string;
-  gateway: "payu" | "paytm" | "pinelabs";
+  gateway: "payu" | "paytm" | "pinelabs" | "shiprocket";
 };
 
 async function loadProfitFinancialRows(supabase: SupabaseClient, startDate: string, endDate: string, dayMode: ProfitSheetDayMode) {
@@ -658,7 +660,7 @@ async function loadProfitFinancialRows(supabase: SupabaseClient, startDate: stri
   // Never query PayU for these orders or synthesize PayU identifiers.
   for (let offset = 0; ; offset += 1000) {
     const backupRows = await supabase.from("payments").select("id,amount,type,paid_at,created_at,gateway")
-      .in("gateway", ["paytm", "pinelabs"]).eq("payment_mode", "live").in("payment_status", ["paid", "refunded"])
+      .in("gateway", ["paytm", "pinelabs", "shiprocket"]).eq("payment_mode", "live").in("payment_status", ["paid", "refunded"])
       .gte("paid_at", `${addDaysToIsoDate(startDate, -1)}T00:00:00Z`).lt("paid_at", `${addDaysToIsoDate(endDate, 2)}T00:00:00Z`)
       .order("id").range(offset, offset + 999);
     if (backupRows.error) throw new Error("Unable to read backup gateway sales");
@@ -666,7 +668,7 @@ async function loadProfitFinancialRows(supabase: SupabaseClient, startDate: stri
       const createdAt = new Date(payment.paid_at || payment.created_at);
       const dayKey = getCostaRicaBusinessDayKeyFromDate(createdAt, dayMode);
       if (dayKey < startDate || dayKey > endDate) continue;
-      financialRows.push({ gateway: payment.gateway as "paytm" | "pinelabs", createdAt, dayKey, kind: payment.amount < 0 ? "refund" : "sale", amount: Math.abs(payment.amount) / 100, signedAmount: payment.amount / 100, type: payment.type });
+      financialRows.push({ gateway: payment.gateway as FinancialRow["gateway"], createdAt, dayKey, kind: payment.amount < 0 ? "refund" : "sale", amount: Math.abs(payment.amount) / 100, signedAmount: payment.amount / 100, type: payment.type });
     }
     if (backupRows.data.length < 1000) break;
   }
@@ -917,7 +919,7 @@ async function handleGET(request: NextRequest) {
     });
 
     const { searchParams } = new URL(request.url);
-    const token = searchParams.get("token");
+    const token = request.headers.get("x-admin-session") || searchParams.get("token");
     const dayModeParam = searchParams.get("dayMode");
     if (dayModeParam && dayModeParam !== BUSINESS_DAY_MODE && dayModeParam !== CALENDAR_DAY_MODE) {
       return NextResponse.json({ error: "Choose a valid profit-sheet day mode." }, { status: 400 });
@@ -947,6 +949,42 @@ async function handleGET(request: NextRequest) {
       return NextResponse.json({ error: "Session expired" }, { status: 401 });
     }
 
+    const adSource = parseAdSource(searchParams);
+    const sourceBreakdownDate = searchParams.get("revenueBreakdownDate");
+    if (adSource !== "all" && sourceBreakdownDate !== null) {
+      if (sourceBreakdownDate < APP_LAUNCH_DATE || sourceBreakdownDate > businessToday) return NextResponse.json({ error: "Choose a valid reporting date." }, { status: 400 });
+      const [day] = await readAdSourceFinance(supabase, "astrorekha", adSource, sourceBreakdownDate, sourceBreakdownDate, dayMode);
+      const names: Record<string, string> = { payu: "PayU", paytm: "Paytm", pinelabs: "Pine Labs", shiprocket: "Shiprocket Fastrr", coupon: "Coupon" };
+      const gateways = Object.entries(day.gateways).map(([gateway, totals]) => ({ gateway, name: names[gateway] || gateway,
+        received: totals.received / 100, refunds: totals.refunds / 100, revenue: (totals.received - totals.refunds) / 100,
+        salesCount: totals.salesCount, refundCount: totals.refundCount }));
+      return NextResponse.json({ date: sourceBreakdownDate, dayMode, adSource, gateways, received: day.received / 100,
+        refunds: day.refund / 100, revenue: (day.received - day.refund) / 100, fetchedAt: new Date().toISOString() }, { headers: { "Cache-Control": "no-store" } });
+    }
+    if (adSource !== "all") {
+      const [saved, finance] = await Promise.all([readProfitSheetRows(supabase, startDate, endDate, dayMode), readAdSourceFinance(supabase, "astrorekha", adSource, startDate, endDate, dayMode)]);
+      const rows = finance.map((day) => {
+        const baseline = saved.find((row) => row.date === day.date);
+        const revenue = (day.received - day.refund) / 100;
+        const spendKnown = adSource === "meta" && !!baseline;
+        const adsCostINR = spendKnown ? baseline!.adsCostINR : null;
+        const indianAdSpendInr = spendKnown ? baseline!.gstBreakdown?.indianAdSpendInr || 0 : 0;
+        const calc = calculateProfitSheetGst(revenue, getProfitSheetGstRate(day.date), indianAdSpendInr);
+        const gst = indianAdGstApplies(day.date) ? calc.gst : revenue * LEGACY_GST_RATE;
+        const profit = adsCostINR === null ? null : revenue - gst - adsCostINR;
+        return { date: day.date, day: getDayOfWeek(day.date), revenue, grossRevenue: day.received / 100, refundAmount: day.refund / 100,
+          gst: spendKnown ? gst : null, gstBreakdown: { ...calc, indianAdSpendInr, indianAdAccounts: spendKnown ? baseline!.gstBreakdown?.indianAdAccounts || [] : [] },
+          adsCostUSD: spendKnown ? baseline!.adsCostUSD : null, adsCostINR, netRevenue: profit,
+          profitPercent: profit === null ? null : revenue > 0 ? profit / revenue * 100 : 0,
+          roas: adsCostINR ? (day.bundleReceived - day.bundleRefund) / 100 / adsCostINR : null,
+          bundleRevenue: (day.bundleReceived - day.bundleRefund) / 100, transactionCount: day.orders, salesCount: day.orders, refundCount: day.refunds, bundlePurchases: day.bundleOrders,
+          accountBalance: spendKnown ? baseline!.accountBalance : undefined, spendUnavailable: !spendKnown };
+      });
+      return NextResponse.json({ rows, adSource, dayMode, exchangeRate: Number(searchParams.get("exchangeRate")) || null,
+        source: "source_filtered_payments", dateRange: { start: startDate, end: endDate }, missingRanges: [], syncedRange: null,
+        syncWarning: adSource === "google" ? "Google Ads spend is not connected. Spend, profit and ROAS are unavailable." : "Meta spend uses the saved Profit Sheet; sales and refunds use saved order attribution." }, { headers: { "Cache-Control": "no-store" } });
+    }
+
     const revenueDate = searchParams.get("revenueBreakdownDate");
     if (revenueDate !== null) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(revenueDate) ||
@@ -958,13 +996,15 @@ async function handleGET(request: NextRequest) {
       // Use exactly the same events and day boundaries as the Profit Sheet sync.
       // Opening the breakdown never refreshes or writes the saved sheet.
       const { financialRows } = await loadProfitFinancialRows(supabase, revenueDate, revenueDate, dayMode);
-      const gateways = (["payu", "paytm", "pinelabs"] as const).map((gateway) => {
+      const gatewayNames = { payu: "PayU", paytm: "Paytm", pinelabs: "Pine Labs", shiprocket: "Shiprocket Fastrr" } as const;
+      const gateways = (Object.keys(gatewayNames) as FinancialRow["gateway"][])
+        .filter(gateway => gateway !== "shiprocket" || financialRows.some(event => event.gateway === gateway)).map((gateway) => {
         const events = financialRows.filter((event) => event.gateway === gateway);
         const sales = events.filter((event) => event.kind === "sale");
         const refunds = events.filter((event) => event.kind === "refund");
         const receivedPaise = sales.reduce((sum, event) => sum + Math.round(event.amount * 100), 0);
         const refundPaise = refunds.reduce((sum, event) => sum + Math.round(event.amount * 100), 0);
-        return { gateway, name: gateway === "pinelabs" ? "Pine Labs" : gateway === "payu" ? "PayU" : "Paytm", received: receivedPaise / 100,
+        return { gateway, name: gatewayNames[gateway], received: receivedPaise / 100,
           refunds: refundPaise / 100, revenue: (receivedPaise - refundPaise) / 100,
           salesCount: sales.length, refundCount: refunds.length };
       });

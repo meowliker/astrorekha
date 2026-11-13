@@ -1,4 +1,7 @@
 // Real report handlers with isolated provider/database boundaries. No API keys or live jobs are used.
+process.env.NEXT_PUBLIC_SUPABASE_URL='https://example.supabase.co';
+process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY='fixture';
+process.env.REPORT_SESSION_SECRET='report-regression-fixture';
 const assert = require('node:assert/strict');
 const { test, beforeEach } = require('node:test');
 const Module = require('node:module'), path = require('node:path');
@@ -22,21 +25,23 @@ Module._load = function(name, ...args) {
 const db = { from(table) {
   let patch = null;
   const execute = async () => {
-    if (table === 'settings') return { data: null };
-    if (table === 'users') return { data: { id: 'fixture-user', unlocked_features: { soulmateSketch: !locked } } };
+    if (table === 'settings' || table === 'customer_markets') return { data: null };
+    if (table === 'users') return { data: { id: 'fixture-user', unlocked_features: { soulmateSketch: !locked, palmReading: !locked } } };
+    if (table === 'user_profiles' || table === 'palm_readings') return {data:null,error:null};
     assert.equal(table, 'soulmate_sketches');
     if (patch) { writes++; sketch = { ...sketch, ...patch }; patch = null; }
     return { data: sketch, error: null };
   };
-  const q = { select() { return q; }, eq() { return q; }, maybeSingle: execute, upsert(value) { patch = value; return q; }, update(value) { patch = value; return q; }, then(ok, fail) { return execute().then(ok, fail); } };
+  const q = { select() { return q; }, eq() { return q; }, is() { return q; }, maybeSingle: execute, upsert(value) { patch = value; return q; }, update(value) { patch = value; return q; }, then(ok, fail) { return execute().then(ok, fail); } };
   return q;
 } };
 const { NextRequest } = require('next/server');
+const {createReportSession}=require('../src/lib/report-session');
 const palm = require('../src/app/api/palm-reading/route');
 const generate = require('../src/app/api/soulmate-sketch/generate/route');
 const status = require('../src/app/api/soulmate-sketch/status/route');
 const palmBody = { imageData: 'data:image/jpeg;base64,Zml4dHVyZQ==', birthDate: '1990-06-28', zodiacSign: 'Cancer', gender: 'male', userId: 'fixture-user' };
-const req = (url, body, auth = true) => new NextRequest('http://localhost' + url, { ...(body ? { method: 'POST', body: JSON.stringify(body) } : {}), headers: { 'content-type': 'application/json', ...(auth ? { cookie: 'ar_access=fixture-user' } : {}) } });
+const req = (url, body, auth = true) => new NextRequest('http://localhost' + url, { ...(body ? { method: 'POST', body: JSON.stringify(body) } : {}), headers: { 'content-type': 'application/json', ...(auth ? { cookie: 'ar_access=fixture-user; ar_report_session='+createReportSession('fixture-user') } : {}) } });
 beforeEach(() => { providerCalls = []; response = JSON.stringify({ cosmicInsight: 'Fixture reading', tabs: { ageTimeline: { stages: [] }, wealth: {}, mounts: {}, love: {} } }); palmFailure = false; sketchFailure = null; locked = false; writes = 0; sketch = { user_id: 'fixture-user', generation_count: 0, question_answers: { attracted_to: 'female', main_worry: 'communication' } }; });
 test('palm generation passes the saved birth date, zodiac and uploaded image to the provider and returns the report structure', async () => {
   const result = await palm.POST(req('/api/palm-reading', palmBody)); const body = await result.json();

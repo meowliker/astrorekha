@@ -1,4 +1,5 @@
 import {withAdminAccess} from "@/lib/admin-access";
+import { parseAdSource } from "@/lib/admin-acquisition";
 import { savedRevenueReport } from "@/lib/revenue-cache";
 import { filterAndSortOrders } from "@/lib/revenue-table";
 import { NextRequest, NextResponse } from "next/server";
@@ -70,7 +71,7 @@ async function handle(request: NextRequest, refresh = false) {
     }
     const attribution =
       params.get("attribution") === "first" ? "first" : "last";
-    const result = await savedRevenueReport(db, range, attribution, refresh);
+    const result = await savedRevenueReport(db, range, attribution, refresh, parseAdSource(params));
     const snapshot = result.snapshot;
     if (params.has("snapshot") && params.get("snapshot") !== snapshot)
       return NextResponse.json(

@@ -1,4 +1,5 @@
 import {withAdminAccess} from "@/lib/admin-access";
+import { parseAdSource, matchesAdSource, filterSourceEvents } from "@/lib/admin-acquisition";
 import { NextRequest, NextResponse } from "next/server";
 import { usGABounceRate } from "@/lib/us-soulmate-ga-report";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -21,11 +22,12 @@ async function handleGET(request: NextRequest) {
   try { range = analyticsRange(startDate, endDate, today); }
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid dates." }, { status: 400 }); }
   try {
+    const adSource = parseAdSource(request.nextUrl.searchParams);
     const events: SoulmateAnalyticsEvent[] = [], orders: ProductAnalyticsOrder[] = [];
     await Promise.all([
       (async () => { for (let offset = 0; ; offset += 1000) {
         if (offset >= 100000) throw new Error("Choose a smaller date range.");
-        const result = await db.from("us_soulmate_marketing_events").select("event_name,session_id,utm_source,utm_campaign,created_at")
+        const result = await db.from("us_soulmate_marketing_events").select("event_name,session_id,utm_source,utm_medium,utm_campaign,created_at,url")
           .eq("product_type", US_SOULMATE_FUNNEL).gte("created_at", range.start).lt("created_at", range.end)
           .order("created_at").order("id").range(offset, offset + 999);
         if (result.error) throw new Error("Unable to read soulmate events.");
@@ -42,7 +44,7 @@ async function handleGET(request: NextRequest) {
         orders.push(...result.data); if (result.data.length < 1000) break;
       } })(),
     ]);
-    return NextResponse.json({ ...summarizeSoulmateAnalytics(events, orders), bounce: await usGABounceRate(startDate, endDate), startDate, endDate, startAt: range.start, endAt: range.end }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ...summarizeSoulmateAnalytics(filterSourceEvents(events, adSource), orders.filter(order => matchesAdSource(order, adSource))), bounce: await usGABounceRate(startDate, endDate, adSource), startDate, endDate, startAt: range.start, endAt: range.end }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load report" }, { status: 503 }); }
 }
 
