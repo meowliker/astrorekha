@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { paytmConfig } from "@/lib/paytm-api";
 import { reconcilePaytmOrder } from "@/lib/paytm-reconciliation";
+import { selectPaytmReconciliationCandidates } from "@/lib/paytm-reconciliation-queue";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 export async function GET(request: NextRequest) {
@@ -10,21 +11,23 @@ export async function GET(request: NextRequest) {
   try {
     const { mode } = paytmConfig();
     const db = getSupabaseAdmin({ fresh: true });
-    const orders = await db.from("payments").select("id").eq("gateway", "paytm").eq("payment_mode", mode)
-      .or("payment_status.in.(created,pending,failed),and(payment_status.eq.paid,fulfilled_at.is.null)")
-      .gte("created_at", new Date(Date.now() - 14 * 86400000).toISOString())
-      .order("gateway_checked_at", { ascending: true, nullsFirst: true }).limit(12);
-    if (orders.error) throw orders.error;
-    const soulmate = await db.from("soulmate_orders").select("id").eq("gateway", "paytm").eq("payment_mode", mode)
-      .in("payment_status", ["created", "pending", "failed"]).gte("created_at", new Date(Date.now() - 14 * 86400000).toISOString())
-      .order("last_verified_at", { ascending: true, nullsFirst: true }).limit(6);
-    if (soulmate.error) throw soulmate.error;
-    const candidates = [...orders.data, ...soulmate.data];
-    let paid = 0, errors = 0;
-    for (let i = 0; i < candidates.length; i += 3) {
-      const results = await Promise.allSettled(candidates.slice(i, i + 3).map(row => reconcilePaytmOrder(row.id)));
-      results.forEach(result => { if (result.status === "rejected") errors++; else if (result.value.payment_status === "paid") paid++; });
-    }
-    return NextResponse.json({ scanned: candidates.length, paid, errors }, { status: errors ? 503 : 200 });
+    const candidates = await selectPaytmReconciliationCandidates(db, mode, new Date(Date.now()));
+    let cursor = 0, scanned = 0, paid = 0, errors = 0;
+    const lanes = { fulfillment: 0, recent: 0, aging: 0, recovery: 0 };
+    // Bound starts during provider outages; unstarted orders keep their place next run.
+    // Existing per-order leases and verified fulfillment remain the only mutation path.
+    const startDeadline = Date.now() + 45_000;
+    await Promise.all(Array.from({ length: 4 }, async () => {
+      while (cursor < candidates.length && Date.now() < startDeadline) {
+        const candidate = candidates[cursor++];
+        scanned++;
+        lanes[candidate.lane]++;
+        try { if ((await reconcilePaytmOrder(candidate.id)).payment_status === "paid") paid++; }
+        catch { errors++; }
+      }
+    }));
+    const summary = { queued: candidates.length, scanned, deferred: candidates.length - scanned, paid, errors, lanes };
+    console.info("[paytm-reconcile]", summary);
+    return NextResponse.json(summary, { status: errors ? 503 : 200 });
   } catch { return NextResponse.json({ error: "Paytm reconciliation needs attention" }, { status: 503 }); }
 }

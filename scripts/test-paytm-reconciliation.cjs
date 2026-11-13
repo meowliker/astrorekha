@@ -14,6 +14,17 @@ beforeEach(()=>{rows=new Map();calls=grants=sendCount=0;status='paid';failGrant=
 function seed(id='ptm_fixture',extra={}){const row={id,table:id.startsWith('sm_')?'soulmate_orders':'payments',gateway:'paytm',amount:10000,payment_mode:'live',payment_status:'pending',customer_email:'fixture@example.com',delivery_hours:12,...extra};rows.set(id,row);return row}
 test('concurrent browser and callback checks use one lease, grant once, then return cached payment',async()=>{seed();await Promise.all([reconcilePaytmOrder('ptm_fixture'),reconcilePaytmOrder('ptm_fixture')]);assert.equal(calls,1);assert.equal(grants,1);await reconcilePaytmOrder('ptm_fixture');assert.equal(calls,1)});
 test('pending and failed responses never unlock access',async()=>{for(const s of ['pending','failed']){const row=seed();status=s;await reconcilePaytmOrder(row.id);assert.equal(row.payment_status,s);assert.equal(grants,0)}});
+test('late verified successes recover failed orders and paid-but-unfulfilled reports without duplicate grants',async()=>{
+ for(const [id,previous] of [['ptm_failed','failed'],['ptm_paid','paid']]){
+  const row=seed(id,{payment_status:previous,fulfilled_at:null});
+  await reconcilePaytmOrder(id);assert.equal(row.payment_status,'paid');assert.ok(row.fulfilled_at);
+  await reconcilePaytmOrder(id);
+ }
+ const soulmate=seed('sm_12345678901234567890',{payment_status:'failed'});
+ await reconcilePaytmOrder(soulmate.id);await reconcilePaytmOrder(soulmate.id);
+ assert.equal(soulmate.payment_status,'paid');assert.equal(soulmate.fulfillment_status,'queued');
+ assert.equal(calls,3);assert.equal(grants,2);assert.equal(sendCount,2);
+});
 test('gateway outage and grant failure remain retryable; no paid status is synthesized',async()=>{const row=seed();failStatus=true;await assert.rejects(reconcilePaytmOrder(row.id));assert.equal(row.payment_status,'pending');assert.equal(grants,0);row.gateway_check_until=null;failStatus=false;failGrant=true;await assert.rejects(reconcilePaytmOrder(row.id));assert.equal(row.payment_status,'pending')});
 test('late failure cannot downgrade a concurrently completed payment',async()=>{const row=seed();status='failed';concurrentPaid=true;await reconcilePaytmOrder(row.id);assert.equal(row.payment_status,'paid')});
 test('unknown orders and orders belonging to PayU never call Paytm',async()=>{await assert.rejects(reconcilePaytmOrder('ptm_fixture'));seed('ptm_fixture',{gateway:'payu'});await assert.rejects(reconcilePaytmOrder('ptm_fixture'));assert.equal(calls,0)});

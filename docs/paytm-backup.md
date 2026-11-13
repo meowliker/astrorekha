@@ -41,6 +41,19 @@ Before activation, complete a controlled real purchase after deployment and conf
 - Existing delivery workers, report generation, purchase tracking, invoices, Revenue Dashboard and campaign attribution are reused. Paytm identifiers are stored separately from PayU identifiers.
 - A read-only Paytm status probe appears in System Status and uses the existing two-scheduled-failure alert safeguard. It does not simulate a bank payment.
 
+### Status-check scheduling
+
+The five-minute Paytm cron reserves separate capacity for recent report and Soulmate orders, incomplete paid report fulfillment, and historical recovery. All candidates must have an expired/absent verification lease and a due check timestamp:
+
+- Created/pending orders less than two hours old: check on the next scheduled run if not checked within the preceding minute; up to 24 report and 12 Soulmate orders per run.
+- Created/pending orders aged two to 24 hours: at least 15 minutes between scheduled checks; up to six report and three Soulmate orders per run.
+- Failed orders, plus created/pending orders older than 24 hours: at least six hours between scheduled checks, retained for the existing 14-day recovery window; up to four report and two Soulmate orders per run.
+- Paid report orders awaiting fulfillment have four separate reserved slots and at least one minute between checks.
+
+Old failures cannot use recent-payment slots. Least-recently-checked orders rotate within each lane; regular and Soulmate candidates are interleaved. Four workers stop starting new work after 45 seconds during outages. Deferred orders retain their timestamps and remain eligible on the next run. The cron response and aggregate log report queued, scanned, deferred, paid and error counts, plus the number started from each lane. These limits bound work; they do not guarantee confirmation within five minutes during an outage or a traffic spike.
+
+The scheduler only selects work. Browser checks, signed callbacks, status validation, fulfillment, tracking and duplicate protection continue through the existing reconciler. No gateway selection, checkout prices, order records, schema or tracking events need a one-off backfill to install this change. Rollback is code-only: revert the scheduler route/helper and redeploy; no database rollback is needed.
+
 ## Refunds
 
 Refunds are initiated manually in the Paytm dashboard, not by this integration. A separate cron runs at minute 17 and 47 and discovers refunds completed in the preceding 29 days. Each refund is checked against the signed Refund Status API and its original local order before storage. Repeated runs deduplicate by Paytm refund ID. Refunds need the gateway's actual timestamp; missing dates never become today's revenue adjustment.
@@ -51,7 +64,7 @@ Main-report refunds enter the existing payments ledger as separate negative entr
 
 `node scripts/check-paytm-connection.cjs` checks configured credentials by creating an **uncharged** ₹1 checkout session, reading its signed status, and reading the refund APIs. It prints no tokens or keys and does not create an app order or fulfil a product.
 
-`node --test scripts/test-paytm-backup.cjs scripts/test-paytm-reconciliation.cjs scripts/test-payment-gateway.cjs` covers API contracts, safety checks, leases, callback recovery and admin controls.
+`node --test scripts/test-paytm-backup.cjs scripts/test-paytm-reconciliation.cjs scripts/test-paytm-reconciliation-queue.cjs scripts/test-payment-gateway.cjs` covers API contracts, safety checks, leases, callback recovery, queue starvation/backoff/deadlines and admin controls.
 
 `PGLITE_MODULE=/path/to/@electric-sql/pglite node scripts/test-paytm-migration.cjs` tests the migration in an isolated PostgreSQL-compatible runtime, including transaction rollback and duplicate grants. Install PGlite in a temporary directory for this test; it is not a production dependency.
 
