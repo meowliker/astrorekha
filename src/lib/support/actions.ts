@@ -198,7 +198,7 @@ export async function executeAction(action: Action) {
       const current = checked(
         await db()
           .from("soulmate_sketches")
-          .select("updated_at,status")
+          .select("updated_at,status,question_answers")
           .eq("user_id", action.customer_id)
           .maybeSingle(),
       );
@@ -216,6 +216,14 @@ export async function executeAction(action: Action) {
           "Recover the existing sketch job before correcting its answers. Do not submit a duplicate job.",
           409,
         );
+      const mergedAnswers = {
+        ...current.question_answers,
+        ...(payload.answers as Record<string, string>),
+      };
+      sketchPatch({
+        attracted_to: mergedAnswers.attracted_to,
+        age_group: mergedAnswers.age_group,
+      });
       checked(
         await db().rpc("support_prepare_sketch_correction", {
           p_action: action.id,
