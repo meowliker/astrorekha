@@ -1,0 +1,106 @@
+const assert = require('node:assert/strict');
+const Module = require('node:module');
+const path = require('node:path');
+require('ts-node').register({ transpileOnly: true, compilerOptions: { module: 'CommonJS', moduleResolution: 'node' } });
+const resolve = Module._resolveFilename;
+Module._resolveFilename = function(name, parent, ...rest) { return resolve.call(this, name.startsWith('@/') ? path.join(__dirname, '../src', name.slice(2)) : name, parent, ...rest); };
+const balances = require('../src/lib/monitoring-ad-balances');
+const { buildMonitoringAlert } = require('../src/lib/monitoring-alerts');
+const now = new Date('2026-11-13T12:30:00Z');
+const source = { accountId: '1123080110423751', accessToken: 'secret-for-test', active: true };
+const settings = { accounts: [source, { accountId: '123', accessToken: 'old', active: false }, { accountId: '456', active: false }, { accountId: '789', accessToken: 'future', startDate: '2099-01-01' }] };
+const workspaces = [{ accounts: [{ accountId: '123', accessToken: 'active', active: true }, source] }];
+const selected = balances.selectBalanceAccounts(settings, +now, workspaces);
+assert.equal(selected.filter(a => a.accountId === '123').length, 1);
+assert.equal(selected.find(a => a.accountId === '123').accessToken, 'active');
+assert.equal(selected.find(a => a.accountId === '456').inactive, true);
+assert.equal(selected.find(a => a.accountId === '789').inactive, true);
+assert.equal(selected.filter(a => a.group === 'VedicRekha').length, 2);
+assert(selected.filter(a => a.group === 'VedicRekha').every(a => a.accessToken === source.accessToken));
+assert.equal(balances.remainingSpendingLimit({ spend_cap: '1000000', amount_spent: '500001', balance: '999999' }), 4999.99);
+assert.equal(balances.remainingSpendingLimit({ spend_cap: '100', amount_spent: '200' }), 0);
+for (const raw of [{}, { spend_cap: '0', amount_spent: '0' }, { spend_cap: '100' }, { spend_cap: '100', amount_spent: '-1' }, { spend_cap: '1e10', amount_spent: '0' }, { spend_cap: '9007199254740992', amount_spent: '0' }]) assert.equal(balances.remainingSpendingLimit(raw), null);
+const balance = { accountId: '123', accountName: 'Ads account', group: 'AstroRekha', currency: 'INR', remaining: 4999.99, remainingINR: 4999.99, state: 'available', detail: '' };
+assert.equal(balances.balanceCheck(balance, +now).status, 'warning');
+assert.equal(balances.balanceCheck({ ...balance, remaining: 5000, remainingINR: 5000 }, +now).status, 'ok');
+assert.equal(balances.balanceCheck({ ...balance, state: 'unavailable' }, +now).status, 'warming');
+assert.equal(balances.balanceCheck({ ...balance, state: 'inactive' }, +now).status, 'unconfigured');
+const low = balances.balanceCheck(balance, +now);
+const alert = buildMonitoringAlert([{ check: low, event: 'issue' }], now);
+assert.match(alert.slackText, /<@U08C5ENV66Q>/);
+assert.match(alert.slackText, /\*AstroRekha\*/);
+assert.doesNotMatch(alert.slackText, /<!here>/);
+const daily = balances.buildDailyBalanceAlert([low, balances.balanceCheck({ ...balance, group: 'VedicRekha', accountName: '<!here>*bad*' }, +now)], now);
+assert.match(daily.slackText, /\*VedicRekha\*/);
+assert.doesNotMatch(daily.slackText, /<!here>/);
+assert.doesNotMatch(daily.emailHtml, /<!here>/);
+assert.equal(balances.dailyBalanceSlot(now), 'ad-balances:2026-11-13');
+assert.equal(balances.dailyBalanceSlot(new Date('2026-11-13T12:29:59Z')), null);
+assert.equal(balances.dailyBalanceSlot(new Date('2026-11-13T13:29:59Z')), 'ad-balances:2026-11-13');
+assert.equal(balances.dailyBalanceSlot(new Date('2026-11-13T13:30:00Z')), null);
+
+async function main() {
+  let fxFailure = false;
+  const calls = [];
+  const db = { from(table) { return { select() { return { eq() { return { abortSignal() { return { async maybeSingle() { return { data: table === 'settings' ? { value: settings } : { accounts: table === 'soulmate_admin_settings' ? workspaces[0].accounts : [] }, error: null }; } }; } }; } }; } }; } };
+  global.fetch = async (url, options) => {
+    assert.equal(options.method, undefined); // all provider reads
+    calls.push(url);
+    if (url.includes('exchangerate')) return { ok: !fxFailure, json: async () => ({ rates: { INR: 90 } }) };
+    assert(!url.includes('secret-for-test'));
+    const id = new URL(url).pathname.split('act_')[1];
+    if (id === '2022187855078303') return { ok: false, json: async () => ({ error: { message: 'sensitive' } }) };
+    return { ok: true, json: async () => ({ id: `act_${id}`, name: `Name ${id}`, currency: id === '123' ? 'USD' : 'INR', spend_cap: '1000000', amount_spent: id === '123' ? '995000' : '500001' }) };
+  };
+  const checks = await balances.collectAdBalanceChecks(db, +now);
+  assert.equal(checks.find(c => c.key === 'meta_balance:123').adBalance.remainingINR, 4500);
+  assert.equal(checks.find(c => c.key === 'meta_balance:2022187855078303').status, 'warming');
+  assert(!calls.some(url => url.includes('act_456') || url.includes('act_789')));
+  assert(!JSON.stringify(checks).includes('secret-for-test'));
+  fxFailure = true;
+  assert.equal((await balances.collectAdBalanceChecks(db, +now)).find(c => c.key === 'meta_balance:123').status, 'warming');
+
+  // Stub network delivery to exercise daily claims without sending any alerts.
+  const stub = (file, exports) => { const id = require.resolve(file); require.cache[id] = { id, filename: id, loaded: true, exports }; };
+  let paused = false, pauseError = false, sends = 0, collectFailure = false;
+  stub('../src/lib/monitoring-delivery', { readMonitoringAlertsPaused: async () => { if (pauseError) throw Error('read failed'); return paused; } });
+  stub('../src/lib/system-monitoring', { deliverMonitoringMessage: async (...args) => { assert.equal(args[5], true); assert.equal(args[2][0].event, 'summary'); sends++; return 1; } });
+  stub('../src/lib/monitoring-ad-balances', { ...balances, collectAdBalanceChecks: async () => { if (collectFailure) throw Error('read failed'); return checks; } });
+  const { runDailyBalanceDigest } = require('../src/lib/monitoring-balance-digest');
+  const claims = new Set(); const updates = [];
+  const digestDB = { from(table) { assert.equal(table, 'monitoring_balance_digests'); return {
+    async insert({ date }) { if (claims.has(date)) return { error: { code: '23505' } }; claims.add(date); return { error: null }; },
+    update(value) { return { async eq() { updates.push(value); return { error: null }; } }; },
+  }; } };
+  assert.equal((await runDailyBalanceDigest(digestDB, new Date('2026-11-13T10:00:00Z'))).skipped, true);
+  paused = true;
+  assert.equal((await runDailyBalanceDigest(digestDB, now)).skipped, true);
+  assert.equal(claims.size, 0);
+  paused = false; pauseError = true;
+  await assert.rejects(runDailyBalanceDigest(digestDB, now));
+  assert.equal(claims.size, 0);
+  pauseError = false;
+  await Promise.all([runDailyBalanceDigest(digestDB, now), runDailyBalanceDigest(digestDB, now)]);
+  assert.equal(sends, 1);
+  assert.equal(updates[0].status, 'sent');
+  collectFailure = true;
+  await assert.rejects(runDailyBalanceDigest(digestDB, new Date('2026-11-14T12:30:00Z')));
+  assert.equal(updates.at(-1).status, 'failed');
+  assert.equal(sends, 1);
+  assert.equal((await runDailyBalanceDigest(digestDB, new Date('2026-11-14T12:30:00Z'))).skipped, true);
+  let invoked = 0;
+  stub('../src/lib/supabase-admin', { getSupabaseAdmin: () => digestDB });
+  stub('../src/lib/monitoring-balance-digest', { runDailyBalanceDigest: async () => { invoked++; return { delivered: 1 }; } });
+  const route = require('../src/app/api/cron/ad-balance-summary/route');
+  const oldSecret = process.env.CRON_SECRET;
+  delete process.env.CRON_SECRET;
+  assert.equal((await route.GET(new Request('https://example.invalid'))).status, 401);
+  process.env.CRON_SECRET = 'test-cron-secret';
+  assert.equal((await route.GET(new Request('https://example.invalid', { headers: { authorization: 'Bearer wrong' } }))).status, 401);
+  assert.equal(invoked, 0);
+  assert.equal((await route.GET(new Request('https://example.invalid', { headers: { authorization: 'Bearer test-cron-secret' } }))).status, 200);
+  assert.equal(invoked, 1);
+  if (oldSecret === undefined) delete process.env.CRON_SECRET; else process.env.CRON_SECRET = oldSecret;
+  console.log('Ad balance selection, thresholds, unknown data, currency conversion, formatting, pause and concurrent daily delivery checks passed. No notifications sent.');
+}
+main().catch(e => { console.error(e); process.exitCode = 1; });

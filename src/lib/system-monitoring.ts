@@ -1,3 +1,4 @@
+import { collectAdBalanceChecks, type AdBalance } from "./monitoring-ad-balances";
 import { pineLabsAccessToken } from "@/lib/pinelabs-api";
 import { randomUUID } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -19,6 +20,7 @@ export type MonitorCheck = {
   checkedAt: string;
   latencyMs: number;
   observedStatus?: "warning" | "down";
+  adBalance?: AdBalance;
 };
 type Incident = { check_key: string; active: boolean; status: string; opened_at: string; last_seen_at: string; last_notified_at: string | null };
 
@@ -279,6 +281,7 @@ async function aisensyCheck(): Promise<MonitorCheck> {
 
 export async function collectMonitoringChecks(db: SupabaseClient, now = Date.now()): Promise<MonitorCheck[]> {
   const appUrl = process.env.MONITOR_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || "https://astrorekha.com";
+  const balancesPromise = collectAdBalanceChecks(db, now).catch(() => [result("meta_balances", "Ad account balances", "warming", "Balance checks unavailable; no low-balance decision was made.", now)]);
   const checks = await Promise.all([
     probe("vercel", "Website / Vercel", async () => {
       const status = await httpStatus(`${appUrl.replace(/\/$/, "")}/api/health`);
@@ -365,7 +368,7 @@ export async function collectMonitoringChecks(db: SupabaseClient, now = Date.now
         })
       : Promise.resolve(result("astro_engine", "Astro engine", "unconfigured", "ASTRO_ENGINE_URL is not configured", Date.now())),
   ]);
-  return [...checks, ...await metaChecks(db, now)];
+  return [...checks, ...await metaChecks(db, now), ...await balancesPromise];
 }
 
 function destinationsFromEnv(): MonitoringDestination[] {
@@ -391,9 +394,17 @@ export function validSlackChatId(value: string): boolean {
 
 async function sendAlert(db: SupabaseClient, runId: string | null, changed: Array<{ check: MonitorCheck; event: "issue" | "recovery" }>, environmentOnly = false): Promise<number> {
   if (!changed.length) return 0;
-  const destinations = await monitoringAlertRecipients(db, destinationsFromEnv(), environmentOnly);
+  return deliverMonitoringMessage(db, runId, changed.map(({ check, event }) => ({ key: check.key, event })), buildMonitoringAlert(changed), environmentOnly);
+}
+
+export async function deliverMonitoringMessage(
+  db: SupabaseClient, runId: string | null, events: Array<{ key: string; event: "issue" | "recovery" | "summary" }>,
+  message: { subject: string; slackText: string; emailHtml: string }, environmentOnly = false, slackOnly = false,
+): Promise<number> {
+  const destinations = (await monitoringAlertRecipients(db, destinationsFromEnv(), environmentOnly))
+    .filter(d => !slackOnly || d.kind !== "email");
   if (!destinations.length) return 0;
-  const { subject, slackText, emailHtml } = buildMonitoringAlert(changed);
+  const { subject, slackText, emailHtml } = message;
   const deliveries = await Promise.all(destinations.map(async (destination) => {
     let delivered = false;
     let error: string | null = null;
@@ -420,8 +431,8 @@ async function sendAlert(db: SupabaseClient, runId: string | null, changed: Arra
     return { delivered, error, destination };
   }));
   await db.from("monitoring_notifications").insert(deliveries.flatMap(({ delivered, error, destination }) =>
-    changed.map(({ check, event }) => ({
-      run_id: runId, check_key: check.key, event,
+    events.map(({ key, event }) => ({
+      run_id: runId, check_key: key, event,
       destination_kind: destination.kind, destination_label: destination.label, delivered, error,
     }))));
   return deliveries.filter((item) => item.delivered).length;

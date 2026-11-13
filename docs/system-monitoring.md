@@ -33,3 +33,15 @@ Meta no-spend alerts compare successive account spend counters on roughly 30 min
 Alerts are sent when a check enters a warning/down state or recovers; ongoing issues do not alert on every cron run. Manual runs also update the log. No-sale alerts apply at all hours.
 
 This monitor runs on Vercel. A full Vercel outage or a stopped cron cannot report itself. Add an independent external uptime/heartbeat service for that failure mode. Cron delivery is not guaranteed and does not retry automatically; check recent-run timestamps in the page after deployment.
+
+## Ad account balance alerts
+
+- Daily cron `/api/cron/ad-balance-summary` runs at `30 12 * * *` UTC (6 PM IST), with scheduler drift allowed until 6:59 PM IST. It sends one Slack message, tagging Nischay (`U08C5ENV66Q`), with bold **AstroRekha** and **VedicRekha** sections.
+- AstroRekha uses the deduplicated account lists across the normal, Soulmate, US Soulmate and US AstroRekha workspaces. An account active in any workspace is checked. Inactive or out-of-window accounts appear as monitoring paused and do not generate low-balance incidents.
+- VedicRekha includes `2022187855078303` and `2366717340763776`, using the saved token for `1123080110423751`. They are balance-only additions: they do not enter app spend/revenue reporting or no-spend checks.
+- Remaining balance means **account spending limit minus account amount spent**, divided by 100 for INR/USD. This is *not* a prepaid wallet balance. Meta's outstanding `balance` field is deliberately not used. A missing/zero/unlimited cap or failed API request is unavailable, never zero. USD is converted using a fresh exchange-rate response; no guessed fallback rate is used.
+- The existing half-hour monitor adds a separate balance incident per account when the INR equivalent is strictly below ₹5,000. Alerts include the actual account name/ID and amount, tag Nischay, and go to existing enabled Slack/email destinations. They alert on entry into a low state, do not repeat every run, and recover when the amount reaches ₹5,000. Unavailable data leaves an existing incident open without reporting a false recovery.
+- Daily summaries and threshold alerts both obey global pause and disabled destinations. Daily summaries are Slack-only. Service alerts retain their existing behavior.
+- Apply `20261113190000_monitoring_ad_balance_digest.sql` before deployment. It adds a service-role-only daily claim/history table and permits `summary` in notification history. No new env secrets are required.
+- A unique daily claim suppresses overlapping requests/replays. The job does not automatically resend after a delivery timeout (Slack might already have accepted it); failed/undelivered summaries stay recorded for review. Delivery history is in System Status. Like other Vercel crons, scheduling is not an exact-time delivery guarantee.
+- Rollback: revert this release and remove the daily cron entry. The additive history table can remain; other service checks, payments, and ad reporting are unchanged.

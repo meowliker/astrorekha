@@ -136,7 +136,7 @@ export default function MonitoringPage() {
         <section className="grid gap-5 lg:grid-cols-2">
           <div className="rounded-xl border border-white/10 bg-[#111a2a] p-5">
             <h2 className="flex items-center gap-2 text-lg font-semibold"><Bell size={18} className="text-teal-300"/> Alert destinations</h2>
-            <p className="mt-1 text-sm text-slate-400">Issue and recovery alerts go to every enabled destination. Existing issues do not repeat every run.</p>
+            <p className="mt-1 text-sm text-slate-400">Issue and recovery alerts go to every enabled destination. Ad spending limits are checked every 30 minutes; balances below ₹5,000 alert Nischay. The 6 PM IST balance summary goes to enabled Slack destinations. All follow the pause switch. Existing issues do not repeat every run.</p>
             <p className="mt-2 text-xs text-slate-500">Pause all alerts also covers destinations configured in Vercel.</p>
             {!dashboard?.deliveryConfig.emailReady && <p className="mt-3 text-xs text-amber-300">Email sending needs BREVO_API_KEY in the server environment.</p>}
             {kind === "slack_chat" && !dashboard?.deliveryConfig.slackBotReady && <p className="mt-3 text-xs text-amber-300">Posting to Slack IDs needs SLACK_BOT_TOKEN in the server environment.</p>}
