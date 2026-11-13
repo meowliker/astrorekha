@@ -647,6 +647,7 @@ function AdminRevenuePage() {
   const [profitSheetData, setProfitSheetData] = useState<ProfitSheetRow[]>([]);
   const [profitSheetLoadedMode, setProfitSheetLoadedMode] = useState<ProfitSheetDayMode | null>(null);
   const [profitSheetLoading, setProfitSheetLoading] = useState(false);
+  const [profitSheetFetchedAt, setProfitSheetFetchedAt] = useState<string | null>(null);
   const [profitSheetError, setProfitSheetError] = useState<string | null>(null);
   const [profitSheetStartDate, setProfitSheetStartDate] = useState<string>(() => getFirstDayOfMonthIso(getCurrentBusinessDateIso()));
   const [profitSheetEndDate, setProfitSheetEndDate] = useState<string>(() => getCurrentBusinessDateIso());
@@ -937,6 +938,7 @@ function AdminRevenuePage() {
       if (requestId !== profitSheetRequestIdRef.current) return;
       if (sourceRef.current !== adSource) return;
       setProfitSheetData(result.rows || []);
+      setProfitSheetFetchedAt(result.fetchedAt || new Date().toISOString());
       setProfitSheetError(gstWarning || result.syncWarning || null);
       setProfitSheetLoadedMode(dayMode);
       if (result.exchangeRate) {
@@ -949,6 +951,7 @@ function AdminRevenuePage() {
       console.error("Profit sheet fetch error:", err);
       setProfitSheetError(err instanceof Error ? err.message : "Failed to fetch profit sheet");
       setProfitSheetData([]);
+      setProfitSheetFetchedAt(null);
       setProfitSheetLoadedMode(dayMode);
     } finally {
       if (requestId === profitSheetRequestIdRef.current) {
@@ -1086,6 +1089,29 @@ function AdminRevenuePage() {
       fetchProfitSheet();
     }
   }, [activeTab, profitSheetStartDate, profitSheetEndDate, adSource]);
+
+  // Re-read receipts and saved spend without triggering provider syncs on focus.
+  // A mounted tab must not keep displaying an old snapshot indefinitely.
+  const profitReloadRef = useRef(() => {});
+  profitReloadRef.current = () => {
+    if (activeTab === "profit-sheet" && !profitSheetLoading &&
+        (!profitSheetFetchedAt || Date.now() - Date.parse(profitSheetFetchedAt) >= 60_000)) {
+      void fetchProfitSheet();
+    }
+  };
+  useEffect(() => {
+    const refreshVisible = () => { if (document.visibilityState === "visible") profitReloadRef.current(); };
+    window.addEventListener("focus", refreshVisible);
+    window.addEventListener("pageshow", refreshVisible);
+    document.addEventListener("visibilitychange", refreshVisible);
+    const timer = window.setInterval(refreshVisible, 60_000);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshVisible);
+      window.removeEventListener("pageshow", refreshVisible);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
+  }, []);
 
   // Fetch meta breakdown when tab changes or date preset changes
   useEffect(() => {
@@ -1497,6 +1523,7 @@ function AdminRevenuePage() {
 
           <ProfitSheetTab
             dayMode="business_1130_ist"
+            fetchedAt={profitSheetFetchedAt}
             data={profitSheetLoadedMode === "business_1130_ist" ? profitSheetData : []}
             loading={profitSheetLoading || profitSheetLoadedMode !== "business_1130_ist"}
             error={profitSheetLoadedMode === "business_1130_ist" ? profitSheetError : null}
@@ -1586,6 +1613,7 @@ type ProfitSheetSortDirection = "asc" | "desc" | null;
 // Profit Sheet Tab Component
 function ProfitSheetTab({
   dayMode,
+  fetchedAt,
   data,
   loading,
   error,
@@ -1605,6 +1633,7 @@ function ProfitSheetTab({
   onRefreshWithRate,
 }: {
   dayMode: ProfitSheetDayMode;
+  fetchedAt: string | null;
   data: ProfitSheetRow[];
   loading: boolean;
   error: string | null;
@@ -2644,6 +2673,7 @@ function ProfitSheetTab({
 	        <p className="text-white/30 text-xs mt-3">
 	          Reporting day: 11:30 AM IST – 11:29 AM IST the next day.
 	        </p>
+            {fetchedAt && <p className="mt-1 text-xs text-white/40">Updated {new Date(fetchedAt).toLocaleString("en-IN", {timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit"})} IST</p>}
 	        {selectedDates.length > 0 && (
 	          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2">
 	            <span className="text-xs font-medium text-primary">Showing specific days:</span>

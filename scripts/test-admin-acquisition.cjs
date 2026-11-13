@@ -57,3 +57,19 @@ test('owner-assigned landing pages are a fallback, never override explicit evide
 });
 
 test('nested event tags and server cookie aliases remain usable',()=>{assert.equal(channel(touch({attribution:{gclid:'x'},path:'/us'})),'google');assert.equal(channel({campaign_id:'123'}),'meta');assert.equal(channel({landing_path:'/us'}),'meta');});
+
+test('normal workspace keeps Instagram and direct sales; dedicated Google funnels never leak',()=>{
+ const {matchesAdSource,workspaceChannel}=require('../src/lib/admin-acquisition');
+ const normal=[{last_touch:{utm_source:'ig',utm_medium:'social',utm_content:'link_in_bio',landing_path:'/'}},{last_touch:{utm_source:'newsletter',utm_medium:'email',landing_path:'/'}},{}];
+ for(const row of normal){assert.equal(matchesAdSource(row,'meta'),true);assert.equal(matchesAdSource(row,'google'),false);}
+ // Paid attribution remains honest while workspace membership includes the receipt.
+ assert.equal(channel(touch(normal[0])),'other');
+ for(const path of ['/discover','/soulmate/discover','/us/soulmate/discover']) {
+  for(const tags of [{},{utm_source:'ig',utm_medium:'social'},{utm_source:'facebook',utm_medium:'paid'}]) {
+   const row={last_touch:{landing_path:path,...tags}};
+   assert.equal(workspaceChannel(row),'google');assert.equal(matchesAdSource(row,'meta'),false);
+  }
+ }
+ assert.equal(workspaceChannel({last_touch:{landing_path:'/',gclid:'click'}}),'google');
+ assert.equal(matchesAdSource({last_touch:{utm_source:'codex_qa',landing_path:'/'}},'meta'),false);
+});

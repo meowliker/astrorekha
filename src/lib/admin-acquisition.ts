@@ -102,20 +102,31 @@ export function summarizeAcquisition(orders: AcquisitionRecord[], landings: Acqu
 }
 
 export type AdSource = "all" | "meta" | "google";
+/** Workspace membership is separate from paid-ad attribution. Normal workspaces
+ * retain Instagram, organic, direct and untagged receipts; only Google traffic
+ * and the dedicated Google funnel destinations belong in Google workspaces. */
+export function workspaceChannel(row: Attribution): "meta" | "google" {
+  const touch = acquisitionTouch(row);
+  return acquisitionChannel(touch) === "google" || landingRouteChannel(touch) === "google" ? "google" : "meta";
+}
 export function parseAdSource(params: URLSearchParams): AdSource {
   const value = params.get("adSource") || "all";
   if (value !== "all" && value !== "meta" && value !== "google") throw new Error("Invalid ad source.");
   return value;
 }
 export function matchesAdSource(row: object, source: AdSource) {
-  return source === "all" || !isAcquisitionTest(row as Attribution) && acquisitionChannel(acquisitionTouch(row as Attribution)) === source;
+  return source === "all" || !isAcquisitionTest(row as Attribution) && workspaceChannel(row as Attribution) === source;
 }
 export function gaSourceFilter(source: AdSource) {
   if (source === "all") return undefined;
-  return { andGroup: { expressions: [
-    { filter: { fieldName: "sessionSource", stringFilter: { matchType: "FULL_REGEXP" as const, value: source === "google" ? "(?i)(google|google_ads|googleads)" : "(?i)(meta|facebook|instagram|fb|ig|.*facebook\\.com|.*instagram\\.com)", caseSensitive: false } } },
-    { filter: { fieldName: "sessionMedium", stringFilter: { matchType: "FULL_REGEXP" as const, value: "(?i)(cpc|ppc|paid|paidsearch|paid_search|paid_social|paid-social|paidsocial|paid social|cpm)", caseSensitive: false } } },
+  const google = { orGroup: { expressions: [
+    { andGroup: { expressions: [
+      { filter: { fieldName: "sessionSource", stringFilter: { matchType: "FULL_REGEXP" as const, value: "(?i)(google|google_ads|googleads)", caseSensitive: false } } },
+      { filter: { fieldName: "sessionMedium", stringFilter: { matchType: "FULL_REGEXP" as const, value: "(?i)(cpc|ppc|paid|paidsearch|paid_search|paid_social|paid-social|paidsocial|paid social|cpm)", caseSensitive: false } } },
+    ] } },
+    { filter: { fieldName: "landingPagePlusQueryString", stringFilter: { matchType: "FULL_REGEXP" as const, value: "^/(discover|soulmate/discover|us/soulmate/discover)([/\\?].*)?$", caseSensitive: false } } },
   ] } };
+  return source === "google" ? google : { notExpression: google };
 }
 
 /** Refunds inherit the original purchase source, never the refund callback's tags. */
@@ -139,8 +150,11 @@ export function filterSourceEvents<T extends { session_id?: string | null }>(eve
   if (source === "all") return events;
   const sessions = new Map<string, string>();
   for (const event of events) {
-    const channel = acquisitionChannel(acquisitionTouch(event as Attribution));
-    if (event.session_id && channel !== "other" && !sessions.has(event.session_id)) sessions.set(event.session_id, channel);
+    const touch = acquisitionTouch(event as Attribution);
+    const channel = workspaceChannel(event as Attribution);
+    const hasEvidence = acquisitionChannel(touch) !== "other" || text(touch.utm_source) || text(touch.utm_medium) || channel === "google";
+    if (event.session_id && hasEvidence && !sessions.has(event.session_id)) sessions.set(event.session_id, channel);
   }
-  return events.filter(e => !isAcquisitionTest(e as Attribution) && (e.session_id ? sessions.get(e.session_id) === source : matchesAdSource(e, source)));
+  return events.filter(e => !isAcquisitionTest(e as Attribution) &&
+    (e.session_id && sessions.has(e.session_id) ? sessions.get(e.session_id) === source : matchesAdSource(e, source)));
 }

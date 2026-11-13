@@ -1005,7 +1005,7 @@ async function handleGET(request: NextRequest) {
           bundleRevenue: (day.bundleReceived - day.bundleRefund) / 100, transactionCount: day.orders, salesCount: day.orders, refundCount: day.refunds, bundlePurchases: day.bundleOrders,
           accountBalance: adSource === "meta" && spendKnown ? baseline!.accountBalance : undefined, spendUnavailable: !spendKnown };
       });
-      return NextResponse.json({ rows, adSource, dayMode, exchangeRate: googleRate,
+      return NextResponse.json({ rows, adSource, dayMode, exchangeRate: googleRate, fetchedAt: new Date().toISOString(),
         source: "source_filtered_payments", dateRange: { start: startDate, end: endDate }, missingRanges: [], syncedRange,
         syncWarning: adSource === "google" ? google?.warnings.join(" ") || null : syncWarning }, { headers: { "Cache-Control": "no-store" } });
     }

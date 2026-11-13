@@ -6,21 +6,21 @@ const paid=(id,source,at,amount=10000)=>({id,payu_txn_id:id,amount,currency:'INR
 function db(tables,fail=false){return {from(name){let rows=[...(tables[name]||[])];const q={select(){return q},eq(k,v){rows=rows.filter(r=>r[k]===v);return q},in(k,vs){rows=rows.filter(r=>vs.includes(r[k]));return q},is(k,v){rows=rows.filter(r=>(r[k]??null)===v);return q},gte(k,v){rows=rows.filter(r=>r[k]>=v);return q},lte(k,v){rows=rows.filter(r=>r[k]<=v);return q},lt(k,v){rows=rows.filter(r=>r[k]<v);return q},like(k,v){rows=rows.filter(r=>String(r[k]).startsWith(v.replace(/%$/,'')));return q},order(){return q},range(a,b){rows=rows.slice(a,b+1);return q},then(ok,no){return Promise.resolve({data:rows,error:fail?{message:'timeout'}:null}).then(ok,no)}};return q}}}
 test('source filtering includes each purchase and its refunds, never a different source or callback tags',()=>{
  const rows=[paid('meta','facebook','2026-11-10T08:00:00Z'),paid('google','google','2026-11-10T08:00:00Z'),paid('direct','','2026-11-10T08:00:00Z'),{id:'pay_refund_1',payu_txn_id:'meta',amount:-500,payment_status:'refund',utm_source:'google',utm_medium:'cpc'}];
- assert.deepEqual(filterSourcePayments(rows,'meta').map(r=>r.id),['meta','pay_refund_1']);assert.deepEqual(filterSourcePayments(rows,'google').map(r=>r.id),['google']);assert.equal(filterSourcePayments(rows,'all'),rows);
+ assert.deepEqual(filterSourcePayments(rows,'meta').map(r=>r.id),['meta','direct','pay_refund_1']);assert.deepEqual(filterSourcePayments(rows,'google').map(r=>r.id),['google']);assert.equal(filterSourcePayments(rows,'all'),rows);
  const first={...rows[0],first_touch:{utm_source:'google',utm_medium:'cpc'}};
  assert.equal(filterSourcePayments([first],'google','first').length,1);assert.equal(filterSourcePayments([first],'meta','first').length,0);
 });
-test('session source follows initial tagged arrival for all steps without assigning untagged sessions',()=>{
+test('session source follows initial tagged arrival for all steps and retains untagged sessions in the normal workspace',()=>{
  const rows=[{session_id:'a',event_name:'landing',url:'https://astrorekha.com/discover?gclid=123'},{session_id:'a',event_name:'checkout'},{session_id:'b',event_name:'landing',url:'https://astrorekha.com/unknown'}];
- assert.deepEqual(filterSourceEvents(rows,'google').map(r=>r.event_name),['landing','checkout']);assert.equal(filterSourceEvents(rows,'meta').length,0);
+ assert.deepEqual(filterSourceEvents(rows,'google').map(r=>r.event_name),['landing','checkout']);assert.equal(filterSourceEvents(rows,'meta').length,1);
  assert.throws(()=>parseAdSource(new URLSearchParams('adSource=both')));
 });
-test('source profit preserves business-day boundary, separate direct receipts, and refunds from older purchases',async()=>{
+test('source profit preserves business-day boundary, includes direct receipts, and refunds from older purchases',async()=>{
  const rows=[paid('a','facebook','2026-11-10T05:59:59Z'),paid('b','facebook','2026-11-10T06:00:00Z',20000),paid('c','google','2026-11-11T05:59:59Z',30000),paid('d','','2026-11-10T12:00:00Z'),{...paid('old','facebook','2026-10-01T07:00:00Z'),payu_txn_id:'gateway-old'},{id:'pay_refund_1',payu_txn_id:'gateway-old',amount:-1000,payment_status:'refund',created_at:'2026-11-10T09:00:00Z'}];
  const meta=(await readAdSourceFinance(db({payments:rows}),'astrorekha','meta','2026-11-10','2026-11-10'))[0];
- assert.equal(meta.received,20000);assert.equal(meta.orders,1);assert.equal(meta.refund,1000);assert.equal(meta.bundleRefund,1000);
+ assert.equal(meta.received,30000);assert.equal(meta.orders,2);assert.equal(meta.refund,1000);assert.equal(meta.bundleRefund,1000);
  const google=(await readAdSourceFinance(db({payments:rows}),'astrorekha','google','2026-11-10','2026-11-10'))[0];assert.equal(google.received,30000);assert.equal(google.refund,0);
- const indian=(await readAdSourceFinance(db({payments:rows}),'astrorekha','meta','2026-11-10','2026-11-10','calendar_ist'))[0];assert.equal(indian.received,30000);
+ const indian=(await readAdSourceFinance(db({payments:rows}),'astrorekha','meta','2026-11-10','2026-11-10','calendar_ist'))[0];assert.equal(indian.received,40000);
 });
 test('source financial reads fail closed and never accept mixed currencies or partial failed queries',async()=>{
  await assert.rejects(readAdSourceFinance(db({},true),'astrorekha','meta','2026-11-10','2026-11-10'));
@@ -57,4 +57,20 @@ test('verified Paytm refunds retain their saved source without a PayU parent ID'
  const meta=(await readAdSourceFinance(db(tables),'astrorekha','meta','2026-11-03','2026-11-03'))[0];
  assert.equal(meta.refund,65962);assert.equal(meta.bundleRefund,65962);assert.equal(meta.refunds,1);
  assert.equal((await readAdSourceFinance(db(tables),'astrorekha','google','2026-11-03','2026-11-03'))[0].refund,0);
+});
+
+test('normal and Google finance partition paid receipts and refunds exactly',async()=>{
+ const at='2026-11-12T08:00:00Z';
+ const rows=[
+ {...paid('meta','facebook',at,6556874),gateway:'pinelabs'},
+ {...paid('instagram','ig',at,1217954),utm_medium:'social',last_touch:{landing_path:'/',utm_source:'ig',utm_medium:'social',utm_content:'link_in_bio'},gateway:'pinelabs'},
+ {...paid('google','ig',at,99002),last_touch:{landing_path:'/discover',utm_source:'ig',utm_medium:'social'},gateway:'pinelabs'},
+ {id:'pay_refund_ig',payu_txn_id:'instagram',amount:-10000,payment_status:'refund',created_at:at},
+ {...paid('sm_not_main','facebook',at,10000),gateway:'pinelabs'},
+ {...paid('test','facebook',at,10000),payment_mode:'test'}];
+ const get=async s=>(await readAdSourceFinance(db({payments:rows}),'astrorekha',s,'2026-11-12','2026-11-12'))[0];
+ const all=await get('all'),normal=await get('meta'),google=await get('google');
+ assert.equal(normal.received,7774828);assert.equal(normal.refund,10000);assert.equal(google.received,99002);
+ for(const key of ['received','refund','orders','refunds','bundleReceived','bundleRefund','bundleOrders'])assert.equal(all[key],normal[key]+google[key],key);
+ assert.equal(normal.gateways.pinelabs.received,normal.received);assert.equal(normal.gateways.pinelabs.refunds,normal.refund);
 });
