@@ -92,6 +92,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "generation_failed" }, { status: 500 });
   }
 
+  if (existingRow?.support_recovery_action_id) {
+    return NextResponse.json({ error: "support_recovery_managed", sketch: existingRow }, { status: 409 });
+  }
   if ((existingRow?.generation_count || 0) >= config.maxSketchPerUser) {
     return NextResponse.json(
       {
@@ -126,14 +129,11 @@ export async function POST(request: NextRequest) {
     created_at: existingRow?.created_at || nowIso,
   };
 
-  const { error: upsertError } = await supabase
-    .from("soulmate_sketches")
-    .upsert(upsertPayload, { onConflict: "user_id" });
-
-  if (upsertError) {
-    console.error("[soulmate-sketch/generate] upsert generating error", upsertError);
-    return NextResponse.json({ error: "generation_failed" }, { status: 500 });
-  }
+  const starting = existingRow
+    ? supabase.from("soulmate_sketches").update(upsertPayload).eq("user_id", userId).is("support_recovery_action_id", null).eq("updated_at", existingRow.updated_at)
+    : supabase.from("soulmate_sketches").upsert(upsertPayload, { onConflict: "user_id", ignoreDuplicates: true });
+  const { data: started, error: upsertError } = await starting.select("user_id").maybeSingle();
+  if (upsertError || !started) return NextResponse.json({ error: "sketch_changed_reload" }, { status: 409 });
 
   try {
     const generated = await generateSoulmateSketchFromKie({ prompt, config });
@@ -149,10 +149,11 @@ export async function POST(request: NextRequest) {
         updated_at: new Date().toISOString(),
       })
       .eq("user_id", userId)
+      .is("support_recovery_action_id", null)
       .select("*")
       .maybeSingle();
 
-    if (completeError) {
+    if (completeError || !completed) {
       console.error("[soulmate-sketch/generate] complete update error", completeError);
       return NextResponse.json({ error: "generation_failed" }, { status: 500 });
     }
@@ -171,6 +172,7 @@ export async function POST(request: NextRequest) {
           updated_at: new Date().toISOString(),
         })
         .eq("user_id", userId)
+      .is("support_recovery_action_id", null)
         .select("*")
         .maybeSingle();
 
@@ -209,7 +211,7 @@ export async function POST(request: NextRequest) {
         status: "failed",
         updated_at: new Date().toISOString(),
       })
-      .eq("user_id", userId);
+      .eq("user_id", userId).is("support_recovery_action_id", null);
 
     return NextResponse.json(
       {

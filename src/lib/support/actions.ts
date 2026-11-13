@@ -1,3 +1,4 @@
+import { sketchPatch } from "./sketch-options";
 import { Actor, db, checked, audit } from "./auth";
 import {
   ACTIONS,
@@ -20,6 +21,16 @@ export async function validatedPayload(
   userId: string,
 ): Promise<Record<string, unknown>> {
   if (!ACTIONS.has(kind)) throw new SupportError("Unknown repair");
+  if (kind === "correct_sketch") {
+    const expectedUpdatedAt = requireText(
+      input.expectedUpdatedAt,
+      "saved sketch timestamp",
+      50,
+    );
+    if (!Number.isFinite(Date.parse(expectedUpdatedAt)))
+      throw new SupportError("Reload the saved sketch timestamp");
+    return { answers: sketchPatch(input.answers), expectedUpdatedAt };
+  }
   if (kind === "change_email") return { email: emailAddress(input.email) };
   if (kind === "add_questions") {
     const questions = Number(input.questions);
@@ -183,7 +194,49 @@ export async function executeAction(action: Action) {
   try {
     let result: Record<string, unknown>;
     const payload = { ...action.payload };
-    if (action.kind === "recover_report")
+    if (action.kind === "correct_sketch") {
+      const current = checked(
+        await db()
+          .from("soulmate_sketches")
+          .select("updated_at,status,question_answers")
+          .eq("user_id", action.customer_id)
+          .maybeSingle(),
+      );
+      if (
+        !current ||
+        Date.parse(current.updated_at) !==
+          Date.parse(String(payload.expectedUpdatedAt))
+      )
+        throw new SupportError(
+          "Sketch changed. Reload the customer and review the latest saved answers before correcting.",
+          409,
+        );
+      if (current.status === "generating")
+        throw new SupportError(
+          "Recover the existing sketch job before correcting its answers. Do not submit a duplicate job.",
+          409,
+        );
+      const mergedAnswers = {
+        ...current.question_answers,
+        ...(payload.answers as Record<string, string>),
+      };
+      sketchPatch({
+        attracted_to: mergedAnswers.attracted_to,
+        age_group: mergedAnswers.age_group,
+      });
+      checked(
+        await db().rpc("support_prepare_sketch_correction", {
+          p_action: action.id,
+        }),
+      );
+      result = await recoverReport(
+        action.customer_id,
+        "soulmateSketch",
+        true,
+        action.id,
+        true,
+      );
+    } else if (action.kind === "recover_report")
       result = await recoverReport(
         action.customer_id,
         payload.report as ReportKey,

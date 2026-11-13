@@ -11,6 +11,7 @@ export const APPROVAL_ACTIONS = new Set([
 export const ACTIONS = new Set([
   ...APPROVAL_ACTIONS,
   "correct_birth",
+  "correct_sketch",
   "restore_access",
   "reconcile_payment",
   "recover_report",

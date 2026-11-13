@@ -20,7 +20,12 @@ import {
   makeReply,
   validateDraft,
 } from "@/lib/support/policy";
-import { findCustomers, customerSnapshot } from "@/lib/support/customer";
+import { SUPPORT_CAPABILITIES } from "@/lib/support/capabilities";
+import {
+  findCustomers,
+  customerSnapshot,
+  inspectReport,
+} from "@/lib/support/customer";
 import { createAction, decideAction } from "@/lib/support/actions";
 import {
   currentRules,
@@ -184,6 +189,7 @@ async function handle(request: NextRequest) {
         return reply({
           ...(await readRules(actor)),
           safeguards: SUPPORT_SAFEGUARDS,
+          capabilities: SUPPORT_CAPABILITIES,
         });
       }
       if (path[0] === "me")
@@ -206,7 +212,18 @@ async function handle(request: NextRequest) {
         await audit(actor.id, "customer_search", q);
         return reply(data);
       }
-      if (path[0] === "customers" && path[1]) {
+      if (
+        path[0] === "customers" &&
+        path[1] &&
+        path[2] === "reports" &&
+        path[3] &&
+        path.length === 4
+      ) {
+        const report = await inspectReport(path[1], path[3]);
+        await audit(actor.id, "report_inspected", path[1], { report: path[3] });
+        return reply(report);
+      }
+      if (path[0] === "customers" && path[1] && path.length === 2) {
         const snapshot = await customerSnapshot(path[1]);
         await audit(actor.id, "customer_viewed", path[1]);
         return reply(snapshot);

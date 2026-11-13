@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await supabase
       .from("soulmate_sketches")
-      .select("id, user_id, status, provider_job_id, sketch_image_url, question_answers, generated_at, generation_count, created_at, updated_at")
+      .select("id, user_id, status, provider_job_id, sketch_image_url, question_answers, generated_at, generation_count, created_at, updated_at, support_recovery_action_id")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    if (data.status === "generating" && data.provider_job_id && !data.sketch_image_url) {
+    if (!data.support_recovery_action_id && data.status === "generating" && data.provider_job_id && !data.sketch_image_url) {
       const updatedAtTs = data.updated_at ? new Date(data.updated_at).getTime() : 0;
       const shouldPollProvider = !updatedAtTs || Date.now() - updatedAtTs >= PROVIDER_POLL_COOLDOWN_MS;
       if (!shouldPollProvider) {
@@ -86,7 +86,9 @@ export async function GET(request: NextRequest) {
               updated_at: new Date().toISOString(),
             })
             .eq("user_id", userId)
-            .select("id, user_id, status, provider_job_id, sketch_image_url, question_answers, generated_at, generation_count, created_at, updated_at")
+            .is("support_recovery_action_id", null)
+            .eq("provider_job_id", data.provider_job_id)
+            .select("id, user_id, status, provider_job_id, sketch_image_url, question_answers, generated_at, generation_count, created_at, updated_at, support_recovery_action_id")
             .maybeSingle();
 
           if (completed) {
@@ -106,7 +108,9 @@ export async function GET(request: NextRequest) {
               updated_at: new Date().toISOString(),
             })
             .eq("user_id", userId)
-            .select("id, user_id, status, provider_job_id, sketch_image_url, question_answers, generated_at, generation_count, created_at, updated_at")
+            .is("support_recovery_action_id", null)
+            .eq("provider_job_id", data.provider_job_id)
+            .select("id, user_id, status, provider_job_id, sketch_image_url, question_answers, generated_at, generation_count, created_at, updated_at, support_recovery_action_id")
             .maybeSingle();
 
           return NextResponse.json({
@@ -122,7 +126,9 @@ export async function GET(request: NextRequest) {
           .update({
             updated_at: new Date().toISOString(),
           })
-          .eq("user_id", userId);
+          .eq("user_id", userId)
+          .is("support_recovery_action_id", null)
+          .eq("provider_job_id", data.provider_job_id);
       } catch (pollError) {
         console.error("[soulmate-sketch/status] provider poll error", pollError);
       }

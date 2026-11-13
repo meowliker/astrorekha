@@ -14,10 +14,11 @@ import {
   CheckCircle2,
   AlertCircle,
 } from "lucide-react";
-import type { customerSnapshot } from "@/lib/support/customer";
+import type { customerSnapshot, inspectReport } from "@/lib/support/customer";
 import { FEATURES } from "@/lib/support/policy";
 import "./support.css";
 import SupportRules from "./SupportRules";
+import SketchCorrection from "./SketchCorrection";
 type Snapshot = Awaited<ReturnType<typeof customerSnapshot>>;
 type Staff = {
   id: string;
@@ -70,6 +71,9 @@ export default function SupportWorkspace() {
     [matches, setMatches] = useState<Snapshot["user"][]>([]),
     [searchPayments, setSearchPayments] = useState<Snapshot["payments"]>([]),
     [customer, setCustomer] = useState<Snapshot | null>(null);
+  const [reportPreview, setReportPreview] = useState<Awaited<
+    ReturnType<typeof inspectReport>
+  > | null>(null);
   const [cases, setCases] = useState<Case[]>([]),
     [activeCase, setActiveCase] = useState<Case | null>(null),
     [actions, setActions] = useState<Action[]>([]),
@@ -110,6 +114,7 @@ export default function SupportWorkspace() {
   async function loadCustomer(id: string) {
     const value = await api<Snapshot>(`customers/${encodeURIComponent(id)}`);
     setCustomer(value);
+    setReportPreview(null);
     setSelectedReports(value.reports.filter((r) => r.ready).map((r) => r.key));
   }
   async function refresh() {
@@ -726,6 +731,20 @@ export default function SupportWorkspace() {
                             </span>
                           </div>
                           <h3>{r.name}</h3>
+                          <button
+                            disabled={busy}
+                            onClick={() =>
+                              void run(async () => {
+                                setReportPreview(
+                                  await api(
+                                    `customers/${encodeURIComponent(customer.user.id)}/reports/${r.key}`,
+                                  ),
+                                );
+                              })
+                            }
+                          >
+                            Inspect saved {r.name}
+                          </button>
                           <p>
                             {r.savedInputs === true
                               ? "Saved inputs found"
@@ -760,6 +779,52 @@ export default function SupportWorkspace() {
                       created.
                     </p>
                   </section>
+                  {reportPreview && (
+                    <section className="support-panel">
+                      <h2>{reportPreview.name} — saved content</h2>
+                      {reportPreview.report === "soulmateSketch" ? (
+                        <>
+                          <pre style={{ whiteSpace: "pre-wrap" }}>
+                            {JSON.stringify(reportPreview.answers, null, 2)}
+                          </pre>
+                          {typeof reportPreview.content === "string" &&
+                            /^https:\/\//.test(reportPreview.content) && (
+                              <a
+                                href={reportPreview.content}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                Open saved sketch image
+                              </a>
+                            )}
+                        </>
+                      ) : (
+                        <pre
+                          style={{
+                            whiteSpace: "pre-wrap",
+                            maxHeight: 500,
+                            overflow: "auto",
+                          }}
+                        >
+                          {JSON.stringify(reportPreview.content, null, 2)}
+                        </pre>
+                      )}
+                    </section>
+                  )}
+                  {customer.reports
+                    .filter((r) => r.key === "soulmateSketch")
+                    .map((r) => (
+                      <SketchCorrection
+                        key={`${customer.user.id}:${r.updatedAt}`}
+                        answers={r.sketchAnswers || {}}
+                        updatedAt={r.updatedAt}
+                        unlocked={r.unlocked}
+                        busy={busy}
+                        submit={(payload) =>
+                          void run(() => repair("correct_sketch", payload))
+                        }
+                      />
+                    ))}
                   <section className="support-panel">
                     <h2>Payments & access</h2>
                     <div className="support-table-wrap">

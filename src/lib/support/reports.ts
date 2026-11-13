@@ -1,3 +1,4 @@
+import { sketchPatch } from "./sketch-options";
 import { NextRequest } from "next/server";
 import sharp from "sharp";
 import { createReportSession } from "@/lib/report-session";
@@ -95,7 +96,11 @@ export async function calculateBirth(input: Record<string, unknown>) {
     );
   return { snapshot, date, time, result, signs };
 }
-async function savedInputs(user: Record<string, unknown>, palmOnly = false) {
+async function savedInputs(
+  user: Record<string, unknown>,
+  palmOnly = false,
+  skipBirth = false,
+) {
   const required = palmOnly ? "completeForPalm" : "completeForBirthChart";
   const profile = checked(
     await db()
@@ -153,6 +158,7 @@ async function savedInputs(user: Record<string, unknown>, palmOnly = false) {
         ) || []),
       );
   }
+  if (skipBirth) return { profile, linked, purchases, birth: null };
   const candidates = [profile, user, ...linked].filter(Boolean);
   const native = candidates
     .slice(0, 2)
@@ -293,6 +299,7 @@ export async function recoverReport(
   key: ReportKey,
   force: boolean,
   actionId: string,
+  preserveBefore = false,
 ) {
   const spec = REPORTS[key];
   if (!spec) throw new SupportError("Unknown report");
@@ -321,22 +328,27 @@ export async function recoverReport(
     return { ready: true, report: key, reused: true };
   }
   // Keep the previous saved content for traceability. Never remove an existing palm image.
-  checked(
-    await db()
-      .from("support_actions")
-      .update({
-        before_data: old
-          ? {
-              report: key,
-              record: Object.fromEntries(
-                Object.entries(old).filter(([k]) => k !== "palm_image_url"),
-              ),
-            }
-          : null,
-      })
-      .eq("id", actionId),
+  if (!preserveBefore)
+    checked(
+      await db()
+        .from("support_actions")
+        .update({
+          before_data: old
+            ? {
+                report: key,
+                record: Object.fromEntries(
+                  Object.entries(old).filter(([k]) => k !== "palm_image_url"),
+                ),
+              }
+            : null,
+        })
+        .eq("id", actionId),
+    );
+  const inputs = await savedInputs(
+    user,
+    key === "palmReading",
+    key === "soulmateSketch",
   );
-  const inputs = await savedInputs(user, key === "palmReading");
   const birthReports = [
     "birthChart",
     "futurePartnerReport",
@@ -612,6 +624,11 @@ export async function recoverReport(
         );
       answers = found[0].question_answers;
     }
+    // Do not silently invent the requested gender/age when saved inputs are incomplete.
+    sketchPatch({
+      attracted_to: answers.attracted_to,
+      age_group: answers.age_group,
+    });
     const configRow = checked(
       await db()
         .from("settings")
@@ -622,37 +639,80 @@ export async function recoverReport(
     const config = normalizeLayoutBConfig(
       configRow?.value || DEFAULT_LAYOUT_B_CONFIG,
     );
-    // Resume an existing job before creating another paid provider request.
-    let generated: { imageUrl: string; providerJobId?: string | null };
-    if (old?.status === "generating" && old.provider_job_id) {
-      const job = await getSoulmateSketchJobStatusFromKie(old.provider_job_id);
-      if (job.state !== "success" || !job.imageUrl)
+    // Persist the provider ID before polling so timeout/network failures can resume without another charge.
+    let generated: { imageUrl: string; providerJobId?: string | null } | null =
+      null;
+    if (old?.status === "generating") {
+      if (!old.provider_job_id)
         throw new SupportError(
-          "The existing sketch job has not completed. Check recovery again before drafting.",
+          "Sketch submission was interrupted before its job ID was saved. Keep the case open for provider reconciliation; do not submit again.",
           409,
         );
-      generated = {
-        imageUrl: job.imageUrl,
-        providerJobId: old.provider_job_id,
-      };
-    } else {
-      const prompt = buildSoulmateSketchPrompt(answers, user);
+      const job = await getSoulmateSketchJobStatusFromKie(old.provider_job_id);
+      if (job.state === "success" && job.imageUrl) {
+        generated = {
+          imageUrl: job.imageUrl,
+          providerJobId: old.provider_job_id,
+        };
+      } else if (!["fail", "failed"].includes(job.state)) {
+        throw new SupportError(
+          "The saved provider job is not complete. Run recover_report for soulmateSketch again after 30 seconds to check the SAME job; do not use force or claim readiness.",
+          409,
+        );
+      }
+      // A definitively failed provider job may be replaced; an unknown/running job may not.
+    }
+    const prompt = buildSoulmateSketchPrompt(answers, user);
+    checked(
+      await db()
+        .from(spec.table)
+        .upsert(
+          {
+            user_id: userId,
+            status: "generating",
+            question_answers: answers,
+            support_recovery_action_id: actionId,
+            sketch_image_url: null,
+            provider_job_id: generated?.providerJobId || null,
+            prompt,
+            generation_count: 1,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id" },
+        ),
+    );
+    if (!generated) {
       try {
-        generated = await generateSoulmateSketchFromKie({ prompt, config });
+        generated = await generateSoulmateSketchFromKie({
+          prompt,
+          config,
+          onJobCreated: async (jobId) => {
+            checked(
+              await db()
+                .from(spec.table)
+                .update({
+                  provider_job_id: jobId,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("user_id", userId)
+                .eq("support_recovery_action_id", actionId),
+            );
+          },
+        });
       } catch (error) {
-        if (error instanceof KieTimeoutError)
+        if (error instanceof KieTimeoutError) {
           checked(
-            await db().from(spec.table).upsert(
-              {
-                user_id: userId,
-                status: "generating",
-                question_answers: answers,
-                provider_job_id: error.jobId,
-                updated_at: new Date().toISOString(),
-              },
-              { onConflict: "user_id" },
-            ),
+            await db()
+              .from(spec.table)
+              .update({ provider_job_id: error.jobId })
+              .eq("user_id", userId)
+              .eq("support_recovery_action_id", actionId),
           );
+          throw new SupportError(
+            "The provider job is saved. Run recover_report for soulmateSketch after 30 seconds to resume that job. Verify completion before drafting.",
+            409,
+          );
+        }
         throw error;
       }
     }
@@ -677,21 +737,21 @@ export async function recoverReport(
         "The saved sketch image is not accessible. Keep the case open.",
       );
     checked(
-      await db()
-        .from(spec.table)
-        .upsert(
-          {
-            user_id: userId,
-            status: "complete",
-            question_answers: answers,
-            sketch_image_url: savedUrl,
-            provider_job_id: generated.providerJobId,
-            generation_count: (old?.generation_count || 0) + 1,
-            generated_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "user_id" },
-        ),
+      await db().from(spec.table).upsert(
+        {
+          user_id: userId,
+          status: "complete",
+          question_answers: answers,
+          sketch_image_url: savedUrl,
+          provider_job_id: generated.providerJobId,
+          support_recovery_action_id: actionId,
+          prompt,
+          generation_count: 1,
+          generated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" },
+      ),
     );
   } else {
     if (!hasContent(old?.answers))

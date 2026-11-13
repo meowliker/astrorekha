@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
 
     const { data: existingRow, error: existingError } = await supabase
       .from("soulmate_sketches")
-      .select("question_answers, status, created_at")
+      .select("question_answers, status, created_at, support_recovery_action_id")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -73,23 +73,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "save_failed" }, { status: 500 });
     }
 
+    if (existingRow?.support_recovery_action_id) {
+      return NextResponse.json({ success: true, saved: false,
+        question_answers: normalizeAnswers(existingRow.question_answers), status: existingRow.status });
+    }
     const existingAnswers = normalizeAnswers(existingRow?.question_answers || {});
     const mergedAnswers = { ...existingAnswers, ...incomingAnswers };
 
-    const { data: savedRow, error: saveError } = await supabase
-      .from("soulmate_sketches")
-      .upsert(
-        {
-          user_id: userId,
-          status: existingRow?.status || "pending",
-          question_answers: mergedAnswers,
-          created_at: existingRow?.created_at || nowIso,
-          updated_at: nowIso,
-        },
-        { onConflict: "user_id" }
-      )
-      .select("question_answers, status, updated_at")
-      .maybeSingle();
+    const patch = {
+      user_id: userId, status: existingRow?.status || "pending", question_answers: mergedAnswers,
+      created_at: existingRow?.created_at || nowIso, updated_at: nowIso,
+    };
+    const query = existingRow
+      ? supabase.from("soulmate_sketches").update(patch).eq("user_id", userId).is("support_recovery_action_id", null)
+      : supabase.from("soulmate_sketches").upsert(patch, { onConflict: "user_id", ignoreDuplicates: true });
+    const { data: savedRow, error: saveError } = await query
+      .select("question_answers, status, updated_at").maybeSingle();
+    if (!saveError && !savedRow) return NextResponse.json({ error: "answers_changed_reload" }, { status: 409 });
 
     if (saveError) {
       console.error("[soulmate-sketch/answers] save error", saveError);

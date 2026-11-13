@@ -24,6 +24,18 @@ Gmail is a separate connector: the support server can enforce freshness on its o
 
 Install the kit in a dedicated folder, save only `ASTROREKHA_SUPPORT_TOKEN=...` in its `.env.support`, and use Node.js 20 or newer. Never commit or share `.env.support` or `.support-rules-session.json`. No production environment file is needed.
 
+## Sketch corrections and report inspection (13 November 2026)
+
+Existing live-rules kits and tokens remain compatible. `start` now also returns `capabilities` with the current action contract and recovery steps. Read those capabilities alongside the owner's rules; they describe available tools and do not change approval permissions.
+
+Use `GET customers/<userId>/reports/soulmateSketch` to inspect saved answers, image URL, status and `updatedAt`. For an ambiguous soulmate gender complaint also inspect `GET customers/<userId>/reports/futurePartnerReport` and the customer's own saved gender; do not assume which report is wrong or change the customer's gender to express a partner preference.
+
+For an explicit customer-requested change, post an action with kind `correct_sketch`, a fresh requestKey, customerId, caseId and customer evidence in reason. Payload: `{answers:{attracted_to:"male",age_group:"35-40"},expectedUpdatedAt:"<exact inspection timestamp>"}`. Send ONLY the changes actually requested. Supported changes are partner gender preference, age group, vibe, main worry and future goal; `start` returns the allowed choices. Other questionnaire answers are retained. This correction requires existing unlocked sketch access and does not need owner approval. It archives the old result, atomically updates answers, regenerates and verifies the saved image.
+
+If the customer reports a wrong image despite matching saved preferences, use `recover_report` with `report:"soulmateSketch",force:true` once. For a provider job saved after timeout, use a new `recover_report` action with force false after 30 seconds; this resumes the SAME job. Continue bounded checks while it progresses. Reuse a request UUID only when determining the outcome of the same network request; a follow-up job check is a new action. A failed provider job may be retried, but unknown jobs must not be duplicated. Submission interrupted without a recorded job ID remains a provider-reconciliation escalation.
+
+After completion, inspect the saved answers and image, verify app availability, then save the specific Gmail draft and apply the current labels/read state. Do not claim that an image visually matches unless it was viewed. If required answers are missing or another operator changed the record, review the latest data rather than inventing values or overwriting it.
+
 ## Workflow
 
 Find the customer by exact email, phone number in payment records, user ID, internal payment ID, PayU ID, or gateway transaction reference. Read the full email conversation, including previous replies. Create a support case with the Gmail thread ID, customer ID and evidence. Search by other references if the first search finds nothing; a missing account match does not establish that the customer did not pay.
@@ -75,6 +87,7 @@ Action payloads:
 | `reconcile_payment` | `{paymentId}` | No; gateway must verify |
 | `restore_access` | `{paymentId}` | No; fulfilled purchase must match |
 | `recover_report` | `{report:"palmReading", force:false}` | No; access and data required |
+| `correct_sketch` | `{answers:{age_group:"35-40"},expectedUpdatedAt:"..."}` | No; explicit customer evidence and unlocked sketch required |
 | `correct_birth` | `{date:"2003-06-28",time:"12:30",place:"Raipur, Chhattisgarh, India"}` | No; record customer evidence |
 | `change_email` | `{email}` | Yes |
 | `add_questions` | `{questions:10}` | Yes |
