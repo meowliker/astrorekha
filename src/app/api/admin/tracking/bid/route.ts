@@ -1,7 +1,7 @@
 import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
+import { normalMetaCredentials, assertNormalMetaObject } from "@/lib/normal-meta-campaigns";
 import { changeMetaBid, MetaBidError, readMetaBid } from "@/lib/tracking-meta-bid";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +19,7 @@ async function authorize(request: NextRequest, accountId: string) {
   if (error || !session || new Date(session.expires_at) <= new Date()) throw new MetaBidError("Session expired", 401);
   const now = Date.now();
   const range = { startMillis: now, endMillis: now + 1 };
-  const configured = await getMetaAccountCredentialsForRange(supabase, range);
-  const credentials = configured.length ? configured : getMetaAccountCredentialsFromEnv(range);
+  const credentials = await normalMetaCredentials(supabase, range);
   const credential = credentials.find((account) => account.accountId === accountId && account.active !== false);
   if (!credential) throw new MetaBidError("This ad account is not currently connected for bid edits.", 403);
   return credential;
@@ -39,6 +38,7 @@ async function handleGET(request: NextRequest) {
     const adsetId = params.get("adsetId");
     if (!isId(accountId) || !isId(adsetId)) return json({ error: "Choose a valid Meta ad set." }, 400);
     const credential = await authorize(request, accountId);
+    await assertNormalMetaObject(credential, "adset", adsetId);
     return json({ bid: await readMetaBid(credential, adsetId) });
   } catch (error) { return respondToError(error); }
 }
@@ -51,6 +51,7 @@ async function handlePOST(request: NextRequest) {
       return json({ error: "Choose a valid bid change." }, 400);
     }
     const credential = await authorize(request, input.accountId);
+    await assertNormalMetaObject(credential, "adset", input.adsetId);
     return json({ bid: await changeMetaBid(credential, input.adsetId, input.expectedAmountMinor, input.newAmountMinor) });
   } catch (error) { return respondToError(error); }
 }

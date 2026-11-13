@@ -52,3 +52,12 @@ test('hourly endpoint flattens the requested date into 24 numeric cells',()=>{
  const flat=googleHourlySpendForDay({accounts:[r]},'2026-11-12');assert.equal(flat[r.campaigns[0].key].length,24);assert.equal(flat[r.campaigns[0].key][1],180);
  assert.equal(flat[r.campaigns[0].key].reduce((a,b)=>a+b,0),180);
 });
+
+test('account list hides unrelated accounts but incomplete reads still block complete spend',()=>{
+ const {googleSpendReport}=require('../src/lib/google-ads-reporting');
+ const own=aggregateGoogleSnapshot(snapshot(),'astrorekha','2026-11-12','2026-11-12','business_1130_ist',90);
+ const other=aggregateGoogleSnapshot(snapshot(),'us-main','2026-11-12','2026-11-12','business_1130_ist',90);
+ const results=[own,other].map(report=>({report,fetchedAt:'2026-11-13T00:00:00Z'}));
+ let result=googleSpendReport(results);assert.equal(result.accounts.length,1);assert.equal(result.complete,true);
+ other.account.error='Access unavailable';other.warnings=['Access unavailable'];result=googleSpendReport(results);assert.equal(result.accounts.length,1);assert.equal(result.complete,false);assert.deepEqual(result.warnings,['Access unavailable']);assert.equal(googleSpendForDay(result,'2026-11-12'),null);
+});

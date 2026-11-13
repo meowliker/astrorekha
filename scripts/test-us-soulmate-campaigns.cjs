@@ -73,15 +73,16 @@ test('saved US settings retain their own token, persist the selection, and redac
  assert.equal(publicSettings.accounts[0].hasAccessToken,true);
  assert.ok(!JSON.stringify(publicSettings).includes('fixture-token'));
 });
+const authToken='a'.repeat(64);
 const state={settings:{accounts:[credential],revision:3,exchange_rate:1},rows:[],calls:[]};
 const db={from(table){
- assert.ok(['us_soulmate_admin_settings','us_soulmate_profit_sheet','admin_sessions'].includes(table),'No other flow settings or tables');
+ assert.ok(['us_soulmate_admin_settings','us_soulmate_profit_sheet','admin_sessions','admin_workspace_members'].includes(table),'No other flow settings or tables');
  const q={select(){return q},eq(){return q},gte(){return q},lte(){return q},order(){return q},
- single:async()=>({data:state.settings,error:null}),maybeSingle:async()=>({data:{id:'fixture',expires_at:'2099-01-01'},error:null}),
+ single:async()=>({data:state.settings,error:null}),maybeSingle:async()=>({data:table==='admin_workspace_members'?{admin_id:'fixture',active:true,is_administrator:false,workspaces:['us-soulmate']}:{id:authToken,admin_id:'fixture',expires_at:'2099-01-01'},error:null}),
  then(a,b){return Promise.resolve({data:state.rows,error:null}).then(a,b)}};return q;
 },async rpc(name,args){state.calls.push({name,args});return {data:4,error:null}}};
 const adminPath=require.resolve('../src/lib/us-soulmate-admin');
-require.cache[adminPath]={id:adminPath,filename:adminPath,loaded:true,exports:{soulmateAdmin:async req=>req.headers.get('authorization')==='Bearer fixture'?db:null}};
+require.cache[adminPath]={id:adminPath,filename:adminPath,loaded:true,exports:{soulmateAdmin:async req=>req.headers.get('authorization')===`Bearer ${authToken}`?db:null}};
 const supabasePath=require.resolve('../src/lib/supabase-admin');
 require.cache[supabasePath]={id:supabasePath,filename:supabasePath,loaded:true,exports:{getSupabaseAdmin:()=>db}};
 const accountsRoute=require('../src/app/api/admin/us-soulmate/ad-accounts/route');
@@ -90,7 +91,7 @@ const budgetRoute=require('../src/app/api/admin/us-soulmate/tracking/budget/rout
 const bidRoute=require('../src/app/api/admin/us-soulmate/tracking/bid/route');
 const {NextRequest}=require('next/server');
 const request=(body,auth=true)=>new NextRequest('http://localhost/api/admin/us-soulmate/ad-accounts',{
- method:'POST',headers:auth?{'authorization':'Bearer fixture','x-admin-session':'fixture'}:{},body:JSON.stringify(body)});
+ method:'POST',headers:auth?{'authorization':`Bearer ${authToken}`,'x-admin-session':authToken}:{},body:JSON.stringify(body)});
 test('picker and save routes enforce auth, ownership and revision before saving only US settings',async()=>{
  state.calls=[];global.fetch=async()=>{throw new Error('Unexpected Meta read')};
  assert.equal((await pickerRoute.POST(request({accountId:credential.accountId},false))).status,401);

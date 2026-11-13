@@ -5,8 +5,8 @@ import { parseAdSource, matchesAdSource, type AdSource } from "@/lib/admin-acqui
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing } from "@/lib/pricing";
-import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
-import { fetchMetaTrackingAccount, fetchMetaTrackingExactHourlySpend } from "@/lib/tracking-meta";
+import { normalMetaCredentials } from "@/lib/normal-meta-campaigns";
+import { fetchMetaTrackingAccount, fetchMetaTrackingExactHourlySpend } from "@/lib/soulmate-tracking-meta";
 import { calculateProfitSheetGst, indianAdGstApplies } from "@/lib/profit-sheet-gst";
 import { readTrackedUtmVisits, visitHour, type TrackingUtmVisit } from "@/lib/tracking-utm-visits";
 import {
@@ -261,8 +261,7 @@ async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { s
   const refunds = allRefunds.filter(row => adSource === "all" || matchesAdSource(parents.get(row.payu_txn_id || "") || row, adSource));
   visitResult.visits = visitResult.visits.filter(v => adSource === "all" || v.channel === adSource);
   const accountRange = { startMillis: Date.parse(start), endMillis: Date.parse(end) };
-  const configured = adSource === "google" ? [] : await getMetaAccountCredentialsForRange(supabase, accountRange);
-  const credentials = configured.length ? configured : getMetaAccountCredentialsFromEnv(accountRange);
+  const credentials = adSource === "google" ? [] : await normalMetaCredentials(supabase, accountRange);
   const distinct = adSource === "google" ? [] : Array.from(new Map(credentials.map((credential) => [credential.accountId, credential])).values());
   const meta = await Promise.all(distinct.map(async (credential) => {
     return fetchMetaTrackingAccount(credential, dates, rate.rate, dayMode);
@@ -289,7 +288,7 @@ async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { s
       const dailyIndianSpend = meta.reduce((sum, account) => sum + (account.dailySpendInr[day]?.indian || 0), 0);
       return indianAdGstApplies(day) ? calculateProfitSheetGst(dailyRevenue, 0.18, dailyIndianSpend).gst : dailyRevenue * 0.05;
     }).reduce((sum, value) => sum + value, 0);
-  const profitAvailable = meta.every((result) => !result.account.error) && campaigns.every((row) => row.spendInr !== null || row.spend === 0);
+  const profitAvailable = (!google || google.complete) && meta.every((result) => !result.account.error) && campaigns.every((row) => row.spendInr !== null || row.spend === 0);
   return {
     spendUnavailable: !!google && !google.complete,
     accounts: meta.map((result) => result.account), campaigns: joined.campaigns, hourly: joined.hourly,
@@ -347,11 +346,10 @@ async function handleGET(request: NextRequest) {
       if (!validDate(day) || day > trackingDate(new Date(), dayMode)) return json({ error: "Choose a valid IST day." }, 400);
       const googleRate = adSource === "meta" ? null : await fxRate(supabase);
       const googleHourly = googleRate ? await readGoogleSpend("astrorekha", day, day, dayMode, googleRate.rate) : null;
-      const googleFailed = googleHourly?.accounts.filter(r => r.account.error || r.campaigns.some(c => c.hourlySpendUnavailable)).map(r => r.account.id) || [];
+      const googleFailed = [...new Set([...(googleHourly?.failedAccountIds || []), ...(googleHourly?.accounts.filter(r => r.account.error || r.campaigns.some(c => c.hourlySpendUnavailable)).map(r => r.account.id) || [])])];
       if (adSource === "google") return json({ hourlySpendInr: googleHourlySpendForDay(googleHourly, day), failedAccountIds: googleFailed, warnings: googleHourly?.warnings || [], fetchedAt: googleHourly?.fetchedAt });
       const accountRange = { startMillis: Date.parse(trackingDayStartUtc(day, dayMode)), endMillis: Date.parse(nextTrackingDayStartUtc(day, dayMode)) };
-      const configured = await getMetaAccountCredentialsForRange(supabase, accountRange);
-      const credentials = configured.length ? configured : getMetaAccountCredentialsFromEnv(accountRange);
+      const credentials = await normalMetaCredentials(supabase, accountRange);
       const rate = await fxRate(supabase);
       const results = await Promise.all(Array.from(new Map(credentials.map((credential) => [credential.accountId, credential])).values()).map(async (credential) => {
         try { return { accountId: credential.accountId, spend: await fetchMetaTrackingExactHourlySpend(credential, day, rate.rate, dayMode), warning: null }; }

@@ -1,7 +1,7 @@
 import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { getMetaAccountCredentialsForRange, getMetaAccountCredentialsFromEnv } from "@/lib/meta-ad-accounts";
+import { normalMetaCredentials, assertNormalMetaObject } from "@/lib/normal-meta-campaigns";
 import { changeMetaBudget, MetaBudgetError, readMetaBudget, type BudgetLevel, type BudgetType } from "@/lib/tracking-meta-budget";
 
 export const dynamic = "force-dynamic";
@@ -21,8 +21,7 @@ async function authorize(request: NextRequest, accountId: string) {
   // Budget edits always use an account credential active now, regardless of the dashboard date range.
   const now = Date.now();
   const range = { startMillis: now, endMillis: now + 1 };
-  const configured = await getMetaAccountCredentialsForRange(supabase, range);
-  const credentials = configured.length ? configured : getMetaAccountCredentialsFromEnv(range);
+  const credentials = await normalMetaCredentials(supabase, range);
   const credential = credentials.find((account) => account.accountId === accountId && account.active !== false);
   if (!credential) throw new MetaBudgetError("This ad account is not currently connected for budget edits.", 403);
   return credential;
@@ -42,6 +41,7 @@ async function handleGET(request: NextRequest) {
     const level = params.get("level");
     if (!isId(accountId) || !isId(id) || !isLevel(level)) return json({ error: "Choose a valid Meta campaign or ad set." }, 400);
     const credential = await authorize(request, accountId);
+    await assertNormalMetaObject(credential, level, id);
     return json({ budget: await readMetaBudget(credential, level, id) });
   } catch (error) { return respondToError(error); }
 }
@@ -55,6 +55,7 @@ async function handlePOST(request: NextRequest) {
       return json({ error: "Choose a valid budget change." }, 400);
     }
     const credential = await authorize(request, input.accountId);
+    await assertNormalMetaObject(credential, input.level, input.id);
     const budget = await changeMetaBudget(credential, input.level, input.id,
       { type: input.type as BudgetType, amountMinor: input.expectedAmountMinor }, input.newAmountMinor);
     return json({ budget });

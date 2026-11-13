@@ -239,7 +239,7 @@ async function summary(supabase: ReturnType<typeof getSupabaseAdmin>, dates: { s
   const indianSpendInr = campaigns.reduce((sum, row) => sum + (row.currency === "USD" ? row.spendInr || 0 : 0), 0);
   const revenue = grossRevenue - refundAmount;
   const gst = (sales.reduce((sum, row) => sum + row.taxAmount, 0) - refunds.reduce((sum, row) => sum + row.taxAmount, 0)) / 100;
-  const profitAvailable = meta.length > 0 && meta.every((result) => !result.account.error) && campaigns.every((row) => row.spendInr !== null || row.spend === 0);
+  const profitAvailable = (!google || google.complete) && meta.length > 0 && meta.every((result) => !result.account.error) && campaigns.every((row) => row.spendInr !== null || row.spend === 0);
   return {
     spendUnavailable: !!google && !google.complete,
     accounts: meta.map((result) => result.account), campaigns: joined.campaigns, hourly: joined.hourly,
@@ -292,7 +292,7 @@ async function handleGET(request: NextRequest) {
       if (!validDate(day) || day > trackingDate(new Date(), dayMode)) return json({ error: "Choose a valid IST day." }, 400);
       const googleRate = adSource === "meta" ? null : await fxRate(supabase);
       const googleHourly = googleRate ? await readGoogleSpend("us-main", day, day, dayMode, googleRate.rate) : null;
-      const googleFailed = googleHourly?.accounts.filter(r => r.account.error || r.campaigns.some(c => c.hourlySpendUnavailable)).map(r => r.account.id) || [];
+      const googleFailed = [...new Set([...(googleHourly?.failedAccountIds || []), ...(googleHourly?.accounts.filter(r => r.account.error || r.campaigns.some(c => c.hourlySpendUnavailable)).map(r => r.account.id) || [])])];
       if (adSource === "google") return json({ hourlySpendInr: googleHourlySpendForDay(googleHourly, day), failedAccountIds: googleFailed, warnings: googleHourly?.warnings || [], fetchedAt: googleHourly?.fetchedAt });
       const accountRange = { startMillis: Date.parse(trackingDayStartUtc(day, dayMode)), endMillis: Date.parse(nextTrackingDayStartUtc(day, dayMode)) };
       const credentials = await soulmateTrackingCredentials(supabase, accountRange);

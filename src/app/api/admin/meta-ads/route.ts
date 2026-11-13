@@ -1,3 +1,4 @@
+import { normalMetaCredentials, normalCampaignFilter } from "@/lib/normal-meta-campaigns";
 import {withAdminAccess} from "@/lib/admin-access";
 
 import type { MetaActionValue, MetaReportingRow, MetaReportingResponse } from "@/lib/meta-api-types";
@@ -5,7 +6,7 @@ import type { MetaActionValue, MetaReportingRow, MetaReportingResponse } from "@
 import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { getMetaAccountCredentialsForRange, getMetaAccountDateRangeForRequest } from "@/lib/meta-ad-accounts";
+import { getMetaAccountDateRangeForRequest } from "@/lib/meta-ad-accounts";
 
 export const dynamic = "force-dynamic";
 
@@ -228,7 +229,7 @@ async function handleGET(request: NextRequest) {
       customStartDate && customEndDate
         ? { startDate: customStartDate, endDate: customEndDate }
         : getMetaPresetDateRange(datePreset);
-    const credentials = await getMetaAccountCredentialsForRange(supabase, requestedRange);
+    const credentials = await normalMetaCredentials(supabase, requestedRange);
 
     if (credentials.length === 0) {
       return NextResponse.json({
@@ -248,15 +249,16 @@ async function handleGET(request: NextRequest) {
         if (!accountDateRange) return null;
         const dateParams = `time_range={"since":"${accountDateRange.startDate}","until":"${accountDateRange.endDate}"}`;
         const accountBase = `${META_BASE_URL}/act_${adAccountId}`;
+        const campaignFilter = `&filtering=${encodeURIComponent(normalCampaignFilter(credential))}`;
         const [insightsData, campaignsData, dailyData, activeCampaignsData, accountMeta] = await Promise.all([
           fetchMetaJson(
-            `${accountBase}/insights?fields=spend,impressions,clicks,cpc,cpm,ctr,reach,frequency,actions,cost_per_action_type,conversions,cost_per_conversion,purchase_roas,website_purchase_roas&${dateParams}&access_token=${accessToken}`
+            `${accountBase}/insights?fields=spend,impressions,clicks,cpc,cpm,ctr,reach,frequency,actions,cost_per_action_type,conversions,cost_per_conversion,purchase_roas,website_purchase_roas&${dateParams}${campaignFilter}&access_token=${accessToken}`
           ),
           fetchMetaJson(
-            `${accountBase}/insights?fields=campaign_name,campaign_id,spend,impressions,clicks,cpc,cpm,ctr,reach,actions,cost_per_action_type,purchase_roas,website_purchase_roas&level=campaign&${dateParams}&limit=200&access_token=${accessToken}`
+            `${accountBase}/insights?fields=campaign_name,campaign_id,spend,impressions,clicks,cpc,cpm,ctr,reach,actions,cost_per_action_type,purchase_roas,website_purchase_roas&level=campaign&${dateParams}${campaignFilter}&limit=200&access_token=${accessToken}`
           ),
           fetchMetaJson(
-            `${accountBase}/insights?fields=spend,impressions,clicks,reach,actions&time_increment=1&${dateParams}&limit=90&access_token=${accessToken}`
+            `${accountBase}/insights?fields=spend,impressions,clicks,reach,actions&time_increment=1&${dateParams}${campaignFilter}&limit=90&access_token=${accessToken}`
           ),
           fetchMetaJson(
             `${accountBase}/campaigns?fields=name,status,objective,daily_budget,lifetime_budget&filtering=[{"field":"effective_status","operator":"IN","value":["ACTIVE"]}]&limit=200&access_token=${accessToken}`
@@ -267,7 +269,7 @@ async function handleGET(request: NextRequest) {
         const accountInsights = insightsData?.data?.[0] || {};
         const metrics = parseAccountMetrics(accountInsights);
 
-        const campaigns = (campaignsData?.data || []).map((c: MetaReportingRow) => {
+        const campaigns = (campaignsData?.data || []).filter((c: MetaReportingRow) => credential.campaignIds.includes(String(c.campaign_id))).map((c: MetaReportingRow) => {
           const cActions = c.actions || [];
           const cCostPerAction = c.cost_per_action_type || [];
           return {
@@ -303,7 +305,7 @@ async function handleGET(request: NextRequest) {
           };
         });
 
-        const activeCampaigns = (activeCampaignsData?.data || []).map((c: MetaReportingRow) => ({
+        const activeCampaigns = ((activeCampaignsData?.data || []).filter((c: {id: string}) => credential.campaignIds.includes(c.id))).map((c: MetaReportingRow) => ({
           name: c.name,
           status: c.status,
           objective: c.objective,

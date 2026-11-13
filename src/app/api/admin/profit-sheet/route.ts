@@ -1,3 +1,4 @@
+import { scopeNormalMetaCredentials, normalCampaignFilter } from "@/lib/normal-meta-campaigns";
 import { readGoogleSpend, googleSpendForDay } from "@/lib/google-ads-reporting";
 import {withAdminAccess} from "@/lib/admin-access";
 import { parseAdSource } from "@/lib/admin-acquisition";
@@ -382,6 +383,8 @@ async function fetchMetaAdsDailySpend(
     credentials = await getMetaAccountCredentialsForRange(supabase, accountRange);
   }
 
+  credentials = await scopeNormalMetaCredentials(supabase, credentials);
+
   if (credentials.length === 0) {
     return new Map();
   }
@@ -395,6 +398,7 @@ async function fetchMetaAdsDailySpend(
 
     for (const credential of credentials) {
       const { accountId: adAccountId, accessToken } = credential;
+      const campaignFilter = `&filtering=${encodeURIComponent(normalCampaignFilter(credential))}`;
       const accountWindow = getMetaAccountWindowForRequest(credential, startDate, endDate, dayMode);
       if (!accountWindow) continue;
       const accountSpendMap = new Map<string, DailyMetaSpend>();
@@ -403,10 +407,10 @@ async function fetchMetaAdsDailySpend(
         `${META_BASE_URL}/act_${adAccountId}/insights` +
         `?fields=date_start,date_stop,spend` +
         `&time_increment=1&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone` +
-        `&${dateParams}&limit=5000&access_token=${accessToken}`;
+        `&${dateParams}${campaignFilter}&limit=5000&access_token=${accessToken}`;
       const dailyFallbackUrl =
         `${META_BASE_URL}/act_${adAccountId}/insights` +
-        `?fields=date_start,spend&time_increment=1&${dateParams}&limit=500&access_token=${accessToken}`;
+        `?fields=date_start,spend&time_increment=1&${dateParams}${campaignFilter}&limit=500&access_token=${accessToken}`;
 
       const [accountResponse, hourlyResponse, dailyResponse] = await Promise.all([
         fetch(accountUrl, { cache: "no-store", signal: AbortSignal.timeout(20000) }),
