@@ -125,13 +125,14 @@ export function balanceAlertSections(checks: MonitorCheck[]) {
 }
 
 export function buildDailyBalanceAlert(checks: MonitorCheck[], now: Date) {
-  const sections = balanceAlertSections(checks);
+  const activeChecks = checks.filter(check => check.adBalance && check.adBalance.state !== "inactive");
+  const sections = balanceAlertSections(activeChecks);
   const time = now.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-  const note = "Amounts show spending limit remaining, not a prepaid wallet balance. Inactive accounts are not checked.";
+  const note = "Amounts show spending limit remaining, not a prepaid wallet balance.";
   return {
     subject: "Daily ad account balances",
-    slackText: `<@${BALANCE_SLACK_MEMBER_ID}> *Daily ad account balances*\n\n${sections.slack}\n\n${note}\nChecked ${time} IST`,
-    emailHtml: `<h2>Daily ad account balances</h2>${sections.html}<p>${note}</p><p>Checked ${time} IST</p>`,
+    slackText: `<@${BALANCE_SLACK_MEMBER_ID}> *Daily ad account balances*\n\n${sections.slack || "No active ad accounts configured."}\n\n${note}\nChecked ${time} IST`,
+    emailHtml: `<h2>Daily ad account balances</h2>${sections.html || "<p>No active ad accounts configured.</p>"}<p>${note}</p><p>Checked ${time} IST</p>`,
   };
 }
 

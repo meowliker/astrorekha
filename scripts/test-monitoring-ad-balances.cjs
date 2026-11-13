@@ -34,6 +34,16 @@ const daily = balances.buildDailyBalanceAlert([low, balances.balanceCheck({ ...b
 assert.match(daily.slackText, /\*VedicRekha\*/);
 assert.doesNotMatch(daily.slackText, /<!here>/);
 assert.doesNotMatch(daily.emailHtml, /<!here>/);
+const inactive = balances.balanceCheck({ ...balance, accountName: 'Retired account', state: 'inactive' }, +now);
+const unavailable = balances.balanceCheck({ ...balance, accountName: 'Active unavailable account', state: 'unavailable', detail: 'Balance unavailable' }, +now);
+const activeOnly = balances.buildDailyBalanceAlert([low, inactive, unavailable], now);
+assert.doesNotMatch(activeOnly.slackText, /Retired account|Inactive/);
+assert.doesNotMatch(activeOnly.emailHtml, /Retired account|Inactive/);
+assert.match(activeOnly.slackText, /Active unavailable account/);
+assert.match(activeOnly.emailHtml, /Active unavailable account/);
+const empty = balances.buildDailyBalanceAlert([inactive], now);
+assert.match(empty.slackText, /No active ad accounts configured/);
+assert.doesNotMatch(empty.slackText, /\*AstroRekha\*/);
 assert.equal(balances.dailyBalanceSlot(now), 'ad-balances:2026-11-13');
 assert.equal(balances.dailyBalanceSlot(new Date('2026-11-13T12:29:59Z')), null);
 assert.equal(balances.dailyBalanceSlot(new Date('2026-11-13T13:29:59Z')), 'ad-balances:2026-11-13');
