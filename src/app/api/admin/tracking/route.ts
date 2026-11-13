@@ -1,7 +1,7 @@
 import { readGoogleSpend, matchGoogleCampaign, googleHourlySpendForDay } from "@/lib/google-ads-reporting";
 import {isStandaloneSoulmatePayment} from "@/lib/admin-order-funnel";
 import {withAdminAccess} from "@/lib/admin-access";
-import { parseAdSource, matchesAdSource, type AdSource } from "@/lib/admin-acquisition";
+import { parseAdSource, matchesAdSource, acquisitionChannel, acquisitionTouch, type AdSource } from "@/lib/admin-acquisition";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing } from "@/lib/pricing";
@@ -138,7 +138,7 @@ function attachOrders(campaigns: TrackingCampaign[], sales: TrackingPayment[], r
       if (!extra.has(key)) extra.set(key, emptyUtmCampaign(key, null, "Google Ads · campaign not provided", "utm_only"));
       return extra.get(key)!;
     }
-    if (matchesAdSource(payment, "meta")) {
+    if (acquisitionChannel(acquisitionTouch(payment)) === "meta") {
       const key = "utm-name:meta ads · campaign not provided";
       if (!extra.has(key)) extra.set(key, emptyUtmCampaign(key, null, "Meta Ads · campaign not provided", "utm_only"));
       return extra.get(key)!;
