@@ -18,7 +18,7 @@ try {
   );
   writeFileSync(
     path.join(dir, "fixture.mjs"),
-    `import{writeFileSync}from'node:fs';globalThis.fetch=async(url,options)=>{if(options.headers.Authorization!=='Bearer ar_support_fixturetoken')throw Error('Token not loaded');writeFileSync('request.json',JSON.stringify({url,receipt:options.headers['x-support-rules-receipt']}));if(process.env.FIXTURE_FAIL)return new Response(JSON.stringify({error:'Reload current rules'}),{status:409});return new Response(JSON.stringify(url.endsWith('/rules')?{version:7,content:'Live workflow instructions',settings:{},receipt:'private-fixture-receipt',safeguards:[]}:{}),{status:200});};`,
+    `import{writeFileSync}from'node:fs';globalThis.fetch=async(url,options)=>{if(options.headers.Authorization!=='Bearer ar_support_fixturetoken')throw Error('Token not loaded');writeFileSync('request.json',JSON.stringify({url,receipt:options.headers['x-support-rules-receipt']}));if(process.env.FIXTURE_FAIL)return new Response(JSON.stringify({error:'Reload current rules'}),{status:409});return new Response(JSON.stringify(url.endsWith('/rules')?{version:7,content:'Live workflow instructions',settings:{},receipt:'private-fixture-receipt',safeguards:[],capabilities:{correctSketch:{kind:"correct_sketch"}}}:{}),{status:200});};`,
   );
   const env = { ...process.env };
   delete env.ASTROREKHA_SUPPORT_TOKEN;
@@ -45,6 +45,7 @@ try {
   r = run(["start"]);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /Live workflow instructions/);
+  assert.match(r.stdout, /correct_sketch/);
   assert.ok(
     !r.stdout.includes("private-fixture-receipt") &&
       !r.stdout.includes("ar_support_fixturetoken"),

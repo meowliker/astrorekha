@@ -230,9 +230,11 @@ export function buildSoulmateSketchPrompt(answers: SketchAnswers, profile: Recor
 export async function generateSoulmateSketchFromKie({
   prompt,
   config,
+  onJobCreated,
 }: {
   prompt: string;
   config: LayoutBFunnelConfig;
+  onJobCreated?: (jobId: string) => Promise<void>;
 }): Promise<SketchGenerationResult> {
   const { apiKey, baseUrl, createPath, statusPathTemplate, initialPollAttempts, initialPollIntervalMs } =
     getKieRuntimeConfig();
@@ -297,6 +299,8 @@ export async function generateSoulmateSketchFromKie({
   if (!jobId) {
     throw new Error("Kie.ai response did not include image URL or job id");
   }
+
+  if (onJobCreated) await onJobCreated(String(jobId));
 
   const statusPath = statusPathTemplate.replace("{job_id}", jobId);
   for (let attempt = 0; attempt < initialPollAttempts; attempt += 1) {

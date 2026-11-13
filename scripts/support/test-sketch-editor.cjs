@@ -1,0 +1,22 @@
+const assert=require('node:assert/strict');
+const Module=require('node:module'),path=require('node:path'),resolve=Module._resolveFilename;
+Module._resolveFilename=function(r,p,...a){return resolve.call(this,r.startsWith('@/')?path.join(process.cwd(),'src',r.slice(2)):r,p,...a)};
+require('ts-node').register({transpileOnly:true,compilerOptions:{module:'CommonJS',moduleResolution:'node',jsx:'react-jsx'}});
+const React=require('react'),{create,act}=require('react-test-renderer');
+global.IS_REACT_ACT_ENVIRONMENT=true;
+const Editor=require('../../src/app/support/SketchCorrection').default;
+(async()=>{
+ let tree,payload;
+ await act(()=>{tree=create(React.createElement(Editor,{answers:{attracted_to:'female',age_group:'40-45',vibe:'bold'},updatedAt:'2026-11-12T00:00:00Z',unlocked:true,busy:false,submit:p=>payload=p}))});
+ assert.equal(tree.root.findByType('button').props.disabled,true);
+ const age=tree.root.findAllByType('select').find(x=>x.props['aria-label']==='Which age group is your perfect match?');
+ await act(()=>age.props.onChange({target:{value:'35-40'}}));
+ assert.equal(tree.root.findByType('button').props.disabled,false);
+ await act(()=>tree.root.findByType('form').props.onSubmit({preventDefault(){}}));
+ assert.deepEqual(payload,{answers:{age_group:'35-40'},expectedUpdatedAt:'2026-11-12T00:00:00Z'});
+ assert.equal(tree.root.findAllByType('select').find(x=>x.props['aria-label']==='Who are you attracted to?').props.value,'female');
+ await act(()=>tree.update(React.createElement(Editor,{answers:{age_group:'40-45'},updatedAt:'stamp',unlocked:false,busy:false,submit(){}})));
+ assert.equal(tree.root.findByType('button').props.disabled,true);
+ await act(()=>tree.unmount());
+ console.log('PASS: editor sends only changed field with saved timestamp, preserves other selections, disables empty and unpurchased corrections');
+})().catch(e=>{console.error(e);process.exitCode=1});
