@@ -2,7 +2,7 @@
 
 import ReportInfoButton from "@/components/ReportInfoButton";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
@@ -39,7 +39,10 @@ function parseMultiAnswer(raw: string | undefined): string[] {
 
 export default function SoulmateSketchPage() {
   const router = useRouter();
-  const { unlockedFeatures } = useUserStore();
+  const { syncFromServer, setUserId: setStoreUserId } = useUserStore();
+  const [sketchUnlocked, setSketchUnlocked] = useState(false);
+  const [needsSignIn, setNeedsSignIn] = useState(false);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const [config, setConfig] = useState<LayoutBFunnelConfig>(DEFAULT_LAYOUT_B_CONFIG);
   const [status, setStatus] = useState<SketchStatus | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -59,7 +62,7 @@ export default function SoulmateSketchPage() {
 
   const fetchStatus = useCallback(async () => {
     if (!userId) return;
-    const response = await fetch(`/api/soulmate-sketch/status?userId=${encodeURIComponent(userId)}`, {
+    const response = await fetch("/api/soulmate-sketch/status", {
       cache: "no-store",
     });
     if (!response.ok) {
@@ -76,43 +79,50 @@ export default function SoulmateSketchPage() {
     const boot = async () => {
       try {
         setLoading(true);
-        const localUserId = localStorage.getItem("astrorekha_user_id") || "";
-        setUserId(localUserId);
-
-        const savedAnswers = localStorage.getItem(ANSWERS_STORAGE_KEY);
-        if (savedAnswers) {
-          setAnswers(JSON.parse(savedAnswers));
-        }
-
-        const cfgResponse = await fetch("/api/ab-test/layout-config", { cache: "no-store" });
+        const response = await fetch("/api/auth/session", { cache: "no-store" });
+        if (response.status === 401) { setNeedsSignIn(true); return; }
+        if (!response.ok) throw new Error("Unable to check your account. Please try again.");
+        const { user } = await response.json();
+        setUserId(user.id);
+        setStoreUserId(user.id);
+        setSketchUnlocked(!!user.unlocked_features?.soulmateSketch);
+        syncFromServer({ unlockedFeatures: user.unlocked_features, coins: user.coins, purchasedBundle: user.bundle_purchased || null });
+        // Browser storage is only a recoverable draft, never authentication.
+        let localAnswers: Record<string, string> = {};
+        try {
+          const previousId = localStorage.getItem("astrorekha_user_id");
+          const scoped = localStorage.getItem(`${ANSWERS_STORAGE_KEY}:${user.id}`);
+          const legacy = (!previousId || previousId === user.id) ? localStorage.getItem(ANSWERS_STORAGE_KEY) : null;
+          const parsed = JSON.parse(scoped || legacy || "{}");
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            localAnswers = Object.fromEntries(Object.entries(parsed).filter(([, value]) => typeof value === "string")) as Record<string, string>;
+          }
+          localStorage.setItem("astrorekha_user_id", user.id);
+        } catch { /* Storage may be unavailable; the verified session still works. */ }
+        const [cfgResponse, statusResponse] = await Promise.all([
+          fetch("/api/ab-test/layout-config", { cache: "no-store" }),
+          fetch("/api/soulmate-sketch/status", { cache: "no-store" }),
+        ]);
+        if (statusResponse.status === 401) { setNeedsSignIn(true); return; }
+        if (!statusResponse.ok) throw new Error("Unable to load your sketch. Please try again.");
         const cfgJson = await cfgResponse.json().catch(() => ({}));
         setConfig(normalizeLayoutBConfig(cfgJson?.config || DEFAULT_LAYOUT_B_CONFIG));
-
-        if (localUserId) {
-          const response = await fetch(`/api/soulmate-sketch/status?userId=${encodeURIComponent(localUserId)}`, {
-            cache: "no-store",
-          });
-          if (response.ok) {
-            const json = await response.json();
-            setStatus(json);
-            if (json?.question_answers && typeof json.question_answers === "object") {
-              setAnswers((prev) => ({ ...prev, ...json.question_answers }));
-            }
-          }
-        }
+        const json = await statusResponse.json();
+        setStatus(json);
+        setAnswers({ ...localAnswers, ...(json.question_answers || {}) });
       } catch (bootError) {
         console.error("Soulmate sketch boot error:", bootError);
-        setError("Unable to load soulmate sketch right now.");
-      } finally {
-        setLoading(false);
-      }
+        setError("Unable to load soulmate sketch right now. Please refresh this page to retry.");
+      } finally { setLoading(false); }
     };
-    boot();
-  }, []);
+    void boot();
+  }, [setStoreUserId, syncFromServer]);
 
   useEffect(() => {
-    localStorage.setItem(ANSWERS_STORAGE_KEY, JSON.stringify(answers));
-  }, [answers]);
+    if (loading || !userId) return;
+    try { localStorage.setItem(`${ANSWERS_STORAGE_KEY}:${userId}`, JSON.stringify(answers)); }
+    catch { /* Server-side saving remains available. */ }
+  }, [answers, loading, userId]);
 
   useEffect(() => {
     if (loading || hasSyncedStepFromSavedAnswers || questions.length === 0) return;
@@ -142,19 +152,24 @@ export default function SoulmateSketchPage() {
     return () => clearInterval(id);
   }, [status, fetchStatus]);
 
-  const persistAnswers = useCallback(
-    (nextAnswers: Record<string, string>) => {
-      if (!userId) return;
-      fetch(`/api/soulmate-sketch/answers?userId=${encodeURIComponent(userId)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, answers: nextAnswers }),
-      }).catch((persistError) => {
-        console.error("[soulmate-sketch] failed to persist answers", persistError);
+  const persistAnswers = useCallback((nextAnswers: Record<string, string>) => {
+    if (!userId) return Promise.reject(new Error("Please sign in to continue."));
+    // Serialize writes so an older selection cannot overwrite a later one.
+    const save = saveQueue.current.catch(() => {}).then(async () => {
+      const response = await fetch("/api/soulmate-sketch/answers", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers: nextAnswers }),
       });
-    },
-    [userId]
-  );
+      if (response.status === 401) {
+        setNeedsSignIn(true);
+        throw new Error("Please sign in to continue. Your answers have been kept in this browser.");
+      }
+      if (!response.ok) throw new Error("Your answers could not be saved. Please try again.");
+    });
+    saveQueue.current = save;
+    void save.catch((saveError: Error) => setError(saveError.message));
+    return save;
+  }, [userId]);
 
   const handleSelect = (value: string) => {
     if (!activeQuestion) return;
@@ -203,19 +218,21 @@ export default function SoulmateSketchPage() {
 
   const handleGenerate = async () => {
     if (!userId) {
-      setError("Please login again to continue.");
+      setNeedsSignIn(true);
       return;
     }
 
     setError("");
     setIsGenerating(true);
     try {
-      const response = await fetch(`/api/soulmate-sketch/generate?userId=${encodeURIComponent(userId)}`, {
+      await persistAnswers(answers);
+      const response = await fetch("/api/soulmate-sketch/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ answers }),
       });
       const json = await response.json();
+      if (response.status === 401) { setNeedsSignIn(true); return; }
       if (!response.ok) {
         console.error("[soulmate-sketch] generate api error", {
           status: response.status,
@@ -257,7 +274,19 @@ export default function SoulmateSketchPage() {
   const hasAllAnswers = questions.every((question) => !!answers[question.id]);
   const canOfferGeneration = hasAllAnswers && (!activeQuestion || currentStep === questions.length - 1);
 
-  if (!unlockedFeatures.soulmateSketch) {
+  if (needsSignIn || !userId || !status) {
+    return <div className="min-h-screen bg-[#0A0E1A] px-6 py-12 text-white">
+      <div className="mx-auto max-w-md space-y-5">
+        <h1 className="text-xl font-semibold">Continue your Soulmate Sketch</h1>
+        <p>{needsSignIn ? "Please sign in to continue. Any answers saved in this browser will be kept." : error}</p>
+        <Button onClick={() => needsSignIn ? router.push("/login?next=/soulmate-sketch") : window.location.reload()}>
+          {needsSignIn ? "Sign in and continue" : "Try again"}
+        </Button>
+      </div>
+    </div>;
+  }
+
+  if (!sketchUnlocked) {
     return (
       <div className="min-h-screen bg-[#0A0E1A] px-4 py-5">
         <div className="mx-auto w-full max-w-md">

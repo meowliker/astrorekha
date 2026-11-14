@@ -33,5 +33,8 @@ export function setReportSession(response: NextResponse, userId: string): NextRe
   response.cookies.set(REPORT_SESSION_COOKIE, createReportSession(userId), {
     httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: MAX_AGE,
   });
+  response.cookies.set("ar_access", "1", {
+    httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: MAX_AGE,
+  });
   return response;
 }

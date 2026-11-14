@@ -1,4 +1,6 @@
 "use client";
+
+import { readSessionHint, writeSessionHint, saveLoginUserId } from "@/lib/session-storage";
 import { getErrorMessage } from "@/lib/error-message";
 
 
@@ -48,7 +50,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     const queryEmail = new URLSearchParams(window.location.search).get("email") || "";
-    const storedEmail = localStorage.getItem("astrorekha_email") || "";
+    const storedEmail = readSessionHint("astrorekha_email") || "";
     const initialEmail = (queryEmail || storedEmail).trim().toLowerCase();
     if (initialEmail) {
       setEmail(initialEmail);
@@ -98,9 +100,9 @@ export default function LoginPage() {
       const user = data.user;
       
       // Save user info to localStorage
-      localStorage.setItem("astrorekha_user_id", user.id);
-      localStorage.setItem("astrorekha_email", user.email || "");
-      localStorage.setItem("astrorekha_password", password); // For delete account verification
+      saveLoginUserId(user.id);
+      writeSessionHint("astrorekha_email", user.email || "");
+      writeSessionHint("astrorekha_password", password); // For delete account verification
       
       // Set access cookie via API
       try {
@@ -122,15 +124,15 @@ export default function LoginPage() {
       
       // Detect and store user's flow type
       const userFlow = user.onboardingFlow || (user.purchaseType === "one-time" ? "flow-b" : "flow-a");
-      localStorage.setItem("astrorekha_onboarding_flow", userFlow);
+      writeSessionHint("astrorekha_onboarding_flow", userFlow);
       
       // Store purchase type for dashboard restrictions
       if (user.purchaseType) {
-        localStorage.setItem("astrorekha_purchase_type", user.purchaseType);
+        writeSessionHint("astrorekha_purchase_type", user.purchaseType);
       }
       
       // Redirect to dashboard
-      router.push(["/witch-archetype", "/coupon-checkout"].includes(new URLSearchParams(window.location.search).get("next") || "") ? new URLSearchParams(window.location.search).get("next")! : "/reports");
+      router.push(["/witch-archetype", "/coupon-checkout", "/soulmate-sketch"].includes(new URLSearchParams(window.location.search).get("next") || "") ? new URLSearchParams(window.location.search).get("next")! : "/reports");
     } catch (err) {
       console.error("Login error:", err);
       setError("Login failed. Please check your credentials.");
@@ -222,8 +224,8 @@ export default function LoginPage() {
       }
 
       // Login successful
-      localStorage.setItem("astrorekha_user_id", data.user.id);
-      localStorage.setItem("astrorekha_email", data.user.email);
+      saveLoginUserId(data.user.id);
+      writeSessionHint("astrorekha_email", data.user.email);
       
       // Update user store
       if (typeof data.user.coins === "number") {
@@ -238,11 +240,11 @@ export default function LoginPage() {
       
       // Detect and store user's flow type from OTP login
       const userFlow = data.user.onboardingFlow || (data.user.purchaseType === "one-time" ? "flow-b" : "flow-a");
-      localStorage.setItem("astrorekha_onboarding_flow", userFlow);
+      writeSessionHint("astrorekha_onboarding_flow", userFlow);
       
       // Store purchase type for dashboard restrictions
       if (data.user.purchaseType) {
-        localStorage.setItem("astrorekha_purchase_type", data.user.purchaseType);
+        writeSessionHint("astrorekha_purchase_type", data.user.purchaseType);
       }
 
       // Set session
@@ -252,7 +254,7 @@ export default function LoginPage() {
         console.error("Failed to set session:", err);
       }
 
-      router.push(["/witch-archetype", "/coupon-checkout"].includes(new URLSearchParams(window.location.search).get("next") || "") ? new URLSearchParams(window.location.search).get("next")! : "/reports");
+      router.push(["/witch-archetype", "/coupon-checkout", "/soulmate-sketch"].includes(new URLSearchParams(window.location.search).get("next") || "") ? new URLSearchParams(window.location.search).get("next")! : "/reports");
     } catch (err) {
       console.error("OTP verify error:", err);
       setOtpError(getErrorMessage(err) || "Invalid OTP. Please try again.");

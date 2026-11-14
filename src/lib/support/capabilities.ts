@@ -1,7 +1,7 @@
 import { sketchFields } from "./sketch-options";
 // Returned alongside live rules so installed clients discover new server capabilities without a kit upgrade.
 export const SUPPORT_CAPABILITIES = {
-  version: "2026-11-13-delegated-owner-access",
+  version: "2026-11-14-sketch-session-recovery",
   clientUpdate: {
     url: "https://astrorekha.com/downloads/astrorekha-support-kit.zip",
     instructions:
@@ -19,6 +19,16 @@ export const SUPPORT_CAPABILITIES = {
       "For a verified repair returning awaiting_approval, a delegated owner operator may approve it through POST actions/<actionId> with decision approve after reviewing the customer evidence and requested effect. Decisions reject and release are also supported. Release is only for interrupted actions older than ten minutes; inspect saved state before retrying.",
       "When actorAuthority.delegatedOwnerApi is true, no separate business-owner intervention is required. Follow the current delegation rule; preserve an audited request and approval. If clarification is necessary, ask the support operator in this Codex session, not the business owner.",
       "Delegated owner API access also permits team invitations/management, rule publication, audit inspection, own-token management and reviewed case resolution. Use the documented API contracts. It does not introduce refund, mail-sending, raw database or unsupported repair endpoints.",
+    ],
+  },
+  accountAccess: {
+    method: "GET", path: "customers/<userId>/access",
+    instructions: [
+      "For repeated sign-in prompts after a questionnaire, run this check before repeating login advice. It tests the current server account resolver without exposing a customer session or requiring owner intervention.",
+      "The signed-session sketch flow no longer depends on a local user ID or the legacy page cookie. Browser drafts are preserved through the login return path. This fix applies automatically; do not reset passwords, create accounts or change email addresses to repair this symptom.",
+      "Read verificationScope carefully: this probe cannot inspect a customer's browser. If saved inputs exist, complete recovery and verify the actual report. If absent across linked records, use loginUrl to reopen the questionnaire; do not fabricate a ready sketch.",
+      "After a verified application access fix, save a specific draft describing restored access and the exact next step even when the customer must finish missing questionnaire inputs. A report-ready claim still requires a completed saved result. Keep the case open for the customer's remaining step, label and mark the handled message read per current rules.",
+      "Existing clients and tokens can use this endpoint immediately. Run start to discover it. Unrelated application bugs still require technical investigation; this is not arbitrary code or database access.",
     ],
   },
   reportInspection: {

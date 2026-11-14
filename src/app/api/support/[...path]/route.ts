@@ -1,3 +1,4 @@
+import { inspectCustomerAccess } from "@/lib/support/access";
 import { resolveSketchImage } from "@/lib/sketch-image";
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
@@ -231,6 +232,11 @@ async function handle(request: NextRequest) {
         const report = await inspectReport(path[1], path[3]);
         await audit(actor.id, "report_inspected", path[1], { report: path[3] });
         return reply(report);
+      }
+      if (path[0] === "customers" && path[1] && path[2] === "access" && path.length === 3) {
+        const access = await inspectCustomerAccess(path[1]);
+        await audit(actor.id, "customer_access_checked", path[1], { sessionFlowVersion: access.sessionFlowVersion });
+        return reply(access);
       }
       if (path[0] === "customers" && path[1] && path.length === 2) {
         const snapshot = await customerSnapshot(path[1]);

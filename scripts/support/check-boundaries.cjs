@@ -184,6 +184,16 @@ async function request(
     401,
   );
   await request("me", {}, 401);
+  rows.users = [{ id: "access-customer", email: "access@example.invalid", unlocked_features: { soulmateSketch: true } }];
+  await request("customers/access-customer/access", {}, 401);
+  await request("customers/access-customer/access", { token: "staff", rulesReceipt: null }, 409);
+  const access = await request("customers/access-customer/access", { token: "staff" }, 200);
+  assert.equal(access.verified.signedAccountResolver, true);
+  assert.equal(access.sketch.hasSavedAnswers, false);
+  assert.equal(access.customerId, "access-customer");
+  assert.ok(!JSON.stringify(access).includes("ar_report_session"));
+  assert.ok(rows.support_audit.some(row => row.event === "customer_access_checked"));
+  await request("customers/no-such-account/access", { token: "staff" }, 401);
   await request("me", { token: "invalid" }, 401);
   await request("me", { token: "disabled" }, 403);
   const capabilitiesResponse = await request("rules", { token: "staff", rulesReceipt: null }, 200);
