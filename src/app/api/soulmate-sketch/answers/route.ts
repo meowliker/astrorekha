@@ -1,8 +1,11 @@
+import { reportSessionUser } from "@/lib/report-session";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import type { SketchAnswers } from "@/lib/soulmate-sketch";
 
 function resolveUserId(request: NextRequest, body: { userId?: string }): string | null {
+  const signedUserId = reportSessionUser(request);
+  if (signedUserId) return signedUserId;
   const cookieValue = request.cookies.get("ar_access")?.value?.trim();
   if (cookieValue && cookieValue !== "1") {
     return cookieValue;
@@ -50,8 +53,19 @@ export async function POST(request: NextRequest) {
     const nowIso = new Date().toISOString();
     const supabase = getSupabaseAdmin();
 
-    // Ensure a lightweight user row exists so FK constraint can be satisfied for anonymous users.
-    await supabase
+    // Only anonymous onboarding may use an unsigned local identifier. Registered
+    // accounts must use the verified session, never a submitted ID or email.
+    const signedIn = !!reportSessionUser(request);
+    if (!signedIn) {
+      if (request.cookies.has("ar_report_session") || !/^anon_[a-zA-Z0-9_]+$/.test(userId)) {
+        return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+      }
+      const existingUser = await supabase.from("users").select("id,email").eq("id", userId).maybeSingle();
+      if (existingUser.error) return NextResponse.json({ error: "save_failed" }, { status: 503 });
+      if (existingUser.data?.email) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    // Preserve the pre-registration questionnaire without overwriting a signed-in profile.
+    if (!signedIn) await supabase
       .from("users")
       .upsert(
         {

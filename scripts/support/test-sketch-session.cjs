@@ -1,0 +1,70 @@
+const assert=require('node:assert/strict'),Module=require('node:module'),path=require('node:path');
+const resolve=Module._resolveFilename, originalLoad=Module._load;
+Module._resolveFilename=function(r,p,...a){return resolve.call(this,r.startsWith('@/')?path.join(process.cwd(),'src',r.slice(2)):r,p,...a)};
+require('ts-node').register({transpileOnly:true,compilerOptions:{module:'CommonJS',moduleResolution:'node',jsx:'react-jsx'}});
+process.env.REPORT_SESSION_SECRET='test-only-session-secret';
+const React=require('react'),{create,act}=require('react-test-renderer');
+global.IS_REACT_ACT_ENVIRONMENT=true;
+let storage=new Map(),storageBlocked=false,requests=[],sessionStatus=200,saveStatus=200,generateStatus=200,returnedStatus={status:'not_started'},hasAccess=true,hydrated;
+const router={push(url){router.last=url},replace(){}};
+const store={syncFromServer(v){hydrated=v},setUserId(){}};
+const tables={users:[{id:'paid-user',email:'customer@example.invalid',unlocked_features:{soulmateSketch:true}}],soulmate_sketches:[],settings:[]};
+const fakeDb={from(table){let filters=[],patch,insert;const q={select(){return q},eq(k,v){filters.push(r=>r[k]===v);return q},is(k,v){filters.push(r=>v===null?r[k]==null:r[k]===v);return q},upsert(value){insert=value;return q},update(value){patch=value;return q},async maybeSingle(){if(insert){const old=tables[table].find(r=>(r.user_id||r.id)===(insert.user_id||insert.id));if(old)Object.assign(old,insert);else tables[table].push({...insert})}const found=tables[table].filter(r=>filters.every(f=>f(r)));if(patch)found.forEach(r=>Object.assign(r,patch));return {error:null,data:found[0]||null}},then(resolve,reject){return q.maybeSingle().then(resolve,reject)}};return q}};
+Module._load=function(r,p,...a){
+ if(r==='next/navigation')return{useRouter:()=>router};
+ if(r==='@/lib/user-store')return{useUserStore:()=>store};
+ if(r==='@/lib/soulmate-sketch')return {buildSoulmateSketchPrompt:()=> 'test prompt',generateSoulmateSketchFromKie:async()=>({imageUrl:'https://example.invalid/test.png',providerJobId:'qa-job'}),KieTimeoutError:class extends Error{}};
+ if(r==='@/lib/supabase-admin')return{getSupabaseAdmin:()=>fakeDb};
+ if(r==='framer-motion')return{motion:new Proxy({},{get:(_,k)=>k})};
+ if(r==='@/components/ReportInfoButton'||r==='@/components/ReportDisclaimer')return{__esModule:true,default:()=>null};
+ return originalLoad.call(this,r,p,...a);
+};
+global.localStorage={getItem(k){if(storageBlocked)throw Error('blocked');return storage.get(k)||null},setItem(k,v){if(storageBlocked)throw Error('blocked');storage.set(k,v)}};
+global.fetch=async(url,options={})=>{
+ requests.push({url,body:options.body});
+ if(url==='/api/auth/session')return new Response(JSON.stringify({user:{id:'paid-user',coins:15,unlocked_features:{soulmateSketch:hasAccess}}}),{status:sessionStatus});
+ if(url==='/api/ab-test/layout-config')return Response.json({});
+ if(url==='/api/soulmate-sketch/status')return Response.json(returnedStatus);
+ if(url==='/api/soulmate-sketch/answers')return Response.json({success:true},{status:saveStatus});
+ if(url==='/api/soulmate-sketch/generate')return Response.json({sketch:{status:'complete',sketch_image_url:'https://example.invalid/test.png'}},{status:generateStatus});
+ throw Error('unexpected URL '+url);
+};
+const Page=require('../../src/app/(app)/soulmate-sketch/page').default;
+const {getActiveSketchQuestions,DEFAULT_LAYOUT_B_CONFIG}=require('../../src/lib/layout-b-funnel');
+const answers=Object.fromEntries(getActiveSketchQuestions(DEFAULT_LAYOUT_B_CONFIG).filter(q=>q.id!=='future_goal').map(q=>[q.id,q.options[0].value]));
+const allText=t=>JSON.stringify(t.toJSON());
+const childText=x=>typeof x==='string'?x:Array.isArray(x)?x.map(childText).join(' '):x?.props?childText(x.props.children):'';
+async function mount(){let t;await act(async()=>{t=create(React.createElement(Page));await new Promise(r=>setTimeout(r,15))});return t}
+(async()=>{
+ const {saveLoginUserId}=require('../../src/lib/session-storage');
+ storage.set('astrorekha_user_id','prior-user');storage.set('astrorekha_soulmate_answers','{"vibe":"saved"}');
+ global.localStorage.removeItem=k=>storage.delete(k);
+ saveLoginUserId('paid-user');assert.equal(storage.get('astrorekha_soulmate_answers:prior-user'),'{"vibe":"saved"}');assert.ok(!storage.has('astrorekha_soulmate_answers'));
+ storageBlocked=true;saveLoginUserId('paid-user');storageBlocked=false;storage=new Map();
+ const {NextRequest}=require('next/server');
+ const {createReportSession}=require('../../src/lib/report-session');
+ const session=require('../../src/app/api/auth/session/route').GET;
+ let res=await session(new NextRequest('https://astrorekha.com/api/auth/session',{headers:{cookie:'ar_access=paid-user'}}));assert.equal(res.status,401);
+ res=await session(new NextRequest('https://astrorekha.com/api/auth/session',{headers:{cookie:'ar_report_session='+createReportSession('paid-user')}}));assert.equal(res.status,200);assert.equal((await res.json()).user.id,'paid-user');assert.match(res.headers.get('set-cookie'),/ar_access=1/);
+ for(const [route,method] of [['status','GET'],['generate','POST'],['answers','POST']]){
+  const fn=require('../../src/app/api/soulmate-sketch/'+route+'/route')[method];
+  const request=new NextRequest('https://astrorekha.com/api/soulmate-sketch/'+route+'?userId=paid-user',{method,headers:{cookie:'ar_access=1','content-type':'application/json'},...(method==='POST'?{body:JSON.stringify({userId:'paid-user',answers})}:{})});
+  assert.equal((await fn(request)).status,401,route+' must reject unsigned identity');
+ }
+ const access=await require('../../src/lib/support/access').inspectCustomerAccess('paid-user');assert.equal(access.verified.localUserIdRequired,false);assert.equal(access.sketch.hasSavedAnswers,false);assert.ok(!JSON.stringify(access).includes('ar_report_session'));
+ const headers={cookie:'ar_report_session='+createReportSession('paid-user'),'content-type':'application/json'};
+ const saveRoute=require('../../src/app/api/soulmate-sketch/answers/route').POST;
+ res=await saveRoute(new NextRequest('https://astrorekha.com/api/soulmate-sketch/answers?userId=wrong-user',{method:'POST',headers,body:JSON.stringify({userId:'wrong-user',answers})}));assert.equal(res.status,200);assert.equal(tables.soulmate_sketches[0].user_id,'paid-user');
+ res=await require('../../src/app/api/soulmate-sketch/generate/route').POST(new NextRequest('https://astrorekha.com/api/soulmate-sketch/generate?userId=wrong-user',{method:'POST',headers,body:JSON.stringify({answers})}));assert.equal(res.status,200);assert.equal((await res.json()).sketch.status,'complete');assert.equal(tables.soulmate_sketches[0].user_id,'paid-user');
+ res=await require('../../src/app/api/soulmate-sketch/status/route').GET(new NextRequest('https://astrorekha.com/api/soulmate-sketch/status',{headers}));assert.equal(res.status,200);assert.equal((await res.json()).status,'complete');
+ tables.soulmate_sketches=[];
+ res=await saveRoute(new NextRequest('https://astrorekha.com/api/soulmate-sketch/answers?userId=anon_qa',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({answers})}));assert.equal(res.status,200);assert.equal(tables.soulmate_sketches[0].user_id,'anon_qa');
+ let tree=await mount();assert.ok(hydrated.unlockedFeatures.soulmateSketch);assert.ok(!allText(tree).includes('Please login again'));assert.ok(requests.some(r=>r.url==='/api/soulmate-sketch/status'));await act(()=>tree.unmount());
+ storageBlocked=true;tree=await mount();assert.ok(!allText(tree).includes('Unable to load soulmate'));await act(()=>tree.unmount());storageBlocked=false;
+ storage=new Map([['astrorekha_soulmate_answers',JSON.stringify(answers)]]);requests=[];tree=await mount();
+ const generate=tree.root.findAllByType('button').find(b=>childText(b.props.children).includes('Generate'));assert.ok(generate,'saved answers reach Generate');await act(async()=>{await generate.props.onClick()});assert.ok(requests.some(r=>r.url==='/api/soulmate-sketch/answers'));assert.ok(requests.some(r=>r.url==='/api/soulmate-sketch/generate'));assert.ok(requests.every(r=>!r.url.includes('userId=')));await act(()=>tree.unmount());
+ requests=[];saveStatus=500;tree=await mount();await act(async()=>{await tree.root.findAllByType('button').find(b=>childText(b.props.children).includes('Generate')).props.onClick()});assert.ok(!requests.some(r=>r.url.includes('/generate')));assert.ok(allText(tree).includes('could not be saved'));await act(()=>tree.unmount());saveStatus=200;
+ sessionStatus=401;tree=await mount();assert.ok(allText(tree).includes('Sign in and continue'));assert.ok(storage.has('astrorekha_soulmate_answers:paid-user'));await act(()=>tree.root.findAllByType('button')[0].props.onClick());assert.equal(router.last,'/login?next=/soulmate-sketch');await act(()=>tree.unmount());sessionStatus=200;
+ hasAccess=false;tree=await mount();assert.ok(!tree.root.findAllByType('button').some(b=>childText(b.props.children).includes('Generate')));await act(()=>tree.unmount());
+ console.log('PASS: signed identity/cookie repair, unsigned ID rejection, support probe redaction, missing/blocked storage, saved-answer submission, failed-save guard, expired-session return, entitlement gate');
+})().catch(e=>{console.error(e);process.exitCode=1});

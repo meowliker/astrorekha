@@ -1,5 +1,7 @@
 "use client";
 
+import { readSessionHint, writeSessionHint, removeSessionHint } from "@/lib/session-storage";
+
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useUserStore } from "@/lib/user-store";
@@ -16,7 +18,7 @@ export default function UserHydrator() {
 
   const getSecurityPromptStorageKey = useCallback(() => {
     if (typeof window === "undefined") return null;
-    const userId = localStorage.getItem("astrorekha_user_id");
+    const userId = readSessionHint("astrorekha_user_id");
     if (!userId) return null;
     return `astrorekha_security_update_prompt_seen_${userId}`;
   }, []);
@@ -25,7 +27,7 @@ export default function UserHydrator() {
     setSecurityModalOpen(false);
     const securityPromptStorageKey = getSecurityPromptStorageKey();
     if (securityPromptStorageKey) {
-      localStorage.setItem(securityPromptStorageKey, "1");
+      writeSessionHint(securityPromptStorageKey, "1");
     }
   }, [getSecurityPromptStorageKey]);
 
@@ -51,7 +53,7 @@ export default function UserHydrator() {
       setResetStatusMessage("Reset link sent. Please check your email inbox.");
       const securityPromptStorageKey = getSecurityPromptStorageKey();
       if (securityPromptStorageKey) {
-        localStorage.setItem(securityPromptStorageKey, "1");
+        writeSessionHint(securityPromptStorageKey, "1");
       }
       setTimeout(() => {
         setSecurityModalOpen(false);
@@ -65,13 +67,13 @@ export default function UserHydrator() {
   }, [securityEmail, getSecurityPromptStorageKey]);
 
   const hydrate = useCallback(async () => {
-    const storedId = localStorage.getItem("astrorekha_user_id");
+    const storedId = readSessionHint("astrorekha_user_id");
     const storedEmail = (
-      localStorage.getItem("astrorekha_email") ||
-      localStorage.getItem("astrorekha_checkout_email") ||
+      readSessionHint("astrorekha_email") ||
+      readSessionHint("astrorekha_checkout_email") ||
       ""
     ).trim().toLowerCase();
-    if (!storedId && !storedEmail) return;
+
 
     let userId = storedId || "";
 
@@ -79,7 +81,15 @@ export default function UserHydrator() {
       let data = null;
       let error = null;
 
-      if (storedEmail) {
+      const sessionResponse = await fetch("/api/auth/session", { cache: "no-store" });
+      if (sessionResponse.ok) {
+        data = (await sessionResponse.json()).user;
+      } else if (sessionResponse.status !== 401) {
+        // A transient backend failure must not clear a valid browser session.
+        return;
+      }
+      if (!data && !storedId && !storedEmail) return;
+      if (!data && storedEmail) {
         const result = await supabase
           .from("users")
           .select("*")
@@ -100,7 +110,8 @@ export default function UserHydrator() {
       }
 
       // User not found in database - clear localStorage and redirect to login
-      if (error || !data) {
+      if (error) return;
+      if (!data) {
         console.warn("User not found in database, clearing session");
         [
           "astrorekha_user_id",
@@ -115,7 +126,7 @@ export default function UserHydrator() {
           "astrorekha_bundle_id",
           "astrorekha_selected_plan",
           "astrorekha_pending_payu_payment",
-        ].forEach((key) => localStorage.removeItem(key));
+        ].forEach((key) => removeSessionHint(key));
         
         // Clear session cookie
         await fetch("/api/session/clear", { method: "POST" });
@@ -127,12 +138,12 @@ export default function UserHydrator() {
 
       userId = data.id;
       if (data.id !== storedId) {
-        localStorage.setItem("astrorekha_user_id", data.id);
+        writeSessionHint("astrorekha_user_id", data.id);
       }
       if (data.email && data.email !== storedEmail) {
         const normalizedEmail = String(data.email).trim().toLowerCase();
-        localStorage.setItem("astrorekha_email", normalizedEmail);
-        localStorage.setItem("astrorekha_checkout_email", normalizedEmail);
+        writeSessionHint("astrorekha_email", normalizedEmail);
+        writeSessionHint("astrorekha_checkout_email", normalizedEmail);
       }
 
       setUserId(userId);
@@ -152,11 +163,11 @@ export default function UserHydrator() {
       }
 
       // Show post-login security update prompt only for affected users.
-      if (!data.password_hash && data.email) {
+      if (Object.prototype.hasOwnProperty.call(data, "password_hash") && !data.password_hash && data.email) {
         setSecurityEmail(String(data.email).trim().toLowerCase());
         const securityPromptStorageKey = getSecurityPromptStorageKey();
         const hasSeenPrompt = securityPromptStorageKey
-          ? localStorage.getItem(securityPromptStorageKey) === "1"
+          ? readSessionHint(securityPromptStorageKey) === "1"
           : false;
         if (!hasSeenPrompt) {
           setSecurityModalOpen(true);

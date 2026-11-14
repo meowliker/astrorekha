@@ -81,7 +81,7 @@ export async function middleware(request: NextRequest) {
   
   if (isProtectedRoute) {
     // Check for access cookie
-    const hasAccess = request.cookies.get("ar_access");
+    const hasAccess = request.cookies.get("ar_access") || request.cookies.get("ar_report_session");
     
     if (!hasAccess) {
       // Keep campaign parameters visible and available after redirecting to the landing page.

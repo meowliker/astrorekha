@@ -7,22 +7,6 @@ import { getSoulmateSketchJobStatusFromKie } from "@/lib/soulmate-sketch";
 
 const PROVIDER_POLL_COOLDOWN_MS = Number(process.env.KIE_STATUS_POLL_COOLDOWN_MS || 12000);
 
-function getSessionUserId(request: NextRequest): string | null {
-  const accessCookie = request.cookies.get("ar_access")?.value;
-  if (!accessCookie) return null;
-
-  if (accessCookie !== "1" && accessCookie.trim()) {
-    return accessCookie.trim();
-  }
-
-  const headerUserId = request.headers.get("x-user-id")?.trim();
-  if (headerUserId) return headerUserId;
-
-  const queryUserId = request.nextUrl.searchParams.get("userId")?.trim();
-  if (queryUserId) return queryUserId;
-
-  return null;
-}
 
 async function loadLayoutConfig() {
   const supabase = getSupabaseAdmin();
@@ -37,7 +21,7 @@ async function loadLayoutConfig() {
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = getSessionUserId(request);
+    const userId = reportSessionUser(request);
     if (!userId) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
