@@ -85,7 +85,8 @@ function fixture(options = {}) {
     if (name === '@/lib/admin-access') return { withAdminAccess: handler => handler };
     if (name === '@/lib/admin-acquisition') return { parseAdSource: params => params.get('adSource') || 'all' };
     if (name === '@/lib/admin-source-finance') return { readAdSourceFinance: async () => { if (!options.finance) throw new Error('Unexpected source-finance call'); return options.finance; } };
-    if (name === '@/lib/google-ads-reporting') return { readGoogleSpend: async () => ({complete:!options.googleError,accounts:[],warnings:options.googleError?['Google unavailable']:[]}), googleSpendForDay: () => options.googleError ? null : ({total:options.googleCost||0,indian:0}) };
+    if (name === '@/lib/profit-financial-bounds') return loadTS('src/lib/profit-financial-bounds.ts', () => profitGst);
+    if (name === '@/lib/google-ads-reporting') return { googleSpendBoundsForDay: () => options.googleBounds || null, readGoogleSpend: async () => ({complete:!options.googleError,accounts:[],warnings:options.googleError?['Google unavailable']:[]}), googleSpendForDay: () => options.googleError ? null : ({total:options.googleCost||0,indian:0}) };
     if (name === '@supabase/supabase-js') return { createClient: () => db };
     if (name === '@/lib/meta-ad-accounts') return helpers;
     if (name === '@/lib/finance-events') return financeEvents;
@@ -332,4 +333,19 @@ test('Meta selected-range refresh updates the canonical ledger before projecting
  assert.equal(status,200);assert.equal(f.storedRows.length,1);assert.equal(body.rows[0].revenue,1000);
  assert.equal(body.rows[0].adsCostINR,f.storedRows[0].ads_cost_inr);assert.ok(body.rows[0].adsCostINR>0);
  assert.equal(body.syncedRange.start,'2026-09-07');assert.equal(body.syncWarning,null);
+});
+
+test('split-hour Google ranges preserve exact sales and add Meta spend only once',async()=>{
+ const saved={date:'2026-09-07',revenue:1000,gross_revenue:1000,ads_cost_inr:100,ads_cost_usd:1};
+ const googleBounds={total:{min:200,max:250},indian:{min:0,max:0}};
+ const f=fixture({savedRows:[saved],googleError:true,googleBounds});
+ const {status,body}=await f.get('token=test&startDate=2026-09-07&endDate=2026-09-07&exchangeRate=100');
+ assert.equal(status,200);const r=body.rows[0];assert.equal(r.revenue,1000);assert.equal(r.adsCostINR,null);assert.equal(r.roas,null);
+ assert.deepEqual(r.financialBounds.adsCostINR,{min:300,max:350});assert.deepEqual(r.financialBounds.netRevenue,{min:600,max:650});
+ assert.equal(f.storedRows[0].ads_cost_inr,100);
+});
+test('Google-only ranges exclude Meta costs and retain source-specific sales',async()=>{
+ const f=fixture({googleError:true,googleBounds:{total:{min:200,max:250},indian:{min:0,max:0}},finance:[{date:'2026-09-07',received:100000,refund:0,bundleReceived:100000,bundleRefund:0,orders:1,refunds:0,bundleOrders:1}]});
+ const {status,body}=await f.get('token=test&adSource=google&startDate=2026-09-07&endDate=2026-09-07&exchangeRate=100');
+ assert.equal(status,200);assert.deepEqual(body.rows[0].financialBounds.adsCostINR,{min:200,max:250});assert.deepEqual(body.rows[0].financialBounds.netRevenue,{min:700,max:750});assert.equal(f.storedRows.length,0);
 });

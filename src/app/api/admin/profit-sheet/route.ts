@@ -1,5 +1,6 @@
 import { scopeNormalMetaCredentials, normalCampaignFilter } from "@/lib/normal-meta-campaigns";
-import { readGoogleSpend, googleSpendForDay } from "@/lib/google-ads-reporting";
+import { readGoogleSpend, googleSpendForDay, googleSpendBoundsForDay } from "@/lib/google-ads-reporting";
+import { profitFinancialBounds } from "@/lib/profit-financial-bounds";
 import {withAdminAccess} from "@/lib/admin-access";
 import { parseAdSource } from "@/lib/admin-acquisition";
 import { readAdSourceFinance } from "@/lib/admin-source-finance";
@@ -1001,12 +1002,13 @@ async function handleGET(request: NextRequest) {
         const gst = indianAdGstApplies(day.date) ? calc.gst : revenue * LEGACY_GST_RATE;
         const profit = adsCostINR === null ? null : revenue - gst - adsCostINR;
         return { date: day.date, day: getDayOfWeek(day.date), revenue, grossRevenue: day.received / 100, refundAmount: day.refund / 100,
-          gst: spendKnown ? gst : null, gstBreakdown: { ...calc, indianAdSpendInr, indianAdAccounts: adSource === "meta" && spendKnown ? baseline!.gstBreakdown?.indianAdAccounts || [] : google?.complete ? google.accounts.filter(a => a.account.currency === "INR").map(a => ({accountId:a.account.id,accountName:a.account.name,spendInr:a.dailySpendInr[day.date]?.indian || 0})) : [] },
+          gst: spendKnown ? gst : null, gstBreakdown: { ...calc, indianAdSpendInr, indianAdAccounts: adSource === "meta" && spendKnown ? baseline!.gstBreakdown?.indianAdAccounts || [] : cost && google ? google.accounts.filter(a => a.account.currency === "INR").map(a => ({accountId:a.account.id,accountName:a.account.name,spendInr:a.dailySpendInr[day.date]?.indian || 0})) : [] },
           adsCostUSD: adSource === "google" ? adsCostINR === null ? null : adsCostINR / googleRate : spendKnown ? baseline!.adsCostUSD : null, adsCostINR, netRevenue: profit,
           profitPercent: profit === null ? null : revenue > 0 ? profit / revenue * 100 : 0,
           roas: adsCostINR ? (day.bundleReceived - day.bundleRefund) / 100 / adsCostINR : null,
           bundleRevenue: (day.bundleReceived - day.bundleRefund) / 100, transactionCount: day.orders, salesCount: day.orders, refundCount: day.refunds, bundlePurchases: day.bundleOrders,
-          accountBalance: adSource === "meta" && spendKnown ? baseline!.accountBalance : undefined, spendUnavailable: !spendKnown };
+          accountBalance: adSource === "meta" && spendKnown ? baseline!.accountBalance : undefined, spendUnavailable: !spendKnown,
+          financialBounds: google && !spendKnown ? profitFinancialBounds(googleSpendBoundsForDay(google, day.date), revenue, getProfitSheetGstRate(day.date), day.date, googleRate) : undefined };
       });
       return NextResponse.json({ rows, adSource, dayMode, exchangeRate: googleRate, fetchedAt: new Date().toISOString(),
         source: "source_filtered_payments", dateRange: { start: startDate, end: endDate }, missingRanges: [], syncedRange,
@@ -1145,7 +1147,8 @@ async function handleGET(request: NextRequest) {
     const google = await readGoogleSpend("astrorekha", startDate, endDate, dayMode, exchangeRate);
     const combinedRows = rows.map(row => {
       const cost = googleSpendForDay(google, row.date);
-      if (!cost) return { ...row, adsCostINR: null, adsCostUSD: null, gst: null, netRevenue: null, profitPercent: null, roas: null, spendUnavailable: true };
+      if (!cost) return { ...row, adsCostINR: null, adsCostUSD: null, gst: null, netRevenue: null, profitPercent: null, roas: null, spendUnavailable: true,
+        financialBounds: profitFinancialBounds(googleSpendBoundsForDay(google, row.date), row.revenue, getProfitSheetGstRate(row.date), row.date, exchangeRate, row.adsCostINR, row.gstBreakdown?.indianAdSpendInr || 0, row.adsCostUSD) };
       const adsCostINR = row.adsCostINR + cost.total;
       const indianAdSpendInr = (row.gstBreakdown?.indianAdSpendInr || 0) + cost.indian;
       const calc = calculateProfitSheetGst(row.revenue, getProfitSheetGstRate(row.date), indianAdSpendInr);

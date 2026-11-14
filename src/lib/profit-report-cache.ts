@@ -6,7 +6,7 @@ const MAX_AGE_MS = 60_000;
 export function profitReportCacheKey(params: URLSearchParams) {
   // Never persist credentials. Timing, source, dates and conversion rate are independent reports.
   return createHash("sha256").update(JSON.stringify([
-    1, "astrorekha", params.get("dayMode") || "business_1130_ist", params.get("adSource") || "all",
+    2, "astrorekha", params.get("dayMode") || "business_1130_ist", params.get("adSource") || "all",
     params.get("startDate"), params.get("endDate"), params.get("exchangeRate") || "auto",
   ])).digest("hex");
 }

@@ -1,4 +1,5 @@
 import { google } from 'googleapis';
+import { GOOGLE_SPLIT_HOUR_NOTICE } from './google-ads-reporting-notices';
 import { campaignNameKey, trackingDayStartUtc, nextTrackingDayStartUtc, type TrackingCampaign, type TrackingDayMode } from './tracking-dashboard';
 import type { AcquisitionFunnel } from './admin-acquisition';
 
@@ -17,10 +18,14 @@ type Row = {
   metrics?: Metrics;
 };
 type Snapshot = { customer: NonNullable<Row['customer']>; campaigns: Row[]; destinations: Row[]; landing: Row[]; hours: Row[]; fetchedAt: string };
+export type SpendBounds = { min: number; max: number };
+export type GoogleDayBounds = { total: SpendBounds; indian: SpendBounds };
 export type GoogleAccountReport = {
   account: { id: string; name: string; currency: string; timezone: string; error?: string };
   campaigns: TrackingCampaign[];
   dailySpendInr: Record<string, { total: number; indian: number }>;
+  dailySpendBounds?: Record<string, GoogleDayBounds>;
+  unavailableDates?: string[];
   hourlySpendInr: Record<string, Record<string, number[]>>;
   warnings: string[];
 };
@@ -121,7 +126,12 @@ export function aggregateGoogleSnapshot(data: Snapshot, funnel: AcquisitionFunne
   const targetCurrency = funnel.startsWith('us-') ? 'USD' : 'INR';
   const factor = customer.currencyCode === targetCurrency ? 1 : customer.currencyCode === 'USD' && targetCurrency === 'INR' ? rate : customer.currencyCode === 'INR' && targetCurrency === 'USD' ? 1 / rate : NaN;
   const report: GoogleAccountReport = { account: { id: `google:${customer.id}`, name: `Google · ${customer.descriptiveName}`, currency: customer.currencyCode, timezone: customer.timeZone }, campaigns: [], dailySpendInr: {}, hourlySpendInr: {}, warnings: [] };
-  for (let date = start; date <= end; date = shift(date, 1)) report.dailySpendInr[date] = { total: 0, indian: 0 };
+  report.dailySpendBounds = {};
+  const unavailable = new Set<string>();
+  for (let date = start; date <= end; date = shift(date, 1)) {
+    report.dailySpendInr[date] = { total: 0, indian: 0 };
+    report.dailySpendBounds[date] = { total: { min: 0, max: 0 }, indian: { min: 0, max: 0 } };
+  }
   const windows = Object.keys(report.dailySpendInr).map(date => ({ date, start: Date.parse(trackingDayStartUtc(date, mode)), end: Date.parse(nextTrackingDayStartUtc(date, mode)) }));
   const current = new Map<string, Set<AcquisitionFunnel | null>>();
   for (const row of data.destinations) for (const url of row.adGroupAd?.ad.finalUrls || []) { const id = row.campaign!.id; const set = current.get(id) || new Set(); set.add(googleDestination(url)); current.set(id, set); }
@@ -147,18 +157,30 @@ export function aggregateGoogleSnapshot(data: Snapshot, funnel: AcquisitionFunne
     if (destinations.size === 1 && !destinations.has(null) && !destinations.has(funnel)) continue;
     const mapped = destinations.size === 1 && destinations.has(funnel) && (cost === 0 || !!mapping && mapping.micros === dailyCosts.get(`${id}:${date}`));
     if (!mapped) {
-      if (cost > 0) { warnings.add('Some Google spend has an unknown or mixed funnel destination. Profit and ROAS are withheld until that spend can be assigned reliably.'); report.account.error = 'Incomplete funnel attribution'; }
+      if (cost > 0) { warnings.add('Some Google spend has an unknown or mixed funnel destination. Profit and ROAS are withheld for affected dates until that spend can be assigned reliably.'); report.account.error = 'Incomplete funnel attribution'; for (const w of overlaps) unavailable.add(w.date); }
       continue;
     }
     const row = getRow(id);
     const exact = overlaps.length === 1 && instants.every(at => at >= overlaps[0].start && at + HOUR <= overlaps[0].end);
-    if (!exact && (cost > 0 || metric(item.metrics?.clicks) > 0 || metric(item.metrics?.impressions) > 0)) {
+    if (!Number.isFinite(factor) || factor <= 0) { report.account.error = 'Configure a valid currency exchange rate'; row.spendInr = null; for (const w of overlaps) unavailable.add(w.date); continue; }
+    const native = cost / 1e6, converted = native * factor;
+    // A split positive-cost hour contributes between zero and its entire cost.
+    // These are conservative bounds, never an assumed proportional allocation.
+    for (const w of overlaps) {
+      const bounds = report.dailySpendBounds[w.date];
+      bounds.total.max += converted;
+      if (exact) bounds.total.min += converted;
+      if (customer.currencyCode === 'INR' && targetCurrency === 'INR') {
+        bounds.indian.max += converted;
+        if (exact) bounds.indian.min += converted;
+      }
+    }
+    if (!exact && cost > 0) {
       row.spendInr = null; report.account.error = 'Reporting window splits a Google clock hour';
-      warnings.add('This reporting window splits a Google account clock hour. Google provides hourly totals only, so affected spend and ROAS are unavailable rather than estimated.'); continue;
+      warnings.add(GOOGLE_SPLIT_HOUR_NOTICE); continue;
     }
     if (!exact) continue;
-    if (!Number.isFinite(factor) || factor <= 0) { report.account.error = 'Configure a valid currency exchange rate'; row.spendInr = null; continue; }
-    const native = cost / 1e6, converted = native * factor, window = overlaps[0];
+    const window = overlaps[0];
     row.spend += native; if (row.spendInr !== null) row.spendInr += converted;
     row.clicks += metric(item.metrics?.clicks); row.linkClicks = row.clicks; row.impressions += metric(item.metrics?.impressions);
     report.dailySpendInr[window.date].total += converted;
@@ -169,6 +191,7 @@ export function aggregateGoogleSnapshot(data: Snapshot, funnel: AcquisitionFunne
     } else if (cost > 0) row.hourlySpendUnavailable = true;
   }
   report.campaigns = [...rows.values()];
+  report.unavailableDates = [...unavailable];
   report.warnings = [...warnings];
   if (report.account.error && !warnings.size) report.warnings.push(report.account.error);
   return report;
@@ -182,7 +205,7 @@ export async function readGoogleSpend(funnel: AcquisitionFunnel, start: string, 
   return googleSpendReport(results);
 }
 export function googleSpendReport(results: {report: GoogleAccountReport; fetchedAt: string}[]): GoogleSpendReport {
-  return { failedAccountIds: results.filter(r => r.report.account.error).map(r => r.report.account.id), accounts: results.map(r => r.report).filter(r => r.campaigns.length > 0), complete: results.every(r => !r.report.account.error), warnings: results.flatMap(r => r.report.warnings), fetchedAt: results.map(r => r.fetchedAt).sort()[0] };
+  return { failedAccountIds: results.filter(r => r.report.account.error).map(r => r.report.account.id), accounts: results.map(r => r.report).filter(r => r.campaigns.length > 0 || r.account.error), complete: results.every(r => !r.report.account.error), warnings: results.flatMap(r => r.report.warnings), fetchedAt: results.map(r => r.fetchedAt).sort()[0] };
 }
 /** Saved Google campaign IDs/names only. A click ID by itself cannot identify a campaign. */
 export function matchGoogleCampaign(campaigns: TrackingCampaign[], campaign: string | null | undefined) {
@@ -192,11 +215,28 @@ export function matchGoogleCampaign(campaigns: TrackingCampaign[], campaign: str
 }
 
 export function googleSpendForDay(report: GoogleSpendReport, date: string) {
-  if (!report.complete) return null;
-  return report.accounts.reduce((sum, account) => ({
-    total: sum.total + (account.dailySpendInr[date]?.total || 0),
-    indian: sum.indian + (account.dailySpendInr[date]?.indian || 0),
-  }), { total: 0, indian: 0 });
+  const bounds = googleSpendBoundsForDay(report, date);
+  if (!bounds || bounds.total.min !== bounds.total.max) return null;
+  return { total: bounds.total.min, indian: bounds.indian.min };
+}
+
+export function googleSpendBoundsForDay(report: GoogleSpendReport, date: string): GoogleDayBounds | null {
+  // An inaccessible/omitted account is not evidence of zero spend.
+  if (!report.complete && (!report.accounts.length || report.failedAccountIds?.some(id => !report.accounts.some(a => a.account.id === id)))) return null;
+  const sum: GoogleDayBounds = { total: { min: 0, max: 0 }, indian: { min: 0, max: 0 } };
+  for (const account of report.accounts) {
+    if (account.account.error && account.account.error !== 'Reporting window splits a Google clock hour' && !account.unavailableDates?.length) return null;
+    if (account.unavailableDates?.includes(date)) return null;
+    const bounds = account.dailySpendBounds?.[date];
+    if (!bounds && (!report.complete || account.account.error)) return null;
+    const exact = account.dailySpendInr[date];
+    if (!bounds && !exact) return null;
+    for (const field of ['total', 'indian'] as const) {
+      sum[field].min += bounds ? bounds[field].min : exact[field];
+      sum[field].max += bounds ? bounds[field].max : exact[field];
+    }
+  }
+  return sum;
 }
 
 /** The selected-day endpoint uses campaign -> 24 values, unlike the range snapshot. */

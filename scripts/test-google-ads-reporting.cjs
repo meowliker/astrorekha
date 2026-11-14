@@ -59,5 +59,34 @@ test('account list hides unrelated accounts but incomplete reads still block com
  const other=aggregateGoogleSnapshot(snapshot(),'us-main','2026-11-12','2026-11-12','business_1130_ist',90);
  const results=[own,other].map(report=>({report,fetchedAt:'2026-11-13T00:00:00Z'}));
  let result=googleSpendReport(results);assert.equal(result.accounts.length,1);assert.equal(result.complete,true);
- other.account.error='Access unavailable';other.warnings=['Access unavailable'];result=googleSpendReport(results);assert.equal(result.accounts.length,1);assert.equal(result.complete,false);assert.deepEqual(result.warnings,['Access unavailable']);assert.equal(googleSpendForDay(result,'2026-11-12'),null);
+ other.account.error='Access unavailable';other.warnings=['Access unavailable'];result=googleSpendReport(results);assert.equal(result.accounts.length,2);assert.equal(result.complete,false);assert.deepEqual(result.warnings,['Access unavailable']);assert.equal(googleSpendForDay(result,'2026-11-12'),null);
+});
+
+test('zero-cost boundary impressions cannot suppress exact spend',()=>{
+ const r=aggregateGoogleSnapshot(snapshot({zone:'Asia/Calcutta',currency:'INR',hour:11,cost:0}),'astrorekha','2026-11-12','2026-11-12','business_1130_ist',90);
+ assert.equal(r.account.error,undefined);
+ assert.deepEqual(googleSpendForDay({complete:true,accounts:[r]},'2026-11-12'),{total:0,indian:0});
+});
+test('paid split hours bound both days and leave unrelated days exact',()=>{
+ const {googleSpendBoundsForDay,googleSpendReport}=require('../src/lib/google-ads-reporting');
+ const r=aggregateGoogleSnapshot(snapshot({zone:'Asia/Calcutta',currency:'INR',hour:11}),'astrorekha','2026-11-11','2026-11-13','business_1130_ist',90);
+ const report=googleSpendReport([{report:r,fetchedAt:'now'}]);
+ for(const date of ['2026-11-11','2026-11-12'])assert.deepEqual(googleSpendBoundsForDay(report,date),{total:{min:0,max:2},indian:{min:0,max:2}});
+ assert.equal(googleSpendForDay(report,'2026-11-12'),null);
+ assert.deepEqual(googleSpendForDay(report,'2026-11-13'),{total:0,indian:0});
+});
+test('unknown attribution never produces a numeric range',()=>{
+ const {googleSpendBoundsForDay,googleSpendReport}=require('../src/lib/google-ads-reporting');
+ const r=aggregateGoogleSnapshot(snapshot({landingCost:1}),'astrorekha','2026-11-12','2026-11-13','business_1130_ist',90);
+ const report=googleSpendReport([{report:r,fetchedAt:'now'}]);
+ assert.equal(googleSpendBoundsForDay(report,'2026-11-12'),null);
+ assert.deepEqual(googleSpendForDay(report,'2026-11-13'),{total:0,indian:0});
+});
+test('profit bounds use GST credit correctly and totals cannot become false zero',()=>{
+ const {profitFinancialBounds,sumProfitFinancialBounds}=require('../src/lib/profit-financial-bounds');
+ const b=profitFinancialBounds({total:{min:100,max:200},indian:{min:50,max:150}},1000,.18,'2026-11-12',100);
+ assert.deepEqual(b.netRevenue,{min:629,max:747});
+ assert.deepEqual(b.gst,{min:153,max:171});
+ assert.equal(sumProfitFinancialBounds([{adsCostINR:null,adsCostUSD:null,gst:null,netRevenue:null}]),undefined);
+ assert.deepEqual(sumProfitFinancialBounds([{financialBounds:b}]).netRevenue,b.netRevenue);
 });

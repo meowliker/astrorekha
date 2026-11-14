@@ -1,0 +1,1 @@
+export const GOOGLE_SPLIT_HOUR_NOTICE = 'Some reporting boundaries split a paid Google Ads hour. Affected spend and profit are shown as possible ranges where supported, not exact amounts. Unaffected dates remain exact.';
