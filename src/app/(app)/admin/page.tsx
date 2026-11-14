@@ -36,15 +36,6 @@ interface AdminOption {
 
 const adminOptions: AdminOption[] = [
   {
-    id: "support",
-    title: "Customer Support",
-    description: "Investigate accounts, recover paid reports, and review support replies",
-    icon: Shield,
-    href: "/support",
-    color: "text-emerald-400",
-    bgColor: "bg-emerald-500/20",
-  },
-  {
     id: "revenue",
     title: "Revenue Dashboard",
     description: "View MRR, ARR, subscriptions, transactions, and financial metrics",
@@ -115,6 +106,15 @@ const adminOptions: AdminOption[] = [
     href: "/admin/ab-tests",
     color: "text-purple-400",
     bgColor: "bg-purple-500/20",
+  },
+  {
+    id: "support",
+    title: "Customer Support",
+    description: "Investigate accounts, recover paid reports, and review support replies",
+    icon: Shield,
+    href: "/support",
+    color: "text-emerald-400",
+    bgColor: "bg-emerald-500/20",
   },
 ];
 

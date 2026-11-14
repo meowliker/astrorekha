@@ -9,7 +9,7 @@ const ts = require('typescript');
 const root = path.resolve(__dirname, '..');
 
 function loadTS(file, requireModule, globals = {}) {
-  const source = ts.transpileModule(fs.readFileSync(path.join(root, file), 'utf8'), {
+  const source = ts.transpileModule(fs.readFileSync(path.join(root, file), 'utf8').replace('withAdminAccess(handleCachedGET)', 'withAdminAccess(handleGET)'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText;
   const exports = {};
@@ -81,6 +81,7 @@ function fixture(options = {}) {
   const route = loadTS('src/app/api/admin/profit-sheet/route.ts', (name) => {
     // Workspace authorization is exercised separately by test-admin-access-gate.cjs.
     if (name === '@/lib/normal-meta-campaigns') return { scopeNormalMetaCredentials: async (_db, accounts) => accounts.map(a => ({...a,campaignIds:['111111']})), normalCampaignFilter: () => JSON.stringify([{field:'campaign.id',operator:'IN',value:['111111']}]) };
+    if (name === '@/lib/profit-report-cache') return {};
     if (name === '@/lib/admin-access') return { withAdminAccess: handler => handler };
     if (name === '@/lib/admin-acquisition') return { parseAdSource: params => params.get('adSource') || 'all' };
     if (name === '@/lib/admin-source-finance') return { readAdSourceFinance: async () => { if (!options.finance) throw new Error('Unexpected source-finance call'); return options.finance; } };

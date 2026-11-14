@@ -4,7 +4,8 @@ import {withAdminAccess} from "@/lib/admin-access";
 import { parseAdSource } from "@/lib/admin-acquisition";
 import { readAdSourceFinance } from "@/lib/admin-source-finance";
 import { isSoulmateTransaction } from "@/lib/soulmate-orders";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
+import { cachedProfitReport, invalidateProfitReports, profitReportCacheKey } from "@/lib/profit-report-cache";
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { classifyPayUEvent } from "@/lib/finance-events";
@@ -18,6 +19,7 @@ import { calculateProfitSheetGst, indianAdGstApplies } from "@/lib/profit-sheet-
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const maxDuration = 300;
 
 const APP_LAUNCH_DATE = "2026-03-13";
 const GST_RATE_CHANGE_DATE = "2026-10-01";
@@ -887,10 +889,11 @@ async function syncProfitSheetRows(
   startDate: string,
   endDate: string,
   exchangeRate: number,
-  dayMode: ProfitSheetDayMode = BUSINESS_DAY_MODE
+  dayMode: ProfitSheetDayMode = BUSINESS_DAY_MODE,
+  persistPayments = true
 ): Promise<{ rows: ProfitSheetRow[]; source: string }> {
   const result = await buildProfitSheetRows(supabase, startDate, endDate, exchangeRate, dayMode);
-  if (result.paymentRows.length > 0) {
+  if (persistPayments && result.paymentRows.length > 0) {
     for (let i = 0; i < result.paymentRows.length; i += 500) {
       const batch = result.paymentRows.slice(i, i + 500);
       const { error } = await supabase
@@ -1175,4 +1178,56 @@ async function handleGET(request: NextRequest) {
   }
 }
 
-export const GET=withAdminAccess(handleGET);
+// Authentication and workspace authorization run before any cached data can be read.
+async function handleCachedGET(request: NextRequest) {
+  const params = new URL(request.url).searchParams;
+  const mode = params.get("dayMode") || BUSINESS_DAY_MODE;
+  if (mode !== BUSINESS_DAY_MODE && mode !== CALENDAR_DAY_MODE) return NextResponse.json({error: "Choose a valid reporting day."}, {status: 400});
+  const today = getCostaRicaBusinessDayKeyFromDate(new Date(), mode);
+  const end = params.get("endDate") || today;
+  const start = params.get("startDate") || APP_LAUNCH_DATE;
+  const validDate = (date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(date)) && new Date(date).toISOString().slice(0, 10) === date;
+  if (!validDate(start) || !validDate(end) || start > end || start > today || start < APP_LAUNCH_DATE || Date.parse(end) - Date.parse(start) >= 366 * 86400000) {
+    return NextResponse.json({error: "Choose a valid date range of up to 366 days."}, {status: 400});
+  }
+  const rate = params.get("exchangeRate");
+  if (rate && (!Number.isFinite(Number(rate)) || Number(rate) <= 0)) return NextResponse.json({error: "Choose a valid exchange rate."}, {status: 400});
+  const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {auth: {persistSession: false, autoRefreshToken: false}});
+  if (params.has("breakdownDate") || params.has("revenueBreakdownDate")) return handleGET(request);
+  if (params.has("sync")) {
+    // Invalidate first so concurrent refreshes cannot publish an older snapshot afterward.
+    await invalidateProfitReports(db);
+    const response = await handleGET(request);
+    await invalidateProfitReports(db);
+    return response;
+  }
+  const normalized = new URL(request.url);
+  normalized.searchParams.set("startDate", start);
+  normalized.searchParams.set("endDate", minIsoDate(end, today));
+  normalized.searchParams.set("dayMode", mode);
+  const load = async () => {
+    const source = parseAdSource(params);
+    if (source !== "google") {
+      const {data, error} = await db.from(profitSheetTableForMode(mode)).select("date,synced_at")
+        .gte("date", start).lte("date", minIsoDate(end, today));
+      if (error) throw new Error("Unable to read the saved reporting window.");
+      const rows = new Map((data || []).map(row => [String(row.date), row.synced_at]));
+      const due: string[] = [];
+      for (let date = start; date <= minIsoDate(end, today); date = addDaysToIsoDate(date, 1)) {
+        if (!rows.has(date) || date >= addDaysToIsoDate(today, -1) && (!rows.get(date) || Date.now() - Date.parse(rows.get(date)) >= 300_000)) due.push(date);
+      }
+      if (due.length) {
+        const exchangeRate = rate ? Number(rate) : await fetchExchangeRate();
+        for (let index = 0; index < due.length;) {
+          const first = due[index++]; let last = first;
+          while (index < due.length && due[index] === addDaysToIsoDate(last, 1) && due[index] <= addDaysToIsoDate(first, 6)) last = due[index++];
+          // Reporting refreshes only write aggregates, never purchases or fulfillment.
+          await syncProfitSheetRows(db, first, last, exchangeRate, mode, false);
+        }
+      }
+    }
+    return handleGET(new NextRequest(normalized, {headers: request.headers}));
+  };
+  return cachedProfitReport(db, profitReportCacheKey(normalized.searchParams), load, after);
+}
+export const GET=withAdminAccess(handleCachedGET);

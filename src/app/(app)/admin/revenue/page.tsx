@@ -644,9 +644,30 @@ function AdminRevenuePage() {
   );
 
   // Profit Sheet state
+  const [profitSheetDayMode, setProfitSheetDayMode] = useState<ProfitSheetDayMode>("business_1130_ist");
+  useEffect(() => {
+    if (localStorage.getItem("profit-sheet-day-mode") === "calendar_ist") {
+      setProfitSheetDayMode("calendar_ist");
+      const today = getIstDateTimeParts(new Date()).dayKey;
+      setProfitSheetStartDate(getFirstDayOfMonthIso(today));
+      setProfitSheetEndDate(today);
+    }
+  }, []);
+  const changeProfitSheetDayMode = (mode: ProfitSheetDayMode) => {
+    ++profitSheetRequestIdRef.current;
+    setProfitSheetDayMode(mode);
+    localStorage.setItem("profit-sheet-day-mode", mode);
+    const today = mode === "calendar_ist" ? getIstDateTimeParts(new Date()).dayKey : getCurrentBusinessDateIso();
+    if (profitSheetFilter === "thisMonth") {
+      setProfitSheetStartDate(getFirstDayOfMonthIso(today));
+      setProfitSheetEndDate(today);
+    }
+  };
   const [profitSheetData, setProfitSheetData] = useState<ProfitSheetRow[]>([]);
   const [profitSheetLoadedMode, setProfitSheetLoadedMode] = useState<ProfitSheetDayMode | null>(null);
   const [profitSheetLoading, setProfitSheetLoading] = useState(false);
+  const [profitSheetPreparing, setProfitSheetPreparing] = useState(false);
+  const [profitSheetRefreshing, setProfitSheetRefreshing] = useState(false);
   const [profitSheetFetchedAt, setProfitSheetFetchedAt] = useState<string | null>(null);
   const [profitSheetError, setProfitSheetError] = useState<string | null>(null);
   const [profitSheetStartDate, setProfitSheetStartDate] = useState<string>(() => getFirstDayOfMonthIso(getCurrentBusinessDateIso()));
@@ -858,14 +879,14 @@ function AdminRevenuePage() {
     }
   };
 
-  const fetchProfitSheet = async (customRate?: number, syncLastTwoDays: boolean = false) => {
+  const fetchProfitSheet = async (customRate?: number, syncLastTwoDays: boolean = false, backgroundRefresh = false) => {
     const requestId = ++profitSheetRequestIdRef.current;
-    const dayMode: ProfitSheetDayMode = "business_1130_ist";
+    const dayMode = profitSheetDayMode;
     const requestedStartDate = profitSheetStartDate;
     const requestedEndDate = profitSheetEndDate;
     const rateInput = profitSheetCustomExchangeRate;
     try {
-      setProfitSheetLoading(true);
+      if (!backgroundRefresh) setProfitSheetLoading(true);
       setProfitSheetError(null);
       const token = localStorage.getItem("admin_session_token");
       if (!token) return;
@@ -880,7 +901,8 @@ function AdminRevenuePage() {
 
       if (syncLastTwoDays && adSource !== "google") {
         // Refresh the selected dates in bounded requests, including older incomplete days.
-        const last = requestedEndDate < getCurrentBusinessDateIso() ? requestedEndDate : getCurrentBusinessDateIso();
+        const today = dayMode === "calendar_ist" ? getIstDateTimeParts(new Date()).dayKey : getCurrentBusinessDateIso();
+        const last = requestedEndDate < today ? requestedEndDate : today;
         for (let from = requestedStartDate; from <= last;) {
           const end = new Date(Date.parse(from) + 6 * 86400000).toISOString().slice(0, 10);
           const to = end < last ? end : last;
@@ -906,6 +928,17 @@ function AdminRevenuePage() {
 
       let result = await res.json();
       if (requestId !== profitSheetRequestIdRef.current) return;
+      if (result.preparing) {
+        setProfitSheetData([]);
+        setProfitSheetFetchedAt(null);
+        setProfitSheetPreparing(true);
+        setProfitSheetRefreshing(true);
+        setProfitSheetError("Preparing this timing for the first time. It will appear automatically.");
+        setProfitSheetLoadedMode(dayMode);
+        return;
+      }
+      setProfitSheetPreparing(false);
+      setProfitSheetRefreshing(Boolean(result.refreshing));
       let gstWarning: string | null = null;
       const missingOctoberDates: string[] = (adSource === "all" ? result.rows || [] : [])
         .filter((row: ProfitSheetRow) => row.date >= INDIAN_AD_GST_START_DATE && !row.gstBreakdown)
@@ -948,10 +981,14 @@ function AdminRevenuePage() {
       }
     } catch (err) {
       if (requestId !== profitSheetRequestIdRef.current) return;
+      setProfitSheetPreparing(false);
       console.error("Profit sheet fetch error:", err);
+      setProfitSheetRefreshing(false);
       setProfitSheetError(err instanceof Error ? err.message : "Failed to fetch profit sheet");
-      setProfitSheetData([]);
-      setProfitSheetFetchedAt(null);
+      if (!backgroundRefresh) {
+        setProfitSheetData([]);
+        setProfitSheetFetchedAt(null);
+      }
       setProfitSheetLoadedMode(dayMode);
     } finally {
       if (requestId === profitSheetRequestIdRef.current) {
@@ -1088,15 +1125,15 @@ function AdminRevenuePage() {
     if (activeTab === "profit-sheet") {
       fetchProfitSheet();
     }
-  }, [activeTab, profitSheetStartDate, profitSheetEndDate, adSource]);
+  }, [activeTab, profitSheetStartDate, profitSheetEndDate, profitSheetDayMode, adSource]);
 
   // Re-read receipts and saved spend without triggering provider syncs on focus.
   // A mounted tab must not keep displaying an old snapshot indefinitely.
   const profitReloadRef = useRef(() => {});
   profitReloadRef.current = () => {
     if (activeTab === "profit-sheet" && !profitSheetLoading &&
-        (!profitSheetFetchedAt || Date.now() - Date.parse(profitSheetFetchedAt) >= 60_000)) {
-      void fetchProfitSheet();
+        (!profitSheetFetchedAt || Date.now() - Date.parse(profitSheetFetchedAt) >= (profitSheetRefreshing ? 10_000 : 60_000))) {
+      void fetchProfitSheet(undefined, false, true);
     }
   };
   useEffect(() => {
@@ -1104,7 +1141,7 @@ function AdminRevenuePage() {
     window.addEventListener("focus", refreshVisible);
     window.addEventListener("pageshow", refreshVisible);
     document.addEventListener("visibilitychange", refreshVisible);
-    const timer = window.setInterval(refreshVisible, 60_000);
+    const timer = window.setInterval(refreshVisible, 10_000);
     return () => {
       window.clearInterval(timer);
       window.removeEventListener("focus", refreshVisible);
@@ -1522,11 +1559,13 @@ function AdminRevenuePage() {
         {activeTab === "profit-sheet" && (
 
           <ProfitSheetTab
-            dayMode="business_1130_ist"
-            fetchedAt={profitSheetFetchedAt}
-            data={profitSheetLoadedMode === "business_1130_ist" ? profitSheetData : []}
-            loading={profitSheetLoading || profitSheetLoadedMode !== "business_1130_ist"}
-            error={profitSheetLoadedMode === "business_1130_ist" ? profitSheetError : null}
+            dayMode={profitSheetDayMode}
+            setDayMode={changeProfitSheetDayMode}
+            refreshing={profitSheetLoadedMode === profitSheetDayMode && profitSheetRefreshing}
+            fetchedAt={profitSheetLoadedMode === profitSheetDayMode ? profitSheetFetchedAt : null}
+            data={profitSheetLoadedMode === profitSheetDayMode ? profitSheetData : []}
+            loading={profitSheetLoading || profitSheetPreparing || profitSheetLoadedMode !== profitSheetDayMode}
+            error={profitSheetLoadedMode === profitSheetDayMode ? profitSheetError : null}
             startDate={profitSheetStartDate}
             endDate={profitSheetEndDate}
             setStartDate={setProfitSheetStartDate}
@@ -1613,6 +1652,8 @@ type ProfitSheetSortDirection = "asc" | "desc" | null;
 // Profit Sheet Tab Component
 function ProfitSheetTab({
   dayMode,
+  setDayMode,
+  refreshing,
   fetchedAt,
   data,
   loading,
@@ -1633,6 +1674,8 @@ function ProfitSheetTab({
   onRefreshWithRate,
 }: {
   dayMode: ProfitSheetDayMode;
+  setDayMode: (mode: ProfitSheetDayMode) => void;
+  refreshing: boolean;
   fetchedAt: string | null;
   data: ProfitSheetRow[];
   loading: boolean;
@@ -2358,6 +2401,15 @@ function ProfitSheetTab({
       {/* Filters */}
       <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
         <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <label htmlFor="profit-reporting-day" className="text-white/50 text-xs mb-1 block">Reporting day · IST</label>
+            <select id="profit-reporting-day" value={dayMode}
+              onChange={(event) => setDayMode(event.target.value as ProfitSheetDayMode)}
+              className="bg-[#1A2235] border border-white/10 rounded-lg px-3 py-2 text-white text-sm">
+              <option value="calendar_ist">Midnight · 12:00 AM–11:59 PM</option>
+              <option value="business_1130_ist">11:30 AM–11:29 AM next day</option>
+            </select>
+          </div>
           <div ref={calendarDropdownRef} className="relative">
             <label className="text-white/50 text-xs mb-1 block">Custom Range</label>
             <button
@@ -2671,8 +2723,9 @@ function ProfitSheetTab({
         </div>
         {gstRefreshError && <p role="alert" className="mt-3 text-xs text-red-300">{gstRefreshError}</p>}
 	        <p className="text-white/30 text-xs mt-3">
-	          Reporting day: 11:30 AM IST – 11:29 AM IST the next day.
+	          {dayMode === "calendar_ist" ? "Reporting day: midnight–11:59 PM IST." : "Reporting day: 11:30 AM IST–11:29 AM IST the next day."}
 	        </p>
+            {refreshing && <p className="mt-1 text-xs text-cyan-300">Showing saved data · refreshing in the background…</p>}
             {fetchedAt && <p className="mt-1 text-xs text-white/40">Updated {new Date(fetchedAt).toLocaleString("en-IN", {timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit"})} IST</p>}
 	        {selectedDates.length > 0 && (
 	          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2">
