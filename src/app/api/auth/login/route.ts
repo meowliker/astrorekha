@@ -4,6 +4,7 @@ import { setReportSession } from "@/lib/report-session";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import bcrypt from "bcryptjs";
+import { attemptIpHash, freshGrant, hashSecret, normalizePurchaseCode, sameOrigin, setPasswordGrant } from "@/lib/purchase-access/security";
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,12 +22,14 @@ export async function POST(request: NextRequest) {
     const supabase = getSupabaseAdmin();
 
     // Look up user by email
-    const { data: user } = await supabase
+    const { data: user, error: userError } = await supabase
       .from("users")
       .select("*")
       .eq("email", normalizedEmail)
       .limit(1)
-      .single();
+      .maybeSingle();
+
+    if (userError) return NextResponse.json({ error: "auth/unavailable", message: "Sign-in is temporarily unavailable. Please retry." }, { status: 503 });
 
     if (!user) {
       return NextResponse.json(
@@ -35,20 +38,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify password
-    if (!user.password_hash) {
-      return NextResponse.json(
-        { success: false, error: "auth/no-password", message: "This account uses OTP login. Please use the OTP option." },
-        { status: 400 }
-      );
-    }
-
-    const isValid = await bcrypt.compare(password, user.password_hash);
+    // A confirmation code is entered in the existing password field. Ordinary
+    // passwords retain priority and never consume an access code.
+    const isValid = user.password_hash && typeof password === "string"
+      ? await bcrypt.compare(password, user.password_hash) : false;
     if (!isValid) {
-      return NextResponse.json(
-        { success: false, error: "auth/wrong-password", message: "Incorrect password" },
-        { status: 401 }
-      );
+      const code = normalizePurchaseCode(password);
+      if (/^[A-HJ-NP-Z2-9]{8}$/.test(code)) {
+        if (!sameOrigin(request)) return NextResponse.json({error:"Invalid origin"},{status:403});
+        const grant = freshGrant();
+        const result = await supabase.rpc("consume_purchase_access_code", {
+          p_email: normalizedEmail, p_code_hash: hashSecret(code),
+          p_ip_hash: attemptIpHash(request), p_grant_hash: hashSecret(grant),
+        });
+        if (result.error) return NextResponse.json({error:"auth/unavailable",message:"Sign-in is temporarily unavailable. Please retry."},{status:503});
+        if (result.data?.error === "rate_limited") return NextResponse.json({error:"auth/rate-limited",message:"Too many code attempts. Please wait 15 minutes."},{status:429,headers:{"Retry-After":"900"}});
+        if (result.data?.userId === user.id) {
+          return setPasswordGrant(setReportSession(NextResponse.json({success:true,requiresPasswordSetup:true},{headers:{"Cache-Control":"private, no-store"}}),user.id),grant);
+        }
+        return NextResponse.json({error:"auth/invalid-code",message:"Incorrect password or access code. A confirmation code works only once; use Sign in with a code if it was already used."},{status:401});
+      }
+      if (!user.password_hash) return NextResponse.json({success:false,error:"auth/no-password",message:"Use your confirmation code in the password field, or request a fresh sign-in code."},{status:400});
+      return NextResponse.json({success:false,error:"auth/wrong-password",message:"Incorrect password or access code."},{status:401});
     }
 
     // Update last login

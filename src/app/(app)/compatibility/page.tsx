@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 import {accountWesternSigns} from "@/lib/account-zodiac-client";
 
 import ReportInfoButton from "@/components/ReportInfoButton";
@@ -352,7 +353,7 @@ export default function CompatibilityPage() {
     };
 
     const fallbackFromLocalBirthDate = () => {
-      const storedBirthDate = localStorage.getItem("birthDate");
+      const storedBirthDate = sessionHints.getItem("birthDate");
       if (!storedBirthDate) return;
       const date = new Date(storedBirthDate);
       if (Number.isNaN(date.getTime())) return;
@@ -367,7 +368,7 @@ export default function CompatibilityPage() {
         if(signs) {
           setWestern(true); setUserSign(signs.sun); setUserSignFromBirthDate(signs.sun); return;
         }
-        const userId = localStorage.getItem("astrorekha_user_id");
+        const userId = sessionHints.getItem("astrorekha_user_id");
         if (!userId) {
           fallbackFromLocalBirthDate();
           return;

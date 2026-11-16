@@ -70,6 +70,10 @@
     {
       "path": "/api/cron/ad-balance-summary",
       "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/cron/send-purchase-access-emails",
+      "schedule": "* * * * *"
     }
   ]
 }

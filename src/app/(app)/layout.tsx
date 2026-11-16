@@ -7,8 +7,7 @@ export default function AppLayout({
 }) {
   return (
     <div className="min-h-screen bg-background">
-      <UserHydrator />
-      <main className="flex-1">{children}</main>
+      <UserHydrator><main className="flex-1">{children}</main></UserHydrator>
     </div>
   );
 }

@@ -360,7 +360,7 @@ export function generateOrderInvoicePdf(invoice: OrderInvoice): Buffer {
 
     const paidAt = formatDate(invoice.payment.paidAt || invoice.invoiceDate);
     const invoiceDate = formatDate(invoice.invoiceDate);
-    const totalLabel = `INR ${invoice.total.toFixed(2)}`;
+    const totalLabel = `${invoice.currency} ${invoice.total.toFixed(2)}`;
     const hasTaxLines = invoice.taxLines.length > 0;
 
   doc.setFillColor(26, 32, 50);
@@ -416,7 +416,7 @@ export function generateOrderInvoicePdf(invoice: OrderInvoice): Buffer {
     doc.text(txnLines, margin + 66, y);
     doc.text(paymentLines, margin + 109, y);
     doc.text(String(item.quantity), rightX - 39, y);
-    doc.text(`INR ${item.amount.toFixed(2)}`, rightX - 4, y, { align: "right" });
+    doc.text(`${invoice.currency} ${item.amount.toFixed(2)}`, rightX - 4, y, { align: "right" });
     y += rowHeight;
   });
 
@@ -425,11 +425,11 @@ export function generateOrderInvoicePdf(invoice: OrderInvoice): Buffer {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     if (hasTaxLines) {
-      doc.text(`Subtotal: INR ${invoice.subtotal.toFixed(2)}`, rightX, y, { align: "right" });
+      doc.text(`Subtotal: ${invoice.currency} ${invoice.subtotal.toFixed(2)}`, rightX, y, { align: "right" });
       y += 6;
       invoice.taxLines.forEach((taxLine) => {
         doc.text(
-          `${taxLine.label} (${taxLine.ratePercent}%): INR ${taxLine.amount.toFixed(2)}`,
+          `${taxLine.label} (${taxLine.ratePercent}%): ${invoice.currency} ${taxLine.amount.toFixed(2)}`,
           rightX,
           y,
           { align: "right" }

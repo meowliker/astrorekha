@@ -1,3 +1,4 @@
+import { reportSessionUser } from "@/lib/report-session";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { generateBirthChartReport } from "@/lib/birth-chart-report-generator";
@@ -98,29 +99,13 @@ function makeBirthChartCacheKey(userProfile: AnyRecord | null, user: AnyRecord |
   return `${base}_vedic`;
 }
 
-function getSessionUserId(request: NextRequest, fallbackUserId?: string | null): string | null {
-  const accessCookie = request.cookies.get("ar_access")?.value;
-  if (!accessCookie) return null;
 
-  // Backward/forward compatible: if cookie ever stores user id, use it; otherwise use x-user-id.
-  if (accessCookie !== "1" && accessCookie.trim()) {
-    return accessCookie.trim();
-  }
-
-  const headerUserId = request.headers.get("x-user-id")?.trim();
-  if (headerUserId) return headerUserId;
-
-  const queryUserId = request.nextUrl.searchParams.get("userId")?.trim();
-  if (queryUserId) return queryUserId;
-
-  return fallbackUserId?.trim() || null;
-}
 
 export async function POST(request: NextRequest) {
   const requestBody = await request
     .json()
     .catch(() => ({} as { force?: boolean; userId?: string }));
-  const userId = getSessionUserId(request, requestBody?.userId);
+  const userId = reportSessionUser(request);
 
   if (!userId) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

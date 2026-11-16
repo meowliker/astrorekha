@@ -78,14 +78,16 @@ test('the tax-inclusive displayed amount agrees with the unchanged server quote,
     }
   }
 });
-test('legacy paywall markup and checkout/coupon handlers remain exactly the original implementation', () => {
+test('legacy paywall and checkout/coupon handlers stay unchanged apart from the private palm input snapshot', () => {
   const file = 'src/app/(onboarding)/onboarding/bundle-pricing/page.tsx';
   const current = fs.readFileSync(file, 'utf8');
   const original = execFileSync('git', ['show', 'HEAD:' + file], { encoding: 'utf8' });
   const markup = '\n  return (\n    <motion.div';
   assert.equal(current.slice(current.lastIndexOf(markup)), original.slice(original.lastIndexOf(markup)));
   const handlers = source => source.slice(source.indexOf('  const handlePurchase = async'), source.indexOf('\n  };', source.indexOf('  const handleCouponUnlock')) + '\n  };'.length);
-  assert.equal(handlers(current), handlers(original));
+  const palmSnapshot = '          palmImage: await checkoutPalm("astrorekha_palm_image"),\n';
+  assert.equal(handlers(current).split(palmSnapshot).length - 1, 1);
+  assert.equal(handlers(current).replace(palmSnapshot, ''), handlers(original).replace(palmSnapshot, ''));
 });
 test('the Ads paywall copies the original layout and keeps its section order rather than replacing the design', () => {
   const baseline = execFileSync('git', ['show', 'HEAD:src/app/(onboarding)/onboarding/bundle-pricing/page.tsx'], { encoding: 'utf8' });

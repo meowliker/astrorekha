@@ -1,4 +1,5 @@
 "use client";
+import { checkoutPalm } from "@/lib/checkout-palm-client";
 import { beginInrCouponCheckout } from "@/lib/inr-coupon-client";
 import { openPaytmCheckout } from "@/lib/payment-checkout-browser";
 
@@ -496,6 +497,7 @@ export default function BundlePricingPage() {
           firstName: localStorage.getItem("astrorekha_name") || "Customer",
           whatsappNumber: checkoutWhatsappNumber,
           birthDetails: useOnboardingStore.getState(),
+          palmImage: await checkoutPalm("astrorekha_palm_image"),
           attribution: getPaymentAttributionPayload(),
         }),
       });

@@ -1,3 +1,4 @@
+import { saveCheckoutReportInputs } from "@/lib/checkout-report-inputs";
 import { initiatePineLabsCheckout, pineLabsConfig } from "@/lib/pinelabs-api";
 import { activePaymentGateway } from "@/lib/payment-gateway";
 import { initiatePaytmCheckout, paytmConfig } from "@/lib/paytm-api";
@@ -127,6 +128,7 @@ export async function POST(request: NextRequest) {
         paywallVariant?: "A" | "B";
         attribution?: PaymentAttributionPayload;
         birthDetails?: BirthDetailsInput;
+        palmImage?: string;
       };
       const {
         type,
@@ -431,6 +433,8 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    await saveCheckoutReportInputs("IN", paymentRecord.id, body.palmImage);
 
     await recordMarketingEvent({
       eventName: "checkout_started",

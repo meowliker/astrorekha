@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 import type { BirthChartData } from "@/lib/birth-chart-data";
 
 
@@ -87,12 +88,7 @@ function IndianBirthChartPage() {
   const [birthPlace, setBirthPlaceState] = useState<string>("");
   const [knowsBirthTime, setKnowsBirthTimeState] = useState<boolean>(true);
   
-  const { 
-    birthMonth: storeBirthMonth, birthDay: storeBirthDay, birthYear: storeBirthYear, 
-    birthHour: storeBirthHour, birthMinute: storeBirthMinute, birthPeriod: storeBirthPeriod, 
-    birthPlace: storeBirthPlace, knowsBirthTime: storeKnowsBirthTime,
-    setBirthDate, setBirthTime, setBirthPlace
-  } = useOnboardingStore();
+  const {setBirthDate, setBirthTime, setBirthPlace} = useOnboardingStore();
   
   const validBirthDate = getBirthDateIso({ birthMonth, birthDay, birthYear });
   const validBirthTime = getBirthTime24({ birthHour, birthMinute, birthPeriod, knowsBirthTime });
@@ -120,14 +116,14 @@ function IndianBirthChartPage() {
   }, []);
 
   const loadUserBirthData = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const userId = localStorage.getItem("astrorekha_user_id");
+      const userId = sessionHints.getItem("astrorekha_user_id");
       if (userId) {
-        const { data: profileData } = await supabase
-          .from("user_profiles")
-          .select("birth_month, birth_day, birth_year, birth_hour, birth_minute, birth_period, birth_place, knows_birth_time")
-          .eq("id", userId)
-          .single();
+        const response = await fetch("/api/auth/report-profile", {cache:"no-store",credentials:"include"});
+        if(!response.ok) throw new Error("Unable to load saved birth details");
+        const {profile: profileData} = await response.json();
 
         if (profileData && profileData.birth_month && profileData.birth_day && profileData.birth_year) {
           setBirthMonthState(String(profileData.birth_month));
@@ -142,43 +138,13 @@ function IndianBirthChartPage() {
           return;
         }
 
-        // Legacy fallback for environments where birth fields still exist in users
-        const { data: dbUser } = await supabase
-          .from("users")
-          .select("birth_month, birth_day, birth_year, birth_hour, birth_minute, birth_period, birth_place")
-          .eq("id", userId)
-          .single();
-
-        if (dbUser && dbUser.birth_month && dbUser.birth_day && dbUser.birth_year) {
-          setBirthMonthState(String(dbUser.birth_month));
-          setBirthDayState(String(dbUser.birth_day));
-          setBirthYearState(String(dbUser.birth_year));
-          setBirthHourState(dbUser.birth_hour || "12");
-          setBirthMinuteState(dbUser.birth_minute || "00");
-          setBirthPeriodState(dbUser.birth_period || "PM");
-          setBirthPlaceState(dbUser.birth_place || "");
-          setKnowsBirthTimeState(true);
-          setUserDataLoaded(true);
-          return;
-        }
       }
-      // Fallback to onboarding store
-      setBirthMonthState(storeBirthMonth);
-      setBirthDayState(storeBirthDay);
-      setBirthYearState(storeBirthYear);
-      setBirthHourState(storeBirthHour || "12");
-      setBirthMinuteState(storeBirthMinute || "00");
-      setBirthPeriodState(storeBirthPeriod || "PM");
-      setBirthPlaceState(storeBirthPlace || "");
-      setKnowsBirthTimeState(storeKnowsBirthTime);
+      // Missing saved details must be collected from this customer, not another browser's draft.
       setUserDataLoaded(true);
     } catch (err) {
       console.error("Failed to load birth data:", err);
-      // Fallback to onboarding store
-      setBirthMonthState(storeBirthMonth);
-      setBirthDayState(storeBirthDay);
-      setBirthYearState(storeBirthYear);
-      setUserDataLoaded(true);
+      setError("Unable to load your saved birth details. Please retry.");
+      setLoading(false);
     }
   };
 
@@ -367,7 +333,7 @@ function IndianBirthChartPage() {
                 <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-6 text-center">
                   <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
                   <p className="text-red-400 mb-4">{error}</p>
-                  <Button onClick={() => loadOrGenerateChart()} className="bg-gradient-to-r from-primary to-purple-600">
+                  <Button onClick={() => userDataLoaded ? loadOrGenerateChart() : loadUserBirthData()} className="bg-gradient-to-r from-primary to-purple-600">
                     <RefreshCw className="w-4 h-4 mr-2" /> Try Again
                   </Button>
                 </div>
@@ -400,7 +366,7 @@ function IndianBirthChartPage() {
                     <p className="text-amber-200 text-sm mb-3">
                       Birth chart details are not available yet for these birth inputs.
                     </p>
-                    <Button onClick={() => loadOrGenerateChart()} className="bg-gradient-to-r from-primary to-purple-600">
+                    <Button onClick={() => userDataLoaded ? loadOrGenerateChart() : loadUserBirthData()} className="bg-gradient-to-r from-primary to-purple-600">
                       <RefreshCw className="w-4 h-4 mr-2" /> Regenerate Chart
                     </Button>
                   </div>

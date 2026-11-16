@@ -1,3 +1,4 @@
+import { saveCheckoutReportInputs } from "@/lib/checkout-report-inputs";
 import {usExperiment} from '@/lib/us-main/experiments';
 import {reportSessionUser} from '@/lib/report-session';
 import {customerMarket} from '@/lib/customer-market';
@@ -15,9 +16,9 @@ export async function POST(req:NextRequest) {
   if(!sameOrigin(req)) return NextResponse.json({error:'Invalid origin'},{status:403});
   if(!enabled()) return NextResponse.json({error:'US checkout is not enabled yet'},{status:503});
   try {
-    if(Number(req.headers.get('content-length')||0)>30000) return NextResponse.json({error:'Request too large'},{status:413});
+    if(Number(req.headers.get('content-length')||0)>1600000) return NextResponse.json({error:'Request too large'},{status:413});
     const raw=await req.text();
-    if(Buffer.byteLength(raw,'utf8')>30000)return NextResponse.json({error:'Request too large'},{status:413});
+    if(Buffer.byteLength(raw,'utf8')>1600000)return NextResponse.json({error:'Request too large'},{status:413});
     const body=JSON.parse(raw);
     const accountPurchase=['report','coins','chat_pass'].includes(body.type);
     const uid=accountPurchase?reportSessionUser(req):null;
@@ -57,6 +58,7 @@ export async function POST(req:NextRequest) {
     }
     if((account&&order.user_id!==account.id) || order.customer_email!==email || order.type!==type || order.parent_order_id!==(parent?.id||null) || Boolean(order.attribution.testPromotion)!==testPromo || order.amount_cents!==quote.cents || order.line_items.map(p=>p.id).join(',')!==quote.lines.map(p=>p.id).join(',')) return NextResponse.json({error:'Checkout reference belongs to another basket'},{status:409});
     if(order.fulfilled_at) return setOwner(NextResponse.json({orderId:order.id,url:`/us/payment?order=${order.id}`}),token);
+    await saveCheckoutReportInputs("US", order.id, body.palmImage);
     const origin=checkoutOrigin(req);
     const params=new URLSearchParams({mode:'payment',allow_promotion_codes:'true','adaptive_pricing[enabled]':'false',customer_email:order.customer_email,client_reference_id:order.id,success_url:`${origin}/us/payment?order=${order.id}`,cancel_url:`${origin}/us/payment?order=${order.id}&cancelled=1`,'payment_method_types[0]':'card','metadata[funnel]':'us_main','metadata[order_id]':order.id,'payment_intent_data[metadata][funnel]':'us_main','payment_intent_data[metadata][order_id]':order.id});
     order.line_items.forEach((p,i)=>{params.set(`line_items[${i}][price_data][currency]`,'usd');params.set(`line_items[${i}][price_data][unit_amount]`,String(p.cents));params.set(`line_items[${i}][price_data][product_data][name]`,p.name);params.set(`line_items[${i}][quantity]`,'1');});

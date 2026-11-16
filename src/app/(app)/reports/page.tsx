@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 import {accountWesternSigns} from "@/lib/account-zodiac-client";
 
 import { useState, useEffect } from "react";
@@ -101,10 +102,10 @@ export default function DashboardPage() {
   const loadUserZodiac = async () => {
     try {
       const sessionUser = await resolveStoredUserSession();
-      const userId = sessionUser?.id || localStorage.getItem("astrorekha_user_id");
+      const userId = sessionUser?.id;
 
       if (userId) {
-        const userData = sessionUser || (await supabase.from("users").select("*").eq("id", userId).single()).data;
+        const userData = sessionUser;
 
         if (userData) {
           if (userData.name) setUserName(userData.name);
@@ -164,7 +165,7 @@ export default function DashboardPage() {
               color: getZodiacColor(sunSignName),
             });
             
-            const storedEmail = localStorage.getItem("astrorekha_email");
+            const storedEmail = sessionHints.getItem("astrorekha_email");
             if (storedEmail && !userEmail) {
               setUserEmail(storedEmail);
             }
@@ -175,7 +176,7 @@ export default function DashboardPage() {
       }
       
       // Also try to get email from localStorage as fallback
-      const storedEmail = localStorage.getItem("astrorekha_email");
+      const storedEmail = sessionHints.getItem("astrorekha_email");
       if (storedEmail && !userEmail) {
         setUserEmail(storedEmail);
       }
@@ -207,7 +208,7 @@ export default function DashboardPage() {
   };
 
   const loadVastuGuidePurchaseTime = async (userId: string, email?: string | null) => {
-    const normalizedEmail = email?.trim().toLowerCase() || localStorage.getItem("astrorekha_email") || "";
+    const normalizedEmail = email?.trim().toLowerCase() || sessionHints.getItem("astrorekha_email") || "";
     const itemFilter = [
       "bundle_id.eq.vastu-shastra-guide",
       "bundle_id.eq.report-vastu-shastra-guide",
@@ -244,7 +245,7 @@ export default function DashboardPage() {
     try {
       setInsightsLoading(true);
       const sessionUser = await resolveStoredUserSession();
-      const userId = sessionUser?.id || localStorage.getItem("astrorekha_user_id");
+      const userId = sessionUser?.id;
       if (!userId) return;
 
       const response = await fetch(`/api/horoscope/daily-insights-v2?userId=${userId}`);
@@ -581,7 +582,7 @@ export default function DashboardPage() {
                             // Update Supabase to deactivate timer after a delay
                             setTimeout(async () => {
                               setBirthChartTimerActive(false);
-                              const userId = localStorage.getItem("astrorekha_user_id");
+                              const userId = sessionHints.getItem("astrorekha_user_id");
                               if (userId) {
                                 try {
                                   await supabase.from("users").update({ birth_chart_timer_active: false }).eq("id", userId);

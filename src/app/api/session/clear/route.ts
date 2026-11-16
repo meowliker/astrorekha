@@ -1,6 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-export async function POST(request: NextRequest) {
+import { clearPasswordGrant } from "@/lib/purchase-access/security";
+
+export async function POST() {
   const response = NextResponse.json({ ok: true });
 
   // Clear the session cookie
@@ -15,5 +17,5 @@ export async function POST(request: NextRequest) {
   });
 
   response.cookies.set("ar_report_session", "", { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 0 });
-  return response;
+  return clearPasswordGrant(response);
 }

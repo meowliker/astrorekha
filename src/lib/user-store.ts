@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { sessionHints } from "./session-storage";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 
 export type PurchasedBundle =
@@ -108,26 +109,16 @@ const initialState = {
 const safeLocalStorage: StateStorage = {
   getItem: (name) => {
     if (typeof window === "undefined") return null;
-    return window.localStorage.getItem(name);
+    return sessionHints.getItem(name);
   },
   setItem: (name, value) => {
     if (typeof window === "undefined") return;
 
-    try {
-      window.localStorage.setItem(name, value);
-    } catch (error) {
-      console.warn(`[UserStore] Failed to persist ${name}; clearing large local cache and retrying.`, error);
-      try {
-        window.localStorage.removeItem("astrorekha_palm_image");
-        window.localStorage.setItem(name, value);
-      } catch (retryError) {
-        console.warn(`[UserStore] Failed to persist ${name} after cleanup.`, retryError);
-      }
-    }
+    sessionHints.setItem(name, value);
   },
   removeItem: (name) => {
     if (typeof window === "undefined") return;
-    window.localStorage.removeItem(name);
+    sessionHints.removeItem(name);
   },
 };
 
@@ -263,7 +254,7 @@ export const useUserStore = create<UserState>()(
           updates.coins = data.coins;
         }
         
-        if (data.purchasedBundle) {
+        if (data.purchasedBundle !== undefined) {
           updates.purchasedBundle = data.purchasedBundle;
         }
         

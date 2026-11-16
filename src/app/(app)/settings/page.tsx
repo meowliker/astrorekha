@@ -1,4 +1,6 @@
 "use client";
+import { clearCustomerSessionCache } from "@/lib/session-recovery";
+import { sessionHints } from "@/lib/session-storage";
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -70,14 +72,14 @@ export default function SettingsPage() {
   const { purchasedBundle, resetUserState, unlockedFeatures } = useUserStore();
 
   const userEmail = typeof window !== "undefined" 
-    ? localStorage.getItem("astrorekha_email") || "user@example.com"
+    ? sessionHints.getItem("astrorekha_email") || "user@example.com"
     : "user@example.com";
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const flow = localStorage.getItem("astrorekha_onboarding_flow");
-      const purchaseType = localStorage.getItem("astrorekha_purchase_type");
-      const bundle = localStorage.getItem("astrorekha_bundle_id");
+      const flow = sessionHints.getItem("astrorekha_onboarding_flow");
+      const purchaseType = sessionHints.getItem("astrorekha_purchase_type");
+      const bundle = sessionHints.getItem("astrorekha_bundle_id");
       setIsFlowB(flow === "flow-b" || purchaseType === "one-time");
       setBundleId(bundle);
     }
@@ -87,10 +89,15 @@ export default function SettingsPage() {
     ? getBundleBenefits(bundleId || purchasedBundle, unlockedFeatures)
     : subscriptionBenefits;
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      const response=await fetch("/api/session/clear",{method:"POST",credentials:"include"});
+      if(!response.ok) throw new Error("Unable to sign out");
+    } catch { window.alert("Unable to sign out. Please retry."); return; }
+    clearCustomerSessionCache();
     // Clear local storage
     if (typeof window !== "undefined") {
-      localStorage.clear();
+      sessionHints.clear();
     }
     // Reset stores
     resetUserState();

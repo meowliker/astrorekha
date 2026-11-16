@@ -21,11 +21,13 @@ export async function POST(request: NextRequest) {
     const supabase = getSupabaseAdmin();
 
     // Get stored OTP
-    const { data: otpData } = await supabase
+    const { data: otpData, error: otpError } = await supabase
       .from("otp_codes")
       .select("*")
       .eq("email", normalizedEmail)
-      .single();
+      .maybeSingle();
+
+    if (otpError) return NextResponse.json({ error: "Verification is temporarily unavailable. Please retry." }, { status: 503 });
 
     if (!otpData) {
       return NextResponse.json(
@@ -52,12 +54,14 @@ export async function POST(request: NextRequest) {
     }
 
     // OTP is valid - get user data
-    const { data: userData } = await supabase
+    const { data: userData, error: userError } = await supabase
       .from("users")
       .select("*")
       .eq("email", normalizedEmail)
       .limit(1)
-      .single();
+      .maybeSingle();
+
+    if (userError) return NextResponse.json({ error: "Sign-in is temporarily unavailable. Please retry." }, { status: 503 });
 
     if (!userData) {
       return NextResponse.json(

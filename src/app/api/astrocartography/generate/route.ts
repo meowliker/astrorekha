@@ -1,3 +1,4 @@
+import { reportSessionUser } from "@/lib/report-session";
 import {customerMarket} from "@/lib/customer-market";
 import {loadWesternAccountChart} from "@/lib/us-main/western-chart";
 import {WESTERN_CHART_VERSION} from "@/lib/western-zodiac";
@@ -39,20 +40,7 @@ const CITY_COORDINATES: Record<string, { latitude: number; longitude: number; ti
   singapore: { latitude: 1.3521, longitude: 103.8198, timezone: 8 },
 };
 
-function getSessionUserId(request: NextRequest, fallbackUserId?: string | null): string | null {
-  const accessCookie = request.cookies.get("ar_access")?.value;
-  if (accessCookie && accessCookie !== "1" && accessCookie.trim()) {
-    return accessCookie.trim();
-  }
 
-  const headerUserId = request.headers.get("x-user-id")?.trim();
-  if (headerUserId) return headerUserId;
-
-  const queryUserId = request.nextUrl.searchParams.get("userId")?.trim();
-  if (queryUserId) return queryUserId;
-
-  return fallbackUserId?.trim() || null;
-}
 
 function getMonthNumber(month: string): number {
   const monthMap: Record<string, number> = {
@@ -222,7 +210,7 @@ async function fetchAstrocartographyProvider(birthData: AstrocartographyBirthDat
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({} as { force?: boolean; userId?: string }));
-  const userId = getSessionUserId(request, body?.userId);
+  const userId = reportSessionUser(request);
 
   if (!userId) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

@@ -1,3 +1,4 @@
+import { loadPaidReportProfile } from "@/lib/paid-report-profile";
 import { createHash } from "node:crypto";
 import { getBirthDateParts, getBirthTime24, type BirthDetailsInput } from "@/lib/birth-details";
 import { fetchFromAstroEngine } from "@/lib/astro-client";
@@ -25,7 +26,7 @@ export async function calculateWesternChart(input: BirthDetailsInput): Promise<{
 export async function loadWesternAccountChart(userId: string) {
   const db = getSupabaseAdmin();
   const [{data:profile,error:pe},{data:user,error:ue}] = await Promise.all([
-    db.from("user_profiles").select("*").eq("id",userId).maybeSingle(),
+    loadPaidReportProfile(userId).then(data => ({data,error:null})),
     db.from("users").select("*").eq("id",userId).maybeSingle(),
   ]);
   if(pe || ue) throw new Error("Unable to load saved birth details");

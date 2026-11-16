@@ -1,290 +1,90 @@
 "use client";
 
-import { readSessionHint, writeSessionHint, removeSessionHint } from "@/lib/session-storage";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import Link from "next/link";
+import { useUserStore, type PurchasedBundle } from "@/lib/user-store";
+import { resolveStoredUserSession } from "@/lib/session-recovery";
+import { isCustomerAccountPath } from "@/lib/customer-account-path";
+import { customerLoginPath } from "@/lib/customer-login-path";
 
-import { useCallback, useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { useUserStore } from "@/lib/user-store";
-import { useRouter } from "next/navigation";
-
-export default function UserHydrator() {
-  const { syncFromServer, setCoins, setUserId, unlockFeature, unlockAllFeatures } = useUserStore();
-  const router = useRouter();
-  const [securityModalOpen, setSecurityModalOpen] = useState(false);
-  const [securityEmail, setSecurityEmail] = useState("");
-  const [isSendingReset, setIsSendingReset] = useState(false);
-  const [resetStatusMessage, setResetStatusMessage] = useState("");
-  const [resetStatusError, setResetStatusError] = useState("");
-
-  const getSecurityPromptStorageKey = useCallback(() => {
-    if (typeof window === "undefined") return null;
-    const userId = readSessionHint("astrorekha_user_id");
-    if (!userId) return null;
-    return `astrorekha_security_update_prompt_seen_${userId}`;
-  }, []);
-
-  const hideSecurityModal = useCallback(() => {
-    setSecurityModalOpen(false);
-    const securityPromptStorageKey = getSecurityPromptStorageKey();
-    if (securityPromptStorageKey) {
-      writeSessionHint(securityPromptStorageKey, "1");
-    }
-  }, [getSecurityPromptStorageKey]);
-
-  const handleResetPassword = useCallback(async () => {
-    if (!securityEmail) return;
-
-    setIsSendingReset(true);
-    setResetStatusError("");
-    setResetStatusMessage("");
-
-    try {
-      const response = await fetch("/api/auth/send-password-reset", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: securityEmail }),
-      });
-
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok || !result?.success) {
-        throw new Error(result?.error || "Failed to send reset link");
-      }
-
-      setResetStatusMessage("Reset link sent. Please check your email inbox.");
-      const securityPromptStorageKey = getSecurityPromptStorageKey();
-      if (securityPromptStorageKey) {
-        writeSessionHint(securityPromptStorageKey, "1");
-      }
-      setTimeout(() => {
-        setSecurityModalOpen(false);
-      }, 1200);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Unable to send reset link right now. Please try again.";
-      setResetStatusError(message);
-    } finally {
-      setIsSendingReset(false);
-    }
-  }, [securityEmail, getSecurityPromptStorageKey]);
+/** Mount report screens only after the server has restored this browser's paid account. */
+export default function UserHydrator({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  if(!isCustomerAccountPath(pathname)) return <>{children}</>;
+  return <CustomerAccountGate pathname={pathname}>{children}</CustomerAccountGate>;
+}
+function CustomerAccountGate({children, pathname}: {children:ReactNode;pathname:string}) {
+  const [state, setState] = useState<"loading" | "ready" | "signed_out" | "error">("loading");
+  const [accountId, setAccountId] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
+  const [loginPath, setLoginPath] = useState("/login?next=/reports");
+  const busy = useRef(false);
+  const generation = useRef(0);
 
   const hydrate = useCallback(async () => {
-    const storedId = readSessionHint("astrorekha_user_id");
-    const storedEmail = (
-      readSessionHint("astrorekha_email") ||
-      readSessionHint("astrorekha_checkout_email") ||
-      ""
-    ).trim().toLowerCase();
-
-
-    let userId = storedId || "";
-
+    if (busy.current) return;
+    busy.current = true;
+    const attempt = generation.current;
     try {
-      let data = null;
-      let error = null;
-
-      const sessionResponse = await fetch("/api/auth/session", { cache: "no-store" });
-      if (sessionResponse.ok) {
-        data = (await sessionResponse.json()).user;
-      } else if (sessionResponse.status !== 401) {
-        // A transient backend failure must not clear a valid browser session.
+      const user = await resolveStoredUserSession(true);
+      if (attempt !== generation.current) return;
+      if (!user) {
+        useUserStore.getState().resetUserState();
+        setAccountId(null);
+        setState("signed_out");
         return;
       }
-      if (!data && !storedId && !storedEmail) return;
-      if (!data && storedEmail) {
-        const result = await supabase
-          .from("users")
-          .select("*")
-          .eq("email", storedEmail)
-          .maybeSingle();
-        data = result.data;
-        error = result.error;
-      }
-
-      if (!data && userId) {
-        const result = await supabase
-          .from("users")
-          .select("*")
-          .eq("id", userId)
-          .maybeSingle();
-        data = result.data;
-        error = result.error;
-      }
-
-      // User not found in database - clear localStorage and redirect to login
-      if (error) return;
-      if (!data) {
-        console.warn("User not found in database, clearing session");
-        [
-          "astrorekha_user_id",
-          "astrorekha_email",
-          "astrorekha_checkout_email",
-          "astrorekha_password",
-          "astrorekha_onboarding_flow",
-          "astrorekha_layout_variant",
-          "astrorekha_purchase_type",
-          "astrorekha_payment_completed",
-          "astrorekha_registration_completed",
-          "astrorekha_bundle_id",
-          "astrorekha_selected_plan",
-          "astrorekha_pending_payu_payment",
-        ].forEach((key) => removeSessionHint(key));
-        
-        // Clear session cookie
-        await fetch("/api/session/clear", { method: "POST" });
-        
-        // Redirect to welcome
-        router.replace("/");
-        return;
-      }
-
-      userId = data.id;
-      if (data.id !== storedId) {
-        writeSessionHint("astrorekha_user_id", data.id);
-      }
-      if (data.email && data.email !== storedEmail) {
-        const normalizedEmail = String(data.email).trim().toLowerCase();
-        writeSessionHint("astrorekha_email", normalizedEmail);
-        writeSessionHint("astrorekha_checkout_email", normalizedEmail);
-      }
-
-      setUserId(userId);
-
-      // Backfill timezone for existing users who don't have it set
-      if (!data.timezone) {
-        try {
-          const detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-          if (detectedTz) {
-            await supabase.from("users").update({ timezone: detectedTz }).eq("id", userId);
-          }
-        } catch {}
-      }
-
-      if (typeof data.coins === "number") {
-        setCoins(data.coins);
-      }
-
-      // Show post-login security update prompt only for affected users.
-      if (Object.prototype.hasOwnProperty.call(data, "password_hash") && !data.password_hash && data.email) {
-        setSecurityEmail(String(data.email).trim().toLowerCase());
-        const securityPromptStorageKey = getSecurityPromptStorageKey();
-        const hasSeenPrompt = securityPromptStorageKey
-          ? readSessionHint(securityPromptStorageKey) === "1"
-          : false;
-        if (!hasSeenPrompt) {
-          setSecurityModalOpen(true);
-        }
-      }
-
-      if (data.is_dev_tester === true) {
-        unlockAllFeatures();
-        setCoins(typeof data.coins === "number" ? data.coins : 999999);
-        return;
-      }
-
-      // Sync unlocked features from server
-      const unlocked = data.unlocked_features || {};
-      syncFromServer({
-        unlockedFeatures: unlocked,
-        coins: data.coins,
-        purchasedBundle: data.bundle_purchased || null,
-      });
-
-      const hasPalmReading = !!unlocked.palmReading;
-      const hasPrediction2026 = !!unlocked.prediction2026;
-      const hasBirthChart = !!unlocked.birthChart;
-      const hasCompatibility = !!unlocked.compatibilityTest;
-      const hasSoulmateSketch = !!unlocked.soulmateSketch;
-      const hasFuturePartnerReport = !!unlocked.futurePartnerReport;
-      const hasVastuShastraGuide = !!unlocked.vastuShastraGuide;
-      const hasAuraColorReport = !!unlocked.auraColorReport;
-      const hasAstrocartographyReport = !!unlocked.astrocartographyReport;
-      const hasPastLifeReport = !!unlocked.pastLifeReport;
-      const hasNumerologyReport = !!unlocked.numerologyReport;
-      const hasSpiritAnimalReport = !!unlocked.spiritAnimalReport;
-
-      if (hasPalmReading) unlockFeature("palmReading");
-      if (hasPrediction2026) unlockFeature("prediction2026");
-      if (hasBirthChart) unlockFeature("birthChart");
-      if (hasCompatibility) unlockFeature("compatibilityTest");
-      if (hasSoulmateSketch) unlockFeature("soulmateSketch");
-      if (hasFuturePartnerReport) unlockFeature("futurePartnerReport");
-      if (hasVastuShastraGuide) unlockFeature("vastuShastraGuide");
-      if (hasAuraColorReport) unlockFeature("auraColorReport");
-      if (hasAstrocartographyReport) unlockFeature("astrocartographyReport");
-      if (hasPastLifeReport) unlockFeature("pastLifeReport");
-      if (hasNumerologyReport) unlockFeature("numerologyReport");
-      if (hasSpiritAnimalReport) unlockFeature("spiritAnimalReport");
-    } catch (err) {
-      console.error("Failed to hydrate user:", err);
-    }
-  }, [syncFromServer, setCoins, setUserId, unlockAllFeatures, unlockFeature, getSecurityPromptStorageKey, router]);
+      const store = useUserStore.getState();
+      if (store.userId !== user.id) store.resetUserState();
+      store.setUserId(user.id);
+      store.syncFromServer({ unlockedFeatures: user.unlocked_features, coins: user.coins,
+        purchasedBundle: (user.bundle_purchased || null) as PurchasedBundle,
+        palmReading:user.palm_reading,birthChart:user.birth_chart,compatibilityTest:user.compatibility_test,
+        prediction2026:user.prediction_2026,soulmateSketch:user.soulmate_sketch,futurePartnerReport:user.future_partner_report,
+        vastuShastraGuide:user.vastu_shastra_guide,auraColorReport:user.aura_color_report,pastLifeReport:user.past_life_report,
+        numerologyReport:user.numerology_report,spiritAnimalReport:user.spirit_animal_report });
+      if (user.is_dev_tester === true) store.unlockAllFeatures();
+      setAccountId(user.id);
+      setMessage("");
+      setState("ready");
+    } catch {
+      if (attempt !== generation.current) return;
+      setMessage("We couldn’t load your account. Please retry. Your purchases and saved reports have not changed.");
+      // A temporary outage must not log out a verified customer or discard their answers.
+      setState(previous => previous === "ready" ? "ready" : "error");
+    } finally { if(attempt === generation.current) busy.current = false; }
+  }, []);
 
   useEffect(() => {
-    // Hydrate immediately on mount
-    hydrate();
-
-    const onPageShow = () => hydrate();
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") hydrate();
-    };
-
-    window.addEventListener("pageshow", onPageShow);
-    document.addEventListener("visibilitychange", onVisibility);
-
+    setLoginPath(customerLoginPath(window.location.pathname + window.location.search));
+    void hydrate();
+    const onShow = () => { void hydrate(); };
+    const onVisible = () => { if (document.visibilityState === "visible") void hydrate(); };
+    window.addEventListener("pageshow", onShow);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
-      window.removeEventListener("pageshow", onPageShow);
-      document.removeEventListener("visibilitychange", onVisibility);
+      generation.current += 1;
+      busy.current = false;
+      window.removeEventListener("pageshow", onShow);
+      document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [hydrate]);
+  }, [hydrate, pathname]);
 
-  return (
-    <>
-      {securityModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-5">
-          <div className="w-full max-w-md rounded-2xl border border-white/15 bg-[#151c2f] p-5 shadow-2xl">
-            <h3 className="text-xl font-bold text-white">Important Account Update</h3>
-            <p className="mt-2 text-sm leading-relaxed text-white/75">
-              We&apos;ve updated our security and usage terms. Please reset your password once and review your profile details to continue smoothly.
-            </p>
-
-            {resetStatusMessage && (
-              <div className="mt-3 rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
-                {resetStatusMessage}
-              </div>
-            )}
-            {resetStatusError && (
-              <div className="mt-3 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-                {resetStatusError}
-              </div>
-            )}
-
-            <div className="mt-5 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleResetPassword}
-                disabled={isSendingReset}
-                className="flex-1 rounded-xl bg-gradient-to-r from-[#f43f5e] to-[#a855f7] px-4 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isSendingReset ? "Sending..." : "Reset Password"}
-              </button>
-              <button
-                type="button"
-                onClick={hideSecurityModal}
-                className="rounded-xl border border-white/20 px-4 py-3 text-sm font-semibold text-white/85 transition-colors hover:bg-white/10"
-              >
-                Later
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => router.push("/profile/edit")}
-              className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white/80 transition-colors hover:bg-white/10"
-            >
-              Review Profile Details
-            </button>
-          </div>
-        </div>
-      )}
-    </>
-  );
+  if (state === "ready") return <Fragment key={accountId}>
+    {message && <div role="status" className="p-3 text-sm text-center text-white/70">{message} <button className="underline" onClick={() => void hydrate()}>Retry</button></div>}
+    {children}
+  </Fragment>;
+  return <div className="min-h-[70vh] flex items-center justify-center p-6">
+    <div className="max-w-md text-center space-y-4">
+      {state === "loading" ? <p role="status">Loading your account and reports…</p> : state === "signed_out" ? <>
+        <h1 className="text-2xl font-semibold">Sign in to your reports</h1>
+        <p className="text-white/60">Use the email you entered at checkout. If you paid without setting a password, choose email code on the sign-in page.</p>
+        <Link href={loginPath} className="inline-block rounded-xl bg-primary px-6 py-3 text-white">Sign in and continue</Link>
+      </> : <>
+        <p role="alert" className="text-white/70">{message}</p>
+        <button className="rounded-xl bg-primary px-6 py-3 text-white" onClick={() => { setState("loading"); void hydrate(); }}>Retry</button>
+      </>}
+    </div>
+  </div>;
 }

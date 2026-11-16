@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 import {accountWesternSigns} from "@/lib/account-zodiac-client";
 
 import ReportInfoButton from "@/components/ReportInfoButton";
@@ -52,7 +53,7 @@ export default function Prediction2026Page() {
     try {
       const westernSigns = await accountWesternSigns();
       if(westernSigns){setZodiacSign(westernSigns.sun);return;}
-      const userId = localStorage.getItem("astrorekha_user_id");
+      const userId = sessionHints.getItem("astrorekha_user_id");
       if (userId) {
         const { data: dbUser } = await supabase.from("users").select("sun_sign").eq("id", userId).single();
         if (dbUser?.sun_sign) {

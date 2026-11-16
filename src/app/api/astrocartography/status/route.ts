@@ -1,3 +1,4 @@
+import { reportSessionUser } from "@/lib/report-session";
 import {customerMarket} from "@/lib/customer-market";
 import {loadWesternAccountChart} from "@/lib/us-main/western-chart";
 import {WESTERN_CHART_VERSION} from "@/lib/western-zodiac";
@@ -14,26 +15,13 @@ function jsonNoStore(body: unknown, init?: ResponseInit) {
   return response;
 }
 
-function getSessionUserId(request: NextRequest): string | null {
-  const accessCookie = request.cookies.get("ar_access")?.value;
-  if (accessCookie && accessCookie !== "1" && accessCookie.trim()) {
-    return accessCookie.trim();
-  }
 
-  const headerUserId = request.headers.get("x-user-id")?.trim();
-  if (headerUserId) return headerUserId;
-
-  const queryUserId = request.nextUrl.searchParams.get("userId")?.trim();
-  if (queryUserId) return queryUserId;
-
-  return null;
-}
 
 export async function GET(request: NextRequest) {
   noStore();
 
   try {
-    const userId = getSessionUserId(request);
+    const userId = reportSessionUser(request);
     if (!userId) {
       return jsonNoStore({ error: "unauthorized" }, { status: 401 });
     }

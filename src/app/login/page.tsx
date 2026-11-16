@@ -1,6 +1,8 @@
 "use client";
 
 import { readSessionHint, writeSessionHint, saveLoginUserId } from "@/lib/session-storage";
+import { customerReturnPath } from "@/lib/customer-login-path";
+import { clearCustomerSessionCache } from "@/lib/session-recovery";
 import { getErrorMessage } from "@/lib/error-message";
 
 
@@ -8,6 +10,7 @@ import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { PurchasePasswordChoice } from "@/components/PurchasePasswordChoice";
 import { ArrowLeft, Mail, Lock, Eye, EyeOff, Loader2, X, KeyRound, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ASTROREKHA_ASSETS } from "@/lib/assets";
@@ -21,6 +24,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [purchaseVerified, setPurchaseVerified] = useState(false);
   
   // OTP Modal states
   const [showOtpModal, setShowOtpModal] = useState(false);
@@ -38,6 +42,14 @@ export default function LoginPage() {
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotError, setForgotError] = useState("");
   const [forgotSuccess, setForgotSuccess] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/auth/purchase-access", {credentials:"include",cache:"no-store"})
+      .then(r => r.ok ? r.json() : null).then(data => {if(active && data?.verified)setPurchaseVerified(true);})
+      .catch(() => {});
+    return () => {active=false;};
+  }, []);
 
   // User not found state
   const [showUserNotFound, setShowUserNotFound] = useState(false);
@@ -89,7 +101,9 @@ export default function LoginPage() {
             setError("Incorrect password. Please try again.");
             break;
           case "auth/no-password":
-            setError("This account uses OTP login. Please use the OTP option.");
+            setOtpEmail(email.trim().toLowerCase());
+            setShowOtpModal(true);
+            setError("Use an email code to open your existing account. No password is needed.");
             break;
           default:
             setError(data.message || "Login failed. Please check your credentials.");
@@ -97,6 +111,12 @@ export default function LoginPage() {
         return;
       }
 
+      if (data.requiresPasswordSetup) {
+        setPassword("");
+        clearCustomerSessionCache();
+        setPurchaseVerified(true);
+        return;
+      }
       const user = data.user;
       
       // Save user info to localStorage
@@ -132,7 +152,8 @@ export default function LoginPage() {
       }
       
       // Redirect to dashboard
-      router.push(["/witch-archetype", "/coupon-checkout", "/soulmate-sketch"].includes(new URLSearchParams(window.location.search).get("next") || "") ? new URLSearchParams(window.location.search).get("next")! : "/reports");
+      clearCustomerSessionCache();
+      router.push(customerReturnPath(new URLSearchParams(window.location.search).get("next")));
     } catch (err) {
       console.error("Login error:", err);
       setError("Login failed. Please check your credentials.");
@@ -254,7 +275,8 @@ export default function LoginPage() {
         console.error("Failed to set session:", err);
       }
 
-      router.push(["/witch-archetype", "/coupon-checkout", "/soulmate-sketch"].includes(new URLSearchParams(window.location.search).get("next") || "") ? new URLSearchParams(window.location.search).get("next")! : "/reports");
+      clearCustomerSessionCache();
+      router.push(customerReturnPath(new URLSearchParams(window.location.search).get("next")));
     } catch (err) {
       console.error("OTP verify error:", err);
       setOtpError(getErrorMessage(err) || "Invalid OTP. Please try again.");
@@ -321,6 +343,7 @@ export default function LoginPage() {
 
   return (
     <>
+      {purchaseVerified && <PurchasePasswordChoice />}
       <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
         <div className="w-full max-w-md h-screen bg-[#0A0E1A] overflow-hidden shadow-2xl shadow-black/50 flex flex-col relative">
           {/* Starry background */}
@@ -475,6 +498,7 @@ export default function LoginPage() {
             Sign in with a code
           </button>
         </motion.div>
+
 
         {/* Sign Up Link */}
         <motion.div

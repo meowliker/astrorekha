@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 import { getErrorMessage } from "@/lib/error-message";
 
 
@@ -116,7 +117,7 @@ export default function AuraColorPage() {
       try {
         setLoading(true);
         setError("");
-        const localUserId = localStorage.getItem("astrorekha_user_id") || "";
+        const localUserId = sessionHints.getItem("astrorekha_user_id") || "";
         setUserId(localUserId);
 
         if (!localUserId) {

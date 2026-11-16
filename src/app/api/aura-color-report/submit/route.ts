@@ -1,3 +1,4 @@
+import { reportSessionUser } from "@/lib/report-session";
 
 import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
@@ -68,22 +69,12 @@ async function fetchTemplateReport({
   };
 }
 
-function getSessionUserId(request: NextRequest): string | null {
-  const accessCookie = request.cookies.get("ar_access")?.value;
-  if (accessCookie && accessCookie !== "1" && accessCookie.trim()) {
-    return accessCookie.trim();
-  }
 
-  const headerUserId = request.headers.get("x-user-id")?.trim();
-  if (headerUserId) return headerUserId;
-
-  return null;
-}
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
-    const userId = getSessionUserId(request) || String(body?.userId || "").trim();
+    const userId = reportSessionUser(request);
     const answers = Array.isArray(body?.answers) ? (body.answers as AuraAnswer[]) : [];
 
     if (!userId) {

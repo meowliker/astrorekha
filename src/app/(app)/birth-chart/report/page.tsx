@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 
 import ReportInfoButton from "@/components/ReportInfoButton";
 
@@ -34,8 +35,8 @@ type ScreenState = "loading" | "ready" | "needs_birth_chart" | "error";
 function getUserId(): string {
   if (typeof window === "undefined") return "";
   return (
-    localStorage.getItem("astrorekha_user_id") ||
-    localStorage.getItem("astrorekha_anon_id") ||
+    sessionHints.getItem("astrorekha_user_id") ||
+    sessionHints.getItem("astrorekha_anon_id") ||
     ""
   );
 }

@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 import type * as Three from "three";
 import type { Topology, GeometryCollection } from "topojson-specification";
 import type { Geometry, Position } from "geojson";
@@ -185,7 +186,7 @@ export default function AstrocartographyPage() {
       try {
         setLoading(true);
         setError("");
-        const localUserId = localStorage.getItem("astrorekha_user_id") || "";
+        const localUserId = sessionHints.getItem("astrorekha_user_id") || "";
         setUserId(localUserId);
 
         if (!localUserId) {

@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 
 import ReportInfoButton from "@/components/ReportInfoButton";
 
@@ -437,8 +438,8 @@ export default function NumerologyPage() {
     try {
       setLoading(true);
       setError("");
-      const userId = localStorage.getItem("astrorekha_user_id") || "";
-      const fallbackName = localStorage.getItem("astrorekha_name") || "";
+      const userId = sessionHints.getItem("astrorekha_user_id") || "";
+      const fallbackName = sessionHints.getItem("astrorekha_name") || "";
       let resolved: NumerologyDetailsFormState | null = null;
       let hasPersistedBirthDate = false;
 
@@ -509,8 +510,8 @@ export default function NumerologyPage() {
     try {
       setSaving(true);
       setError("");
-      const userId = localStorage.getItem("astrorekha_user_id") || "";
-      const email = (localStorage.getItem("astrorekha_email") || "").trim().toLowerCase();
+      const userId = sessionHints.getItem("astrorekha_user_id") || "";
+      const email = (sessionHints.getItem("astrorekha_email") || "").trim().toLowerCase();
       const birthPayload = {
         birth_month: details.birthMonth,
         birth_day: details.birthDay,
@@ -518,7 +519,7 @@ export default function NumerologyPage() {
         updated_at: new Date().toISOString(),
       };
 
-      localStorage.setItem("astrorekha_name", input.name);
+      sessionHints.setItem("astrorekha_name", input.name);
       setBirthDate(details.birthMonth, details.birthDay, details.birthYear);
 
       if (userId) {

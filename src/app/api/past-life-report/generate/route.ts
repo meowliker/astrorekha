@@ -1,3 +1,4 @@
+import { reportSessionUser } from "@/lib/report-session";
 import {customerMarket} from "@/lib/customer-market";
 import {loadWesternAccountChart} from "@/lib/us-main/western-chart";
 import {WESTERN_CHART_VERSION} from "@/lib/western-zodiac";
@@ -13,19 +14,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-function getSessionUserId(request: NextRequest): string | null {
-  const accessCookie = request.cookies.get("ar_access")?.value;
-  if (!accessCookie) return null;
 
-  if (accessCookie && accessCookie !== "1" && accessCookie.trim()) {
-    return accessCookie.trim();
-  }
-
-  const headerUserId = request.headers.get("x-user-id")?.trim();
-  if (headerUserId) return headerUserId;
-
-  return null;
-}
 
 function getBirthDateFromProfile(userProfile: StoredProfile | null, user: StoredProfile | null): string | null {
   const parts = getBirthDateParts({
@@ -181,7 +170,7 @@ async function getPastLifeChartData(
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({} as { force?: boolean }));
-  const userId = getSessionUserId(request);
+  const userId = reportSessionUser(request);
 
   if (!userId) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

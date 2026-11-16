@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -59,7 +60,7 @@ export default function EditProfilePage() {
   const loadUserProfile = async () => {
     setIsLoading(true);
     try {
-      const storedId = localStorage.getItem("astrorekha_user_id");
+      const storedId = sessionHints.getItem("astrorekha_user_id");
       const userId = storedId;
 
       if (!userId) {
@@ -98,7 +99,7 @@ export default function EditProfilePage() {
           setKnowsBirthTime(profileData.knows_birth_time);
         }
       } else {
-        const savedName = localStorage.getItem("astrorekha_name");
+        const savedName = sessionHints.getItem("astrorekha_name");
         if (savedName) setLocalName(savedName);
       }
     } catch (error) {
@@ -133,7 +134,7 @@ export default function EditProfilePage() {
       switch (field) {
         case "name":
           setLocalName(value);
-          localStorage.setItem("astrorekha_name", value);
+          sessionHints.setItem("astrorekha_name", value);
           break;
         case "gender":
           setGender(value as Parameters<typeof setGender>[0]);
@@ -155,7 +156,7 @@ export default function EditProfilePage() {
       }
 
       // Save to Supabase
-      const userId = localStorage.getItem("astrorekha_user_id");
+      const userId = sessionHints.getItem("astrorekha_user_id");
       if (userId) {
         
         // Determine the new birth details
@@ -267,7 +268,7 @@ export default function EditProfilePage() {
 
   const handleDeleteAccount = async () => {
     // Verify password (simple check - in production, verify against Supabase Auth)
-    const storedPassword = localStorage.getItem("astrorekha_password");
+    const storedPassword = sessionHints.getItem("astrorekha_password");
     if (storedPassword && deletePassword !== storedPassword) {
       setDeleteError("Incorrect password. Please try again.");
       return;
@@ -277,8 +278,8 @@ export default function EditProfilePage() {
     setDeleteError("");
     
     try {
-      const userId = localStorage.getItem("astrorekha_user_id");
-      const userEmail = localStorage.getItem("astrorekha_email");
+      const userId = sessionHints.getItem("astrorekha_user_id");
+      const userEmail = sessionHints.getItem("astrorekha_email");
       
       // Step 1: Delete from Supabase
       if (userId) {
@@ -287,7 +288,7 @@ export default function EditProfilePage() {
       }
       
       // Step 3: Clear all local data
-      localStorage.clear();
+      sessionHints.clear();
       
       // Step 4: Reset stores
       resetUserState();

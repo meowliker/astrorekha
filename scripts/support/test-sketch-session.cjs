@@ -36,11 +36,11 @@ const allText=t=>JSON.stringify(t.toJSON());
 const childText=x=>typeof x==='string'?x:Array.isArray(x)?x.map(childText).join(' '):x?.props?childText(x.props.children):'';
 async function mount(){let t;await act(async()=>{t=create(React.createElement(Page));await new Promise(r=>setTimeout(r,15))});return t}
 (async()=>{
- const {saveLoginUserId}=require('../../src/lib/session-storage');
+ const {saveLoginUserId,clearSessionHints}=require('../../src/lib/session-storage');
  storage.set('astrorekha_user_id','prior-user');storage.set('astrorekha_soulmate_answers','{"vibe":"saved"}');
  global.localStorage.removeItem=k=>storage.delete(k);
  saveLoginUserId('paid-user');assert.equal(storage.get('astrorekha_soulmate_answers:prior-user'),'{"vibe":"saved"}');assert.ok(!storage.has('astrorekha_soulmate_answers'));
- storageBlocked=true;saveLoginUserId('paid-user');storageBlocked=false;storage=new Map();
+ storageBlocked=true;saveLoginUserId('paid-user');storageBlocked=false;clearSessionHints();storage=new Map();
  const {NextRequest}=require('next/server');
  const {createReportSession}=require('../../src/lib/report-session');
  const session=require('../../src/app/api/auth/session/route').GET;
@@ -61,7 +61,7 @@ async function mount(){let t;await act(async()=>{t=create(React.createElement(Pa
  res=await saveRoute(new NextRequest('https://astrorekha.com/api/soulmate-sketch/answers?userId=anon_qa',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({answers})}));assert.equal(res.status,200);assert.equal(tables.soulmate_sketches[0].user_id,'anon_qa');
  let tree=await mount();assert.ok(hydrated.unlockedFeatures.soulmateSketch);assert.ok(!allText(tree).includes('Please login again'));assert.ok(requests.some(r=>r.url==='/api/soulmate-sketch/status'));await act(()=>tree.unmount());
  storageBlocked=true;tree=await mount();assert.ok(!allText(tree).includes('Unable to load soulmate'));await act(()=>tree.unmount());storageBlocked=false;
- storage=new Map([['astrorekha_soulmate_answers',JSON.stringify(answers)]]);requests=[];tree=await mount();
+ clearSessionHints();storage=new Map([['astrorekha_soulmate_answers',JSON.stringify(answers)]]);requests=[];tree=await mount();
  const generate=tree.root.findAllByType('button').find(b=>childText(b.props.children).includes('Generate'));assert.ok(generate,'saved answers reach Generate');await act(async()=>{await generate.props.onClick()});assert.ok(requests.some(r=>r.url==='/api/soulmate-sketch/answers'));assert.ok(requests.some(r=>r.url==='/api/soulmate-sketch/generate'));assert.ok(requests.every(r=>!r.url.includes('userId=')));await act(()=>tree.unmount());
  requests=[];saveStatus=500;tree=await mount();await act(async()=>{await tree.root.findAllByType('button').find(b=>childText(b.props.children).includes('Generate')).props.onClick()});assert.ok(!requests.some(r=>r.url.includes('/generate')));assert.ok(allText(tree).includes('could not be saved'));await act(()=>tree.unmount());saveStatus=200;
  sessionStatus=401;tree=await mount();assert.ok(allText(tree).includes('Sign in and continue'));assert.ok(storage.has('astrorekha_soulmate_answers:paid-user'));await act(()=>tree.root.findAllByType('button')[0].props.onClick());assert.equal(router.last,'/login?next=/soulmate-sketch');await act(()=>tree.unmount());sessionStatus=200;

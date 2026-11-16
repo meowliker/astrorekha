@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -60,7 +61,7 @@ export default function SpiritAnimalPage() {
   useEffect(() => {
     const boot = async () => {
       try {
-        const localUserId = localStorage.getItem("astrorekha_user_id") || "";
+        const localUserId = sessionHints.getItem("astrorekha_user_id") || "";
         setUserId(localUserId);
         if (!localUserId) throw new Error("Please log in again to continue.");
         await fetchStatus(localUserId);

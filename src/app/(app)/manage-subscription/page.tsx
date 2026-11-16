@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
@@ -36,7 +37,7 @@ export default function ManageSubscriptionPage() {
 
   useEffect(() => {
     const fetchPurchaseInfo = async () => {
-      const userId = localStorage.getItem("astrorekha_user_id");
+      const userId = sessionHints.getItem("astrorekha_user_id");
       if (!userId) return;
 
       const { data } = await supabase

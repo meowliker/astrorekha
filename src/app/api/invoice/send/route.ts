@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildCombinedOrderInvoice, sendCombinedOrderInvoiceEmail } from "@/lib/order-invoice";
+import { queueInvoiceConfirmation } from "@/lib/purchase-access/invoice";
 import { sendInvoiceDeliveryWhatsapp } from "@/lib/whatsapp-invoice";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +38,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invoice not found for this customer" }, { status: 404 });
     }
 
-    const sentInvoice = await sendCombinedOrderInvoiceEmail(txnIds);
+    const queued = await queueInvoiceConfirmation(invoice);
+    const sentInvoice = queued ? invoice : await sendCombinedOrderInvoiceEmail(txnIds);
     const whatsappResult = await sendInvoiceDeliveryWhatsapp(sentInvoice, txnIds).catch((error) => {
       console.error("[invoice/send] whatsapp invoice failed:", error);
       return { success: false, status: "failed" as const, reason: "unexpected_error" };
@@ -45,6 +47,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      emailQueued: queued,
       invoiceNumber: sentInvoice.invoiceNumber,
       itemCount: sentInvoice.items.length,
       total: sentInvoice.total,

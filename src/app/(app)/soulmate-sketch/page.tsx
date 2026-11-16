@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 
 import ReportInfoButton from "@/components/ReportInfoButton";
 
@@ -90,14 +91,14 @@ export default function SoulmateSketchPage() {
         // Browser storage is only a recoverable draft, never authentication.
         let localAnswers: Record<string, string> = {};
         try {
-          const previousId = localStorage.getItem("astrorekha_user_id");
-          const scoped = localStorage.getItem(`${ANSWERS_STORAGE_KEY}:${user.id}`);
-          const legacy = (!previousId || previousId === user.id) ? localStorage.getItem(ANSWERS_STORAGE_KEY) : null;
+          const previousId = sessionHints.getItem("astrorekha_user_id");
+          const scoped = sessionHints.getItem(`${ANSWERS_STORAGE_KEY}:${user.id}`);
+          const legacy = (!previousId || previousId === user.id) ? sessionHints.getItem(ANSWERS_STORAGE_KEY) : null;
           const parsed = JSON.parse(scoped || legacy || "{}");
           if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
             localAnswers = Object.fromEntries(Object.entries(parsed).filter(([, value]) => typeof value === "string")) as Record<string, string>;
           }
-          localStorage.setItem("astrorekha_user_id", user.id);
+          sessionHints.setItem("astrorekha_user_id", user.id);
         } catch { /* Storage may be unavailable; the verified session still works. */ }
         const [cfgResponse, statusResponse] = await Promise.all([
           fetch("/api/ab-test/layout-config", { cache: "no-store" }),
@@ -120,7 +121,7 @@ export default function SoulmateSketchPage() {
 
   useEffect(() => {
     if (loading || !userId) return;
-    try { localStorage.setItem(`${ANSWERS_STORAGE_KEY}:${userId}`, JSON.stringify(answers)); }
+    try { sessionHints.setItem(`${ANSWERS_STORAGE_KEY}:${userId}`, JSON.stringify(answers)); }
     catch { /* Server-side saving remains available. */ }
   }, [answers, loading, userId]);
 

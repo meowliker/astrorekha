@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 import { getErrorMessage } from "@/lib/error-message";
 
 
@@ -125,7 +126,7 @@ export default function FuturePartnerPage() {
     const boot = async () => {
       try {
         setLoading(true);
-        const localUserId = localStorage.getItem("astrorekha_user_id") || "";
+        const localUserId = sessionHints.getItem("astrorekha_user_id") || "";
         setUserId(localUserId);
 
         if (!localUserId) {

@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 import {accountWesternSigns} from "@/lib/account-zodiac-client";
 import type {WesternChart} from "@/lib/western-zodiac";
 import type { BirthChartData } from "@/lib/birth-chart-data";
@@ -373,7 +374,7 @@ export default function PartnerCompatibilityPage() {
           if(!response.ok) throw new Error(result.error);
           setUserMoonPhase(westernMoonPhase(result.data)); return;
         }
-        const userId = localStorage.getItem("astrorekha_user_id");
+        const userId = sessionHints.getItem("astrorekha_user_id");
         if (!userId) {
           setUserMoonSign(null);
           return;

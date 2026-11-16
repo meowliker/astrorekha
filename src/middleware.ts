@@ -1,3 +1,4 @@
+import { customerLoginPath } from "@/lib/customer-login-path";
 import { type NextRequest, NextResponse } from "next/server";
 
 const ATTRIBUTION_KEYS = [
@@ -86,7 +87,9 @@ export async function middleware(request: NextRequest) {
     if (!hasAccess) {
       // Keep campaign parameters visible and available after redirecting to the landing page.
       const landingUrl = request.nextUrl.clone();
-      landingUrl.pathname = "/";
+      const login = new URL(customerLoginPath(request.nextUrl.pathname + request.nextUrl.search), request.url);
+      landingUrl.pathname = login.pathname;
+      landingUrl.search = login.search;
       return withAttribution(request, NextResponse.redirect(landingUrl));
     }
   }

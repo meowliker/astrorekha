@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 import type { PalmReadingData } from "@/lib/palm-reading-data";
 
 
@@ -90,7 +91,7 @@ export default function PalmReadingPage() {
         return;
       }
       // Recover the account's stored photo on any device, for both onboarding flows.
-      const savedPalmImage = result.image || localStorage.getItem("astrorekha_palm_image");
+      const savedPalmImage = result.image || sessionHints.getItem("astrorekha_palm_image");
       if(savedPalmImage) {
         setCapturedImage(savedPalmImage);
         setLoading(false);

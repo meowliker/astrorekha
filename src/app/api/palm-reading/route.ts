@@ -1,3 +1,4 @@
+import { loadPaidReportProfile } from "@/lib/paid-report-profile";
 import { NextRequest, NextResponse } from "next/server";
 import { reportSessionUser } from "@/lib/report-session";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -136,7 +137,7 @@ export async function GET(request: NextRequest) {
     const db=getSupabaseAdmin();
     const [saved,profile]=await Promise.all([
       db.from("palm_readings").select("reading,palm_image_url,birth_date,deleted_at").eq("id",userId).maybeSingle(),
-      db.from("user_profiles").select("palm_image,birth_year,birth_month,birth_day,gender").eq("id",userId).maybeSingle()
+      loadPaidReportProfile(userId, true).then(data => ({data,error:null}))
     ]);
     if(saved.error || profile.error) throw saved.error || profile.error;
     const western = await customerMarket(userId) === "US";
@@ -157,7 +158,7 @@ export async function POST(request: NextRequest) {
     if(!userId) return NextResponse.json({success:false,error:"Sign in to your purchased account."},{status:403});
     const body = await request.json();
     const db=getSupabaseAdmin();
-    const {data:profile,error:profileError}=await db.from("user_profiles").select("palm_image,birth_year,birth_month,birth_day,gender").eq("id",userId).maybeSingle();
+    const {data:profile,error:profileError}=await loadPaidReportProfile(userId, true).then(data => ({data,error:null}));
     if(profileError) throw profileError;
     const imageData = body.imageData || profile?.palm_image;
     let birthDate = body.birthDate || (profile ? getBirthDateIso({birthYear:profile.birth_year,birthMonth:profile.birth_month,birthDay:profile.birth_day}) : "");

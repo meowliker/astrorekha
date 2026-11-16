@@ -1,3 +1,4 @@
+import { reportSessionUser } from "@/lib/report-session";
 import {loadWesternAccountChart} from "@/lib/us-main/western-chart";
 
 import type { BirthChartData, ChartPlanet, PanchangPeriod } from "@/lib/birth-chart-data";
@@ -9,22 +10,7 @@ import { getBirthDateIso, getBirthTime24 } from "@/lib/birth-details";
 import {customerMarket} from "@/lib/customer-market";
 import {WESTERN_CHART_VERSION,westernChartDetails,type WesternChart} from "@/lib/western-zodiac";
 
-function getSessionUserId(request: NextRequest, fallbackUserId?: string | null): string | null {
-  const accessCookie = request.cookies.get("ar_access")?.value;
-  if (!accessCookie) return null;
 
-  if (accessCookie !== "1" && accessCookie.trim()) {
-    return accessCookie.trim();
-  }
-
-  const headerUserId = request.headers.get("x-user-id")?.trim();
-  if (headerUserId) return headerUserId;
-
-  const queryUserId = request.nextUrl.searchParams.get("userId")?.trim();
-  if (queryUserId) return queryUserId;
-
-  return fallbackUserId?.trim() || null;
-}
 
 type KeyValue = { label: string; value: string };
 type PlanetRow = {
@@ -570,7 +556,7 @@ export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
-  const userId = getSessionUserId(request);
+  const userId = reportSessionUser(request);
 
   if (!userId) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

@@ -1,0 +1,48 @@
+const assert=require('node:assert/strict'),Module=require('node:module'),path=require('node:path');
+const resolve=Module._resolveFilename,load=Module._load;
+Module._resolveFilename=function(name,...rest){return resolve.call(this,name.startsWith('@/')?path.join(__dirname,'../src',name.slice(2)):name,...rest)};
+require('ts-node').register({transpileOnly:true,compilerOptions:{module:'CommonJS',moduleResolution:'node',jsx:'react-jsx'}});
+const React=require('react'),{create,act}=require('react-test-renderer');global.IS_REACT_ACT_ENVIRONMENT=true;
+let navigations=[],requests=[],saved=[],resumed=false,failure=false,normal=false;
+global.window={location:{search:'',assign:url=>navigations.push(url)}};
+const motion=new Proxy({},{get:(_t,tag)=>({children,...props})=>React.createElement(tag,props,children)});
+Module._load=function(name,...rest){
+ if(name==='next/navigation')return {useRouter:()=>({push:url=>navigations.push(url)})};
+ if(name==='next/image')return {__esModule:true,default:props=>React.createElement('img',props)};
+ if(name==='framer-motion')return {motion,AnimatePresence:({children})=>children};
+ if(name==='@/components/OnboardingSidebar')return {OnboardingSidebar:()=>null};
+ if(name==='@/lib/user-store')return {useUserStore:()=>({setCoins(){},setUserId(){},syncFromServer(){}})};
+ if(name==='@/lib/session-storage')return {readSessionHint:()=>'',writeSessionHint:(...args)=>saved.push(args),saveLoginUserId:()=>{}};
+ if(name==='@/lib/session-recovery')return {clearCustomerSessionCache:()=>{}};
+ return load.call(this,name,...rest);
+};
+const Login=require('../src/app/login/page').default;Module._load=load;
+global.fetch=async(url,init)=>{
+ requests.push({url,init});
+ assert.ok(['/api/auth/login','/api/auth/purchase-access','/api/auth/purchase-access/password','/api/auth/purchase-access/skip','/api/session'].includes(url),'no payment, fulfillment or purchase-event requests');
+ if(!init?.method)return Response.json({verified:resumed});
+ if(failure)return Response.json({error:'auth/invalid-code',message:'Code already used'},{status:401});
+ if(url==='/api/auth/login')return Response.json(normal?{success:true,user:{id:'owner',email:'owner@example.invalid',coins:45}}:{success:true,requiresPasswordSetup:true});
+ return Response.json({success:true});
+};
+const change=async(node,value)=>act(()=>node.props.onChange({target:{value}}));
+const click=async(node)=>act(async()=>{node.props.onClick();});
+const submit=async(node)=>act(()=>node.props.onSubmit({preventDefault(){}}));
+const button=(tree,label)=>tree.root.findAllByType('button').find(node=>node.props.children===label);
+const mount=async()=>{let tree;await act(async()=>{tree=create(React.createElement(Login),{createNodeMock:()=>({showModal(){},focus(){}})})});return tree};
+(async()=>{
+ let tree=await mount();
+ assert.equal(tree.root.findAllByProps({placeholder:'Password'}).length,1);
+ await change(tree.root.findByProps({placeholder:'Email address'}),'owner@example.invalid');
+ await change(tree.root.findByProps({placeholder:'Password'}),'ABCD2345');
+ failure=true;await submit(tree.root.findByType('form'));assert.equal(tree.root.findAllByType('dialog').length,0);assert.match(JSON.stringify(tree.toJSON()),/Code already used/);
+ failure=false;await submit(tree.root.findByType('form'));assert.equal(requests.at(-1).url,'/api/auth/login');assert.deepEqual(JSON.parse(requests.at(-1).init.body),{email:'owner@example.invalid',password:'ABCD2345'});
+ assert.equal(tree.root.findAllByType('dialog').length,1);assert.ok(!JSON.stringify(saved).includes('ABCD2345'),'confirmation code never stored as password');
+ await click(button(tree,'Set / reset password'));
+ const dialog=tree.root.findByType('dialog'),fields=dialog.findAllByProps({type:'password'});assert.equal(fields.length,2);assert.ok(fields.every(f=>f.props.autoComplete==='new-password'));
+ await change(fields[0],'NewFixturePassword123!');await change(fields[1],'NewFixturePassword123!');await submit(dialog.findByType('form'));
+ assert.equal(requests.at(-1).url,'/api/auth/purchase-access/password');assert.deepEqual(navigations,['/reports']);await act(()=>tree.unmount());
+ resumed=true;requests=[];navigations=[];tree=await mount();assert.equal(tree.root.findAllByType('dialog').length,1);await click(button(tree,'Go directly to reports'));assert.equal(requests.at(-1).url,'/api/auth/purchase-access/skip');assert.deepEqual(navigations,['/reports']);await act(()=>tree.unmount());
+ resumed=false;normal=true;requests=[];navigations=[];tree=await mount();await change(tree.root.findByProps({placeholder:'Email address'}),'owner@example.invalid');await change(tree.root.findByProps({placeholder:'Password'}),'NormalPassword123!');await submit(tree.root.findByType('form'));assert.equal(tree.root.findAllByType('dialog').length,0);assert.deepEqual(navigations,['/reports']);await act(()=>tree.unmount());
+ console.log('PASS: existing login accepts code in password field; no extra page; invalid/used code; optional password reset/skip; refreshed proof; normal password unchanged; code not stored');
+})().catch(e=>{console.error(e);process.exitCode=1});

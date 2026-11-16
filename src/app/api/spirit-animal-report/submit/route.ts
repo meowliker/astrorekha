@@ -1,3 +1,4 @@
+import { reportSessionUser } from "@/lib/report-session";
 import { NextRequest, NextResponse } from "next/server";
 import {
   buildSpiritAnimalReport,
@@ -13,14 +14,7 @@ import {
 } from "@/lib/spirit-animal-report";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
-function getSessionUserId(request: NextRequest, bodyUserId?: unknown): string | null {
-  const accessCookie = request.cookies.get("ar_access")?.value;
-  if (accessCookie && accessCookie !== "1" && accessCookie.trim()) return accessCookie.trim();
-  const headerUserId = request.headers.get("x-user-id")?.trim();
-  if (headerUserId) return headerUserId;
-  const fallback = String(bodyUserId || "").trim();
-  return fallback || null;
-}
+
 
 async function fetchReportTemplate(
   supabase: ReturnType<typeof getSupabaseAdmin>,
@@ -43,7 +37,7 @@ async function fetchReportTemplate(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
-    const userId = getSessionUserId(request, body?.userId);
+    const userId = reportSessionUser(request);
     const answers = Array.isArray(body?.answers) ? (body.answers as SpiritAnimalAnswer[]) : [];
 
     if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });

@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 import {accountWesternSigns} from "@/lib/account-zodiac-client";
 
 import { useState, useEffect } from "react";
@@ -72,10 +73,10 @@ export default function HoroscopePage() {
       const westernSigns = await accountWesternSigns();
       if(westernSigns){setSelectedSign(westernSigns.sun);setUserSign(westernSigns.sun);return;}
       const sessionUser = await resolveStoredUserSession();
-      const userId = sessionUser?.id || localStorage.getItem("astrorekha_user_id");
+      const userId = sessionUser?.id;
 
       if (userId) {
-        const userData = sessionUser || (await supabase.from("users").select("*").eq("id", userId).single()).data;
+        const userData = sessionUser;
 
         if (userData) {
           const storedSunSign = extractStoredSignName(userData.sun_sign);

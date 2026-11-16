@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 import type { StoredProfile } from "@/lib/stored-profile-types";
 
 
@@ -89,7 +90,7 @@ function AccountProfilePage({western}: {western:boolean}) {
   const loadUserData = async () => {
     setIsLoading(true);
     try {
-      const userId = localStorage.getItem("astrorekha_user_id");
+      const userId = sessionHints.getItem("astrorekha_user_id");
       let dbUser: StoredProfile | null = null;
       let profileData: StoredProfile | null = null;
       if (userId) {
@@ -163,7 +164,7 @@ function AccountProfilePage({western}: {western:boolean}) {
         birthHour: hour, birthMinute: minute, birthPeriod: period, knowsBirthTime,
         sunSign, moonSign, ascendantSign,
         name: dbUser?.name || profileData?.name || undefined,
-        email: dbUser?.email || profileData?.email || localStorage.getItem("astrorekha_email") || undefined,
+        email: dbUser?.email || profileData?.email || sessionHints.getItem("astrorekha_email") || undefined,
       });
     } catch (error) {
       console.error("Error loading user data:", error);

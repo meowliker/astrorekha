@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 import type { StoredProfile } from "@/lib/stored-profile-types";
 
 import { getErrorMessage } from "@/lib/error-message";
@@ -360,7 +361,7 @@ export default function PastLifePage() {
         setLoading(true);
         setError("");
         setNeedsBirthDetails(false);
-        const localUserId = localStorage.getItem("astrorekha_user_id") || "";
+        const localUserId = sessionHints.getItem("astrorekha_user_id") || "";
         setUserId(localUserId);
 
         if (!localUserId) {

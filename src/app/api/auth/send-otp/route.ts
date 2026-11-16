@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 
 import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
@@ -7,7 +8,7 @@ import nodemailer from "nodemailer";
 
 // Generate 6-digit OTP
 function generateOTP(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return randomInt(100000, 1000000).toString();
 }
 
 // Create email transporter
@@ -37,12 +38,14 @@ export async function POST(request: NextRequest) {
     const supabase = getSupabaseAdmin();
 
     // Check if user exists in Supabase
-    const { data: userRow } = await supabase
+    const { data: userRow, error: userError } = await supabase
       .from("users")
       .select("id")
       .eq("email", normalizedEmail)
       .limit(1)
-      .single();
+      .maybeSingle();
+
+    if (userError) return NextResponse.json({ error: "AUTH_UNAVAILABLE", message: "Sign-in is temporarily unavailable. Please retry." }, { status: 503 });
 
     const userId: string | null = userRow?.id ?? null;
 
@@ -58,7 +61,7 @@ export async function POST(request: NextRequest) {
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
     // Store OTP in Supabase (upsert by email)
-    await supabase
+    const { error: saveError } = await supabase
       .from("otp_codes")
       .upsert({
         email: normalizedEmail,
@@ -67,6 +70,8 @@ export async function POST(request: NextRequest) {
         verified: false,
         created_at: new Date().toISOString(),
       }, { onConflict: "email" });
+
+    if (saveError) return NextResponse.json({ error: "OTP_UNAVAILABLE", message: "We couldn’t prepare your email code. Please retry." }, { status: 503 });
 
     const html = `
       <!DOCTYPE html>

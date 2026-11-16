@@ -1,4 +1,5 @@
 "use client";
+import { sessionHints } from "@/lib/session-storage";
 import {accountWesternSigns} from "@/lib/account-zodiac-client";
 import type { CheckoutWidgetWindow, PayUBoltResponse, RazorpaySuccess } from "@/lib/checkout-widget-types";
 
@@ -106,7 +107,7 @@ function savePendingPayUPayment(payment: {
   bundleId?: string;
   returnTo: string;
 }) {
-  localStorage.setItem(
+  sessionHints.setItem(
     PENDING_PAYMENT_KEY,
     JSON.stringify({
       ...payment,
@@ -213,11 +214,11 @@ export default function ChatPage() {
       const endsAt = typeof data?.pass?.endsAt === "string" ? data.pass.endsAt : null;
       setUnlimitedPassEndsAt(endsAt);
 
-      const localSeen = localStorage.getItem(getUnlimitedOfferSeenKey(userId)) === "1";
+      const localSeen = sessionHints.getItem(getUnlimitedOfferSeenKey(userId)) === "1";
       const serverSeen = !!data?.shown;
       setUnlimitedOfferAlreadyShown(localSeen || serverSeen);
       if (serverSeen && !localSeen) {
-        localStorage.setItem(getUnlimitedOfferSeenKey(userId), "1");
+        sessionHints.setItem(getUnlimitedOfferSeenKey(userId), "1");
       }
 
       return data;
@@ -232,8 +233,8 @@ export default function ChatPage() {
 
     try {
       const storedEmail = String(
-        localStorage.getItem("astrorekha_email") ||
-        localStorage.getItem("astrorekha_checkout_email") ||
+        sessionHints.getItem("astrorekha_email") ||
+        sessionHints.getItem("astrorekha_checkout_email") ||
         ""
       )
         .trim()
@@ -252,13 +253,13 @@ export default function ChatPage() {
       const resolvedEmail = typeof data?.email === "string" ? data.email.trim().toLowerCase() : "";
 
       if (resolvedUserId && resolvedUserId !== userId) {
-        localStorage.setItem("astrorekha_user_id", resolvedUserId);
+        sessionHints.setItem("astrorekha_user_id", resolvedUserId);
         setCurrentUserId(resolvedUserId);
       }
 
       if (resolvedEmail && !storedEmail) {
-        localStorage.setItem("astrorekha_email", resolvedEmail);
-        localStorage.setItem("astrorekha_checkout_email", resolvedEmail);
+        sessionHints.setItem("astrorekha_email", resolvedEmail);
+        sessionHints.setItem("astrorekha_checkout_email", resolvedEmail);
       }
 
       if (typeof data?.coins === "number") {
@@ -275,9 +276,9 @@ export default function ChatPage() {
   const recordUnlimitedOfferShown = async (userId: string | null = currentUserId) => {
     if (!userId) return;
     const storageKey = getUnlimitedOfferSeenKey(userId);
-    if (localStorage.getItem(storageKey) === "1") return;
+    if (sessionHints.getItem(storageKey) === "1") return;
 
-    localStorage.setItem(storageKey, "1");
+    sessionHints.setItem(storageKey, "1");
     setUnlimitedOfferAlreadyShown(true);
     await trackMarketingEvent({
       eventName: CHAT_UNLIMITED_OFFER_EVENT_NAMES.shown,
@@ -302,7 +303,7 @@ export default function ChatPage() {
 
     const alreadyShown =
       unlimitedOfferAlreadyShown ||
-      localStorage.getItem(getUnlimitedOfferSeenKey(userId)) === "1" ||
+      sessionHints.getItem(getUnlimitedOfferSeenKey(userId)) === "1" ||
       !!status?.shown;
 
     if (!alreadyShown) {
@@ -323,7 +324,7 @@ export default function ChatPage() {
       if(!commerce.ready)throw new Error(commerce.error||'Please wait for account prices.');
       if(commerce.isUS){await startUsAccountCheckout('coins',pkg.packageId,commerce.data!.userId);return;}
       const checkoutWhatsappNumber = normalizeIndianWhatsappNumber(
-        localStorage.getItem("astrorekha_whatsapp_number")
+        sessionHints.getItem("astrorekha_whatsapp_number")
       );
       const response = await fetch("/api/payments/initiate", {
         method: "POST",
@@ -332,8 +333,8 @@ export default function ChatPage() {
           userId: generateUserId(),
           packageId: pkg.packageId,
           type: "coins",
-          email: localStorage.getItem("astrorekha_email") || "",
-          firstName: localStorage.getItem("astrorekha_name") || "Customer",
+          email: sessionHints.getItem("astrorekha_email") || "",
+          firstName: sessionHints.getItem("astrorekha_name") || "Customer",
           whatsappNumber: checkoutWhatsappNumber,
           birthDetails: useOnboardingStore.getState(),
           attribution: getPaymentAttributionPayload(),
@@ -397,11 +398,11 @@ export default function ChatPage() {
                 window.location.href = `/payment/processing?txnid=${encodeURIComponent(data.txnId)}&source=coins`;
                 return;
               }
-              localStorage.removeItem(PENDING_PAYMENT_KEY);
+              sessionHints.removeItem(PENDING_PAYMENT_KEY);
               setPurchasingPackage(null);
               window.location.reload();
             } else if (isPayUCancelOrFailure(response.response.txnStatus)) {
-              localStorage.removeItem(PENDING_PAYMENT_KEY);
+              sessionHints.removeItem(PENDING_PAYMENT_KEY);
               setPurchaseError("Payment was cancelled. You can try again whenever you're ready.");
               setPurchasingPackage(null);
             } else {
@@ -410,7 +411,7 @@ export default function ChatPage() {
           },
           catchException: (error: unknown) => {
             console.error("PayU Bolt error:", error);
-            localStorage.removeItem(PENDING_PAYMENT_KEY);
+            sessionHints.removeItem(PENDING_PAYMENT_KEY);
             setPurchaseError("Payment was cancelled. You can try again whenever you're ready.");
             setPurchasingPackage(null);
           }
@@ -434,7 +435,7 @@ export default function ChatPage() {
       if(!commerce.ready)throw new Error(commerce.error||'Please wait for account prices.');
       if(commerce.isUS){await startUsAccountCheckout('chat_pass',CHAT_UNLIMITED_PASS_ID,commerce.data!.userId);return;}
       const checkoutWhatsappNumber = normalizeIndianWhatsappNumber(
-        localStorage.getItem("astrorekha_whatsapp_number")
+        sessionHints.getItem("astrorekha_whatsapp_number")
       );
       const response = await fetch("/api/payments/initiate", {
         method: "POST",
@@ -443,8 +444,8 @@ export default function ChatPage() {
           userId: currentUserId || generateUserId(),
           packageId: CHAT_UNLIMITED_PASS_ID,
           type: CHAT_UNLIMITED_PASS_TYPE,
-          email: localStorage.getItem("astrorekha_email") || "",
-          firstName: localStorage.getItem("astrorekha_name") || "Customer",
+          email: sessionHints.getItem("astrorekha_email") || "",
+          firstName: sessionHints.getItem("astrorekha_name") || "Customer",
           whatsappNumber: checkoutWhatsappNumber,
           birthDetails: useOnboardingStore.getState(),
           attribution: getPaymentAttributionPayload(),
@@ -521,13 +522,13 @@ export default function ChatPage() {
                 window.location.href = `/payment/processing?txnid=${encodeURIComponent(data.txnId)}&source=chat_pass`;
                 return;
               }
-              localStorage.removeItem(PENDING_PAYMENT_KEY);
+              sessionHints.removeItem(PENDING_PAYMENT_KEY);
               setPurchasingUnlimitedPass(false);
               setShowUnlimitedOffer(false);
               setShowLowBalanceBubble(false);
               await refreshUnlimitedPassStatus(currentUserId || generateUserId());
             } else if (isPayUCancelOrFailure(response.response.txnStatus)) {
-              localStorage.removeItem(PENDING_PAYMENT_KEY);
+              sessionHints.removeItem(PENDING_PAYMENT_KEY);
               setPurchaseError("Payment was cancelled. You can try again whenever you're ready.");
               setPurchasingUnlimitedPass(false);
             } else {
@@ -536,7 +537,7 @@ export default function ChatPage() {
           },
           catchException: (error: unknown) => {
             console.error("PayU Bolt error:", error);
-            localStorage.removeItem(PENDING_PAYMENT_KEY);
+            sessionHints.removeItem(PENDING_PAYMENT_KEY);
             setPurchaseError("Payment was cancelled. You can try again whenever you're ready.");
             setPurchasingUnlimitedPass(false);
           }
@@ -574,13 +575,13 @@ export default function ChatPage() {
     setIsClient(true);
     
     // Load palm image from localStorage
-    const savedPalmImage = localStorage.getItem("astrorekha_palm_image");
+    const savedPalmImage = sessionHints.getItem("astrorekha_palm_image");
     if (savedPalmImage) {
       setPalmImage(savedPalmImage);
     }
 
     const loadData = async () => {
-      const userId = localStorage.getItem("astrorekha_user_id") || generateUserId();
+      const userId = sessionHints.getItem("astrorekha_user_id") || generateUserId();
       setCurrentUserId(userId);
       await refreshQuestionBalance(userId);
       refreshUnlimitedPassStatus(userId);
@@ -649,7 +650,7 @@ export default function ChatPage() {
         // Fallback: if user upgraded from anon to registered ID and old chat row still exists on anon ID,
         // load that history and migrate it to current user ID.
         if (!chatDoc) {
-          const anonId = localStorage.getItem("astrorekha_anon_id");
+          const anonId = sessionHints.getItem("astrorekha_anon_id");
           if (anonId && anonId !== userId) {
             const { data: anonChatDoc } = await supabase
               .from("chat_messages")
@@ -805,7 +806,7 @@ export default function ChatPage() {
     const unlimitedActiveForThisMessage = hasActiveUnlimitedPass;
     const initialUserId = currentUserId || generateUserId();
     const freshCoins = await refreshQuestionBalance(initialUserId);
-    const userIdForMessage = localStorage.getItem("astrorekha_user_id") || initialUserId;
+    const userIdForMessage = sessionHints.getItem("astrorekha_user_id") || initialUserId;
     const availableCoins = typeof freshCoins === "number" ? freshCoins : coins;
 
     if (!unlimitedActiveForThisMessage && availableCoins < COINS_PER_QUESTION) {
