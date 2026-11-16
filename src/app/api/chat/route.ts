@@ -4,8 +4,9 @@ import {reportSessionUser} from '@/lib/report-session';
 import type { ChatReadingContext } from "@/lib/astrology-context-types";
 import { anthropic } from "@/lib/anthropic";
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
+// Static JSON imports bundle these instructions into the server function.
+// Do not load them from process.cwd(): deployed functions may omit loose text files.
+import elysiaPrompts from "../../../../prompts/elysia.json";
 import { logClaudeUsage } from "@/lib/ai-usage-logger";
 import { ELYSIA_PRODUCT_CONTEXT } from "@/lib/elysia-product-context";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -17,6 +18,7 @@ import {
 } from "@/lib/chat-unlimited-pass";
 
 const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
+const { system: elysiaSystemPrompt, interpretationRules } = elysiaPrompts;
 const COINS_PER_QUESTION = 3;
 const SUCCESS_STATUSES = ["paid", "success", "captured"];
 const WRONG_BRAND_PATTERN = /\bPalm\s*Cosmic\b/i;
@@ -35,16 +37,6 @@ function safeProductReply(userMessage: string): string {
     return `${correction}Soulmate Sketch is an AstroRekha feature. It creates a personalized AI portrait from the preferences you shared. I can help explain how it works or discuss what stood out to you in your sketch, though I can't see the finished image in this chat.`;
   }
   return "I'm Elysia, your guide in AstroRekha. Tell me which part of your reading or report you'd like to explore, and I'll use the details available here to help.";
-}
-
-// Load prompt files from prompts/ directory
-function loadPrompt(filename: string): string {
-  try {
-    return fs.readFileSync(path.join(process.cwd(), "prompts", filename), "utf-8");
-  } catch (error) {
-    console.error(`Failed to load prompt file: ${filename}`, error);
-    return "";
-  }
 }
 
 // Build structured user context from palm + chart data so Claude can cite specific data points
@@ -490,10 +482,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Load prompt files
-    const elysiaSystemPrompt = loadPrompt("elysia_chatbot_system.txt");
-    const interpretationRules = loadPrompt("elysia_interpretation_rules.txt");
-
     // Merge natalChart data into palmReading so buildUserContext can find chart/dasha/transits
     const mergedData = {
       ...palmReading,
@@ -517,7 +505,7 @@ If the user's question is about job/career/profession:
 4) Keep the tone practical and concise.`
       : "";
 
-    // Build full system prompt with loaded prompts + user data
+    // Build full system prompt with bundled prompts + user data
     const fullSystemPrompt = `${elysiaSystemPrompt}\n\n${ELYSIA_PRODUCT_CONTEXT}\n\n${interpretationRules}${careerDirective}${getCurrentDateContext()}${FOLLOW_UP_DIRECTIVE}\n\n=== ASTROREKHA PRODUCT RULE ===\nYou are Elysia inside AstroRekha. Soulmate Sketch is an AstroRekha report. Acknowledge the user's experience with it without claiming to see the finished image or dismissing the product. Earlier assistant replies that denied the feature or used another app name were wrong. If the user challenges one of those replies, own the mistake instead of denying it.\n\n=== THIS USER'S PERSONAL DATA ===\n${structuredContext}${western ? "\n" + WESTERN_REPORT_INSTRUCTIONS + " The Birth Chart product for this account is Western, not Vedic. Ignore earlier messages or client profile signs that conflict with this chart." : ""}`;
 
     // Build messages array with chat history (last 20 messages for context)
