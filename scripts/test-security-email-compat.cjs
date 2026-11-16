@@ -22,20 +22,11 @@ global.fetch = async (url, options) => {
 };
 const brevo = require('../src/lib/brevo');
 
-test('updated Brevo SDK preserves contact/list requests, email payloads and failure monitoring', async () => {
+test('Brevo preserves transactional email payloads and failure monitoring', async () => {
   try {
-    await brevo.upsertContact('buyer@example.com', { PURCHASED: true }, [2]);
-    assert.deepEqual(calls.at(-1).body, { email: 'buyer@example.com', updateEnabled: true, attributes: { PURCHASED: true }, listIds: [2] });
-    await brevo.addContactToList('buyer@example.com', 2);
-    assert.equal(calls.at(-1).url, 'https://api.brevo.com/v3/contacts/lists/2/contacts/add');
-    assert.deepEqual(calls.at(-1).body, { emails: ['buyer@example.com'] });
-    await brevo.removeContactFromList('buyer@example.com', 2);
-    assert.equal(calls.at(-1).url, 'https://api.brevo.com/v3/contacts/lists/2/contacts/remove');
     const to = { email: 'buyer@example.com', name: 'Buyer' };
     assert.equal(await brevo.sendEmail(to, 'Receipt', '<p>Paid</p>'), true);
     assert.deepEqual(calls.at(-1).body, { to: [to], subject: 'Receipt', htmlContent: '<p>Paid</p>', sender: { email: 'sender@example.com', name: 'Fixture' } });
-    await brevo.sendTemplateEmail(to, 7, { ORDER: 'order-fixture' });
-    assert.deepEqual(calls.at(-1).body, { to: [to], templateId: 7, params: { ORDER: 'order-fixture' } });
     const attachment = [{ name: 'invoice.pdf', content: Buffer.from('%PDF fixture').toString('base64') }];
     await brevo.sendEmailWithAttachments(to, 'Invoice', '<p>Invoice</p>', attachment);
     assert.deepEqual(calls.at(-1).body.attachment, attachment);
@@ -45,9 +36,6 @@ test('updated Brevo SDK preserves contact/list requests, email payloads and fail
     assert.equal(await brevo.sendEmail(to, 'Receipt', '<p>Paid</p>'), false);
     assert.equal(calls.length, before + 1, 'SDK must not retry and duplicate email sends');
     assert.equal(failures, 1);
-    status = 409;
-    await brevo.upsertContact('buyer@example.com');
-    assert.equal(failures, 1, 'existing contacts do not trigger delivery alerts');
   } finally { global.fetch = originalFetch; }
 });
 

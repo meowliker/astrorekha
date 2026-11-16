@@ -1,3 +1,4 @@
+import { metaReportingFetch } from "./meta-reporting-fetch";
 import type { MetaAccountCredential, MetaAdAccountSettingsRow } from "./meta-ad-accounts";
 
 export type SoulmateAdAccount = MetaAdAccountSettingsRow & { campaignIds?: string[] };
@@ -17,10 +18,10 @@ export function campaignInsightFilter(account: SoulmateAdAccount): string {
   return JSON.stringify([{ field: "campaign.id", operator: "IN", value: selectedCampaignIds(account) }]);
 }
 
-async function metaRead(path: string, token: string, params: Record<string, string>) {
+async function metaRead(path: string, token: string, params: Record<string, string>, reporting = false) {
   const url = new URL(`https://graph.facebook.com/v21.0/${path}`);
   Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: AbortSignal.timeout(20000) });
+  const res = await (reporting ? metaReportingFetch : fetch)(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: AbortSignal.timeout(20000) });
   const data = await res.json().catch(() => null);
   if (!res.ok || !data || data.error) throw new Error("Unable to read Meta campaigns. Check this account’s token and ads_read permission.");
   return data;
@@ -33,7 +34,7 @@ export async function listSoulmateCampaigns(account: SoulmateAdAccount): Promise
   for (let page = 0; page < 100; page++) {
     const data = await metaRead(`act_${account.accountId}/campaigns`, account.accessToken, {
       fields: "id,name,effective_status", limit: "200", ...(after ? { after } : {}),
-    });
+    }, true);
     if (!Array.isArray(data.data)) throw new Error("Meta returned incomplete campaign data.");
     rows.push(...data.data.map((row: { id: string; name: string; effective_status?: string }) => ({ id: row.id, name: row.name, status: row.effective_status })));
     if (!data.paging?.next) return rows;

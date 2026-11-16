@@ -1,3 +1,4 @@
+import { MetaReportingRateLimitError } from "@/lib/meta-reporting-fetch";
 import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -62,6 +63,11 @@ async function handleGET(request: NextRequest) {
     }
     return json({ error: "Unknown detail request." }, 400);
   } catch (error) {
+    if (error instanceof MetaReportingRateLimitError) {
+      const response = json({ error: error.message, retryAfterSeconds: error.retryAfterSeconds }, 429);
+      response.headers.set("Retry-After", String(error.retryAfterSeconds));
+      return response;
+    }
     console.error("[admin/soulmate/tracking/details]", error instanceof Error ? error.message : error);
     return json({ error: error instanceof Error ? error.message : "Meta detail unavailable" }, 500);
   }

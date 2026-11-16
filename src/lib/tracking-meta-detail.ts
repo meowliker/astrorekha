@@ -1,3 +1,4 @@
+import { metaReportingFetch } from "./meta-reporting-fetch";
 import { getMetaAccountWindowForRequest, type MetaAccountCredential } from "@/lib/meta-ad-accounts";
 import { bufferedMetaRange, campaignSpendForBusinessDays, metaPurchasesMatchWindow, normalizeHourlySpendToDailyTotals, type CampaignSpendRow } from "@/lib/tracking-meta-spend";
 import { trackingDayStartUtc, nextTrackingDayStartUtc, type TrackingActivity, type TrackingChild, type TrackingDayMode } from "@/lib/tracking-dashboard";
@@ -116,7 +117,7 @@ async function pages<T>(url: string, maxPages = 20): Promise<T[]> {
   const rows: T[] = [];
   let next: string | undefined = url;
   for (let page = 0; next && page < maxPages; page++) {
-    const response = await fetch(next, { cache: "no-store", signal: AbortSignal.timeout(20_000) });
+    const response = await metaReportingFetch(next, { cache: "no-store", signal: AbortSignal.timeout(20_000) });
     const result = await response.json().catch(() => null) as Page<T> | null;
     if (!response.ok || result?.error) throw new Error(result?.error?.message || `Meta HTTP ${response.status}`);
     rows.push(...(result?.data || []));
@@ -152,7 +153,7 @@ export async function fetchMetaTrackingChildren(credential: MetaAccountCredentia
   const accountId = credential.accountId;
   const accountBase = `act_${accountId}`;
   const token = credential.accessToken;
-  const meta = await fetch(url(accountBase, token, { fields: "name,currency,timezone_name,timezone_offset_hours_utc" }), { cache: "no-store", signal: AbortSignal.timeout(20_000) });
+  const meta = await metaReportingFetch(url(accountBase, token, { fields: "name,currency,timezone_name,timezone_offset_hours_utc" }), { cache: "no-store", signal: AbortSignal.timeout(20_000) });
   const metaData = await meta.json() as { name?: string; currency?: string; timezone_name?: string; timezone_offset_hours_utc?: number; error?: { message?: string } };
   if (!meta.ok || metaData.error) throw new Error(metaData.error?.message || "Unable to read Meta account");
   const currency = String(metaData.currency || "INR").toUpperCase();
@@ -215,7 +216,7 @@ export async function fetchMetaTrackingActivities(credential: MetaAccountCredent
   const [raw, currency] = await Promise.all([pages<RawActivity>(url(`act_${credential.accountId}/activities`, credential.accessToken, {
     fields: "event_time,event_type,translated_event_type,object_id,object_name,object_type,actor_name,extra_data",
     since, until, limit: "100",
-  }), 20), fetch(url(`act_${credential.accountId}`, credential.accessToken, { fields: "currency" }), { cache: "no-store", signal: AbortSignal.timeout(20_000) })
+  }), 20), metaReportingFetch(url(`act_${credential.accountId}`, credential.accessToken, { fields: "currency" }), { cache: "no-store", signal: AbortSignal.timeout(20_000) })
     .then(async (response) => {
       const account = await response.json().catch(() => ({})) as { currency?: string };
       return response.ok && /^[A-Z]{3}$/.test(account.currency || "") ? account.currency! : "";
@@ -261,7 +262,7 @@ export async function fetchMetaTrackingActivities(credential: MetaAccountCredent
 
 export async function fetchMetaTrackingHourlySpend(credential: MetaAccountCredential, campaignId: string, day: string, rate: number, dayMode: TrackingDayMode = "business_1130_ist") {
   const token = credential.accessToken;
-  const accountResponse = await fetch(url(`act_${credential.accountId}`, token, { fields: "currency,timezone_offset_hours_utc" }), { cache: "no-store", signal: AbortSignal.timeout(20_000) });
+  const accountResponse = await metaReportingFetch(url(`act_${credential.accountId}`, token, { fields: "currency,timezone_offset_hours_utc" }), { cache: "no-store", signal: AbortSignal.timeout(20_000) });
   const account = await accountResponse.json() as { currency?: string; timezone_offset_hours_utc?: number; error?: { message?: string } };
   if (!accountResponse.ok || account.error) throw new Error(account.error?.message || "Meta account unavailable");
   const offset = Number(account.timezone_offset_hours_utc);

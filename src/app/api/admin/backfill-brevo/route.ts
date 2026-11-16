@@ -1,70 +1,7 @@
-import {withAdminAccess} from "@/lib/admin-access";
+import { withAdminAccess } from "@/lib/admin-access";
+import { NextResponse } from "next/server";
 
-import { getErrorMessage } from "@/lib/error-message";
-import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { addContactToList, BREVO_LISTS } from "@/lib/brevo";
-
-async function handlePOST(request: NextRequest) {
-  try {
-    // Verify admin token
-    const { searchParams } = new URL(request.url);
-    const token = searchParams.get("token");
-
-    const adminToken = process.env.ADMIN_SYNC_SECRET || process.env.CRON_SECRET;
-    if (!token || !adminToken || token !== adminToken) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const supabase = getSupabaseAdmin();
-    
-    const { data: allUsers } = await supabase.from("users").select("id, email, subscription_status");
-    
-    let added = 0;
-    let skipped = 0;
-    const errors: string[] = [];
-
-    for (const userData of (allUsers || [])) {
-      const email = userData.email;
-      const status = userData.subscription_status;
-      
-      // Only add users who are trialing or active and have an email
-      if (!email) {
-        skipped++;
-        continue;
-      }
-      
-      if (status !== "trialing" && status !== "active") {
-        skipped++;
-        continue;
-      }
-
-      try {
-        await addContactToList(email, BREVO_LISTS.ACTIVE_SUBSCRIBERS);
-        added++;
-        console.log(`Backfilled: ${email} (${status})`);
-        
-        // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (err) {
-        errors.push(`${email}: ${getErrorMessage(err) || "unknown error"}`);
-      }
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: `Backfill complete. Added ${added} contacts, skipped ${skipped}.`,
-      added,
-      skipped,
-      errors: errors.length > 0 ? errors : undefined,
-    });
-  } catch (error) {
-    console.error("Backfill error:", error);
-    return NextResponse.json(
-      { error: getErrorMessage(error) || "Backfill failed" },
-      { status: 500 }
-    );
-  }
-}
-
-export const POST=withAdminAccess(handlePOST);
+// Retired list backfill: keep old admin requests from enrolling any contacts.
+export const POST = withAdminAccess(async () => NextResponse.json(
+  { error: "Contact-list syncing has been removed." }, { status: 410 },
+));

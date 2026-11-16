@@ -1,3 +1,4 @@
+import { MetaReportingRateLimitError } from "@/lib/meta-reporting-fetch";
 import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -31,7 +32,7 @@ async function handleGET(request: NextRequest) {
     }
     const includeBoth = params.get("mode") === "activities" && params.get("includeBoth") === "1";
     const accountRange = { startMillis: Date.parse(trackingDayStartUtc(start, includeBoth ? "calendar_ist" : dayMode)), endMillis: Date.parse(nextTrackingDayStartUtc(end, includeBoth ? "business_1130_ist" : dayMode)) };
-    const credentials = await normalMetaCredentials(supabase, accountRange);
+    const credentials = await normalMetaCredentials(supabase, accountRange, params.get("accountId") && params.get("accountId") !== "all" ? params.get("accountId")! : undefined);
     if (params.get("mode") === "activities") {
       const selected = params.get("accountId");
       const results = await Promise.all(credentials.filter((account) => !selected || selected === "all" || account.accountId === selected).map(async (account) => {
@@ -57,6 +58,11 @@ async function handleGET(request: NextRequest) {
     }
     return json({ error: "Unknown detail request." }, 400);
   } catch (error) {
+    if (error instanceof MetaReportingRateLimitError) {
+      const response = json({ error: error.message, retryAfterSeconds: error.retryAfterSeconds }, 429);
+      response.headers.set("Retry-After", String(error.retryAfterSeconds));
+      return response;
+    }
     console.error("[admin/tracking/details]", error instanceof Error ? error.message : error);
     return json({ error: error instanceof Error ? error.message : "Meta detail unavailable" }, 500);
   }

@@ -1,3 +1,4 @@
+import { metaReportingFetch } from "./meta-reporting-fetch";
 import { getMetaAccountWindowForRequest, type MetaAccountCredential } from "@/lib/meta-ad-accounts";
 import { trackingDayStartUtc, type TrackingCampaign, type TrackingDayMode } from "@/lib/tracking-dashboard";
 import { bufferedMetaRange, campaignHourlySpendForBusinessDays, campaignSpendForBusinessDays, metaPurchasesMatchWindow, normalizeHourlySpendToDailyTotals, type CampaignSpendRow } from "@/lib/tracking-meta-spend";
@@ -27,7 +28,7 @@ const action = (items: MetaAction[] | undefined, kinds: string[]) => {
 };
 
 async function metaJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(20_000) });
+  const response = await metaReportingFetch(url, { cache: "no-store", signal: AbortSignal.timeout(20_000) });
   const payload = await response.json().catch(() => null);
   if (!response.ok || payload?.error) {
     // Never include the request URL: it contains the server-side Meta access token.

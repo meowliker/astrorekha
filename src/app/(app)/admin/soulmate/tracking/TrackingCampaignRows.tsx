@@ -88,7 +88,7 @@ function CampaignRow({ row, columns, token, dates, dayMode, refreshKey, activeOn
     if (cached && Date.now() - cached.fetchedAt < CACHE_TTL && loadedRetry === retry) return;
     const controller = new AbortController();
     if (!cached) setLoading(true);
-    const params = new URLSearchParams({ mode: "children", accountId: row.accountId, campaignId: row.campaignId, dayMode, ...dates });
+    const params = new URLSearchParams({ mode: "children", accountId: row.accountId, campaignId: row.campaignId, dayMode, start: dates.start, end: dates.end });
     fetch(`/api/admin/soulmate/tracking/details?${params}`, { headers: { "x-admin-session": token }, cache: "no-store", signal: controller.signal })
       .then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error || "Meta details unavailable"); return data; })
       .then((data: ChildData) => {
@@ -98,7 +98,7 @@ function CampaignRow({ row, columns, token, dates, dayMode, refreshKey, activeOn
       })
       .catch((cause) => { if (!controller.signal.aborted) { setError(cause instanceof Error ? cause.message : "Meta details unavailable"); setLoading(false); } });
     return () => controller.abort();
-  }, [open, cached, refreshKey, token, row.network, row.accountId, row.campaignId, dates, dayMode, retry, loadedRetry, cacheKey]);
+  }, [open, cached, refreshKey, token, row.network, row.accountId, row.campaignId, dates.start, dates.end, dayMode, retry, loadedRetry, cacheKey]);
 
   const hierarchy = useMemo(() => {
     const children = cached?.data;

@@ -14,7 +14,7 @@ test('main workspace excludes reserved historical campaigns, hides fully reserve
  const h=await fetchMetaTrackingExactHourlySpend(scoped[0],'2026-11-12',90);assert.deepEqual(Object.keys(h.hourlySpendInr),['meta:123456:111111']);
 });
 test('assignment or campaign discovery failures cannot fall back to whole-account spend',async()=>{
- let calls=0;global.fetch=async()=>{calls++;throw Error('Meta unavailable')};await assert.rejects(scopeNormalMetaCredentials(db(true),[cred]),/assignments/);assert.equal(calls,0);await assert.rejects(scopeNormalMetaCredentials(db(),[cred]),/Meta unavailable/);assert.throws(()=>normalCampaignFilter({...cred,campaignIds:[]}),/No campaigns/);
+ let calls=0;global.fetch=async()=>{calls++;throw Error('Meta unavailable')};await assert.rejects(scopeNormalMetaCredentials(db(true),[cred]),/assignments/);assert.equal(calls,0);await assert.rejects(scopeNormalMetaCredentials(db(),[{...cred,accessToken:"unavailable-token"}]),/Meta unavailable/);assert.throws(()=>normalCampaignFilter({...cred,campaignIds:[]}),/No campaigns/);
 });
 test('normal workspace cannot read or edit a reserved campaign or its ad set',async()=>{
  const c={...cred,campaignIds:['111111']};let calls=0;global.fetch=async u=>{calls++;return Response.json({id:new URL(u).pathname.split('/').pop(),account_id:'123456',campaign_id:'222222'})};

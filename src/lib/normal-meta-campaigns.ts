@@ -27,12 +27,12 @@ export async function scopeNormalMetaCredentials(db: SupabaseClient, credentials
   })));
   return scoped.filter(c => c.campaignIds.length > 0);
 }
-export async function normalMetaCredentials(db: SupabaseClient, range?: MetaAdAccountCredentialRange) {
+export async function normalMetaCredentials(db: SupabaseClient, range?: MetaAdAccountCredentialRange, accountId?: string) {
   const {data, error} = await db.from('settings').select('value').eq('key', 'meta_ad_accounts').maybeSingle();
   if (error || !data) throw new Error('Unable to verify normal funnel ad accounts. Please retry.');
   const settings = normalizeMetaAdAccountsSettings(data.value);
   const credentials = getMetaAccountCredentialsFromSettings(settings, range);
-  return scopeNormalMetaCredentials(db, credentials);
+  return scopeNormalMetaCredentials(db, accountId ? credentials.filter(account => account.accountId === accountId) : credentials);
 }
 
 export async function assertNormalMetaObject(credential: NormalMetaCredential, level: 'campaign' | 'adset', id: string) {

@@ -460,20 +460,6 @@ export default function BundlePricingPage() {
       // Track AddToCart
       try { pixelEvents.addToCart(plan.price, plan.name); } catch { /* Optional analytics. */ }
 
-      // Track Brevo checkout_started for abandoned checkout automation (30-min email)
-      const userEmail = localStorage.getItem("astrorekha_email");
-      if (userEmail) {
-        fetch("/api/track-event", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: userEmail,
-            event: "checkout_started",
-            properties: { plan: selectedPlan, price: plan.price, flow: "bundle" },
-          }),
-        }).catch(() => {});
-      }
-
       const checkoutEmail = (localStorage.getItem("astrorekha_email") || "").trim().toLowerCase();
       const checkoutWhatsappNumber = normalizeIndianWhatsappNumber(
         localStorage.getItem("astrorekha_whatsapp_number")
