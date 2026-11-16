@@ -9,6 +9,7 @@ import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUserStore } from "@/lib/user-store";
 import ReportDisclaimer from "@/components/ReportDisclaimer";
+import { PARTNER_PREFERENCES, partnerPreference, confirmedPartnerPreference } from "@/lib/sketch-preference";
 import {
   DEFAULT_LAYOUT_B_CONFIG,
   getActiveSketchQuestions,
@@ -46,6 +47,8 @@ export default function SoulmateSketchPage() {
   const [config, setConfig] = useState<LayoutBFunnelConfig>(DEFAULT_LAYOUT_B_CONFIG);
   const [status, setStatus] = useState<SketchStatus | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  // Deliberately not restored from storage: every generation needs a fresh review.
+  const [confirmedPreference, setConfirmedPreference] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -129,6 +132,7 @@ export default function SoulmateSketchPage() {
 
     const firstUnansweredIndex = questions.findIndex((question) => {
       const value = answers[question.id];
+      if (question.id === "attracted_to") return !partnerPreference(value);
       if (!value) return true;
       if (MULTI_SELECT_QUESTION_IDS.has(question.id)) {
         return parseMultiAnswer(value).length === 0;
@@ -173,6 +177,7 @@ export default function SoulmateSketchPage() {
 
   const handleSelect = (value: string) => {
     if (!activeQuestion) return;
+    setConfirmedPreference(null);
     if (MULTI_SELECT_QUESTION_IDS.has(activeQuestion.id)) {
       setAnswers((prev) => {
         const existing = parseMultiAnswer(prev[activeQuestion.id]);
@@ -222,6 +227,11 @@ export default function SoulmateSketchPage() {
       return;
     }
 
+    if (!confirmedPartnerPreference(answers, confirmedPreference)) {
+      setError("Please review and confirm who your sketch should show.");
+      return;
+    }
+
     setError("");
     setIsGenerating(true);
     try {
@@ -229,11 +239,16 @@ export default function SoulmateSketchPage() {
       const response = await fetch("/api/soulmate-sketch/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers }),
+        body: JSON.stringify({ answers, confirmedPartnerPreference: confirmedPreference }),
       });
       const json = await response.json();
       if (response.status === 401) { setNeedsSignIn(true); return; }
       if (!response.ok) {
+        if (json.error === "partner_preference_confirmation_required") {
+          setConfirmedPreference(null);
+          setError("Please refresh, review your partner preference, and confirm it before generating.");
+          return;
+        }
         console.error("[soulmate-sketch] generate api error", {
           status: response.status,
           body: json,
@@ -271,7 +286,8 @@ export default function SoulmateSketchPage() {
 
   const imageUrl = status?.sketch_image_url || null;
   const hasReachedLimit = (status?.generation_count || 0) >= (status?.maxSketchPerUser || config.maxSketchPerUser);
-  const hasAllAnswers = questions.every((question) => !!answers[question.id]);
+  const selectedPreference = partnerPreference(answers.attracted_to);
+  const hasAllAnswers = !!selectedPreference && questions.every((question) => !!answers[question.id]);
   const canOfferGeneration = hasAllAnswers && (!activeQuestion || currentStep === questions.length - 1);
 
   if (needsSignIn || !userId || !status) {
@@ -365,6 +381,7 @@ export default function SoulmateSketchPage() {
                   </div>
 
                   <h2 className="mt-5 text-xl font-medium text-white">{activeQuestion.title}</h2>
+                  {activeQuestion.description ? <p className="mt-2 text-sm text-white/70">{activeQuestion.description}</p> : null}
                   {isMultiSelectQuestion ? (
                     <p className="mt-1 text-xs text-white/55">Select one or more options.</p>
                   ) : null}
@@ -377,6 +394,7 @@ export default function SoulmateSketchPage() {
                         <button
                           key={option.value}
                           type="button"
+                          aria-pressed={selected}
                           onClick={() => handleSelect(option.value)}
                           className={`w-full rounded-xl border p-3 text-left transition ${
                             selected ? "border-primary bg-primary/10" : "border-white/10 bg-white/[0.03]"
@@ -429,9 +447,21 @@ export default function SoulmateSketchPage() {
               ) : null}
 
               {canOfferGeneration ? (
+                <div className="mt-6 rounded-2xl border border-primary/30 bg-primary/5 p-4">
+                  <h2 className="text-lg font-semibold text-white">Review your sketch</h2>
+                  <p className="mt-2 text-white">Sketch subject: <strong>{PARTNER_PREFERENCES[selectedPreference!]}</strong></p>
+                  {answers.age_group ? <p className="mt-1 text-sm text-white/75">Partner age: {answers.age_group}</p> : null}
+                  {selectedPreference === "any" ? <p className="mt-2 text-sm text-white/70">Your sketch may show a man or a woman.</p> : null}
+                  <button type="button" className="mt-3 text-sm text-primary underline" onClick={() => { setConfirmedPreference(null); setCurrentStep(0); setError(""); }}>
+                    Change partner preference
+                  </button>
+                  <label className="mt-4 flex cursor-pointer items-start gap-3 text-sm text-white">
+                    <input type="checkbox" className="mt-1 h-4 w-4 accent-pink-600" checked={confirmedPartnerPreference(answers, confirmedPreference)} onChange={(event) => setConfirmedPreference(event.target.checked ? selectedPreference : null)} />
+                    <span>{selectedPreference === "any" ? "I confirm that I have no preference for who appears in my sketch." : `I confirm that my sketch should show ${selectedPreference === "male" ? "a man" : "a woman"}.`}</span>
+                  </label>
                 <Button
                   onClick={handleGenerate}
-                  disabled={isGenerating || hasReachedLimit}
+                  disabled={isGenerating || hasReachedLimit || !confirmedPartnerPreference(answers, confirmedPreference)}
                   className="mt-6 h-12 w-full"
                 >
                   {isGenerating ? (
@@ -446,6 +476,7 @@ export default function SoulmateSketchPage() {
                     </span>
                   )}
                 </Button>
+                </div>
               ) : null}
             </>
           )}
