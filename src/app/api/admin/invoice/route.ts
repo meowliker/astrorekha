@@ -1,3 +1,4 @@
+import { getCreditEvidence, type CreditEvidence } from "@/lib/invoice-credit-evidence";
 import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { jsPDF } from "jspdf";
@@ -55,6 +56,7 @@ type InvoiceItem = {
 };
 
 type InvoicePayload = {
+  creditEvidence: CreditEvidence | null;
   invoiceNumber: string;
   invoiceDate: string;
   source: string;
@@ -713,10 +715,13 @@ async function buildInvoice(userId: string, txnId: string): Promise<InvoicePaylo
     const total = calculatedTotal || subtotal || fallbackTotal;
   const customerUserId = user?.id || primaryPayment.user_id || "-";
   const paymentFeatures = uniqueStrings(invoicePayments.flatMap((payment) => featuresForPayment(payment, pricing)));
-  const unlockedFeatures = paymentFeatures.length
+  const isCreditPurchase = invoicePayments.every((payment) => normalizeType(payment.type) === "coins");
+  const unlockedFeatures = isCreditPurchase ? [] : paymentFeatures.length
     ? paymentFeatures
     : parseUnlockedFeatures(user?.unlocked_features || null);
   const activity = await getReportActivity(customerUserId, unlockedFeatures);
+  const creditEvidence = isCreditPurchase && invoicePayments.length === 1
+    ? await getCreditEvidence(getSupabaseAdmin({ fresh: true }), primaryPayment) : null;
   const itemNames = items.map((item) => item.name).filter(Boolean);
   if (activity.birthChart.generated && !activity.birthChart.createdAt && activity.palmReading.createdAt) {
     activity.birthChart.createdAt = activity.palmReading.createdAt;
@@ -729,6 +734,7 @@ async function buildInvoice(userId: string, txnId: string): Promise<InvoicePaylo
   }
 
   return {
+    creditEvidence,
     invoiceNumber,
     invoiceDate: invoiceDateIso,
     source: primaryPayment.source || "payments",
@@ -756,7 +762,7 @@ async function buildInvoice(userId: string, txnId: string): Promise<InvoicePaylo
       updatedAt: user?.updated_at || null,
     },
     orderMetadata: {
-      purchaseType: user?.purchase_type || normalizeType(primaryPayment.type),
+      purchaseType: normalizeType(primaryPayment.type) || user?.purchase_type || "",
       bundle: itemNames.join(", ") || titleFromId(user?.bundle_purchased || primaryPayment.bundle_id),
       paymentStatus: primaryPayment.payment_status || user?.payment_status || "paid",
       primaryTxnId: firstDefined(["paytm", "pinelabs"].includes(primaryPayment.gateway || "") ? primaryPayment.id : null, primaryPayment.payu_txn_id, user?.payu_txn_id, txnId, primaryPayment.id),
@@ -904,7 +910,7 @@ function generatePdf(invoice: InvoicePayload): ArrayBuffer {
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
-  doc.text(`Service Delivery: Completed digitally in-app (${invoice.items.length} paid item${invoice.items.length === 1 ? "" : "s"}).`, margin, y);
+  doc.text(invoice.creditEvidence ? "Digital service: In-app chat credits" : "Digital service records", margin, y);
   y += 7;
   if (invoice.unlockedFeatures.length) {
     y += text(`Unlocked Features: ${invoice.unlockedFeatures.join(", ")}`, margin, y, { maxWidth: contentWidth }) + 1;
@@ -932,11 +938,33 @@ function generatePdf(invoice: InvoicePayload): ArrayBuffer {
     y += 7;
     doc.text(`Future Partner Created: ${invoice.activity.futurePartnerReport.createdAt ? formatDate(invoice.activity.futurePartnerReport.createdAt) : "-"}`, margin, y);
   }
+  if (invoice.creditEvidence) {
+    const e = invoice.creditEvidence;
+    const lines = [
+      `Purchased credits recorded: ${e.coins} coins`,
+      `Fulfillment recorded (IST): ${e.fulfillmentRecordedAt ? formatDate(e.fulfillmentRecordedAt) : "Not recorded"}`,
+      `First later chat-page visit (IST): ${e.firstChatVisit ? formatDate(e.firstChatVisit.at) : "Not recorded"}`,
+      `Chat-page visits after purchase: ${e.chatVisitCount}`,
+      `Retained chat snapshot: ${e.retainedChat.userMessages} user messages; ${e.retainedChat.assistantMessages} assistant messages`,
+      `Snapshot period (IST): ${e.retainedChat.firstAt ? formatDate(e.retainedChat.firstAt) : "Not recorded"} to ${e.retainedChat.lastAt ? formatDate(e.retainedChat.lastAt) : "Not recorded"}`,
+      `Payment record: ${e.paymentRecordId}`,
+      `First chat-page event: ${e.firstChatVisit?.id || "Not recorded"}`,
+      "Account activity is subsequent to purchase. Individual messages are not allocated to a specific top-up. Page visits record navigation, not message delivery.",
+      `Records checked (IST): ${formatDate(e.checkedAt)}`,
+    ];
+    for (const value of lines) {
+      const wrapped = doc.splitTextToSize(value, contentWidth);
+      if (y + wrapped.length * 5 > 275) { doc.addPage(); y = 20; }
+      doc.text(wrapped, margin, y);
+      y += wrapped.length * 5 + 2;
+    }
+  }
   y += 13;
+  if (y > 270) { doc.addPage(); y = 20; }
 
   doc.setFontSize(9);
   doc.setTextColor(20, 20, 20);
-  const note = "This invoice is generated from AstroRekha transaction logs as proof of purchase and digital delivery.";
+  const note = "Generated from saved payment and account activity records.";
   doc.text(doc.splitTextToSize(note, contentWidth), margin, y);
 
   if (invoice.source) {

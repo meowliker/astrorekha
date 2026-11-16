@@ -1,10 +1,12 @@
 "use client";
 
+import type { CreditEvidence } from "@/lib/invoice-credit-evidence";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Download, FileJson, Loader2, Printer } from "lucide-react";
 
 type InvoicePayload = {
+  creditEvidence?: CreditEvidence | null;
   invoiceNumber: string;
   invoiceDate: string;
   source: string;
@@ -81,7 +83,7 @@ function formatDateTime(value: string | null | undefined) {
   return new Intl.DateTimeFormat("en-IN", {
     timeZone: "Asia/Kolkata",
     dateStyle: "medium",
-    timeStyle: "short",
+    timeStyle: "medium",
   }).format(new Date(value));
 }
 
@@ -297,8 +299,10 @@ function AdminInvoiceViewContent() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="min-h-[140px] rounded-xl border border-[#334155] bg-[#0F172A] p-4">
-                <h3 className="mb-3 text-base font-semibold">Unlocked Features</h3>
-                {invoice.unlockedFeatures.length ? (
+                <h3 className="mb-3 text-base font-semibold">{invoice.creditEvidence ? "Purchased Service" : "Unlocked Features"}</h3>
+                {invoice.creditEvidence ? (
+                  <div className="space-y-2 text-sm text-[#D1D5DB]"><p>{invoice.creditEvidence.coins} in-app chat coins</p><p>Service: Chat questions</p><p>Access: Customer’s AstroRekha account</p></div>
+                ) : invoice.unlockedFeatures.length ? (
                   <ul className="list-disc space-y-2 pl-5 text-sm text-[#D1D5DB]">
                     {invoice.unlockedFeatures.map((feature) => (
                       <li key={feature}>{feature}</li>
@@ -329,9 +333,40 @@ function AdminInvoiceViewContent() {
                   ) : null}
                   <p className="text-2xl font-bold">{formatCurrency(invoice.total, invoice.currency)}</p>
                 <p className="mt-4 text-xs leading-5 text-[#9CA3AF]">
-                  This invoice is generated from AstroRekha transaction logs as proof of purchase and digital delivery.
+                  Generated from saved payment and account activity records. All timestamps are shown in IST.
                 </p>
               </div>
+
+              {invoice.creditEvidence ? (
+                <>
+                  <div className="rounded-xl border border-[#334155] bg-[#0F172A] p-4">
+                    <h3 className="mb-3 text-base font-semibold">Chat Credit Fulfillment</h3>
+                    <div className="space-y-2 text-sm text-[#D1D5DB]">
+                      <p>Purchased credits recorded: {invoice.creditEvidence.coins} coins</p>
+                      <p>Fulfillment recorded: {formatDateTime(invoice.creditEvidence.fulfillmentRecordedAt)} IST</p>
+                      <p className="break-all text-xs text-[#94A3B8]">Source: payments · {invoice.creditEvidence.paymentRecordId}</p>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-[#334155] bg-[#0F172A] p-4">
+                    <h3 className="mb-3 text-base font-semibold">Customer Account Access</h3>
+                    <div className="space-y-2 text-sm text-[#D1D5DB]">
+                      <p>First chat-page visit after purchase: {formatDateTime(invoice.creditEvidence.firstChatVisit?.at)} IST</p>
+                      <p>Chat-page visits after purchase: {invoice.creditEvidence.chatVisitCount}</p>
+                      <p className="break-all text-xs text-[#94A3B8]">Source: marketing_events · {invoice.creditEvidence.firstChatVisit?.id || "No event recorded"}</p>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-[#334155] bg-[#0F172A] p-4 md:col-span-2">
+                    <h3 className="mb-3 text-base font-semibold">Subsequent Chat Activity</h3>
+                    <div className="space-y-2 text-sm text-[#D1D5DB]">
+                      <p>Retained snapshot: {invoice.creditEvidence.retainedChat.userMessages} user messages · {invoice.creditEvidence.retainedChat.assistantMessages} assistant messages</p>
+                      <p>From {formatDateTime(invoice.creditEvidence.retainedChat.firstAt)} to {formatDateTime(invoice.creditEvidence.retainedChat.lastAt)} IST</p>
+                      <p className="text-xs text-[#94A3B8]">Source: chat_messages · Account {invoice.customer.userId}</p>
+                      <p className="text-xs leading-5 text-[#94A3B8]">Account activity is subsequent to purchase. Individual messages are not allocated to a specific top-up. Page visits record navigation, not message delivery.</p>
+                      <p className="text-xs text-[#94A3B8]">Records checked: {formatDateTime(invoice.creditEvidence.checkedAt)} IST</p>
+                    </div>
+                  </div>
+                </>
+              ) : null}
 
               {hasUnlockedFeature(invoice, "Birth Chart Report") ? (
                 <div className="rounded-xl border border-[#334155] bg-[#0F172A] p-4">
