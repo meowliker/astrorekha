@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReportEvidence } from "@/lib/invoice-report-evidence";
 import type { CreditEvidence } from "@/lib/invoice-credit-evidence";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -7,6 +8,8 @@ import { ArrowLeft, Download, FileJson, Loader2, Printer } from "lucide-react";
 
 type InvoicePayload = {
   creditEvidence?: CreditEvidence | null;
+  reportEvidence?: ReportEvidence[];
+  fulfillmentRecordedAt?: string | null;
   invoiceNumber: string;
   invoiceDate: string;
   source: string;
@@ -87,11 +90,6 @@ function formatDateTime(value: string | null | undefined) {
   }).format(new Date(value));
 }
 
-function hasUnlockedFeature(invoice: InvoicePayload | null, feature: string) {
-  return Boolean(
-    invoice?.unlockedFeatures.some((item) => item.toLowerCase() === feature.toLowerCase())
-  );
-}
 
 function AdminInvoiceViewContent() {
   const router = useRouter();
@@ -368,42 +366,29 @@ function AdminInvoiceViewContent() {
                 </>
               ) : null}
 
-              {hasUnlockedFeature(invoice, "Birth Chart Report") ? (
-                <div className="rounded-xl border border-[#334155] bg-[#0F172A] p-4">
-                  <h3 className="mb-3 text-base font-semibold">Birth Chart Report Activity</h3>
-                  <div className="space-y-1 text-sm text-[#D1D5DB]">
-                    <p>Generated: {invoice.activity.birthChart.generated ? "Yes" : "No"}</p>
-                    <p>Created: {invoice.activity.birthChart.createdAt ? formatDateTime(invoice.activity.birthChart.createdAt) : "-"}</p>
+              {(invoice.reportEvidence || []).map((report) => (
+                <div key={report.key} className="rounded-xl border border-[#334155] bg-[#0F172A] p-4">
+                  <h3 className="mb-3 text-base font-semibold">{report.name} · Delivery &amp; Access</h3>
+                  <div className="space-y-2 text-sm text-[#D1D5DB]">
+                    <p>Purchased access: {report.accessEnabled ? "Enabled" : "Not enabled"}</p>
+                    <p>Report status: {report.state}</p>
+                    <p>Generation time: {report.generatedAt ? `${formatDateTime(report.generatedAt)} IST` : "Not recorded"}</p>
+                    {report.recordCreatedAt ? <p>Report record created: {formatDateTime(report.recordCreatedAt)} IST</p> : null}
+                    <p>First report-page visit after purchase: {report.firstPageVisit ? `${formatDateTime(report.firstPageVisit.at)} IST` : "Not recorded"}</p>
+                    <p>Report-page visits after purchase: {report.pageVisitCount}</p>
+                    {report.generatedBeforePurchase ? <p className="text-xs text-[#94A3B8]">The saved report was generated before this purchase.</p> : null}
+                    <p className="break-all text-xs text-[#94A3B8]">Source: {report.source} · {report.recordId || "No saved report row"}</p>
+                    {report.firstPageVisit ? <p className="break-all text-xs text-[#94A3B8]">Access event: {report.firstPageVisit.id}</p> : null}
                   </div>
                 </div>
-              ) : null}
-
-              {hasUnlockedFeature(invoice, "Palm Reading Report") ? (
-                <div className="rounded-xl border border-[#334155] bg-[#0F172A] p-4">
-                  <h3 className="mb-3 text-base font-semibold">Palm Reading Report Activity</h3>
-                  <div className="space-y-1 text-sm text-[#D1D5DB]">
-                    <p>Generated: {invoice.activity.palmReading.generated ? "Yes" : "No"}</p>
-                    <p>Created: {invoice.activity.palmReading.createdAt ? formatDateTime(invoice.activity.palmReading.createdAt) : "-"}</p>
-                  </div>
-                </div>
-              ) : null}
-
-              {hasUnlockedFeature(invoice, "Soulmate Sketch") ? (
-                <div className="rounded-xl border border-[#334155] bg-[#0F172A] p-4">
-                  <h3 className="mb-3 text-base font-semibold">Soulmate Sketch Activity</h3>
-                  <div className="space-y-1 text-sm text-[#D1D5DB]">
-                    <p>Generated: {invoice.activity.soulmateSketch.generated ? "Yes" : "No"}</p>
-                    <p>Created: {invoice.activity.soulmateSketch.createdAt ? formatDateTime(invoice.activity.soulmateSketch.createdAt) : "-"}</p>
-                  </div>
-                </div>
-              ) : null}
-
-              {hasUnlockedFeature(invoice, "Future Partner Report") ? (
-                <div className="rounded-xl border border-[#334155] bg-[#0F172A] p-4">
-                  <h3 className="mb-3 text-base font-semibold">Future Partner Report Activity</h3>
-                  <div className="space-y-1 text-sm text-[#D1D5DB]">
-                    <p>Generated: {invoice.activity.futurePartnerReport.generated ? "Yes" : "No"}</p>
-                    <p>Created: {invoice.activity.futurePartnerReport.createdAt ? formatDateTime(invoice.activity.futurePartnerReport.createdAt) : "-"}</p>
+              ))}
+              {invoice.reportEvidence?.length ? (
+                <div className="rounded-xl border border-[#334155] bg-[#0F172A] p-4 md:col-span-2">
+                  <h3 className="mb-3 text-base font-semibold">Record Verification</h3>
+                  <div className="space-y-2 text-sm text-[#D1D5DB]">
+                    <p>Payment fulfillment recorded: {formatDateTime(invoice.fulfillmentRecordedAt)} IST</p>
+                    <p>Records checked: {formatDateTime(invoice.reportEvidence[0].checkedAt)} IST</p>
+                    <p className="text-xs leading-5 text-[#94A3B8]">Payment fulfillment, report generation and page visits are separate records. Page visits record navigation, not a confirmed download or customer acknowledgement.</p>
                   </div>
                 </div>
               ) : null}

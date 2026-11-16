@@ -1,3 +1,4 @@
+import { getReportEvidence, type ReportEvidence } from "@/lib/invoice-report-evidence";
 import { getCreditEvidence, type CreditEvidence } from "@/lib/invoice-credit-evidence";
 import {withAdminAccess} from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
@@ -57,6 +58,8 @@ type InvoiceItem = {
 
 type InvoicePayload = {
   creditEvidence: CreditEvidence | null;
+  reportEvidence: ReportEvidence[];
+  fulfillmentRecordedAt: string | null;
   invoiceNumber: string;
   invoiceDate: string;
   source: string;
@@ -227,9 +230,9 @@ function buildInvoiceNumber({
   paymentId: string;
 }): string {
   const datePart = getIstDateCompact(now);
-  const source = sanitizeInvoiceSuffixSource(txnId) || sanitizeInvoiceSuffixSource(paymentId);
+  const source = sanitizeInvoiceSuffixSource(paymentId) || sanitizeInvoiceSuffixSource(txnId);
   const fallback = Math.random().toString(36).slice(2);
-  const suffix = (source || fallback).slice(-6).padStart(6, "0").toLowerCase();
+  const suffix = (source || fallback).slice(-16).padStart(6, "0").toLowerCase();
   return `AR-INV-${datePart}-${suffix}`;
 }
 
@@ -312,12 +315,12 @@ function resolvePaymentItems(payment: PaymentRow, pricing: PricingConfig): strin
     const upsellItems = bundleTokens.map(
       (id) => findById(pricing.upsells, id) || findById(pricing.reports, id) || humanizeFeature(id)
     );
-    return [...upsellItems, ...featureTokens.map(humanizeFeature)].filter(Boolean);
+    return uniqueStrings(featureTokens.length ? featureTokens.map(humanizeFeature) : upsellItems);
   }
 
   if (type === "report") {
     const reportItems = bundleTokens.map((id) => findById(pricing.reports, id) || humanizeFeature(id));
-    return [...reportItems, ...featureTokens.map(humanizeFeature)].filter(Boolean);
+    return uniqueStrings(featureTokens.length ? featureTokens.map(humanizeFeature) : reportItems);
   }
 
   const fallback = [...bundleTokens, ...featureTokens].map(humanizeFeature).filter(Boolean);
@@ -431,19 +434,6 @@ async function findPayments(userId: string, txnId: string, email: string): Promi
   return results.filter((payment) => PAID_STATUSES.includes(String(payment.payment_status || "").toLowerCase()));
 }
 
-function includesFeature(
-  features: string[],
-  expected: "birthChart" | "palmReading" | "soulmateSketch" | "futurePartnerReport"
-): boolean {
-  const labels = {
-    birthChart: "Birth Chart Report",
-    palmReading: "Palm Reading Report",
-    soulmateSketch: "Soulmate Sketch",
-    futurePartnerReport: "Future Partner Report",
-  };
-  const expectedLabel = labels[expected];
-  return features.some((feature) => feature.toLowerCase() === expectedLabel.toLowerCase());
-}
 
 function selectInvoicePayments(payments: PaymentRow[], requestedTxnId: string): PaymentRow[] {
   if (payments.length <= 1) return payments;
@@ -470,154 +460,6 @@ function selectInvoicePayments(payments: PaymentRow[], requestedTxnId: string): 
   return payments;
 }
 
-async function getReportActivity(
-  userId: string,
-  unlockedFeatures: string[]
-): Promise<InvoicePayload["activity"]> {
-  const supabase = getSupabaseAdmin();
-  const activity: InvoicePayload["activity"] = {
-    birthChart: { generated: includesFeature(unlockedFeatures, "birthChart"), createdAt: null },
-    palmReading: { generated: includesFeature(unlockedFeatures, "palmReading"), createdAt: null },
-    soulmateSketch: { generated: includesFeature(unlockedFeatures, "soulmateSketch"), createdAt: null },
-    futurePartnerReport: { generated: includesFeature(unlockedFeatures, "futurePartnerReport"), createdAt: null },
-  };
-
-  if (!userId || userId === "-") return activity;
-
-  const palmResult = await supabase
-    .from("palm_readings")
-    .select("created_at, reading, palm_image_url")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (palmResult.data) {
-    const row = palmResult.data as { created_at?: string | null; reading?: unknown; palm_image_url?: string | null };
-    activity.palmReading = {
-      generated: Boolean(row.reading || row.palm_image_url || row.created_at),
-      createdAt: row.created_at || null,
-    };
-  }
-
-  const birthChartReport = await supabase
-    .from("birth_chart_reports")
-    .select("status, generated_at, created_at")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (birthChartReport.data) {
-    const row = birthChartReport.data as {
-      status?: string | null;
-      generated_at?: string | null;
-      created_at?: string | null;
-    };
-    activity.birthChart = {
-      generated: row.status === "complete" || Boolean(row.generated_at || row.created_at) || activity.birthChart.generated,
-      createdAt: row.generated_at || row.created_at || activity.birthChart.createdAt,
-    };
-  }
-
-  const linkedBirthChart = await supabase
-    .from("birth_chart_user_links")
-    .select("birth_chart_id, created_at, updated_at")
-    .eq("user_id", userId)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (linkedBirthChart.data?.birth_chart_id) {
-    const birthChart = await supabase
-      .from("birth_charts")
-      .select("cached_at")
-      .eq("id", linkedBirthChart.data.birth_chart_id)
-      .maybeSingle();
-    if (birthChart.data) {
-      const row = birthChart.data as { cached_at?: string | null };
-      const link = linkedBirthChart.data as {
-        created_at?: string | null;
-        updated_at?: string | null;
-      };
-      activity.birthChart = {
-        generated: true,
-        createdAt: row.cached_at || link.created_at || link.updated_at || activity.birthChart.createdAt,
-      };
-      return activity;
-    }
-  }
-
-  const directBirthChart = await supabase
-    .from("birth_charts")
-    .select("cached_at")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (directBirthChart.data) {
-    const row = directBirthChart.data as { cached_at?: string | null };
-    activity.birthChart = {
-      generated: true,
-      createdAt: row.cached_at || activity.birthChart.createdAt,
-    };
-  }
-
-  const natalChart = await supabase
-    .from("natal_charts")
-    .select("created_at")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (natalChart.data) {
-    const row = natalChart.data as { created_at?: string | null };
-    activity.birthChart = {
-      generated: true,
-      createdAt: activity.birthChart.createdAt || row.created_at || null,
-    };
-  }
-
-  const soulmateSketch = await supabase
-    .from("soulmate_sketches")
-    .select("status, sketch_image_url, generated_at, created_at, updated_at")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (soulmateSketch.data) {
-    const row = soulmateSketch.data as {
-      status?: string | null;
-      sketch_image_url?: string | null;
-      generated_at?: string | null;
-      created_at?: string | null;
-      updated_at?: string | null;
-    };
-    activity.soulmateSketch = {
-      generated:
-        row.status === "complete" ||
-        Boolean(row.sketch_image_url || row.generated_at) ||
-        activity.soulmateSketch.generated,
-      createdAt: row.generated_at || row.created_at || row.updated_at || activity.soulmateSketch.createdAt,
-    };
-  }
-
-  const futurePartner = await supabase
-    .from("future_partner_reports")
-    .select("status, generated_at, created_at, updated_at")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (futurePartner.data) {
-    const row = futurePartner.data as {
-      status?: string | null;
-      generated_at?: string | null;
-      created_at?: string | null;
-      updated_at?: string | null;
-    };
-    activity.futurePartnerReport = {
-      generated: row.status === "complete" || Boolean(row.generated_at) || activity.futurePartnerReport.generated,
-      createdAt: row.generated_at || row.created_at || row.updated_at || activity.futurePartnerReport.createdAt,
-    };
-  }
-
-  return activity;
-}
 
 function toYmd(value: Date): string {
   const year = value.getFullYear();
@@ -719,29 +561,32 @@ async function buildInvoice(userId: string, txnId: string): Promise<InvoicePaylo
   const unlockedFeatures = isCreditPurchase ? [] : paymentFeatures.length
     ? paymentFeatures
     : parseUnlockedFeatures(user?.unlocked_features || null);
-  const activity = await getReportActivity(customerUserId, unlockedFeatures);
+  const unlocked = typeof user?.unlocked_features === "string" ? safeJsonParse(user.unlocked_features) : user?.unlocked_features;
+  const reportEvidence = isCreditPurchase ? [] : await getReportEvidence(
+    getSupabaseAdmin({ fresh: true }), customerUserId, unlockedFeatures, primaryPayment.created_at || "",
+    (unlocked && typeof unlocked === "object" ? unlocked : {}) as Record<string, unknown>
+  );
+  const legacyActivity = (key: string) => {
+    const report = reportEvidence.find((item) => item.key === key);
+    return { generated: report?.complete || false, createdAt: report?.generatedAt || null };
+  };
+  const activity = { birthChart: legacyActivity("birthChart"), palmReading: legacyActivity("palmReading"), soulmateSketch: legacyActivity("soulmateSketch"), futurePartnerReport: legacyActivity("futurePartnerReport") };
   const creditEvidence = isCreditPurchase && invoicePayments.length === 1
     ? await getCreditEvidence(getSupabaseAdmin({ fresh: true }), primaryPayment) : null;
   const itemNames = items.map((item) => item.name).filter(Boolean);
-  if (activity.birthChart.generated && !activity.birthChart.createdAt && activity.palmReading.createdAt) {
-    activity.birthChart.createdAt = activity.palmReading.createdAt;
-  }
-  if (activity.soulmateSketch.generated && !activity.soulmateSketch.createdAt && activity.palmReading.createdAt) {
-    activity.soulmateSketch.createdAt = activity.palmReading.createdAt;
-  }
-  if (activity.futurePartnerReport.generated && !activity.futurePartnerReport.createdAt && activity.palmReading.createdAt) {
-    activity.futurePartnerReport.createdAt = activity.palmReading.createdAt;
-  }
+  const customerEmail = firstDefined(user?.email, primaryPayment.customer_email);
 
   return {
     creditEvidence,
+    reportEvidence,
+    fulfillmentRecordedAt: primaryPayment.fulfilled_at || null,
     invoiceNumber,
     invoiceDate: invoiceDateIso,
     source: primaryPayment.source || "payments",
     customer: {
       userId: customerUserId,
       name: customerName,
-      email: user?.email || primaryPayment.customer_email || "-",
+      email: !customerEmail || customerEmail.toLowerCase() === "customer@astrorekha.com" ? "Not recorded" : customerEmail,
     },
     payment: {
       status: primaryPayment.payment_status || user?.payment_status || "paid",
@@ -915,28 +760,22 @@ function generatePdf(invoice: InvoicePayload): ArrayBuffer {
   if (invoice.unlockedFeatures.length) {
     y += text(`Unlocked Features: ${invoice.unlockedFeatures.join(", ")}`, margin, y, { maxWidth: contentWidth }) + 1;
   }
-  if (invoice.unlockedFeatures.includes("Birth Chart Report")) {
-    doc.text(`Birth Chart Report: ${invoice.activity.birthChart.generated ? "Generated" : "Not generated"}`, margin, y);
-    y += 7;
-    doc.text(`Birth Chart Created: ${invoice.activity.birthChart.createdAt ? formatDate(invoice.activity.birthChart.createdAt) : "-"}`, margin, y);
-    y += 7;
-  }
-  if (invoice.unlockedFeatures.includes("Palm Reading Report")) {
-    doc.text(`Palm Reading Report: ${invoice.activity.palmReading.generated ? "Generated" : "Not generated"}`, margin, y);
-    y += 7;
-    doc.text(`Palm Reading Created: ${invoice.activity.palmReading.createdAt ? formatDate(invoice.activity.palmReading.createdAt) : "-"}`, margin, y);
-    y += 7;
-  }
-  if (invoice.unlockedFeatures.includes("Soulmate Sketch")) {
-    doc.text(`Soulmate Sketch: ${invoice.activity.soulmateSketch.generated ? "Generated" : "Not generated"}`, margin, y);
-    y += 7;
-    doc.text(`Soulmate Sketch Created: ${invoice.activity.soulmateSketch.createdAt ? formatDate(invoice.activity.soulmateSketch.createdAt) : "-"}`, margin, y);
-    y += 7;
-  }
-  if (invoice.unlockedFeatures.includes("Future Partner Report")) {
-    doc.text(`Future Partner Report: ${invoice.activity.futurePartnerReport.generated ? "Generated" : "Not generated"}`, margin, y);
-    y += 7;
-    doc.text(`Future Partner Created: ${invoice.activity.futurePartnerReport.createdAt ? formatDate(invoice.activity.futurePartnerReport.createdAt) : "-"}`, margin, y);
+  for (const report of invoice.reportEvidence) {
+    const lines = [
+      `${report.name}: ${report.state}`,
+      `Purchased access: ${report.accessEnabled ? "Enabled" : "Not enabled"}`,
+      `Generation time (IST): ${report.generatedAt ? formatDate(report.generatedAt) : "Not recorded"}`,
+      `Report record created (IST): ${report.recordCreatedAt ? formatDate(report.recordCreatedAt) : "Not recorded"}`,
+      `First report-page visit after purchase (IST): ${report.firstPageVisit ? formatDate(report.firstPageVisit.at) : "Not recorded"}`,
+      `Report-page visits after purchase: ${report.pageVisitCount}`,
+      `Source: ${report.source}; record: ${report.recordId || "No saved row"}`,
+      ...(report.generatedBeforePurchase ? ["This saved report was generated before this purchase."] : []),
+    ];
+    for (const value of lines) {
+      const wrapped = doc.splitTextToSize(value, contentWidth);
+      if (y + wrapped.length * 5 > 275) { doc.addPage(); y = 20; }
+      doc.text(wrapped, margin, y); y += wrapped.length * 5 + 2;
+    }
   }
   if (invoice.creditEvidence) {
     const e = invoice.creditEvidence;
