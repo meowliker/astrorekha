@@ -24,7 +24,6 @@ export interface SketchQuestionOption {
 export interface SketchQuestion {
   id: SketchQuestionId;
   title: string;
-  description?: string;
   options: SketchQuestionOption[];
 }
 
@@ -42,12 +41,11 @@ export interface LayoutBFunnelConfig {
 export const SKETCH_QUESTION_BANK: SketchQuestion[] = [
   {
     id: "attracted_to",
-    title: "Who should your soulmate sketch show?",
-    description: "Choose the person you want to see in your sketch. This is your partner preference.",
+    title: "Who are you attracted to?",
     options: [
-      { value: "male", label: "A man", emoji: "👨" },
-      { value: "female", label: "A woman", emoji: "👩" },
-      { value: "any", label: "No preference", emoji: "✨" },
+      { value: "male", label: "Male", emoji: "👨" },
+      { value: "female", label: "Female", emoji: "👩" },
+      { value: "any", label: "Any", emoji: "✨" },
     ],
   },
   {
@@ -261,10 +259,9 @@ export function normalizeLayoutBConfig(raw: unknown): LayoutBFunnelConfig {
 
 export function getActiveSketchQuestions(config: LayoutBFunnelConfig): SketchQuestion[] {
   const byId = new Map(SKETCH_QUESTION_BANK.map((q) => [q.id, q]));
-  // A sketch subject must always be chosen, even with an older/custom configuration.
-  return ["attracted_to" as SketchQuestionId, ...config.questionOrder.filter((id) => id !== "attracted_to")]
+  return config.questionOrder
     .filter((id) => id !== "appearance")
-    .filter((id) => id === "attracted_to" || config.questions[id] !== false)
+    .filter((id) => config.questions[id] !== false)
     .map((id) => byId.get(id))
     .filter((q): q is SketchQuestion => !!q);
 }

@@ -2,7 +2,6 @@ import { reportSessionUser } from "@/lib/report-session";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import type { SketchAnswers } from "@/lib/soulmate-sketch";
-import { partnerPreference } from "@/lib/sketch-preference";
 
 function resolveUserId(request: NextRequest, body: { userId?: string }): string | null {
   const signedUserId = reportSessionUser(request);
@@ -47,9 +46,6 @@ export async function POST(request: NextRequest) {
     }
 
     const incomingAnswers = normalizeAnswers(body?.answers);
-    if (Object.hasOwn(incomingAnswers, "attracted_to") && !partnerPreference(incomingAnswers.attracted_to)) {
-      return NextResponse.json({ error: "invalid_partner_preference" }, { status: 400 });
-    }
     if (Object.keys(incomingAnswers).length === 0) {
       return NextResponse.json({ success: true, saved: false });
     }
@@ -82,7 +78,7 @@ export async function POST(request: NextRequest) {
 
     const { data: existingRow, error: existingError } = await supabase
       .from("soulmate_sketches")
-      .select("question_answers, status, created_at, updated_at, support_recovery_action_id")
+      .select("question_answers, status, created_at, support_recovery_action_id")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -91,7 +87,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "save_failed" }, { status: 500 });
     }
 
-    if (existingRow?.support_recovery_action_id || existingRow?.status === "complete" || existingRow?.status === "generating") {
+    if (existingRow?.support_recovery_action_id) {
       return NextResponse.json({ success: true, saved: false,
         question_answers: normalizeAnswers(existingRow.question_answers), status: existingRow.status });
     }
@@ -103,7 +99,7 @@ export async function POST(request: NextRequest) {
       created_at: existingRow?.created_at || nowIso, updated_at: nowIso,
     };
     const query = existingRow
-      ? supabase.from("soulmate_sketches").update(patch).eq("user_id", userId).eq("updated_at", existingRow.updated_at).eq("status", existingRow.status).is("support_recovery_action_id", null)
+      ? supabase.from("soulmate_sketches").update(patch).eq("user_id", userId).is("support_recovery_action_id", null)
       : supabase.from("soulmate_sketches").upsert(patch, { onConflict: "user_id", ignoreDuplicates: true });
     const { data: savedRow, error: saveError } = await query
       .select("question_answers, status, updated_at").maybeSingle();

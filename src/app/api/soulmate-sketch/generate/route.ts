@@ -1,5 +1,4 @@
 import { reportSessionUser } from "@/lib/report-session";
-import { confirmedPartnerPreference } from "@/lib/sketch-preference";
 
 import { getErrorMessage } from "@/lib/error-message";
 import { NextRequest, NextResponse } from "next/server";
@@ -102,16 +101,6 @@ export async function POST(request: NextRequest) {
 
   const storedAnswers = normalizeAnswers(existingRow?.question_answers || {});
   const answers = { ...storedAnswers, ...incomingAnswers };
-  if (!confirmedPartnerPreference(answers, body?.confirmedPartnerPreference)) {
-    return NextResponse.json({
-      error: "partner_preference_confirmation_required",
-      message: "Review and confirm who your sketch should show before generating.",
-    }, { status: 400 });
-  }
-  // A repeated request must not submit another job while the first is running.
-  if (existingRow?.status === "generating") {
-    return NextResponse.json({ success: true, pending: true, sketch: existingRow });
-  }
   const prompt = buildSoulmateSketchPrompt(answers, user);
   const nowIso = new Date().toISOString();
 

@@ -59,35 +59,15 @@ test('locked or unsigned sketch requests do not invoke the provider or grant acc
   assert.equal(providerCalls.length, 0); assert.equal(writes, 0);
 });
 test('unlocked sketch generation merges saved answers, persists the completed report and rejects repeat generation', async () => {
-  const body = await (await generate.POST(req('/api/soulmate-sketch/generate', { answers: { vibe: 'calm', attracted_to: ' ' }, confirmedPartnerPreference: 'female' }))).json();
+  const body = await (await generate.POST(req('/api/soulmate-sketch/generate', { answers: { vibe: 'calm', attracted_to: ' ' } }))).json();
   assert.equal(body.success, true); assert.equal(sketch.status, 'complete'); assert.equal(sketch.generation_count, 1);
   assert.equal(sketch.question_answers.attracted_to, 'female'); assert.equal(sketch.question_answers.vibe, 'calm');
   assert.equal((await generate.POST(req('/api/soulmate-sketch/generate', { answers: {} }))).status, 409); assert.equal(providerCalls.length, 1);
 });
 test('slow generation retains its job ID and status polling completes that same job without resubmission', async () => {
-  sketchFailure = 'pending'; const pending = await (await generate.POST(req('/api/soulmate-sketch/generate', { answers: {}, confirmedPartnerPreference: 'female' }))).json();
+  sketchFailure = 'pending'; const pending = await (await generate.POST(req('/api/soulmate-sketch/generate', { answers: {} }))).json();
   assert.equal(pending.pending, true); assert.equal(sketch.provider_job_id, 'fixture-job'); assert.equal(sketch.status, 'generating');
   sketch.updated_at = new Date(0).toISOString(); const complete = await (await status.GET(req('/api/soulmate-sketch/status'))).json();
   assert.equal(complete.status, 'complete'); assert.equal(complete.remaining, 0);
   assert.equal(providerCalls.filter(x => x.prompt).length, 1); assert.equal(providerCalls.filter(x => x.poll).length, 1);
-});
-
-test('missing, invalid or mismatched subject confirmation never writes or generates', async () => {
-  for (const body of [{answers:{}}, {answers:{attracted_to:'male'},confirmedPartnerPreference:'female'}, {answers:{attracted_to:'invalid'},confirmedPartnerPreference:'invalid'}, {answers:{},confirmedPartnerPreference:true}]) {
-    const res=await generate.POST(req('/api/soulmate-sketch/generate',body));assert.equal(res.status,400);assert.equal((await res.json()).error,'partner_preference_confirmation_required');
-  }
-  assert.equal(writes,0);assert.equal(providerCalls.length,0);
-});
-test('each explicit subject choice reaches the provider unchanged, including overriding a stale saved female choice', async () => {
-  for(const preference of ['male','female','any']) {
-    sketch={user_id:'fixture-user',generation_count:0,question_answers:{attracted_to:'female',age_group:'35-40'}};
-    const res=await generate.POST(req('/api/soulmate-sketch/generate',{answers:{attracted_to:preference},confirmedPartnerPreference:preference}));assert.equal(res.status,200);
-    assert.equal(JSON.parse(providerCalls.at(-1).prompt).attracted_to,preference);assert.equal(sketch.question_answers.attracted_to,preference);
-  }
-});
-test('a pending job is not resubmitted and stale answer saves cannot change its subject', async () => {
-  sketch.status='generating';sketch.provider_job_id='fixture-job';
-  const res=await generate.POST(req('/api/soulmate-sketch/generate',{answers:{},confirmedPartnerPreference:'female'}));assert.equal(res.status,200);assert.equal((await res.json()).pending,true);assert.equal(providerCalls.length,0);assert.equal(writes,0);
-  const save=require('../src/app/api/soulmate-sketch/answers/route').POST;
-  for(const state of ['generating','complete']) {sketch.status=state;const r=await save(req('/api/soulmate-sketch/answers',{answers:{attracted_to:'male'}}));assert.equal(r.status,200);assert.equal((await r.json()).saved,false);assert.equal(sketch.question_answers.attracted_to,'female');}
 });
