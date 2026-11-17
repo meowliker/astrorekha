@@ -3,6 +3,7 @@ import { logClaudeUsage } from "@/lib/ai-usage-logger";
 
 // Initialize Anthropic client for Claude AI
 export const anthropic = new Anthropic({
+  fetch: globalThis.fetch,
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 

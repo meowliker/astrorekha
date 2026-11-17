@@ -13,6 +13,7 @@ const db={from(table){
   let filters=[],operation=null,payload=null,maximum=null;
   const query={
     select(){return query},eq(k,v){filters.push(r=>r[k]===v);return query},order(){return query},limit(n){maximum=n;return query},
+    not(k,op,v){assert.equal(op,'is');assert.equal(v,null);filters.push(r=>r[k]!=null);return query},
     upsert(p){operation='upsert';payload=p;return query},insert(p){operation='insert';payload=p;return query},update(p){operation='update';payload=p;return query},
     maybeSingle(){return execute(true)},single(){return execute(true)},then(a,b){return execute(false).then(a,b)},
   };
@@ -145,11 +146,14 @@ async function main(){
  tables.users[0].unlocked_features.palmReading=true;
  const palm=require('../src/app/api/palm-reading/route');
  tables.palm_readings=[{id:'us-user',palm_image_url:'saved-palm-test',reading:{tabs:{},cosmicInsight:'Old Aquarius'}}];
- let palmResult=await (await palm.GET(req('/palm'))).json();assert.equal(palmResult.reading,null);assert.equal(palmResult.image,'saved-palm-test');
+ let palmResponse=await palm.GET(req('/palm'));assert.equal(palmResponse.status,200,'saved palm lookup must succeed before checking zodiac invalidation');
+ let palmResult=await palmResponse.json();assert.equal(palmResult.success,true);assert.equal(palmResult.reading,null);assert.equal(palmResult.image,'saved-palm-test');
  tables.palm_readings[0].reading={tabs:{},cosmicInsight:'Pisces',_zodiac_system:WESTERN_CHART_VERSION,_birth_chart_id:a.id};
- palmResult=await (await palm.GET(req('/palm'))).json();assert.equal(palmResult.reading.cosmicInsight,'Pisces');
+ palmResponse=await palm.GET(req('/palm'));assert.equal(palmResponse.status,200);
+ palmResult=await palmResponse.json();assert.equal(palmResult.reading.cosmicInsight,'Pisces');
  market='IN';tables.palm_readings[0].reading={tabs:{},cosmicInsight:'Existing Indian reading'};
- assert.equal((await (await palm.GET(req('/palm'))).json()).reading.cosmicInsight,'Existing Indian reading');market='US';
+ palmResponse=await palm.GET(req('/palm'));assert.equal(palmResponse.status,200);
+ assert.equal((await palmResponse.json()).reading.cosmicInsight,'Existing Indian reading');market='US';
  engineFails=true;tables.birth_charts=[];
  assert.equal((await account.GET(req('/api/account/zodiac'))).status,503,'Engine failure must not return a saved Vedic sign');
  assert.ok(!writes.some(x=>/orders|payments|coins|features|users|user_profiles/.test(x)),'no payment, unlock, coin, or account mutations');

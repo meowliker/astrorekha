@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { logClaudeUsage } from "@/lib/ai-usage-logger";
 
 const anthropic = new Anthropic({
+  fetch: globalThis.fetch,
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 

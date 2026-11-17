@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { logClaudeUsage } from "@/lib/ai-usage-logger";
 
 const anthropic = new Anthropic({
+  fetch: globalThis.fetch,
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 

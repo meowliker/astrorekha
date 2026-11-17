@@ -8,6 +8,7 @@ import { logClaudeUsage } from "@/lib/ai-usage-logger";
 import { getBirthDateIso, normalizeBirthDetailsSnapshot } from "@/lib/birth-details";
 
 const anthropic = new Anthropic({
+  fetch: globalThis.fetch,
   apiKey: process.env.ANTHROPIC_API_KEY!,
   timeout: 120000,
   maxRetries: 0,
