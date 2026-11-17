@@ -1,5 +1,6 @@
 "use client";
-import GoogleProfitAccountSelector, {googleProfitAccount, googleProfitToday} from "@/components/admin/GoogleProfitAccountSelector";
+import GoogleProfitReportingDay from "@/components/admin/GoogleProfitReportingDay";
+import { googleProfitRegion, googleProfitToday } from "@/lib/google-profit-region";
 import AcquisitionView, { useAdSource, sourceUrl } from "@/components/admin/AcquisitionView";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -650,16 +651,16 @@ function AdminRevenuePage() {
   );
 
   // Profit Sheet state
-  const [profitGoogleAccount, setProfitGoogleAccount] = useState("4870113996");
+  const profitGoogleAccount = googleProfitRegion("astrorekha").id;
   const [profitSheetDayMode, setProfitSheetDayMode] = useState<ProfitSheetDayMode>("business_1130_ist");
   useEffect(() => {
-    if (localStorage.getItem("profit-sheet-day-mode") === "calendar_ist") {
+    if (adSource === "google" || localStorage.getItem("profit-sheet-day-mode") === "calendar_ist") {
       setProfitSheetDayMode("calendar_ist");
       const today = getIstDateTimeParts(new Date()).dayKey;
       setProfitSheetStartDate(getFirstDayOfMonthIso(today));
       setProfitSheetEndDate(today);
     }
-  }, []);
+  }, [adSource]);
   const changeProfitSheetDayMode = (mode: ProfitSheetDayMode) => {
     ++profitSheetRequestIdRef.current;
     setProfitSheetDayMode(mode);
@@ -677,8 +678,8 @@ function AdminRevenuePage() {
   const [profitSheetRefreshing, setProfitSheetRefreshing] = useState(false);
   const [profitSheetFetchedAt, setProfitSheetFetchedAt] = useState<string | null>(null);
   const [profitSheetError, setProfitSheetError] = useState<string | null>(null);
-  const [profitSheetStartDate, setProfitSheetStartDate] = useState<string>(() => getFirstDayOfMonthIso(getCurrentBusinessDateIso()));
-  const [profitSheetEndDate, setProfitSheetEndDate] = useState<string>(() => getCurrentBusinessDateIso());
+  const [profitSheetStartDate, setProfitSheetStartDate] = useState<string>(() => getFirstDayOfMonthIso(adSource === "google" ? googleProfitToday("astrorekha") : getCurrentBusinessDateIso()));
+  const [profitSheetEndDate, setProfitSheetEndDate] = useState<string>(() => adSource === "google" ? googleProfitToday("astrorekha") : getCurrentBusinessDateIso());
   const [profitSheetFilter, setProfitSheetFilter] = useState<string>("thisMonth");
   const [profitSheetRoasFilter, setProfitSheetRoasFilter] = useState<string>("all");
   const [profitSheetCustomExchangeRate, setProfitSheetCustomExchangeRate] = useState<string>("");
@@ -1566,8 +1567,6 @@ function AdminRevenuePage() {
         {activeTab === "profit-sheet" && (
 
           <ProfitSheetTab
-            googleAccount={profitGoogleAccount}
-            setGoogleAccount={value=>{if(value===profitGoogleAccount)return;++profitSheetRequestIdRef.current;setProfitSheetData([]);setProfitSheetLoading(true);setProfitGoogleAccount(value);setProfitSheetEndDate(current=>current>googleProfitToday(value)?googleProfitToday(value):current);}}
             dayMode={profitSheetDayMode}
             setDayMode={changeProfitSheetDayMode}
             refreshing={profitSheetLoadedMode === profitSheetDayMode && profitSheetRefreshing}
@@ -1660,7 +1659,6 @@ type ProfitSheetSortDirection = "asc" | "desc" | null;
 
 // Profit Sheet Tab Component
 function ProfitSheetTab({
-  googleAccount, setGoogleAccount,
   dayMode,
   setDayMode,
   refreshing,
@@ -1683,8 +1681,6 @@ function ProfitSheetTab({
   onRefresh,
   onRefreshWithRate,
 }: {
-  googleAccount: string;
-  setGoogleAccount: (value:string)=>void;
   dayMode: ProfitSheetDayMode;
   setDayMode: (mode: ProfitSheetDayMode) => void;
   refreshing: boolean;
@@ -1813,7 +1809,7 @@ function ProfitSheetTab({
     };
   }, [isSpecificDaysOpen]);
 
-  const maxSelectableBusinessDate = adSource === "google" ? googleProfitToday(googleAccount) : dayMode === "calendar_ist"
+  const maxSelectableBusinessDate = adSource === "google" ? googleProfitToday("astrorekha") : dayMode === "calendar_ist"
     ? getIstDateTimeParts(new Date()).dayKey
     : getCurrentBusinessDateIso();
   const maxMonthStart = getMonthStartUtcDate(maxSelectableBusinessDate);
@@ -2427,7 +2423,7 @@ function ProfitSheetTab({
       <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
         <div className="flex flex-wrap items-end gap-4">
           <div>
-            {adSource === "google" ? <GoogleProfitAccountSelector value={googleAccount} onChange={setGoogleAccount} /> : <>
+            {adSource === "google" ? <GoogleProfitReportingDay funnel="astrorekha" /> : <>
             <div className="mb-1 flex items-center gap-1.5">
               <label htmlFor="profit-reporting-day" className="text-white/50 text-xs">Reporting day · IST</label>
               <details className="relative">
@@ -2760,7 +2756,7 @@ function ProfitSheetTab({
         </div>
         {gstRefreshError && <p role="alert" className="mt-3 text-xs text-red-300">{gstRefreshError}</p>}
 	        <p className="text-white/30 text-xs mt-3">
-	          {adSource === "google" ? `Reporting day: midnight–11:59 PM · ${googleProfitAccount(googleAccount).timezone}. Sales and spend use the same account day.` : dayMode === "calendar_ist" ? "Reporting day: midnight–11:59 PM IST." : "Reporting day: 11:30 AM IST–11:29 AM IST the next day."}
+	          {adSource === "google" ? `Reporting day: midnight–11:59 PM · ${googleProfitRegion("astrorekha").label}. Sales and spend use the same account day.` : dayMode === "calendar_ist" ? "Reporting day: midnight–11:59 PM IST." : "Reporting day: 11:30 AM IST–11:29 AM IST the next day."}
 	        </p>
             {refreshing && <p className="mt-1 text-xs text-cyan-300">Showing saved data · refreshing in the background…</p>}
             {fetchedAt && <p className="mt-1 text-xs text-white/40">Updated {new Date(fetchedAt).toLocaleString("en-IN", {timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit"})} IST</p>}

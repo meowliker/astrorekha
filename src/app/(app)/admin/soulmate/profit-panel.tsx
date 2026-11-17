@@ -1,5 +1,6 @@
 "use client";
-import GoogleProfitAccountSelector, {googleProfitAccount, googleProfitToday} from "@/components/admin/GoogleProfitAccountSelector";
+import GoogleProfitReportingDay from "@/components/admin/GoogleProfitReportingDay";
+import { googleProfitRegion, googleProfitToday } from "@/lib/google-profit-region";
 import { useAdSource } from "@/components/admin/AcquisitionView";
 
 import { useEffect, useRef, useState } from "react";
@@ -22,8 +23,8 @@ const columns: { key: ColumnKey; label: string; hint?: string }[] = [
 
 export function SoulmateProfitPanel() {
   const adSource = useAdSource();
-  const [googleAccount, setGoogleAccount] = useState("4870113996");
-  const today = adSource === "google" ? googleProfitToday(googleAccount) : profitDay(Date.now());
+  const googleAccount = googleProfitRegion("soulmate").id;
+  const today = adSource === "google" ? googleProfitToday("soulmate") : profitDay(Date.now());
   const [start, setStart] = useState(SOULMATE_PROFIT_START);
   const [end, setEnd] = useState(today);
   const [period, setPeriod] = useState("sinceLaunch");
@@ -139,7 +140,7 @@ export function SoulmateProfitPanel() {
     {accountsOpen && <SoulmateAdAccountsDialog close={() => setAccountsOpen(false)} saved={() => { setAccountsOpen(false); setRefresh((n) => n + 1); setNotice("Soulmate accounts saved. Refresh updates the latest two days; use Backfill for older dates."); }} />}
     <div className="rounded-xl border border-white/10 bg-[#1A2235] p-4">
       <div className="flex flex-wrap items-end gap-4">
-        {adSource === "google" && <GoogleProfitAccountSelector value={googleAccount} onChange={value=>{if(value===googleAccount)return;setRows([]);setLoading(true);setGoogleAccount(value);setEnd(current=>current>googleProfitToday(value)?googleProfitToday(value):current);}} />}
+        {adSource === "google" && <GoogleProfitReportingDay funnel="soulmate" />}
         <div><p className="mb-1 text-xs text-white/50">Custom Range</p><button type="button" aria-haspopup="dialog" className={control} onClick={() => setPicker("range")}>{formatDate(start)} – {formatDate(end)}</button></div>
         <div><p className="mb-1 text-xs text-white/50">Specific Days</p><button type="button" aria-haspopup="dialog" className={`${control} ${days.length ? "border-primary/40 text-primary" : ""}`} onClick={() => setPicker("days")}>{days.length ? `${days.length} days selected` : "Pick Days"}</button></div>
         <label className="text-xs text-white/50">Period<select aria-label="Period" value={period} onChange={(e) => selectPeriod(e.target.value)} className={`${control} mt-1 block`}>
@@ -151,7 +152,7 @@ export function SoulmateProfitPanel() {
         <div><label htmlFor="soulmate-exchange-rate" className="mb-1 block text-xs text-white/50">USD to INR Rate</label><div className="flex gap-2"><input id="soulmate-exchange-rate" type="number" step="0.01" min="0.01" max="1000" placeholder="Set rate" value={rate} readOnly={adSource === "google"} onChange={(e) => setRate(e.target.value)} className={`${control} w-24`} /><button type="button" disabled={syncing || loading || !revision || !Number.isFinite(Number(rate)) || Number(rate) <= 0 || Number(rate) > 1000} onClick={saveRate} hidden={adSource === "google"} className="h-9 rounded-lg bg-amber-500/20 px-3 text-sm text-amber-400 transition-colors hover:bg-amber-500/30 disabled:opacity-40">Apply</button></div></div>
         <button type="button" disabled={loading || syncing} onClick={() => sync("last2")} className="flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm text-white transition-colors hover:bg-primary/80 disabled:opacity-50"><RefreshCw size={15} className={syncing ? "animate-spin" : ""} />{syncing ? "Refreshing…" : "Refresh"}</button>
       </div>
-      <p className="mt-3 text-xs text-white/40">{adSource === "google" ? `Reporting day: midnight–11:59 PM · ${googleProfitAccount(googleAccount).timezone}. Sales and spend use the same account day.` : "Reporting day: 11:30 AM IST – 11:29 AM IST the next day."}</p>
+      <p className="mt-3 text-xs text-white/40">{adSource === "google" ? `Reporting day: midnight–11:59 PM · ${googleProfitRegion("soulmate").label}. Sales and spend use the same account day.` : "Reporting day: 11:30 AM IST – 11:29 AM IST the next day."}</p>
     </div>
     {notice && <p role="status" className="text-sm text-amber-200">{notice}</p>}
     {!loading && !error && needsSync.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-sm"><span className="text-amber-200">{needsSync.length === 1 ? `${formatDate(needsSync[0])} needs` : `${needsSync.length} days need`} an initial sync or recalculation.</span><button type="button" disabled={syncing} className={control} onClick={backfill}>{syncing ? "Syncing…" : needsSync.length === 1 ? `Sync ${formatDate(needsSync[0])}` : `Sync ${needsSync.length} days`}</button></div>}

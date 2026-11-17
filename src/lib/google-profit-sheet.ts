@@ -2,10 +2,11 @@ import { createHash } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { after } from 'next/server';
 import type { AcquisitionFunnel } from './admin-acquisition';
-import { googleAccountDate, googleOrderAccount, readGoogleProfitContext, validateGoogleRange, GOOGLE_ADS_CUSTOMERS } from './google-ads-reporting';
+import { googleAccountDate, googleOrderAccount, readGoogleProfitContext, validateGoogleRange } from './google-ads-reporting';
 import { readAdSourceFinance, type SourceFinanceDay } from './admin-source-finance';
 import { cachedProfitReport } from './profit-report-cache';
 import { calculateProfitSheetGst } from './profit-sheet-gst';
+import { googleProfitRegion } from './google-profit-region';
 
 export function googleProfitCacheKey(funnel: string, account: string, start: string, end: string, rate: string | null) {
   return createHash('sha256').update(JSON.stringify(['google-account-profit-v1', funnel, account, start, end, rate || 'auto'])).digest('hex');
@@ -44,13 +45,14 @@ export function googleProfitRow(day: SourceFinanceDay, costMicros: number | null
 
 export async function googleProfitResponse(request: Request, funnel: AcquisitionFunnel) {
   const params = new URL(request.url).searchParams;
-  const id = params.get('googleAccount') || GOOGLE_ADS_CUSTOMERS[0];
+  const region = googleProfitRegion(funnel);
+  const id = region.id;
   const start = params.get('startDate') || params.get('start') || '';
   const end = params.get('endDate') || params.get('end') || '';
   const suppliedRate = params.get('exchangeRate');
   try {
     validateGoogleRange(start,end);
-    if (!(GOOGLE_ADS_CUSTOMERS as readonly string[]).includes(id)) throw new Error('Choose a configured Google account.');
+    if (params.has('googleAccount') && params.get('googleAccount') !== id) throw new Error(`This workspace uses ${region.name}. Refresh the page to load its reporting day.`);
     if (suppliedRate && (!Number.isFinite(Number(suppliedRate)) || Number(suppliedRate)<=0)) throw new Error('Choose a valid exchange rate.');
   } catch (error) { return Response.json({error:(error as Error).message},{status:400}); }
   const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!,process.env.SUPABASE_SERVICE_ROLE_KEY!,{auth:{persistSession:false,autoRefreshToken:false}});
