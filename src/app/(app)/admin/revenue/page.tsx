@@ -1,4 +1,5 @@
 "use client";
+import GoogleProfitAccountSelector, {googleProfitAccount, googleProfitToday} from "@/components/admin/GoogleProfitAccountSelector";
 import AcquisitionView, { useAdSource, sourceUrl } from "@/components/admin/AcquisitionView";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -56,6 +57,7 @@ type ProfitSheetDayMode = "business_1130_ist" | "calendar_ist";
 interface ProfitSheetRow {
   financialBounds?: ProfitFinancialBounds;
   spendUnavailable?: boolean;
+  profitUnavailable?: boolean;
   date: string;           // Costa Rica date (e.g., "2026-03-13")
   day: string;            // Day of week (e.g., "Sat")
   revenue: number;        // Net revenue after refunds for that Costa Rica day
@@ -648,6 +650,7 @@ function AdminRevenuePage() {
   );
 
   // Profit Sheet state
+  const [profitGoogleAccount, setProfitGoogleAccount] = useState("4870113996");
   const [profitSheetDayMode, setProfitSheetDayMode] = useState<ProfitSheetDayMode>("business_1130_ist");
   useEffect(() => {
     if (localStorage.getItem("profit-sheet-day-mode") === "calendar_ist") {
@@ -895,7 +898,7 @@ function AdminRevenuePage() {
       const token = localStorage.getItem("admin_session_token");
       if (!token) return;
 
-      let url = `/api/admin/profit-sheet?token=${encodeURIComponent(token)}&startDate=${encodeURIComponent(requestedStartDate)}&endDate=${encodeURIComponent(requestedEndDate)}&dayMode=${dayMode}`;
+      let url = `/api/admin/profit-sheet?googleAccount=${profitGoogleAccount}&token=${encodeURIComponent(token)}&startDate=${encodeURIComponent(requestedStartDate)}&endDate=${encodeURIComponent(requestedEndDate)}&dayMode=${dayMode}`;
 
       // Use custom exchange rate if provided
       const rateToUse = customRate || (rateInput ? parseFloat(rateInput) : undefined);
@@ -1129,7 +1132,7 @@ function AdminRevenuePage() {
     if (activeTab === "profit-sheet") {
       fetchProfitSheet();
     }
-  }, [activeTab, profitSheetStartDate, profitSheetEndDate, profitSheetDayMode, adSource]);
+  }, [activeTab, profitSheetStartDate, profitSheetEndDate, profitSheetDayMode, adSource, profitGoogleAccount]);
 
   // Re-read receipts and saved spend without triggering provider syncs on focus.
   // A mounted tab must not keep displaying an old snapshot indefinitely.
@@ -1563,6 +1566,8 @@ function AdminRevenuePage() {
         {activeTab === "profit-sheet" && (
 
           <ProfitSheetTab
+            googleAccount={profitGoogleAccount}
+            setGoogleAccount={value=>{if(value===profitGoogleAccount)return;++profitSheetRequestIdRef.current;setProfitSheetData([]);setProfitSheetLoading(true);setProfitGoogleAccount(value);setProfitSheetEndDate(current=>current>googleProfitToday(value)?googleProfitToday(value):current);}}
             dayMode={profitSheetDayMode}
             setDayMode={changeProfitSheetDayMode}
             refreshing={profitSheetLoadedMode === profitSheetDayMode && profitSheetRefreshing}
@@ -1655,6 +1660,7 @@ type ProfitSheetSortDirection = "asc" | "desc" | null;
 
 // Profit Sheet Tab Component
 function ProfitSheetTab({
+  googleAccount, setGoogleAccount,
   dayMode,
   setDayMode,
   refreshing,
@@ -1677,6 +1683,8 @@ function ProfitSheetTab({
   onRefresh,
   onRefreshWithRate,
 }: {
+  googleAccount: string;
+  setGoogleAccount: (value:string)=>void;
   dayMode: ProfitSheetDayMode;
   setDayMode: (mode: ProfitSheetDayMode) => void;
   refreshing: boolean;
@@ -1699,7 +1707,9 @@ function ProfitSheetTab({
   onRefresh: () => void;
   onRefreshWithRate: (rate: number) => void;
 }) {
+  const adSource = useAdSource();
   const costsUnavailable = data.some(row => row.spendUnavailable);
+  const profitUnavailable = costsUnavailable || data.some(row=>row.profitUnavailable);
   const actionableError = error?.split(GOOGLE_SPLIT_HOUR_NOTICE).join("").trim();
   const formatCurrency = (value: number) => {
     if (value == null || !Number.isFinite(value)) return "—";
@@ -1803,7 +1813,7 @@ function ProfitSheetTab({
     };
   }, [isSpecificDaysOpen]);
 
-  const maxSelectableBusinessDate = dayMode === "calendar_ist"
+  const maxSelectableBusinessDate = adSource === "google" ? googleProfitToday(googleAccount) : dayMode === "calendar_ist"
     ? getIstDateTimeParts(new Date()).dayKey
     : getCurrentBusinessDateIso();
   const maxMonthStart = getMonthStartUtcDate(maxSelectableBusinessDate);
@@ -2346,7 +2356,7 @@ function ProfitSheetTab({
                     <td className="px-4 py-3 text-right text-sm font-medium text-red-400">-{formatCurrency(row.refundAmount ?? 0)}</td>
                     <td className="px-4 py-3 text-right text-sm font-medium text-green-400">
                       <div className="flex items-center justify-end gap-1 whitespace-nowrap">
-                        <RevenueBreakdownButton date={row.date} savedRevenue={row.revenue} dayMode={dayMode} />
+                        {adSource !== "google" && <RevenueBreakdownButton date={row.date} savedRevenue={row.revenue} dayMode={dayMode} />}
                         {formatCurrency(row.revenue)}
                       </div>
                     </td>
@@ -2354,18 +2364,18 @@ function ProfitSheetTab({
                     <td className="px-4 py-3 text-right text-sm text-red-400/70">
                       <div className="flex items-center justify-end gap-1 whitespace-nowrap">
                         {financialAmount(row.adsCostINR, row.financialBounds?.adsCostINR)}
-                        {!row.spendUnavailable && <SpendBreakdownButton date={row.date} savedTotalINR={row.adsCostINR} dayMode={dayMode} />}
+                        {adSource !== "google" && !row.spendUnavailable && <SpendBreakdownButton date={row.date} savedTotalINR={row.adsCostINR} dayMode={dayMode} />}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right text-sm text-amber-400/70">
                       <div className="flex items-center justify-end gap-1 whitespace-nowrap">
                         {financialAmount(row.gst, row.financialBounds?.gst)}
-                        {!row.spendUnavailable && row.date >= gstChangeDate && <GstBreakdownButton date={row.date} revenue={row.revenue} breakdown={row.gstBreakdown} rate={18} />}
+                        {!row.spendUnavailable && !row.profitUnavailable && row.date >= gstChangeDate && <GstBreakdownButton date={row.date} revenue={row.revenue} breakdown={row.gstBreakdown} rate={18} />}
                       </div>
                     </td>
                     {showAccountBalance && renderBalanceCell(row.accountBalance)}
                     <td className={`px-4 py-3 text-right text-sm font-medium ${row.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{financialAmount(row.netRevenue, row.financialBounds?.netRevenue)}</td>
-                    <td className={`px-4 py-3 text-right text-sm font-medium ${(row.profitPercent || 0) >= 0 ? "text-green-400" : "text-red-400"}`}>{row.spendUnavailable ? "—" : `${(row.profitPercent || 0).toFixed(2)}%`}</td>
+                    <td className={`px-4 py-3 text-right text-sm font-medium ${(row.profitPercent || 0) >= 0 ? "text-green-400" : "text-red-400"}`}>{(row.spendUnavailable || row.profitUnavailable) ? "—" : `${(row.profitPercent || 0).toFixed(2)}%`}</td>
                     <td className={`px-4 py-3 text-right text-sm font-medium ${row.roas >= 1 ? "text-green-400" : row.roas > 0 ? "text-amber-400" : "text-white/30"}`}>{row.roas > 0 ? row.roas.toFixed(2) : "-"}</td>
                     <td className="px-4 py-3 text-right text-sm text-white/80">{row.bundlePurchases}</td>
                     <td className="px-4 py-3 text-right text-sm text-white/60">{row.transactionCount}</td>
@@ -2379,11 +2389,11 @@ function ProfitSheetTab({
               <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(tableTotals.revenue)}</td>
               <td className="px-4 py-3 text-right text-sm text-red-400/70">{financialAmount(costsUnavailable ? null : tableTotals.adsCostUSD, tableTotals.financialBounds?.adsCostUSD, true)}</td>
               <td className="px-4 py-3 text-right text-sm text-red-400">{financialAmount(costsUnavailable ? null : tableTotals.adsCostINR, tableTotals.financialBounds?.adsCostINR)}</td>
-              <td className="px-4 py-3 text-right text-sm text-amber-400">{financialAmount(costsUnavailable ? null : tableTotals.gst, tableTotals.financialBounds?.gst)}</td>
+              <td className="px-4 py-3 text-right text-sm text-amber-400">{financialAmount(profitUnavailable ? null : tableTotals.gst, tableTotals.financialBounds?.gst)}</td>
               {showAccountBalance && renderBalanceTotalCell()}
-              <td className={`px-4 py-3 text-right text-sm ${tableTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{financialAmount(costsUnavailable ? null : tableTotals.netRevenue, tableTotals.financialBounds?.netRevenue)}</td>
-              <td className={`px-4 py-3 text-right text-sm ${tableTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{costsUnavailable ? "—" : `${tableTotals.profitPercent.toFixed(2)}%`}</td>
-              <td className={`px-4 py-3 text-right text-sm ${tableTotals.roas >= 1 ? "text-green-400" : "text-amber-400"}`}>{costsUnavailable ? "—" : tableTotals.roas > 0 ? tableTotals.roas.toFixed(2) : "-"}</td>
+              <td className={`px-4 py-3 text-right text-sm ${tableTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{financialAmount(profitUnavailable ? null : tableTotals.netRevenue, tableTotals.financialBounds?.netRevenue)}</td>
+              <td className={`px-4 py-3 text-right text-sm ${tableTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{profitUnavailable ? "—" : `${tableTotals.profitPercent.toFixed(2)}%`}</td>
+              <td className={`px-4 py-3 text-right text-sm ${tableTotals.roas >= 1 ? "text-green-400" : "text-amber-400"}`}>{profitUnavailable ? "—" : tableTotals.roas > 0 ? tableTotals.roas.toFixed(2) : "-"}</td>
               <td className="px-4 py-3 text-right text-sm text-white">{tableTotals.bundlePurchases}</td>
               <td className="px-4 py-3 text-right text-sm text-white">{tableTotals.transactionCount}</td>
             </tr>
@@ -2395,11 +2405,11 @@ function ProfitSheetTab({
                 <td className="px-4 py-3 text-right text-sm text-green-400">{formatCurrency(overallTotals.revenue)}</td>
                 <td className="px-4 py-3 text-right text-sm text-red-400/70">{financialAmount(costsUnavailable ? null : overallTotals.adsCostUSD, overallTotals.financialBounds?.adsCostUSD, true)}</td>
                 <td className="px-4 py-3 text-right text-sm text-red-400">{financialAmount(costsUnavailable ? null : overallTotals.adsCostINR, overallTotals.financialBounds?.adsCostINR)}</td>
-                <td className="px-4 py-3 text-right text-sm text-amber-400">{financialAmount(costsUnavailable ? null : overallTotals.gst, overallTotals.financialBounds?.gst)}</td>
+                <td className="px-4 py-3 text-right text-sm text-amber-400">{financialAmount(profitUnavailable ? null : overallTotals.gst, overallTotals.financialBounds?.gst)}</td>
                 {showAccountBalance && renderBalanceTotalCell()}
-                <td className={`px-4 py-3 text-right text-sm ${overallTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{financialAmount(costsUnavailable ? null : overallTotals.netRevenue, overallTotals.financialBounds?.netRevenue)}</td>
-                <td className={`px-4 py-3 text-right text-sm ${overallTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{costsUnavailable ? "—" : `${overallTotals.profitPercent.toFixed(2)}%`}</td>
-                <td className={`px-4 py-3 text-right text-sm ${overallTotals.roas >= 1 ? "text-green-400" : "text-amber-400"}`}>{costsUnavailable ? "—" : overallTotals.roas > 0 ? overallTotals.roas.toFixed(2) : "-"}</td>
+                <td className={`px-4 py-3 text-right text-sm ${overallTotals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>{financialAmount(profitUnavailable ? null : overallTotals.netRevenue, overallTotals.financialBounds?.netRevenue)}</td>
+                <td className={`px-4 py-3 text-right text-sm ${overallTotals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>{profitUnavailable ? "—" : `${overallTotals.profitPercent.toFixed(2)}%`}</td>
+                <td className={`px-4 py-3 text-right text-sm ${overallTotals.roas >= 1 ? "text-green-400" : "text-amber-400"}`}>{profitUnavailable ? "—" : overallTotals.roas > 0 ? overallTotals.roas.toFixed(2) : "-"}</td>
                 <td className="px-4 py-3 text-right text-sm text-white">{overallTotals.bundlePurchases}</td>
                 <td className="px-4 py-3 text-right text-sm text-white">{overallTotals.transactionCount}</td>
               </tr>
@@ -2417,6 +2427,7 @@ function ProfitSheetTab({
       <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
         <div className="flex flex-wrap items-end gap-4">
           <div>
+            {adSource === "google" ? <GoogleProfitAccountSelector value={googleAccount} onChange={setGoogleAccount} /> : <>
             <div className="mb-1 flex items-center gap-1.5">
               <label htmlFor="profit-reporting-day" className="text-white/50 text-xs">Reporting day · IST</label>
               <details className="relative">
@@ -2434,6 +2445,7 @@ function ProfitSheetTab({
               <option value="calendar_ist">Midnight · 12:00 AM–11:59 PM</option>
               <option value="business_1130_ist">11:30 AM–11:29 AM next day</option>
             </select>
+              </>}
           </div>
           <div ref={calendarDropdownRef} className="relative">
             <label className="text-white/50 text-xs mb-1 block">Custom Range</label>
@@ -2748,7 +2760,7 @@ function ProfitSheetTab({
         </div>
         {gstRefreshError && <p role="alert" className="mt-3 text-xs text-red-300">{gstRefreshError}</p>}
 	        <p className="text-white/30 text-xs mt-3">
-	          {dayMode === "calendar_ist" ? "Reporting day: midnight–11:59 PM IST." : "Reporting day: 11:30 AM IST–11:29 AM IST the next day."}
+	          {adSource === "google" ? `Reporting day: midnight–11:59 PM · ${googleProfitAccount(googleAccount).timezone}. Sales and spend use the same account day.` : dayMode === "calendar_ist" ? "Reporting day: midnight–11:59 PM IST." : "Reporting day: 11:30 AM IST–11:29 AM IST the next day."}
 	        </p>
             {refreshing && <p className="mt-1 text-xs text-cyan-300">Showing saved data · refreshing in the background…</p>}
             {fetchedAt && <p className="mt-1 text-xs text-white/40">Updated {new Date(fetchedAt).toLocaleString("en-IN", {timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit"})} IST</p>}
@@ -2780,6 +2792,7 @@ function ProfitSheetTab({
         </div>
       )}
 
+
       {showCombinedTotals && (
         <>
           <div>
@@ -2805,7 +2818,7 @@ function ProfitSheetTab({
         </div>
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Combined GST</p>
-          <p className="text-amber-400 text-xl font-bold">{financialAmount(costsUnavailable ? null : totals.gst, totals.financialBounds?.gst)}</p>
+          <p className="text-amber-400 text-xl font-bold">{financialAmount(profitUnavailable ? null : totals.gst, totals.financialBounds?.gst)}</p>
         </div>
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Ads Cost (USD)</p>
@@ -2818,19 +2831,19 @@ function ProfitSheetTab({
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Profit</p>
           <p className={`text-xl font-bold ${totals.netRevenue >= 0 ? "text-green-400" : "text-red-400"}`}>
-            {financialAmount(costsUnavailable ? null : totals.netRevenue, totals.financialBounds?.netRevenue)}
+            {financialAmount(profitUnavailable ? null : totals.netRevenue, totals.financialBounds?.netRevenue)}
           </p>
         </div>
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Overall Profit %</p>
           <p className={`text-xl font-bold ${totals.profitPercent >= 0 ? "text-green-400" : "text-red-400"}`}>
-            {costsUnavailable ? "—" : `${totals.profitPercent.toFixed(2)}%`}
+            {profitUnavailable ? "—" : `${totals.profitPercent.toFixed(2)}%`}
           </p>
         </div>
         <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10 min-w-0">
           <p className="text-white/50 text-xs mb-1">Overall ROAS</p>
           <p className={`text-xl font-bold ${totals.roas >= 1 ? "text-green-400" : totals.roas > 0 ? "text-amber-400" : "text-white/40"}`}>
-            {costsUnavailable ? "—" : totals.roas > 0 ? totals.roas.toFixed(2) : "-"}
+            {profitUnavailable ? "—" : totals.roas > 0 ? totals.roas.toFixed(2) : "-"}
           </p>
         </div>
           </div>

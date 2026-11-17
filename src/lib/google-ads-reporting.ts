@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 import { GOOGLE_SPLIT_HOUR_NOTICE } from './google-ads-reporting-notices';
 import { campaignNameKey, trackingDayStartUtc, nextTrackingDayStartUtc, type TrackingCampaign, type TrackingDayMode } from './tracking-dashboard';
 import type { AcquisitionFunnel } from './admin-acquisition';
+import { acquisitionTags, acquisitionTouch, type Attribution } from './admin-acquisition';
 
 // Direct, read-only access granted to the existing Google service account.
 export const GOOGLE_ADS_CUSTOMERS = ['4870113996', '6752275511'] as const;
@@ -24,6 +25,7 @@ export type GoogleAccountReport = {
   account: { id: string; name: string; currency: string; timezone: string; error?: string };
   campaigns: TrackingCampaign[];
   dailySpendInr: Record<string, { total: number; indian: number }>;
+  dailyCostMicros?: Record<string, number>;
   dailySpendBounds?: Record<string, GoogleDayBounds>;
   unavailableDates?: string[];
   hourlySpendInr: Record<string, Record<string, number[]>>;
@@ -38,6 +40,12 @@ export function validateGoogleRange(start: string, end: string) {
   if (end < start || Date.parse(end) - Date.parse(start) >= 366 * DAY) throw new Error('Choose up to 366 days for Google Ads reporting.');
 }
 function shift(day: string, n: number) { return new Date(Date.parse(day) + n * DAY).toISOString().slice(0, 10); }
+export function googleAccountDate(at: string | number, timezone: string) { return localParts(typeof at === 'number' ? at : Date.parse(at), timezone).date; }
+export function googleAccountDayWindow(date: string, timezone: string) {
+  const hours = [...googleClockHours(date, timezone).values()].flat();
+  if (!hours.length) throw new Error('Google account calendar day is unavailable.');
+  return {start:Math.min(...hours),end:Math.max(...hours)+HOUR};
+}
 function credentialAuth() {
   if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) throw new Error('Google Ads service-account credentials are not configured.');
   return auth ||= new google.auth.GoogleAuth({ credentials: { client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL, private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n') }, scopes: ['https://www.googleapis.com/auth/adwords'] });
@@ -121,18 +129,26 @@ function campaignRow(row: Row, customer: Snapshot['customer']): TrackingCampaign
     spend: 0, spendInr: 0, impressions: 0, reach: 0, clicks: 0, linkClicks: 0, landingPageViews: 0, addToCarts: 0, checkouts: 0, metaPurchases: 0, metaPurchaseValue: 0, leads: 0,
     metaPurchaseWindowAligned: false, orders: 0, grossRevenue: 0, refunds: 0, refundAmount: 0, revenue: 0, utmSources: [], utmMediums: [], utmTerms: [], utmContents: [], attribution: 'none', adBreakdown: [] };
 }
-export function aggregateGoogleSnapshot(data: Snapshot, funnel: AcquisitionFunnel, start: string, end: string, mode: TrackingDayMode, rate: number): GoogleAccountReport {
+export function aggregateGoogleSnapshot(data: Snapshot, funnel: AcquisitionFunnel, start: string, end: string, mode: TrackingDayMode, rate: number, accountDay = false): GoogleAccountReport {
   const { customer } = data;
   const targetCurrency = funnel.startsWith('us-') ? 'USD' : 'INR';
   const factor = customer.currencyCode === targetCurrency ? 1 : customer.currencyCode === 'USD' && targetCurrency === 'INR' ? rate : customer.currencyCode === 'INR' && targetCurrency === 'USD' ? 1 / rate : NaN;
   const report: GoogleAccountReport = { account: { id: `google:${customer.id}`, name: `Google · ${customer.descriptiveName}`, currency: customer.currencyCode, timezone: customer.timeZone }, campaigns: [], dailySpendInr: {}, hourlySpendInr: {}, warnings: [] };
   report.dailySpendBounds = {};
+  report.dailyCostMicros = {};
   const unavailable = new Set<string>();
   for (let date = start; date <= end; date = shift(date, 1)) {
     report.dailySpendInr[date] = { total: 0, indian: 0 };
+    report.dailyCostMicros[date] = 0;
     report.dailySpendBounds[date] = { total: { min: 0, max: 0 }, indian: { min: 0, max: 0 } };
   }
-  const windows = Object.keys(report.dailySpendInr).map(date => ({ date, start: Date.parse(trackingDayStartUtc(date, mode)), end: Date.parse(nextTrackingDayStartUtc(date, mode)) }));
+  const windows = Object.keys(report.dailySpendInr).map(date => {
+    if (!accountDay) return { date, start: Date.parse(trackingDayStartUtc(date, mode)), end: Date.parse(nextTrackingDayStartUtc(date, mode)) };
+    // Account calendar days include every real clock hour, including DST repeats.
+    const hours = [...googleClockHours(date, customer.timeZone).values()].flat();
+    if (!hours.length) throw new Error('Google account calendar day is unavailable.');
+    return { date, start: Math.min(...hours), end: Math.max(...hours) + HOUR };
+  });
   const current = new Map<string, Set<AcquisitionFunnel | null>>();
   for (const row of data.destinations) for (const url of row.adGroupAd?.ad.finalUrls || []) { const id = row.campaign!.id; const set = current.get(id) || new Set(); set.add(googleDestination(url)); current.set(id, set); }
   const landing = new Map<string, { funnels: Set<AcquisitionFunnel | null>; micros: number }>();
@@ -181,6 +197,8 @@ export function aggregateGoogleSnapshot(data: Snapshot, funnel: AcquisitionFunne
     }
     if (!exact) continue;
     const window = overlaps[0];
+    report.dailyCostMicros[window.date] += cost;
+    if (!Number.isSafeInteger(report.dailyCostMicros[window.date])) throw new Error('Google cost exceeds safe precision.');
     row.spend += native; if (row.spendInr !== null) row.spendInr += converted;
     row.clicks += metric(item.metrics?.clicks); row.linkClicks = row.clicks; row.impressions += metric(item.metrics?.impressions);
     report.dailySpendInr[window.date].total += converted;
@@ -195,6 +213,47 @@ export function aggregateGoogleSnapshot(data: Snapshot, funnel: AcquisitionFunne
   report.warnings = [...warnings];
   if (report.account.error && !warnings.size) report.warnings.push(report.account.error);
   return report;
+}
+
+export type GoogleAccountDaySpend = {
+  funnel: AcquisitionFunnel; start: string; end: string; fetchedAt: string;
+  accounts: Array<{
+    id: string; name: string; currency: string; timezone: string; error?: string;
+    rows: Array<{date: string; costMicros: number | null; status: 'reported' | 'updating' | 'not_started' | 'unavailable'}>;
+  }>;
+};
+
+export function aggregateGoogleAccountDays(data: Snapshot, funnel: AcquisitionFunnel, start: string, end: string, now = Date.now()): GoogleAccountDaySpend['accounts'][number] {
+  // Native integer micros are authoritative here; no currency conversion is displayed.
+  const result = aggregateGoogleSnapshot(data, funnel, start, end, 'calendar_ist', 1, true);
+  const today = localParts(now, data.customer.timeZone).date;
+  const rows = Object.entries(result.dailyCostMicros || {}).map(([date, micros]) => {
+    const unavailable = result.unavailableDates?.includes(date) || (!!result.account.error && !result.unavailableDates?.length);
+    const status = date > today ? 'not_started' : unavailable ? 'unavailable' : date === today ? 'updating' : 'reported';
+    return {date, costMicros: status === 'unavailable' || status === 'not_started' ? null : micros, status} as GoogleAccountDaySpend['accounts'][number]['rows'][number];
+  });
+  return {id:data.customer.id, name:data.customer.descriptiveName, currency:data.customer.currencyCode, timezone:data.customer.timeZone, rows,
+    ...(result.account.error ? {error:'Some spend could not be assigned to this workspace. Affected dates are unavailable.'} : {})};
+}
+
+export type GoogleCampaignAccount = {id:string;name:string;accountId:string};
+export function googleOrderAccount(order: Attribution, campaigns: GoogleCampaignAccount[]): string | null {
+  const tags = acquisitionTags(acquisitionTouch(order));
+  const id = String(tags.google_campaign_id || tags.gad_campaignid || '').trim();
+  const campaign = id || String(tags.utm_campaign || '').trim();
+  if (!campaign) return null;
+  const matches = campaigns.filter(row => row.id === campaign || (!id && campaignNameKey(row.name) === campaignNameKey(campaign)));
+  const accounts = [...new Set(matches.map(row=>row.accountId))];
+  return accounts.length===1 ? accounts[0] : null;
+}
+export async function readGoogleProfitContext(accountId:string, funnel:AcquisitionFunnel,start:string,end:string) {
+  if (!(GOOGLE_ADS_CUSTOMERS as readonly string[]).includes(accountId)) throw new Error('Choose a configured Google account.');
+  validateGoogleRange(start,end);
+  // Both campaign catalogs are needed to reject ambiguous cross-account names.
+  const snapshots = await Promise.all(GOOGLE_ADS_CUSTOMERS.map(id=>snapshot(id,start,end)));
+  const raw = snapshots.find(item=>item.customer.id===accountId)!;
+  const campaigns = snapshots.flatMap(item=>item.campaigns.map(row=>({id:row.campaign!.id,name:row.campaign!.name,accountId:item.customer.id})));
+  return {account:aggregateGoogleAccountDays(raw,funnel,start,end),campaigns,fetchedAt:raw.fetchedAt};
 }
 export async function readGoogleSpend(funnel: AcquisitionFunnel, start: string, end: string, mode: TrackingDayMode, rate: number): Promise<GoogleSpendReport> {
   validateGoogleRange(start, end);

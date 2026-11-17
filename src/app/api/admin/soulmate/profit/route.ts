@@ -1,3 +1,4 @@
+import { googleProfitResponse } from "@/lib/google-profit-sheet";
 import { readGoogleSpend, googleSpendForDay } from "@/lib/google-ads-reporting";
 import {withAdminAccess} from "@/lib/admin-access";
 import { parseAdSource } from "@/lib/admin-acquisition";
@@ -12,6 +13,7 @@ export const maxDuration = 300;
 const json = (data: unknown, status = 200) => NextResponse.json(data, { status, headers: { "Cache-Control": "no-store" } });
 
 async function handleGET(request: NextRequest) {
+  if (parseAdSource(request.nextUrl.searchParams) === "google") return googleProfitResponse(request, "soulmate");
   const db = await soulmateAdmin(request);
   if (!db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const start = request.nextUrl.searchParams.get("start") || SOULMATE_PROFIT_START;

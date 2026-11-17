@@ -90,3 +90,59 @@ test('profit bounds use GST credit correctly and totals cannot become false zero
  assert.equal(sumProfitFinancialBounds([{adsCostINR:null,adsCostUSD:null,gst:null,netRevenue:null}]),undefined);
  assert.deepEqual(sumProfitFinancialBounds([{financialBounds:b}]).netRevenue,b.netRevenue);
 });
+
+test('account-day view returns original integer micros without splitting India or USA hours',()=>{
+ const {aggregateGoogleAccountDays}=require('../src/lib/google-ads-reporting');
+ for(const zone of ['Asia/Calcutta','America/New_York']){
+  const raw=snapshot({zone,currency:zone==='Asia/Calcutta'?'INR':'USD',hour:11,cost:314800000});
+  const result=aggregateGoogleAccountDays(raw,'astrorekha','2026-11-12','2026-11-12',Date.parse('2026-11-20'));
+  assert.equal(result.currency,raw.customer.currencyCode);assert.equal(result.timezone,zone);
+  assert.deepEqual(result.rows,[{date:'2026-11-12',costMicros:314800000,status:'reported'}]);
+  assert.equal(result.error,undefined);
+ }
+});
+test('account-day totals preserve repeated DST hour once and do not include adjacent dates',()=>{
+ const {aggregateGoogleAccountDays}=require('../src/lib/google-ads-reporting');
+ const raw=snapshot({date:'2026-11-01',hour:1,cost:2345678});
+ raw.hours.push({...raw.hours[0],segments:{date:'2026-11-02',hour:1},metrics:{costMicros:'999000000'}});
+ const result=aggregateGoogleAccountDays(raw,'astrorekha','2026-11-01','2026-11-01',Date.parse('2026-11-20'));
+ assert.equal(result.rows[0].costMicros,2345678);
+ const spring=aggregateGoogleAccountDays(snapshot({date:'2026-03-08',hour:3}),'astrorekha','2026-03-08','2026-03-08',Date.parse('2026-11-20'));
+ assert.equal(spring.rows[0].costMicros,2000000);
+});
+test('account-day view never counts another workspace or turns missing coverage into zero',()=>{
+ const {aggregateGoogleAccountDays}=require('../src/lib/google-ads-reporting');
+ const raw=snapshot({url:'https://astrorekha.com/us/soulmate/discover'});
+ const other=aggregateGoogleAccountDays(raw,'astrorekha','2026-11-12','2026-11-12',Date.parse('2026-11-20'));
+ assert.equal(other.rows[0].costMicros,0);
+ const missing=aggregateGoogleAccountDays(snapshot({landingCost:1}),'astrorekha','2026-11-12','2026-11-12',Date.parse('2026-11-20'));
+ assert.equal(missing.rows[0].costMicros,null);assert.equal(missing.rows[0].status,'unavailable');
+});
+test('today and future labels follow the account timezone rather than the viewer timezone',()=>{
+ const {aggregateGoogleAccountDays}=require('../src/lib/google-ads-reporting');
+ const now=Date.parse('2026-11-13T01:00:00Z');
+ const usa=aggregateGoogleAccountDays(snapshot(),'astrorekha','2026-11-12','2026-11-13',now);
+ assert.equal(usa.rows[0].status,'updating');assert.equal(usa.rows[1].status,'not_started');assert.equal(usa.rows[1].costMicros,null);
+ const india=aggregateGoogleAccountDays(snapshot({zone:'Asia/Calcutta',currency:'INR'}),'astrorekha','2026-11-12','2026-11-13',now);
+ assert.equal(india.rows[0].status,'reported');assert.equal(india.rows[1].status,'updating');
+});
+
+test('account day windows honor IST and both New York DST boundaries',()=>{
+ const {googleAccountDayWindow,googleAccountDate}=require('../src/lib/google-ads-reporting');
+ const ist=googleAccountDayWindow('2026-11-12','Asia/Calcutta');
+ assert.equal(new Date(ist.start).toISOString(),'2026-11-11T18:30:00.000Z');
+ assert.equal(ist.end-ist.start,24*3600000);
+ for(const [date,hours] of [['2026-03-08',23],['2026-11-01',25]]){
+  const w=googleAccountDayWindow(date,'America/New_York');assert.equal(w.end-w.start,hours*3600000);
+  assert.equal(googleAccountDate(w.start,'America/New_York'),date);assert.equal(googleAccountDate(w.end-1,'America/New_York'),date);assert.notEqual(googleAccountDate(w.end,'America/New_York'),date);
+ }
+});
+test('account attribution requires a unique saved campaign, never currency or funnel alone',()=>{
+ const {googleOrderAccount}=require('../src/lib/google-ads-reporting');
+ const campaigns=[{id:'100',name:'USA campaign',accountId:'usa'},{id:'200',name:'India campaign',accountId:'india'},{id:'300',name:'Shared',accountId:'usa'},{id:'400',name:'Shared',accountId:'india'}];
+ assert.equal(googleOrderAccount({last_touch:{gad_campaignid:'100'}},campaigns),'usa');
+ assert.equal(googleOrderAccount({utm_campaign:'India campaign'},campaigns),'india');
+ assert.equal(googleOrderAccount({landing_url:'https://astrorekha.com/discover?gad_campaignid=200'},campaigns),'india');
+ assert.equal(googleOrderAccount({utm_campaign:'Shared'},campaigns),null);
+ assert.equal(googleOrderAccount({currency:'USD',landing_url:'https://astrorekha.com/discover?gclid=abc'},campaigns),null);
+});

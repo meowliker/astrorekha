@@ -1,3 +1,4 @@
+import { googleProfitResponse } from "@/lib/google-profit-sheet";
 import { scopeNormalMetaCredentials, normalCampaignFilter } from "@/lib/normal-meta-campaigns";
 import { readGoogleSpend, googleSpendForDay, googleSpendBoundsForDay } from "@/lib/google-ads-reporting";
 import { profitFinancialBounds } from "@/lib/profit-financial-bounds";
@@ -1183,6 +1184,7 @@ async function handleGET(request: NextRequest) {
 
 // Authentication and workspace authorization run before any cached data can be read.
 async function handleCachedGET(request: NextRequest) {
+  if (parseAdSource(new URL(request.url).searchParams) === "google") return googleProfitResponse(request, "astrorekha");
   const params = new URL(request.url).searchParams;
   const mode = params.get("dayMode") || BUSINESS_DAY_MODE;
   if (mode !== BUSINESS_DAY_MODE && mode !== CALENDAR_DAY_MODE) return NextResponse.json({error: "Choose a valid reporting day."}, {status: 400});

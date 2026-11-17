@@ -74,3 +74,22 @@ test('normal and Google finance partition paid receipts and refunds exactly',asy
  for(const key of ['received','refund','orders','refunds','bundleReceived','bundleRefund','bundleOrders'])assert.equal(all[key],normal[key]+google[key],key);
  assert.equal(normal.gateways.pinelabs.received,normal.received);assert.equal(normal.gateways.pinelabs.refunds,normal.refund);
 });
+
+test('Google account midnight scopes sales and refunds without changing the Meta business day',async()=>{
+ const rows=[paid('before','google','2026-11-12T04:59:59Z'),paid('inside','google','2026-11-12T05:00:00Z'),paid('next','google','2026-11-13T05:00:00Z'),paid('india','google','2026-11-12T10:00:00Z'),{...paid('old','google','2026-10-01T07:00:00Z'),payu_txn_id:'old'}, {id:'pay_refund_test',payu_txn_id:'old',amount:-1000,payment_status:'refund',created_at:'2026-11-13T04:59:59Z'}];
+ const scope={timezone:'America/New_York',include:r=>r.id!=='india',unknownRefundTime:()=>assert.fail('timestamp exists')};
+ const [day]=await readAdSourceFinance(db({payments:rows}),'astrorekha','google','2026-11-12','2026-11-12','account_day',scope);
+ assert.equal(day.orders,1);assert.equal(day.received,10000);assert.equal(day.refund,1000);
+ const [ist]=await readAdSourceFinance(db({payments:rows}),'astrorekha','google','2026-11-12','2026-11-12','account_day',{...scope,timezone:'Asia/Calcutta'});
+ assert.equal(ist.orders,2);assert.equal(ist.refund,0);
+});
+
+test('account-local nonmain refunds use the actual timestamp, not the saved 11:30 business date',async()=>{
+ const order={id:'us_order',amount_cents:10000,paid_amount_cents:10000,type:'bundle',paid_at:'2026-11-01T12:00:00Z',payment_status:'paid',payment_mode:'live','attribution->>trackingEnvironment':'production',attribution:{trackingEnvironment:'production',marketing:{utm_source:'google',utm_medium:'cpc',gad_campaignid:'100'}}};
+ const refund={event_id:'r',order_id:'us_order',date:'2026-11-11',amount_paise:500,gst_paise:0,occurred_at:'2026-11-12T05:30:00Z'};
+ let unknown=0;const scope={timezone:'America/New_York',include:()=>true,unknownRefundTime:()=>unknown++};
+ const [day]=await readAdSourceFinance(db({us_main_orders:[order],us_main_refund_events:[refund]}),'us-main','google','2026-11-12','2026-11-12','account_day',scope);
+ assert.equal(day.refund,500);assert.equal(unknown,0);
+ const [legacy]=await readAdSourceFinance(db({us_main_orders:[order],us_main_refund_events:[{...refund,occurred_at:null}]}),'us-main','google','2026-11-12','2026-11-12','account_day',scope);
+ assert.equal(legacy.refund,0);assert.equal(unknown,1,'no invented timestamp');
+});

@@ -1,4 +1,5 @@
 "use client";
+import GoogleProfitAccountSelector, {googleProfitAccount, googleProfitToday} from "@/components/admin/GoogleProfitAccountSelector";
 import { useAdSource } from "@/components/admin/AcquisitionView";
 
 import { useEffect, useRef, useState } from "react";
@@ -21,7 +22,8 @@ const columns: { key: ColumnKey; label: string; hint?: string }[] = [
 
 export function SoulmateProfitPanel() {
   const adSource = useAdSource();
-  const [today] = useState(() => profitDay(Date.now()));
+  const [googleAccount, setGoogleAccount] = useState("4870113996");
+  const today = adSource === "google" ? googleProfitToday(googleAccount) : profitDay(Date.now());
   const [start, setStart] = useState(US_SOULMATE_PROFIT_START);
   const [end, setEnd] = useState(today);
   const [period, setPeriod] = useState("sinceLaunch");
@@ -31,6 +33,7 @@ export function SoulmateProfitPanel() {
   const [, setAppliedRate] = useState<number | null>(null);
   const [, setRevision] = useState(0);
   const [accountCount, setAccountCount] = useState(0);
+  const [attributionComplete,setAttributionComplete]=useState(true);
   const [accountsOpen, setAccountsOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [notice, setNotice] = useState("");
@@ -48,16 +51,22 @@ export function SoulmateProfitPanel() {
   useEffect(() => {
     const abort = new AbortController();
     setLoading(true); setRows([]); setError("");
-    fetch(`/api/admin/us-soulmate/profit?${new URLSearchParams({ start: rangeStart, end: rangeEnd, adSource })}`, {
+    fetch(`/api/admin/us-soulmate/profit?${new URLSearchParams({ start: rangeStart, end: rangeEnd, adSource, googleAccount })}`, {
       headers: { Authorization: `Bearer ${localStorage.getItem("admin_session_token") || ""}` }, signal: abort.signal, cache: "no-store",
     }).then(async (response) => {
-      const result = await response.json();
+      let result = await response.json();
+      for (let attempt=0;result.preparing && attempt<20 && !abort.signal.aborted;attempt++) {
+        await new Promise(resolve=>setTimeout(resolve,1500));
+        const retry=await fetch(`/api/admin/us-soulmate/profit?${new URLSearchParams({start:rangeStart,end:rangeEnd,adSource,googleAccount})}`,{headers:{Authorization:`Bearer ${localStorage.getItem("admin_session_token")||""}`},signal:abort.signal,cache:"no-store"});
+        result=await retry.json(); if(!retry.ok)throw new Error(result.error||"Unable to load profit sheet.");
+      }
+      if(result.preparing)throw new Error("This reporting window is still being prepared. Please refresh.");
       if (!response.ok) throw new Error(result.error || "Unable to load profit sheet.");
-      if (!abort.signal.aborted) { setRows(result.rows); setNotice((result.warnings || []).join(" ")); setUpdatedAt(result.updatedAt || ""); setMissing(result.missing); setAccountCount(result.accountCount); setRevision(result.revision); setAppliedRate(result.exchangeRate); setRate(result.exchangeRate ? String(result.exchangeRate) : ""); }
+      if (!abort.signal.aborted) { setRows(result.rows); setAttributionComplete(result.attributionComplete !== false); setNotice((result.warnings || []).join(" ")); setUpdatedAt(result.updatedAt || ""); setMissing(result.missing); setAccountCount(result.accountCount); setRevision(result.revision); setAppliedRate(result.exchangeRate); setRate(result.exchangeRate ? String(result.exchangeRate) : ""); }
     }).catch((cause) => { if (!abort.signal.aborted) setError(cause.message); })
       .finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();
-  }, [rangeStart, rangeEnd, refresh, adSource]);
+  }, [rangeStart, rangeEnd, refresh, adSource, googleAccount]);
 
   const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem("admin_session_token") || ""}`, "Content-Type": "application/json" });
   async function sync(mode: "last2" | "range", first?: string, last?: string) {
@@ -109,7 +118,8 @@ export function SoulmateProfitPanel() {
     {accountsOpen && <SoulmateAdAccountsDialog close={() => setAccountsOpen(false)} saved={() => { setAccountsOpen(false); setRefresh((n) => n + 1); setNotice("US Soulmate campaign selection saved for Tracking and Profit Sheet. Refresh updates the latest two days; use Backfill for older dates."); }} />}
     <div className="rounded-xl border border-white/10 bg-[#1A2235] p-4">
       <div className="flex flex-wrap items-end gap-4">
-        <div><p className="mb-1 text-xs text-white/50">Date range · IST</p><TrackingDateRangePicker value={{ start, end }} maxDate={today} minDate={US_SOULMATE_PROFIT_START} maxDays={366} align="left" onChange={(range) => { setStart(range.start); setEnd(range.end); setDays([]); setPeriod("custom"); }} /></div>
+        {adSource === "google" && <GoogleProfitAccountSelector value={googleAccount} onChange={value=>{if(value===googleAccount)return;setRows([]);setLoading(true);setGoogleAccount(value);setEnd(current=>current>googleProfitToday(value)?googleProfitToday(value):current);}} />}
+        <div><p className="mb-1 text-xs text-white/50">Date range · {adSource === "google" ? googleProfitAccount(googleAccount).timezone : "IST"}</p><TrackingDateRangePicker value={{ start, end }} maxDate={today} minDate={US_SOULMATE_PROFIT_START} maxDays={366} align="left" onChange={(range) => { setStart(range.start); setEnd(range.end); setDays([]); setPeriod("custom"); }} /></div>
         <div><p className="mb-1 text-xs text-white/50">Specific Days</p><button type="button" aria-haspopup="dialog" className={`${control} ${days.length ? "border-primary/40 text-primary" : ""}`} onClick={() => setPicker("days")}>{days.length ? `${days.length} days selected` : "Pick Days"}</button></div>
         <label className="text-xs text-white/50">Period<select aria-label="Period" value={period} onChange={(e) => selectPeriod(e.target.value)} className={`${control} mt-1 block`}>
           <option value="custom" disabled>Custom selection</option><option value="sinceLaunch">Since 28 Oct 2026</option><option value="today">Today</option><option value="yesterday" disabled={today <= US_SOULMATE_PROFIT_START}>Yesterday</option><option value="last7">Last 7 Days</option><option value="last30">Last 30 Days</option><option value="thisMonth">This Month</option>
@@ -120,7 +130,7 @@ export function SoulmateProfitPanel() {
         <div className="text-xs text-white/50">Reporting currency: USD</div>
         <button type="button" disabled={loading || syncing} onClick={() => sync("last2")} className="flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm text-white transition-colors hover:bg-primary/80 disabled:opacity-50"><RefreshCw size={15} className={syncing ? "animate-spin" : ""} />{syncing ? "Refreshing…" : "Refresh"}</button>
       </div>
-      <p className="mt-3 text-xs text-white/40">Reporting day: 11:30 AM IST – 11:29 AM IST the next day.</p>
+      <p className="mt-3 text-xs text-white/40">{adSource === "google" ? `Reporting day: midnight–11:59 PM · ${googleProfitAccount(googleAccount).timezone}. Sales and spend use the same account day.` : "Reporting day: 11:30 AM IST – 11:29 AM IST the next day."}</p>
     </div>
     {notice && <p role="status" className="text-sm text-amber-200">{notice}</p>}
     {adSource !== "google" && !loading && needsSync.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-sm"><span className="text-amber-200">{needsSync.length} dates need an initial sync or recalculation.</span><button type="button" disabled={syncing} className={control} onClick={() => sync("range", backfillStart, backfillEnd)}>Backfill {formatDate(backfillStart)} – {formatDate(backfillEnd)}</button></div>}
@@ -137,7 +147,7 @@ export function SoulmateProfitPanel() {
             {key === "date" ? <>{formatDate(row.date, { day: "numeric", month: "short", year: "numeric" })}<span className="mt-1 block text-xs text-white/40">{formatDate(row.date, { weekday: "short" })}{row.stale ? " · Recalculate" : ""}</span></> : key === "orders" ? row.orders : key === "roas" ? row.roas === null ? "—" : `${row.roas.toFixed(2)}×` : money(row[key] as number | null, key === "adsUsd" || key === "balance" ? "USD" : "USD")}
           </td>)}
         </tr>) : <tr><td colSpan={columns.length} className="py-16 text-center text-white/50">No saved days match these filters. Use Refresh or Backfill to populate missing dates.</td></tr>}</tbody>
-        {!loading && !error && visible.length > 0 && <tfoot className="bg-white/5 font-medium"><tr>{columns.map(({ key }, i) => <td key={key} className={`px-4 py-4 ${i ? "text-right" : "text-left"} text-white/80`}>{key === "date" ? `Total · ${visible.length} days` : key === "orders" ? total(key) : key === "balance" ? "—" : key === "roas" ? total("adsInr") && total("revenue") !== null ? `${(total("revenue")! / total("adsInr")!).toFixed(2)}×` : "—" : money(total(key), key === "adsUsd" ? "USD" : "USD")}</td>)}</tr></tfoot>}
+        {!loading && !error && visible.length > 0 && <tfoot className="bg-white/5 font-medium"><tr>{columns.map(({ key }, i) => <td key={key} className={`px-4 py-4 ${i ? "text-right" : "text-left"} text-white/80`}>{key === "date" ? `Total · ${visible.length} days` : key === "orders" ? total(key) : key === "balance" ? "—" : key === "roas" ? attributionComplete && total("adsInr") && total("revenue") !== null ? `${(total("revenue")! / total("adsInr")!).toFixed(2)}×` : "—" : money(total(key), key === "adsUsd" ? "USD" : "USD")}</td>)}</tr></tfoot>}
       </table></div>
     </div>
     {updatedAt && <p className="text-xs text-white/35">Last refreshed {new Date(updatedAt).toLocaleString("en-US", { timeZone: "Asia/Kolkata" })} IST.</p>}
