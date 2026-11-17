@@ -8,7 +8,7 @@ import {
   buildAstrocartographyReport,
   hasUsableAstrocartographyLines,
 } from "@/lib/astrocartography-report";
-import { downloadImage } from "@/lib/soulmate-fulfillment";
+import { downloadImage, ImageDownloadError } from "@/lib/soulmate-fulfillment";
 import { db, checked } from "./auth";
 import {
   REPORTS,
@@ -324,11 +324,23 @@ export async function recoverReport(
       .maybeSingle(),
   );
   if (!force && reportReady(key, old, true)) {
-    if (key === "soulmateSketch")
+    if (key !== "soulmateSketch")
+      return { ready: true, report: key, reused: true };
+    try {
       await downloadImage(
         await resolveSketchImage(String(old.sketch_image_url), userId),
       );
-    return { ready: true, report: key, reused: true };
+      return { ready: true, report: key, reused: true };
+    } catch (error) {
+      // A completed row may still reference an expired provider image. Only a
+      // definitive missing/gone response permits regeneration from saved inputs.
+      // Network, authorization and storage-signing failures must not spend again.
+      if (!(error instanceof ImageDownloadError && [404, 410].includes(error.status)))
+        throw new SupportError(
+          "The saved sketch image could not be verified. Its record and answers are unchanged. Retry recover_report with force false; do not force regeneration for a network, authorization or storage error.",
+          502,
+        );
+    }
   }
   // Keep the previous saved content for traceability. Never remove an existing palm image.
   if (!preserveBefore)

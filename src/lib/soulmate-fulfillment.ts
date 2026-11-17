@@ -66,13 +66,21 @@ export function privateAddress(ip: string): boolean {
   // Only globally routable IPv6 unicast; reject mapped IPv4, loopback and link-local.
   return !/^[23][0-9a-f]{3}:/i.test(ip);
 }
+export class ImageDownloadError extends Error {
+  constructor(public readonly status: number) {
+    super(`Image download returned HTTP ${status}`);
+    this.name = "ImageDownloadError";
+  }
+}
+
 export async function downloadImage(source: string): Promise<{ buffer: Buffer; contentType: string; extension: string }> {
   const url = new URL(source);
   if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) throw new Error("Invalid image URL");
   const addresses = await dns.lookup(url.hostname, { all: true });
   if (!addresses.length || addresses.some(({ address }) => privateAddress(address))) throw new Error("Invalid image host");
   const response = await fetch(url, { signal: AbortSignal.timeout(20000), redirect: "error" });
-  if (!response.ok || !response.body || Number(response.headers.get("content-length")) > 7 * 1024 * 1024) throw new Error("Image download failed or image too large");
+  if (!response.ok) throw new ImageDownloadError(response.status);
+  if (!response.body || Number(response.headers.get("content-length")) > 7 * 1024 * 1024) throw new Error("Image download failed or image too large");
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let length = 0;

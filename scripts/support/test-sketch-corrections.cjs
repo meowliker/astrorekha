@@ -7,7 +7,7 @@ require('ts-node').register({transpileOnly:true,compilerOptions:{module:'CommonJ
 process.env.ANTHROPIC_API_KEY='fixture-only';
 process.env.REPORT_SESSION_SECRET='test-only-report-signature';
 const uid='support-test';
-let rows, submissions=0, mode='success', providerState='success', signingFails=false, signedCount=0;
+let rows, submissions=0, mode='success', providerState='success', signingFails=false, signedCount=0, oldImageFailure=null;
 const copy=x=>JSON.parse(JSON.stringify(x));
 function query(table) {
  let filters=[],operation=null,patch=null,single=false,ignore=false;
@@ -39,11 +39,12 @@ provider.generateSoulmateSketchFromKie=async({prompt,onJobCreated})=>{
  return {imageUrl:'https://provider.example.invalid/result.jpg',providerJobId:'saved-job'};
 };
 provider.getSoulmateSketchJobStatusFromKie=async()=>({state:providerState,imageUrl:providerState==='success'?'https://provider.example.invalid/result.jpg':null});
-require('../../src/lib/soulmate-fulfillment').downloadImage=async()=>({buffer:Buffer.from('test-image'),contentType:'image/jpeg',extension:'jpg'});
+const fulfillment=require('../../src/lib/soulmate-fulfillment');
+fulfillment.downloadImage=async(source)=>{if(source.endsWith('/old.jpg') && oldImageFailure) throw oldImageFailure;return {buffer:Buffer.from('test-image'),contentType:'image/jpeg',extension:'jpg'};};
 global.fetch=async()=>({ok:true});
 const {validatedPayload,executeAction}=require('../../src/lib/support/actions');
 const {inspectReport}=require('../../src/lib/support/customer');
-function reset(){submissions=0;mode='success';providerState='success';signingFails=false;signedCount=0;rows={
+function reset(){oldImageFailure=null;submissions=0;mode='success';providerState='success';signingFails=false;signedCount=0;rows={
  users:[{id:uid,email:'fixture@example.invalid',gender:'female',unlocked_features:{soulmateSketch:true}}],user_profiles:[],payments:[],settings:[],support_audit:[],
  soulmate_sketches:[{id:'sketch-id',user_id:uid,status:'complete',generation_count:1,question_answers:{attracted_to:'female',age_group:'40-45',vibe:'bold',future_goal:'career',appearance:'indian'},sketch_image_url:'https://storage.example.invalid/old.jpg',created_at:'2026-11-12T00:00:00Z',updated_at:'2026-11-12T00:00:00Z'}],support_actions:[]};}
 function action(kind='correct_sketch',payload={answers:{attracted_to:'male',age_group:'35-40'},expectedUpdatedAt:rows.soulmate_sketches[0].updated_at}){const a={id:'action-'+rows.support_actions.length,customer_id:uid,actor_id:'staff',kind,payload,status:'running'};rows.support_actions.push(a);return a;}
@@ -68,6 +69,24 @@ function action(kind='correct_sketch',payload={answers:{attracted_to:'male',age_
  providerState='success';r=await executeAction(action('recover_report',{report:'soulmateSketch',force:false}));assert.equal(r.status,'complete');assert.equal(submissions,1);assert.equal(rows.soulmate_sketches[0].question_answers.age_group,'35-40');
  reset();signingFails=true;r=await executeAction(action());assert.equal(r.status,'needs_review');assert.equal(rows.soulmate_sketches[0].status,'generating');assert.equal(rows.soulmate_sketches[0].provider_job_id,'saved-job');signingFails=false;r=await executeAction(action('recover_report',{report:'soulmateSketch',force:false}));assert.equal(r.status,'complete');assert.equal(submissions,1,'private storage retry must not resubmit generation');
  reset();rows.soulmate_sketches[0].status='generating';r=await executeAction(action());assert.equal(r.status,'needs_review');assert.equal(submissions,0);
+ // A stale complete flag must not block routine recovery of an expired provider URL.
+ for(const status of [404,410]) {
+  reset();Object.assign(rows.soulmate_sketches[0].question_answers,{attracted_to:'male',age_group:'35-40'});
+  const originalAnswers=copy(rows.soulmate_sketches[0].question_answers);
+  oldImageFailure=new fulfillment.ImageDownloadError(status);
+  const recovery=action('recover_report',{report:'soulmateSketch',force:false});r=await executeAction(recovery);
+  assert.equal(r.status,'complete');assert.equal(submissions,1);assert.deepEqual(rows.soulmate_sketches[0].question_answers,originalAnswers);
+  assert.equal(recovery.before_data.record.sketch_image_url,'https://storage.example.invalid/old.jpg');
+  assert.match(rows.soulmate_sketches[0].sketch_image_url,/^storage:/);
+  r=await executeAction(action('recover_report',{report:'soulmateSketch',force:false}));assert.equal(r.result.reused,true);assert.equal(submissions,1);
+ }
+ for(const failure of [new fulfillment.ImageDownloadError(403),new fulfillment.ImageDownloadError(429),new fulfillment.ImageDownloadError(503),new Error('network timeout')]) {
+  reset();oldImageFailure=failure;const before=copy(rows.soulmate_sketches[0]);
+  r=await executeAction(action('recover_report',{report:'soulmateSketch',force:false}));
+  assert.equal(r.status,'needs_review');assert.match(r.result.message,/Retry recover_report with force false/);assert.equal(submissions,0);assert.deepEqual(rows.soulmate_sketches[0],before);
+ }
+ reset();oldImageFailure=new fulfillment.ImageDownloadError(404);delete rows.soulmate_sketches[0].question_answers.attracted_to;
+ r=await executeAction(action('recover_report',{report:'soulmateSketch',force:false}));assert.equal(r.status,'needs_review');assert.equal(submissions,0);
  process.env.KIE_API_KEY='fixture-only';process.env.KIE_INITIAL_POLL_ATTEMPTS='1';process.env.KIE_INITIAL_POLL_INTERVAL_MS='1';
  let jobPersisted=false;
  global.fetch=async(url,options)=>{
