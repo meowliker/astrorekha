@@ -99,10 +99,10 @@ function AdminInvoiceViewContent() {
   const entrySource = searchParams.get("from") || "";
   const isFromOrders = entrySource === "orders";
   const backRoute = isFromOrders ? "/admin/orders" : "/admin/invoices";
-  const pageTitle = isFromOrders ? "Digital Delivery Invoice" : "Invoice Preview";
+  const pageTitle = "Digital Delivery Invoice";
   const pageSubtitle = isFromOrders
     ? "Order proof with invoice details and downloadable PDF"
-    : "Review, download, or print this temporary invoice";
+    : "";
   const [invoice, setInvoice] = useState<InvoicePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
@@ -194,7 +194,7 @@ function AdminInvoiceViewContent() {
             </button>
             <div>
               <h1 className="text-xl font-semibold">{pageTitle}</h1>
-              <p className="text-xs text-white/45">{pageSubtitle}</p>
+              {pageSubtitle && <p className="text-xs text-white/45">{pageSubtitle}</p>}
             </div>
           </div>
           <div className="flex items-center gap-2">
