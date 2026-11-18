@@ -44,11 +44,17 @@ assert.match(activeOnly.emailHtml, /Active unavailable account/);
 const empty = balances.buildDailyBalanceAlert([inactive], now);
 assert.match(empty.slackText, /No active ad accounts configured/);
 assert.doesNotMatch(empty.slackText, /\*AstroRekha\*/);
-assert.equal(balances.dailyBalanceSlot(now), 'ad-balances:2026-11-13');
+assert.equal(balances.dailyBalanceSlot(now), 'ad-balances:2026-11-13:evening');
 assert.equal(balances.dailyBalanceSlot(new Date('2026-11-13T12:29:59Z')), null);
-assert.equal(balances.dailyBalanceSlot(new Date('2026-11-13T13:29:59Z')), 'ad-balances:2026-11-13');
+assert.equal(balances.dailyBalanceSlot(new Date('2026-11-13T13:29:59Z')), 'ad-balances:2026-11-13:evening');
 assert.equal(balances.dailyBalanceSlot(new Date('2026-11-13T13:30:00Z')), null);
 
+assert.equal(balances.dailyBalanceSlot(new Date('2026-11-13T18:30:00Z')), 'ad-balances:2026-11-14:midnight');
+assert.equal(balances.dailyBalanceSlot(new Date('2026-11-13T19:29:59Z')), 'ad-balances:2026-11-14:midnight');
+assert.equal(balances.dailyBalanceSlot(new Date('2026-11-13T18:29:59Z')), null);
+assert.equal(balances.dailyBalanceSlot(new Date('2026-11-13T19:30:00Z')), null);
+const crons = require('../vercel.json').crons.filter(c => c.path === '/api/cron/ad-balance-summary');
+assert.deepEqual(crons.map(c => c.schedule).sort(), ['30 12 * * *', '30 18 * * *']);
 async function main() {
   let fxFailure = false;
   const calls = [];
@@ -79,8 +85,8 @@ async function main() {
   const { runDailyBalanceDigest } = require('../src/lib/monitoring-balance-digest');
   const claims = new Set(); const updates = [];
   const digestDB = { from(table) { assert.equal(table, 'monitoring_balance_digests'); return {
-    async insert({ date }) { if (claims.has(date)) return { error: { code: '23505' } }; claims.add(date); return { error: null }; },
-    update(value) { return { async eq() { updates.push(value); return { error: null }; } }; },
+    async insert({ date, delivery_slot }) { const key = `${date}:${delivery_slot}`; if (claims.has(key)) return { error: { code: '23505' } }; claims.add(key); return { error: null }; },
+    update(value) { const filters = {}; const q = { eq(k,v) { filters[k]=v; return q; }, then(resolve) { assert.ok(filters.date && filters.delivery_slot); updates.push(value); return Promise.resolve({error:null}).then(resolve); } }; return q; },
   }; } };
   assert.equal((await runDailyBalanceDigest(digestDB, new Date('2026-11-13T10:00:00Z'))).skipped, true);
   paused = true;
@@ -93,10 +99,14 @@ async function main() {
   await Promise.all([runDailyBalanceDigest(digestDB, now), runDailyBalanceDigest(digestDB, now)]);
   assert.equal(sends, 1);
   assert.equal(updates[0].status, 'sent');
+  const midnight = new Date('2026-11-12T18:30:00Z'); // Same IST date as the evening check.
+  await Promise.all([runDailyBalanceDigest(digestDB, midnight), runDailyBalanceDigest(digestDB, midnight)]);
+  assert.equal(sends, 2);
+  assert.ok(claims.has('2026-11-13:midnight') && claims.has('2026-11-13:evening'));
   collectFailure = true;
   await assert.rejects(runDailyBalanceDigest(digestDB, new Date('2026-11-14T12:30:00Z')));
   assert.equal(updates.at(-1).status, 'failed');
-  assert.equal(sends, 1);
+  assert.equal(sends, 2);
   assert.equal((await runDailyBalanceDigest(digestDB, new Date('2026-11-14T12:30:00Z'))).skipped, true);
   let invoked = 0;
   stub('../src/lib/supabase-admin', { getSupabaseAdmin: () => digestDB });

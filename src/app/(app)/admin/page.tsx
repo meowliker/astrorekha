@@ -18,6 +18,7 @@ import {
   Sparkles,
   ChartNoAxesCombined,
   TableProperties,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -249,6 +250,12 @@ function AdminDashboardPage() {
             <span>Logout</span>
           </button>
         </motion.div>
+
+        {access?.isAdministrator && <button onClick={() => router.push('/admin/account-balances')} className="mb-6 flex w-full items-center gap-4 rounded-2xl border border-emerald-400/25 bg-[#1A2235] p-6 text-left hover:border-emerald-400/60">
+          <span className="rounded-xl bg-emerald-500/15 p-3"><Wallet className="h-6 w-6 text-emerald-300" /></span>
+          <span className="flex-1"><span className="block text-lg font-semibold text-white">Account Balances</span><span className="mt-1 block text-sm text-white/50">Active ad accounts by funnel, balance snapshots and automatic balance history.</span></span>
+          <ChevronRight className="h-5 w-5 text-white/40" />
+        </button>}
 
         {/* Admin Options Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

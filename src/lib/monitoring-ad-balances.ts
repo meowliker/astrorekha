@@ -138,7 +138,8 @@ export function buildDailyBalanceAlert(checks: MonitorCheck[], now: Date) {
 
 export function dailyBalanceSlot(now: Date) {
   const date = new Date(now.getTime() + 330 * 60_000);
-  // Permit scheduler drift within the hour; never send a manual morning digest.
-  if (date.getUTCHours() !== 18) return null;
-  return `ad-balances:${date.toISOString().slice(0, 10)}`;
+  // Two independent IST slots; allow scheduler drift within the matching hour.
+  const hour = date.getUTCHours();
+  if (hour !== 0 && hour !== 18) return null;
+  return `ad-balances:${date.toISOString().slice(0, 10)}:${hour === 0 ? "midnight" : "evening"}`;
 }

@@ -78,6 +78,22 @@
     {
       "path": "/api/cron/collect-soulmate-sketches",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/sync-account-balances",
+      "schedule": "30 18 * * *"
+    },
+    {
+      "path": "/api/cron/sync-account-balances",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/sync-account-balances",
+      "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/cron/ad-balance-summary",
+      "schedule": "30 18 * * *"
     }
   ]
 }
