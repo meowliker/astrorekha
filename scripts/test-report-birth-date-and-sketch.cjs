@@ -88,3 +88,11 @@ test('provider HTTP-200 application errors are errors, not successful progress',
 test('background collection requires cron authorization',async()=>{
  process.env.CRON_SECRET='fixture-cron';const r=await require('../src/app/api/cron/collect-soulmate-sketches/route').GET(req('/api/cron/collect-soulmate-sketches'));assert.equal(r.status,401);
 });
+test('unavailable old provider records do not starve newer jobs in the next batch',async t=>{
+ const rows=Array.from({length:21},(_,i)=>({...queued(),user_id:'owner-'+i,provider_job_id:'job-'+i,updated_at:new Date(Date.UTC(2026,0,1,0,i)).toISOString()}));
+ const tables={soulmate_sketches:rows};const db=database(tables);t.mock.method(admin,'getSupabaseAdmin',()=>db);
+ t.mock.method(provider,'getSoulmateSketchJobStatusFromKie',async id=>{if(id!=='job-20')throw new Error('recordInfo is null');return {state:'success',imageUrl:'https://example.invalid/new.jpg'};});
+ let r=await collectPendingSoulmateSketches();assert.equal(r.errors,20);assert.ok(rows.slice(0,20).every(row=>row.status==='generating'&&row.generation_count===0));
+ r=await collectPendingSoulmateSketches();assert.equal(r.complete,1);assert.equal(rows[20].status,'complete');assert.equal(rows[20].generation_count,1);
+ assert.ok(db.writes.every(w=>w.table==='soulmate_sketches'));
+});

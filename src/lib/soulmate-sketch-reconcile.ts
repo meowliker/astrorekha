@@ -61,7 +61,17 @@ export async function collectPendingSoulmateSketches() {
       if (result.sketch.status === "complete") totals.complete++;
       else if (result.sketch.status === "failed") totals.failed++;
       else totals.pending++;
-    } catch { totals.errors++; }
+    } catch {
+      totals.errors++;
+      // Retired provider records must not occupy the oldest batch forever.
+      // Rotate the check timestamp only; keep the job and its report state intact.
+      let retry = db.from("soulmate_sketches")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("user_id", row.user_id).eq("provider_job_id", row.provider_job_id)
+        .eq("status", "generating").is("support_recovery_action_id", null);
+      if (row.updated_at) retry = retry.eq("updated_at", row.updated_at);
+      await retry;
+    }
   }
   return totals;
 }
