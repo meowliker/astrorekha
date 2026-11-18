@@ -5,7 +5,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsPDF } from "jspdf";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing, type PricingConfig } from "@/lib/pricing";
-import { getPayUPaymentId, getPayUTransactions } from "@/lib/payu-api";
 import { CHAT_UNLIMITED_PASS_NAME, CHAT_UNLIMITED_PASS_TYPE } from "@/lib/chat-unlimited-pass";
 
 export const dynamic = "force-dynamic";
@@ -402,32 +401,37 @@ async function findPayments(userId: string, txnId: string, email: string): Promi
   }
 
   if (txnId) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("payments")
       .select("*")
       .or(`payu_txn_id.eq.${txnId},payu_payment_id.eq.${txnId},gateway_transaction_id.eq.${txnId},id.eq.${txnId}`)
       .order("created_at", { ascending: false })
       .limit(20);
+    if (error) throw error;
     addRows(data);
+    const paid = results.filter(payment => PAID_STATUSES.includes(String(payment.payment_status || "").toLowerCase()));
+    if (paid.length) return paid;
   }
 
   if (userId) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("payments")
       .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(20);
+    if (error) throw error;
     addRows(data);
   }
 
   if (email) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("payments")
       .select("*")
       .eq("customer_email", email)
       .order("created_at", { ascending: false })
       .limit(20);
+    if (error) throw error;
     addRows(data);
   }
 
@@ -461,49 +465,8 @@ function selectInvoicePayments(payments: PaymentRow[], requestedTxnId: string): 
 }
 
 
-function toYmd(value: Date): string {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-async function getPayUCustomerName(payment: PaymentRow, fallbackDate: string): Promise<string> {
-  if (["paytm", "pinelabs"].includes(payment.gateway || "")) return payment.customer_name || "";
-  const txnId = firstDefined(payment.payu_txn_id, payment.id);
-  const paymentId = firstDefined(payment.payu_payment_id);
-  const anchorDate = new Date(firstDefined(payment.fulfilled_at, payment.created_at, fallbackDate));
-
-  if ((!txnId && !paymentId) || Number.isNaN(anchorDate.getTime())) {
-    return "";
-  }
-
-  const fromDate = new Date(anchorDate);
-  fromDate.setDate(fromDate.getDate() - 2);
-  const toDate = new Date(anchorDate);
-  toDate.setDate(toDate.getDate() + 2);
-
-  try {
-    const transactions = await getPayUTransactions(toYmd(fromDate), toYmd(toDate));
-    const match = transactions.find((txn) => {
-      const payuId = getPayUPaymentId(txn);
-      return (
-        (!!txnId && String(txn.txnid || "").trim() === txnId) ||
-        (!!paymentId && payuId === paymentId)
-      );
-    });
-
-    const name = String(match?.firstname || "").trim();
-    return isGenericCustomerName(name) ? "" : name;
-  } catch (error) {
-    console.warn("PayU customer name lookup failed for invoice:", error);
-    return "";
-  }
-}
-
 async function buildInvoice(userId: string, txnId: string): Promise<InvoicePayload> {
-  const pricing = await getPricingConfig();
-  const firstPayments = await findPayments(userId, txnId, "");
+  const [pricing, firstPayments] = await Promise.all([getPricingConfig(), findPayments(userId, txnId, "")]);
   const firstPayment = firstPayments[0] || null;
   const user = await findUser(userId, txnId, firstPayment);
 
@@ -511,7 +474,7 @@ async function buildInvoice(userId: string, txnId: string): Promise<InvoicePaylo
     throw new Error("No user or paid transaction found for invoice.");
   }
 
-  const payments = await findPayments(user?.id || userId, txnId, user?.email || firstPayment?.customer_email || "");
+  const payments = txnId && firstPayments.length ? firstPayments : await findPayments(user?.id || userId, txnId, user?.email || firstPayment?.customer_email || "");
   let invoicePayments = selectInvoicePayments(payments, txnId);
   if (invoicePayments.length === 0 && user && String(user.payment_status || "").toLowerCase() === "paid") {
     invoicePayments = [createSyntheticPayment(user)];
@@ -532,9 +495,8 @@ async function buildInvoice(userId: string, txnId: string): Promise<InvoicePaylo
     txnId: txn,
     paymentId,
   });
-  const payuCustomerName = await getPayUCustomerName(primaryPayment, paidAt || user?.updated_at || user?.created_at || "");
   const customerName = firstDefined(
-    payuCustomerName,
+    isGenericCustomerName(primaryPayment.customer_name) ? "" : primaryPayment.customer_name,
     isGenericCustomerName(user?.name) ? "" : user?.name,
     "Customer"
   );
@@ -818,7 +780,7 @@ function generatePdf(invoice: InvoicePayload): ArrayBuffer {
 async function handleGET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const token = searchParams.get("token") || "";
+    const token = request.headers.get("x-admin-session") || searchParams.get("token") || "";
     const userId = searchParams.get("userId")?.trim() || "";
     const txnId = searchParams.get("txnId")?.trim() || "";
     const format = searchParams.get("format") || "json";

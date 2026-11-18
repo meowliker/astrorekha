@@ -1,5 +1,6 @@
 "use client";
 
+import { loadAdminInvoice } from "@/lib/admin-invoice-client";
 import type { ReportEvidence } from "@/lib/invoice-report-evidence";
 import type { CreditEvidence } from "@/lib/invoice-credit-evidence";
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -119,20 +120,11 @@ function AdminInvoiceViewContent() {
       return;
     }
 
-    const params = new URLSearchParams({ token, format: "json" });
-    if (userId) params.set("userId", userId);
-    if (txnId) params.set("txnId", txnId);
-
     setLoading(true);
     setError("");
 
     try {
-      const response = await fetch(`/api/admin/invoice?${params.toString()}`, { cache: "no-store" });
-      const json = (await response.json()) as { invoice?: InvoicePayload; error?: string };
-      if (!response.ok || !json.invoice) {
-        throw new Error(json.error || "Failed to generate invoice");
-      }
-      setInvoice(json.invoice);
+      setInvoice(await loadAdminInvoice<InvoicePayload>(token, userId, txnId));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate invoice");
       setInvoice(null);

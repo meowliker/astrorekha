@@ -1,4 +1,5 @@
 "use client";
+import { prefetchAdminInvoice } from "@/lib/admin-invoice-client";
 import AdSourceBadge from "@/components/admin/AdSourceBadge";
 import AcquisitionView, { useAdSource, sourceUrl } from "@/components/admin/AcquisitionView";
 
@@ -22,6 +23,7 @@ import {
 type OrderRow = {
   ad_source?: string;
   id: string;
+  paymentId?: string;
   userId: string;
   email: string;
   customerName: string;
@@ -318,6 +320,10 @@ function AdminOrdersContent() {
       }
 
       setOrders(json.orders || []);
+      if (json.orders?.length === 1) {
+        const order = json.orders[0];
+        prefetchAdminInvoice(order.userId === "-" ? "" : order.userId, order.id);
+      }
       setTotal(json.total || 0);
       setTotalPages(json.totalPages || 1);
     } catch (err) {
@@ -469,7 +475,7 @@ function AdminOrdersContent() {
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search user id, email, order id, item"
+                placeholder="Search PayU/payment ID, user ID, email or item"
                 className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/35"
               />
               {search ? (
@@ -694,6 +700,8 @@ function AdminOrdersContent() {
                   orders.map((order) => (
                     <tr
                       key={order.id}
+                      onMouseEnter={() => prefetchAdminInvoice(order.userId === "-" ? "" : order.userId, order.id)}
+                      onFocus={() => prefetchAdminInvoice(order.userId === "-" ? "" : order.userId, order.id)}
                       onClick={() => openInvoiceFromOrder(order)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
@@ -707,7 +715,7 @@ function AdminOrdersContent() {
                     >
                       <td className="max-w-[220px] px-4 py-3">
                         <p className="truncate font-medium text-white/85">{order.userId}</p>
-                        <p className="truncate text-xs text-white/35">{order.id}</p>
+                        <p className="truncate text-xs text-white/35">{order.paymentId || order.id}</p>
                         <AdSourceBadge source={order.ad_source} />
                       </td>
                       <td className="max-w-[240px] px-4 py-3">

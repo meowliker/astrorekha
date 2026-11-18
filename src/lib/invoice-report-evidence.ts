@@ -29,15 +29,17 @@ export function reportCompletion(row: Record<string, unknown> | null, contentFie
 export async function getReportEvidence(db: SupabaseClient, userId: string, features: string[], purchasedAt: string, unlocked: Record<string, unknown>): Promise<ReportEvidence[]> {
   const since = Number.isFinite(Date.parse(purchasedAt)) ? purchasedAt : null;
   return Promise.all(REPORTS.filter((spec) => features.includes(spec.name)).map(async (spec) => {
-    const record = await db.from(spec.table).select(spec.fields).eq(spec.userKey, userId)
-      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const [record, visits] = await Promise.all([
+      db.from(spec.table).select(spec.fields).eq(spec.userKey, userId)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      since ? db.from("marketing_events").select("id,created_at", { count: "exact" })
+        .eq("user_id", userId).eq("event_name", "page_view").eq("path", spec.path)
+        .gte("created_at", since).order("created_at", { ascending: true }).limit(1) : null,
+    ]);
     if (record.error) throw new Error(`Unable to verify ${spec.name} records. Please retry.`);
     const row = record.data as Record<string, unknown> | null;
     const complete = reportCompletion(row, spec.content, spec.key);
     const generatedAt = complete && typeof row?.generated_at === "string" ? row.generated_at : null;
-    const visits = since ? await db.from("marketing_events").select("id,created_at", { count: "exact" })
-      .eq("user_id", userId).eq("event_name", "page_view").eq("path", spec.path)
-      .gte("created_at", since).order("created_at", { ascending: true }).limit(1) : null;
     if (visits?.error) throw new Error(`Unable to verify ${spec.name} access records. Please retry.`);
     return {
       key: spec.key, name: spec.name, source: spec.table, recordId: typeof row?.id === "string" ? row.id : null,

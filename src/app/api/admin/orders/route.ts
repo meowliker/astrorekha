@@ -12,6 +12,8 @@ export const revalidate = 0;
 type PaymentRow = {
   id: string;
   payu_txn_id: string | null;
+  payu_payment_id?: string | null;
+  gateway_transaction_id?: string | null;
   user_id: string | null;
   type: string | null;
   bundle_id: string | null;
@@ -169,10 +171,14 @@ function matchesSearch(order: {
   email: string;
   type: string;
   items: string[];
+  paymentId?: string | null;
+  transactionId?: string | null;
 }, search: string): boolean {
   if (!search) return true;
   const haystack = [
     order.id,
+    order.paymentId,
+    order.transactionId,
     order.userId,
     order.email,
     order.type,
@@ -230,31 +236,46 @@ async function handleGET(request: NextRequest) {
       ...pricing.coinPackages.map(pkg => ({id:pkg.id,name:`${coinsToQuestionCount(pkg.coins)} Questions`})),
     ].map(item => [item.id, item.name]));
     for (const feature of ["palmReading","birthChart","prediction2026","compatibilityTest","soulmateSketch","futurePartnerReport","vastuShastraGuide","auraColorReport","astrocartographyReport","pastLifeReport","numerologyReport","spiritAnimalReport","witchArchetypeReport"]) names[feature] = featureToName(feature);
-    // Supabase filters and paginates the authoritative records; no stale copies or payment hooks.
-    const fast = await supabase.rpc("read_admin_main_orders", {
-      p_source:adSource, p_start:startDate ? getIstBoundaryUtcIso(startDate) : null,
-      p_end:endDate ? getIstBoundaryUtcIso(endDate,true) : null,
-      p_type:typeFilter, p_search:search, p_page:page, p_size:pageSize, p_names:names,
-    });
-    if (!fast.error) {
-      const total = Number(fast.data.total);
-      const orders = (fast.data.rows as (PaymentRow & {email:string;customer_name:string;ad_source:string})[]).map(payment => {
-        const items=resolveItems(payment,pricing), type=normalizeType(payment.type);
-        return {id:payment.id,userId:payment.user_id || "-",email:payment.email,customerName:payment.customer_name,
-          dateOfPurchase:payment.created_at,type,typeLabel:formatType(type),amount:amountPaiseToInr(payment.amount),
-          currency:payment.currency || "INR",items,itemCount:items.length,ad_source:payment.ad_source};
-      });
-      return NextResponse.json({orders,total,page,pageSize,totalPages:Math.max(1,Math.ceil(total/pageSize))});
+    // Resolve full gateway IDs directly, including older payments not indexed by the RPC.
+    // Restrict interpolation to ID characters; ordinary text/email searches use the RPC.
+    let exactPayments: PaymentRow[] | null = null;
+    if (/^[A-Za-z0-9_-]{6,200}$/.test(search)) {
+      let query = supabase.from("payments").select("*")
+        .in("payment_status", PAID_PAYMENT_STATUSES)
+        .or(["id", "payu_txn_id", "payu_payment_id", "gateway_transaction_id"].map(field => `${field}.eq.${search}`).join(","));
+      if (startDate) query = query.gte("created_at", getIstBoundaryUtcIso(startDate));
+      if (endDate) query = query.lte("created_at", getIstBoundaryUtcIso(endDate, true));
+      const result = await query.order("created_at", { ascending: false });
+      if (result.error) throw result.error;
+      if (result.data?.length) exactPayments = result.data.filter(row => !isStandaloneSoulmatePayment(row) && matchesAdSource(row, adSource));
     }
-    // Allows safe code rollback/rolling deploy. Other DB errors must not masquerade as empty orders.
-    if (!["PGRST202","42883"].includes(fast.error.code)) throw fast.error;
+    if (exactPayments === null) {
+      // Supabase filters and paginates the authoritative records; no stale copies or payment hooks.
+      const fast = await supabase.rpc("read_admin_main_orders", {
+        p_source:adSource, p_start:startDate ? getIstBoundaryUtcIso(startDate) : null,
+        p_end:endDate ? getIstBoundaryUtcIso(endDate,true) : null,
+        p_type:typeFilter, p_search:search, p_page:page, p_size:pageSize, p_names:names,
+      });
+      if (!fast.error) {
+        const total = Number(fast.data.total);
+        const orders = (fast.data.rows as (PaymentRow & {email:string;customer_name:string;ad_source:string})[]).map(payment => {
+          const items=resolveItems(payment,pricing), type=normalizeType(payment.type);
+          return {id:payment.id,userId:payment.user_id || "-",email:payment.email,customerName:payment.customer_name,
+            dateOfPurchase:payment.created_at,type,typeLabel:formatType(type),amount:amountPaiseToInr(payment.amount),
+            currency:payment.currency || "INR",items,itemCount:items.length,ad_source:payment.ad_source};
+        });
+        return NextResponse.json({orders,total,page,pageSize,totalPages:Math.max(1,Math.ceil(total/pageSize))});
+      }
+      // Allows safe code rollback/rolling deploy. Other DB errors must not masquerade as empty orders.
+      if (!["PGRST202","42883"].includes(fast.error.code)) throw fast.error;
+    }
     // Read all matching pages before filtering/counting; Supabase caps each response.
     async function readPayments(): Promise<PaymentRow[]> {
       const rows: PaymentRow[] = [];
       for (let offset = 0; ; offset += 1000) {
         if (offset >= 100000) throw new Error("Choose a shorter date range to view these orders.");
         let query = supabase.from("payments")
-          .select("id, payu_txn_id, user_id, type, bundle_id, feature, coins, customer_email, amount, currency, created_at, landing_url, landing_path, utm_source, utm_medium, utm_campaign, meta_campaign_id, meta_adset_id, meta_ad_id, last_touch")
+          .select("id, payu_txn_id, payu_payment_id, gateway_transaction_id, user_id, type, bundle_id, feature, coins, customer_email, amount, currency, created_at, landing_url, landing_path, utm_source, utm_medium, utm_campaign, meta_campaign_id, meta_adset_id, meta_ad_id, last_touch")
           .in("payment_status", PAID_PAYMENT_STATUSES);
         if (startDate) query = query.gte("created_at", getIstBoundaryUtcIso(startDate, false));
         if (endDate) query = query.lte("created_at", getIstBoundaryUtcIso(endDate, true));
@@ -266,7 +287,7 @@ async function handleGET(request: NextRequest) {
       }
     }
 
-    const payments = await readPayments();
+    const payments = exactPayments ?? await readPayments();
 
     const users: UserRow[] = [];
     const userIds = [...new Set(payments.map(p=>p.user_id).filter((id): id is string=>!!id))];
@@ -288,6 +309,8 @@ async function handleGET(request: NextRequest) {
         return {
           ad_source: isAcquisitionTest(payment) ? "test" : acquisitionChannel(acquisitionTouch(payment)),
           id: payment.id,
+          paymentId: payment.gateway_transaction_id || payment.payu_payment_id || "",
+          transactionId: payment.payu_txn_id || "",
           userId: payment.user_id || "-",
           email: user?.email || payment.customer_email || "Unknown",
           customerName: user?.name || "",
@@ -302,7 +325,7 @@ async function handleGET(request: NextRequest) {
       })
       .filter((order) => {
         if (typeFilter !== "all" && order.type !== typeFilter) return false;
-        return matchesSearch(order, search);
+        return exactPayments !== null || matchesSearch(order, search);
       });
 
     const total = orders.length;
