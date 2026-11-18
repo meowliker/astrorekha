@@ -4,6 +4,7 @@ import type { MonitorCheck } from "./system-monitoring";
 
 export const LOW_AD_BALANCE_INR = 5000;
 export const BALANCE_SLACK_MEMBER_ID = "U08C5ENV66Q";
+const DAILY_BALANCE_MAHESH_MEMBER_ID = "U08KKPKQKHD";
 const TOKEN_SOURCE_ACCOUNT = "1123080110423751";
 const VEDIC_ACCOUNTS = ["2022187855078303", "2366717340763776"] as const;
 export type AdBalance = {
@@ -131,7 +132,7 @@ export function buildDailyBalanceAlert(checks: MonitorCheck[], now: Date) {
   const note = "Amounts show spending limit remaining, not a prepaid wallet balance.";
   return {
     subject: "Daily ad account balances",
-    slackText: `<@${BALANCE_SLACK_MEMBER_ID}> *Daily ad account balances*\n\n${sections.slack || "No active ad accounts configured."}\n\n${note}\nChecked ${time} IST`,
+    slackText: `<@${BALANCE_SLACK_MEMBER_ID}> <@${DAILY_BALANCE_MAHESH_MEMBER_ID}> *Daily ad account balances*\n\n${sections.slack || "No active ad accounts configured."}\n\n${note}\nChecked ${time} IST`,
     emailHtml: `<h2>Daily ad account balances</h2>${sections.html || "<p>No active ad accounts configured.</p>"}<p>${note}</p><p>Checked ${time} IST</p>`,
   };
 }

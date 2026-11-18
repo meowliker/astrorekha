@@ -31,6 +31,7 @@ assert.match(alert.slackText, /<@U08C5ENV66Q>/);
 assert.match(alert.slackText, /\*AstroRekha\*/);
 assert.doesNotMatch(alert.slackText, /<!here>/);
 const daily = balances.buildDailyBalanceAlert([low, balances.balanceCheck({ ...balance, group: 'VedicRekha', accountName: '<!here>*bad*' }, +now)], now);
+assert.match(daily.slackText, /^<@U08C5ENV66Q> <@U08KKPKQKHD> \*Daily ad account balances\*/);
 assert.match(daily.slackText, /\*VedicRekha\*/);
 assert.doesNotMatch(daily.slackText, /<!here>/);
 assert.doesNotMatch(daily.emailHtml, /<!here>/);
