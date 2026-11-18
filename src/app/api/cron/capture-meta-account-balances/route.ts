@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
   const now = new Date();
   if (!isAccountBalanceCaptureWindow(now)) {
     return jsonNoStore(
-      { skipped: true, reason: "Account balances can only be captured from 11:30 AM to 11:34 AM IST." },
+      { skipped: true, reason: "Account balances can only be captured from 12:00–12:04 AM or 11:30–11:34 AM IST." },
       { status: 409 }
     );
   }
@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
       success: true,
       status: result.status,
       date: result.date,
+      dayMode: result.dayMode,
       capturedAt: result.snapshot?.fetchedAt,
       totalUSD: result.snapshot?.totalUSD,
       totalINR: result.snapshot?.totalINR,

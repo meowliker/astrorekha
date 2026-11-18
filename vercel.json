@@ -20,6 +20,10 @@
       "schedule": "0 6 * * *"
     },
     {
+      "path": "/api/cron/capture-meta-account-balances",
+      "schedule": "30 18 * * *"
+    },
+    {
       "path": "/api/cron/monitor-system",
       "schedule": "*/30 * * * *"
     },

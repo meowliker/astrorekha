@@ -41,6 +41,7 @@ export interface AccountBalanceBreakdown {
 
 export interface AccountBalanceSummary {
   date: string;
+  dayMode?: "calendar_ist" | "business_1130_ist";
   accounts: AccountBalanceBreakdown[];
   totalUSD: number;
   totalINR: number;

@@ -21,6 +21,7 @@ export default function AccountBalanceButton({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const titleId = "account-balance-breakdown";
+  const snapshotTime = data.dayMode === "calendar_ist" ? "12:00 AM" : "11:30 AM";
 
   useEffect(() => {
     if (!open) return;
@@ -61,7 +62,7 @@ export default function AccountBalanceButton({
               <div>
                 <h2 id={titleId} className="text-lg font-semibold">Account balance by ad account</h2>
                 <p className="mt-1 text-sm text-white/65">
-                  Saved 11:30 AM IST snapshot for {new Date(`${data.date}T12:00:00+05:30`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}
+                  Saved {snapshotTime} IST snapshot for {new Date(`${data.date}T12:00:00+05:30`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}
                 </p>
               </div>
               <button type="button" autoFocus onClick={close} aria-label="Close account balance breakdown" className="rounded-lg p-2 text-white/60 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400">
@@ -89,7 +90,7 @@ export default function AccountBalanceButton({
                 </ul>
                 {data.accounts.length === 0 && <p className="py-6 text-sm text-white/60">No current ad accounts are configured.</p>}
                 <div className="flex items-center justify-between border-t border-white/15 pt-4">
-                  <span className="text-sm font-medium">Total account balance at 11:30 AM</span>
+                  <span className="text-sm font-medium">Total account balance at {snapshotTime}</span>
                   <div className="text-right tabular-nums">
                     <p className={`text-lg font-semibold ${data.totalUSD < 0 ? "text-red-300" : "text-green-300"}`}>{money(data.totalUSD, "USD")}</p>
                     <p className="text-xs text-white/55">{money(data.totalINR, "INR")}</p>

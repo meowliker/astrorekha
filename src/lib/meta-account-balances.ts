@@ -8,7 +8,12 @@ import type { AccountBalanceBreakdown, AccountBalanceSummary } from "@/lib/profi
 
 const META_API_VERSION = "v21.0";
 const META_BASE_URL = `https://graph.facebook.com/${META_API_VERSION}`;
-const BUSINESS_DAY_MODE = "business_1130_ist" as const;
+export type BalanceDayMode = "business_1130_ist" | "calendar_ist";
+const BUSINESS_DAY_MODE: BalanceDayMode = "business_1130_ist";
+
+export function accountBalanceTable(mode: BalanceDayMode) {
+  return mode === "calendar_ist" ? "profit_sheet_calendar" : "profit_sheet";
+}
 
 function parseMetaMinorUnits(rawValue: unknown, field: string, accountName: string): number {
   const value = Number(rawValue);
@@ -40,14 +45,21 @@ export function getAccountBalanceCaptureDate(now: Date = new Date()): string {
   return getIstDateParts(now).date;
 }
 
-export function isAccountBalanceCaptureWindow(now: Date = new Date()): boolean {
+export function getAccountBalanceCaptureMode(now: Date = new Date()): BalanceDayMode | null {
   const { hour, minute } = getIstDateParts(now);
-  return hour === 11 && minute >= 30 && minute <= 34;
+  if (hour === 0 && minute <= 4) return "calendar_ist";
+  if (hour === 11 && minute >= 30 && minute <= 34) return BUSINESS_DAY_MODE;
+  return null;
+}
+
+export function isAccountBalanceCaptureWindow(now: Date = new Date()): boolean {
+  return getAccountBalanceCaptureMode(now) !== null;
 }
 
 export async function resolveAccountBalanceExchangeRate(
   supabase: SupabaseClient,
-  date: string
+  date: string,
+  dayMode: BalanceDayMode = BUSINESS_DAY_MODE
 ): Promise<number> {
   try {
     const response = await fetch("https://api.exchangerate-api.com/v4/latest/USD", {
@@ -62,7 +74,7 @@ export async function resolveAccountBalanceExchangeRate(
   }
 
   const { data } = await supabase
-    .from("profit_sheet")
+    .from(accountBalanceTable(dayMode))
     .select("exchange_rate")
     .lte("date", date)
     .gt("exchange_rate", 0)
@@ -77,7 +89,8 @@ export async function fetchMetaAccountBalanceSnapshot(
   supabase: SupabaseClient,
   date: string,
   exchangeRate: number,
-  now: Date = new Date()
+  now: Date = new Date(),
+  dayMode: BalanceDayMode = BUSINESS_DAY_MODE
 ): Promise<AccountBalanceSummary> {
   if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
     throw new Error("A valid USD to INR rate is required to calculate account balances.");
@@ -87,7 +100,7 @@ export async function fetchMetaAccountBalanceSnapshot(
   const nowMillis = now.getTime();
   const range = { startMillis: nowMillis, endMillis: nowMillis + 60_000 };
   const currentAccounts = settings.accounts.filter((account) =>
-    getMetaAccountWindowForRequest(account, date, date, BUSINESS_DAY_MODE)
+    getMetaAccountWindowForRequest(account, date, date, dayMode)
   );
   const missingToken = currentAccounts.find((account) => !account.accessToken);
   if (missingToken) {
@@ -107,7 +120,7 @@ export async function fetchMetaAccountBalanceSnapshot(
     const accountName = credential.label || String(accountData?.name || credential.accountId);
 
     if (!response.ok || accountData?.error) {
-      throw new Error(`Unable to fetch the 11:30 AM balance for ${accountName}. Check its Meta access and try again.`);
+      throw new Error(`Unable to fetch the scheduled balance for ${accountName}. Check its Meta access and try again.`);
     }
 
     const currency = String(accountData?.currency || "").toUpperCase();
@@ -147,6 +160,7 @@ export async function fetchMetaAccountBalanceSnapshot(
 
   return {
     date,
+    dayMode,
     accounts: accounts.sort((a, b) => b.usd - a.usd),
     totalUSD: totals.usd,
     totalINR: totals.inr,
@@ -158,18 +172,20 @@ export async function fetchMetaAccountBalanceSnapshot(
 export async function captureMetaAccountBalanceSnapshot(
   supabase: SupabaseClient,
   now: Date = new Date()
-): Promise<{ status: "captured" | "already_captured"; date: string; snapshot?: AccountBalanceSummary }> {
+): Promise<{ status: "captured" | "already_captured"; date: string; dayMode: BalanceDayMode; snapshot?: AccountBalanceSummary }> {
+  const dayMode = getAccountBalanceCaptureMode(now);
+  if (!dayMode) throw new Error("Account balances can only be captured at midnight or 11:30 AM IST (within five minutes).");
   const date = getAccountBalanceCaptureDate(now);
   const { data: existing, error: existingError } = await supabase
-    .from("profit_sheet")
+    .from(accountBalanceTable(dayMode))
     .select("date,account_balance_captured_at")
     .eq("date", date)
     .maybeSingle();
   if (existingError) throw new Error(existingError.message || "Unable to check the saved account balance snapshot.");
-  if (existing?.account_balance_captured_at) return { status: "already_captured", date };
+  if (existing?.account_balance_captured_at) return { status: "already_captured", date, dayMode };
 
-  const exchangeRate = await resolveAccountBalanceExchangeRate(supabase, date);
-  const snapshot = await fetchMetaAccountBalanceSnapshot(supabase, date, exchangeRate, now);
+  const exchangeRate = await resolveAccountBalanceExchangeRate(supabase, date, dayMode);
+  const snapshot = await fetchMetaAccountBalanceSnapshot(supabase, date, exchangeRate, now, dayMode);
   const payload = {
     account_balance_usd: snapshot.totalUSD,
     account_balance_inr: snapshot.totalINR,
@@ -181,17 +197,17 @@ export async function captureMetaAccountBalanceSnapshot(
 
   if (existing) {
     const { data: saved, error } = await supabase
-      .from("profit_sheet")
+      .from(accountBalanceTable(dayMode))
       .update(payload)
       .eq("date", date)
       .is("account_balance_captured_at", null)
       .select("date");
     if (error) throw new Error(error.message || "Unable to save the account balance snapshot.");
-    if (!saved?.length) return { status: "already_captured", date };
+    if (!saved?.length) return { status: "already_captured", date, dayMode };
   } else {
     const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: "UTC" })
       .format(new Date(`${date}T12:00:00Z`));
-    const { error } = await supabase.from("profit_sheet").insert({
+    const { error } = await supabase.from(accountBalanceTable(dayMode)).insert({
       date,
       day: weekday,
       exchange_rate: exchangeRate,
@@ -201,17 +217,17 @@ export async function captureMetaAccountBalanceSnapshot(
     });
     if (error?.code === "23505") {
       const { data: saved, error: saveError } = await supabase
-        .from("profit_sheet")
+        .from(accountBalanceTable(dayMode))
         .update(payload)
         .eq("date", date)
         .is("account_balance_captured_at", null)
         .select("date");
       if (saveError) throw new Error(saveError.message || "Unable to save the account balance snapshot.");
-      if (!saved?.length) return { status: "already_captured", date };
+      if (!saved?.length) return { status: "already_captured", date, dayMode };
     } else if (error) {
       throw new Error(error.message || "Unable to create the account balance snapshot row.");
     }
   }
 
-  return { status: "captured", date, snapshot };
+  return { status: "captured", date, dayMode, snapshot };
 }

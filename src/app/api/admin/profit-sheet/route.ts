@@ -794,7 +794,7 @@ function toDbRow(row: ProfitSheetRow, exchangeRate: number, source: string) {
   };
 }
 
-function fromDbRow(row: Record<string, unknown>): ProfitSheetRow {
+function fromDbRow(row: Record<string, unknown>, dayMode: ProfitSheetDayMode): ProfitSheetRow {
   const revenue = Number(row.revenue || 0);
   const adsCostINR = Number(row.ads_cost_inr || 0);
   // Older rows have no saved per-account spend yet. Preserve their prior gross
@@ -821,6 +821,7 @@ function fromDbRow(row: Record<string, unknown>): ProfitSheetRow {
   const accountBalance = row.account_balance_captured_at
     ? {
         date: String(row.date),
+        dayMode,
         accounts: balanceAccounts,
         totalUSD: Number(row.account_balance_usd || 0),
         totalINR: Number(row.account_balance_inr || 0),
@@ -867,7 +868,7 @@ async function readProfitSheetRows(supabase: SupabaseClient, startDate: string, 
     throw new Error(error.message || "Failed to read profit sheet");
   }
 
-  return (data || []).map(fromDbRow);
+  return (data || []).map(row => fromDbRow(row, dayMode));
 }
 
 function getMissingReportingRanges(rows: ProfitSheetRow[], startDate: string, endDate: string): Array<{ startDate: string; endDate: string; days: number }> {
