@@ -146,10 +146,11 @@ export async function getSoulmateSketchJobStatusFromKie(jobId: string): Promise<
       Authorization: `Bearer ${apiKey}`,
     },
     cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
   });
   const statusPayload = await statusRes.json().catch(() => ({}));
 
-  if (!statusRes.ok) {
+  if (!statusRes.ok || (statusPayload.code != null && Number(statusPayload.code) !== 200)) {
     console.error("[soulmate-sketch/kie] status failed", {
       status: statusRes.status,
       statusText: statusRes.statusText,
@@ -231,10 +232,12 @@ export async function generateSoulmateSketchFromKie({
   prompt,
   config,
   onJobCreated,
+  deferPolling = false,
 }: {
   prompt: string;
   config: LayoutBFunnelConfig;
   onJobCreated?: (jobId: string) => Promise<void>;
+  deferPolling?: boolean;
 }): Promise<SketchGenerationResult> {
   const { apiKey, baseUrl, createPath, statusPathTemplate, initialPollAttempts, initialPollIntervalMs } =
     getKieRuntimeConfig();
@@ -275,7 +278,7 @@ export async function generateSoulmateSketchFromKie({
   });
 
   const createPayload = await createRes.json().catch(() => ({}));
-  if (!createRes.ok) {
+  if (!createRes.ok || (createPayload.code != null && Number(createPayload.code) !== 200)) {
     const providerMessage = extractProviderErrorMessage(createPayload);
     console.error("[soulmate-sketch/kie] create failed", {
       status: createRes.status,
@@ -301,6 +304,7 @@ export async function generateSoulmateSketchFromKie({
   }
 
   if (onJobCreated) await onJobCreated(String(jobId));
+  if (deferPolling) throw new KieTimeoutError("Sketch queued for background collection", String(jobId));
 
   const statusPath = statusPathTemplate.replace("{job_id}", jobId);
   for (let attempt = 0; attempt < initialPollAttempts; attempt += 1) {

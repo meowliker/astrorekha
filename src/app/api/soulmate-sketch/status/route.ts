@@ -3,10 +3,7 @@ import { reportSessionUser } from "@/lib/report-session";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_LAYOUT_B_CONFIG, normalizeLayoutBConfig } from "@/lib/layout-b-funnel";
-import { getSoulmateSketchJobStatusFromKie } from "@/lib/soulmate-sketch";
-
-const PROVIDER_POLL_COOLDOWN_MS = Number(process.env.KIE_STATUS_POLL_COOLDOWN_MS || 12000);
-
+import { reconcileSoulmateSketch, type SavedSketch } from "@/lib/soulmate-sketch-reconcile";
 
 async function loadLayoutConfig() {
   const supabase = getSupabaseAdmin();
@@ -29,7 +26,7 @@ export async function GET(request: NextRequest) {
     const supabase = getSupabaseAdmin();
     const config = await loadLayoutConfig();
 
-    const { data, error } = await supabase
+    const { data: saved, error } = await supabase
       .from("soulmate_sketches")
       .select("id, user_id, status, provider_job_id, sketch_image_url, question_answers, generated_at, generation_count, created_at, updated_at, support_recovery_action_id")
       .eq("user_id", userId)
@@ -40,6 +37,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "status_fetch_failed" }, { status: 500 });
     }
 
+    let data: SavedSketch | null = saved;
     if (!data) {
       return NextResponse.json({
         status: "not_started",
@@ -47,77 +45,17 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    if (!data.support_recovery_action_id && data.status === "generating" && data.provider_job_id && !data.sketch_image_url) {
-      const updatedAtTs = data.updated_at ? new Date(data.updated_at).getTime() : 0;
-      const shouldPollProvider = !updatedAtTs || Date.now() - updatedAtTs >= PROVIDER_POLL_COOLDOWN_MS;
-      if (!shouldPollProvider) {
-        return NextResponse.json({
-          ...data,
-          maxSketchPerUser: config.maxSketchPerUser,
-          remaining: Math.max(0, config.maxSketchPerUser - (data.generation_count || 0)),
-        });
-      }
-
-      try {
-        const job = await getSoulmateSketchJobStatusFromKie(String(data.provider_job_id));
-
-        if (job.state === "success" && job.imageUrl) {
-          const { data: completed } = await supabase
-            .from("soulmate_sketches")
-            .update({
-              status: "complete",
-              sketch_image_url: job.imageUrl,
-              generated_at: new Date().toISOString(),
-              generation_count: 1,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("user_id", userId)
-            .is("support_recovery_action_id", null)
-            .eq("provider_job_id", data.provider_job_id)
-            .select("id, user_id, status, provider_job_id, sketch_image_url, question_answers, generated_at, generation_count, created_at, updated_at, support_recovery_action_id")
-            .maybeSingle();
-
-          if (completed) {
-            return NextResponse.json({
-              ...completed,
-              maxSketchPerUser: config.maxSketchPerUser,
-              remaining: Math.max(0, config.maxSketchPerUser - (completed.generation_count || 0)),
-            });
-          }
-        }
-
-        if (job.state === "fail" || job.state === "failed") {
-          const { data: failed } = await supabase
-            .from("soulmate_sketches")
-            .update({
-              status: "failed",
-              updated_at: new Date().toISOString(),
-            })
-            .eq("user_id", userId)
-            .is("support_recovery_action_id", null)
-            .eq("provider_job_id", data.provider_job_id)
-            .select("id, user_id, status, provider_job_id, sketch_image_url, question_answers, generated_at, generation_count, created_at, updated_at, support_recovery_action_id")
-            .maybeSingle();
-
-          return NextResponse.json({
-            ...(failed || data),
-            message: job.failMessage || "Sketch generation failed",
-            maxSketchPerUser: config.maxSketchPerUser,
-            remaining: Math.max(0, config.maxSketchPerUser - ((failed?.generation_count ?? data.generation_count) || 0)),
-          });
-        }
-
-        await supabase
-          .from("soulmate_sketches")
-          .update({
-            updated_at: new Date().toISOString(),
-          })
-          .eq("user_id", userId)
-          .is("support_recovery_action_id", null)
-          .eq("provider_job_id", data.provider_job_id);
-      } catch (pollError) {
-        console.error("[soulmate-sketch/status] provider poll error", pollError);
-      }
+    let providerState: string | null = null;
+    let providerDelayed = false;
+    let statusCheckUnavailable = false;
+    try {
+      const reconciled = await reconcileSoulmateSketch(data);
+      data = reconciled.sketch;
+      providerState = reconciled.providerState;
+      providerDelayed = reconciled.providerDelayed;
+    } catch {
+      // Retain the existing job on provider/network errors. Do not create a replacement.
+      statusCheckUnavailable = true;
     }
 
     const privateImage = data.sketch_image_url && isPrivateSketchImage(data.sketch_image_url);
@@ -126,7 +64,8 @@ export async function GET(request: NextRequest) {
     }
     return NextResponse.json({
       ...data,
-      sketch_image_url: privateImage ? await resolveSketchImage(data.sketch_image_url, userId) : data.sketch_image_url,
+      providerState, providerDelayed, statusCheckUnavailable,
+      sketch_image_url: privateImage && data.sketch_image_url ? await resolveSketchImage(data.sketch_image_url, userId) : data.sketch_image_url,
       maxSketchPerUser: config.maxSketchPerUser,
       remaining: Math.max(0, config.maxSketchPerUser - (data.generation_count || 0)),
     }, { headers: { "Cache-Control": "no-store" } });

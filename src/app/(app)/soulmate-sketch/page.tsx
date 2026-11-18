@@ -25,6 +25,9 @@ interface SketchStatus {
   generation_count?: number;
   maxSketchPerUser?: number;
   remaining?: number;
+  providerState?: string | null;
+  providerDelayed?: boolean;
+  statusCheckUnavailable?: boolean;
 }
 
 const ANSWERS_STORAGE_KEY = "astrorekha_soulmate_answers";
@@ -70,7 +73,10 @@ export default function SoulmateSketchPage() {
       throw new Error("Unable to load sketch status");
     }
     const json = await response.json();
-    setStatus(json);
+    setStatus((previous) => ({ ...json,
+      providerState: json.providerState ?? (json.status === "generating" ? previous?.providerState : null),
+      providerDelayed: json.providerState ? json.providerDelayed : (json.status === "generating" && previous?.providerDelayed),
+    }));
     if (json?.question_answers && typeof json.question_answers === "object") {
       setAnswers((prev) => ({ ...prev, ...json.question_answers }));
     }
@@ -330,9 +336,13 @@ export default function SoulmateSketchPage() {
           {status?.status === "generating" || isGenerating ? (
             <div className="mt-6 rounded-2xl border border-primary/30 bg-primary/10 p-6 text-center">
               <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
-              <p className="mt-3 text-base font-medium text-white">Finding your soulmate...</p>
+              <p className="mt-3 text-base font-medium text-white">{status?.providerState === "waiting" || status?.providerState === "queuing" ? "Your portrait is queued" : "Preparing your portrait..."}</p>
               <p className="mt-2 text-sm text-white/75">
-                Your portrait is being prepared. Please check back in some time.
+                {status?.statusCheckUnavailable
+                  ? "We couldn’t check progress just now. Your saved request is safe, and we’ll check again."
+                  : status?.providerDelayed
+                    ? "Image generation is taking longer than usual. Your request is saved; there is no need to generate it again."
+                    : "Your portrait is being prepared. It will appear here when ready."}
               </p>
               <p className="mt-2 text-xs text-white/60">
                 You can leave this screen and return later.

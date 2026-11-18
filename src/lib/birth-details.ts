@@ -111,14 +111,9 @@ export function getBirthDateParts(input: Pick<BirthDetailsInput, "birthMonth" | 
   return valid ? { month, day, year } : null;
 }
 
-export function isDefaultBirthDate(input: Pick<BirthDetailsInput, "birthMonth" | "birthDay" | "birthYear">): boolean {
-  const parts = getBirthDateParts(input);
-  return !!parts && parts.year === 2000 && parts.month === 1 && parts.day === 1;
-}
-
 export function getBirthDateIso(input: Pick<BirthDetailsInput, "birthMonth" | "birthDay" | "birthYear">): string | null {
   const parts = getBirthDateParts(input);
-  if (!parts || isDefaultBirthDate(input)) return null;
+  if (!parts) return null;
   return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
 }
 
@@ -161,7 +156,9 @@ export function normalizeBirthDetailsSnapshot(
   const hasBirthDate = !!getBirthDateParts({ birthMonth, birthDay, birthYear });
   const hasBirthTime = knowsBirthTime ? !!getBirthTime24({ birthHour, birthMinute, birthPeriod, knowsBirthTime }) : false;
   const hasBirthPlace = !!birthPlace;
-  const isDefaultPlaceholder = isDefaultBirthDate({ birthMonth, birthDay, birthYear });
+  // A picker default is still a valid birthday. Never infer missing input from
+  // a particular calendar date; absent/invalid fields are checked separately.
+  const isDefaultPlaceholder = false;
 
   const snapshot: BirthDetailsSnapshot = {
     gender: cleanText(input.gender),

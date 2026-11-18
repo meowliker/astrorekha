@@ -1,5 +1,6 @@
 "use client";
 
+import { getBirthDateParts } from "@/lib/birth-details";
 import { motion } from "framer-motion";
 import { fadeUp } from "@/lib/motion";
 import { useOnboardingRouter as useRouter } from "@/components/us-main/Experience";
@@ -25,6 +26,8 @@ export default function BirthdayPage() {
   const { triggerLight } = useHaptic();
 
   const handleContinue = () => {
+    if (!getBirthDateParts({ birthMonth, birthDay, birthYear })) return;
+    setBirthDate(birthMonth, birthDay, birthYear);
     triggerLight();
     router.push("/us/onboarding/birth-time");
   };
@@ -73,7 +76,11 @@ export default function BirthdayPage() {
       </div>
 
       <div className="onboarding-cta">
+        {!getBirthDateParts({ birthMonth, birthDay, birthYear }) && (
+          <p role="alert" className="text-sm text-center text-muted-foreground mb-2">Please select a valid date of birth.</p>
+        )}
         <Button
+          disabled={!getBirthDateParts({ birthMonth, birthDay, birthYear })}
           onClick={handleContinue}
           className="w-full h-14 text-lg font-semibold"
           size="lg"

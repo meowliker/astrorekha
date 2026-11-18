@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
 
     const { data: existingRow, error: existingError } = await supabase
       .from("soulmate_sketches")
-      .select("question_answers, status, created_at, support_recovery_action_id")
+      .select("question_answers, status, created_at, updated_at, support_recovery_action_id")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "save_failed" }, { status: 500 });
     }
 
-    if (existingRow?.support_recovery_action_id) {
+    if (existingRow?.support_recovery_action_id || existingRow?.status === "generating" || existingRow?.status === "complete") {
       return NextResponse.json({ success: true, saved: false,
         question_answers: normalizeAnswers(existingRow.question_answers), status: existingRow.status });
     }
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
       created_at: existingRow?.created_at || nowIso, updated_at: nowIso,
     };
     const query = existingRow
-      ? supabase.from("soulmate_sketches").update(patch).eq("user_id", userId).is("support_recovery_action_id", null)
+      ? supabase.from("soulmate_sketches").update(patch).eq("user_id", userId).eq("status", existingRow.status).eq("updated_at", existingRow.updated_at).is("support_recovery_action_id", null)
       : supabase.from("soulmate_sketches").upsert(patch, { onConflict: "user_id", ignoreDuplicates: true });
     const { data: savedRow, error: saveError } = await query
       .select("question_answers, status, updated_at").maybeSingle();

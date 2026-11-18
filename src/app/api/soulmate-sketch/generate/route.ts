@@ -99,6 +99,11 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  // Resume the saved job. Refreshes, repeat clicks and retries must never enqueue it again.
+  if (existingRow?.status === "generating") {
+    return NextResponse.json({ success: true, sketch: existingRow, pending: true }, { status: 202 });
+  }
+
   const storedAnswers = normalizeAnswers(existingRow?.question_answers || {});
   const answers = { ...storedAnswers, ...incomingAnswers };
   const prompt = buildSoulmateSketchPrompt(answers, user);
@@ -107,6 +112,7 @@ export async function POST(request: NextRequest) {
   const upsertPayload = {
     user_id: userId,
     status: "generating",
+    provider_job_id: null,
     question_answers: answers,
     prompt,
     provider: "kie-nano-banana-2",
@@ -120,8 +126,19 @@ export async function POST(request: NextRequest) {
   const { data: started, error: upsertError } = await starting.select("user_id").maybeSingle();
   if (upsertError || !started) return NextResponse.json({ error: "sketch_changed_reload" }, { status: 409 });
 
+  let createdJobId: string | null = null;
   try {
-    const generated = await generateSoulmateSketchFromKie({ prompt, config });
+    const generated = await generateSoulmateSketchFromKie({ prompt, config, deferPolling: true,
+      onJobCreated: async (jobId) => {
+        createdJobId = jobId;
+        const saved = await supabase.from("soulmate_sketches")
+          .update({ provider_job_id: jobId, updated_at: new Date().toISOString() })
+          .eq("user_id", userId).eq("status", "generating")
+          .is("support_recovery_action_id", null).eq("updated_at", nowIso)
+          .select("user_id").maybeSingle();
+        if (saved.error || !saved.data) throw new Error("Unable to save sketch job. Please contact support before trying again.");
+      },
+    });
 
     const { data: completed, error: completeError } = await supabase
       .from("soulmate_sketches")
@@ -134,6 +151,7 @@ export async function POST(request: NextRequest) {
         updated_at: new Date().toISOString(),
       })
       .eq("user_id", userId)
+      .eq("status", "generating").eq("updated_at", nowIso)
       .is("support_recovery_action_id", null)
       .select("*")
       .maybeSingle();
@@ -149,17 +167,10 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     if (error instanceof KieTimeoutError) {
-      const { data: pendingRow } = await supabase
-        .from("soulmate_sketches")
-        .update({
-          status: "generating",
-          provider_job_id: error.jobId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("user_id", userId)
-      .is("support_recovery_action_id", null)
-        .select("*")
-        .maybeSingle();
+      // Job ID was saved before returning. Read the latest row because a concurrent
+      // collector may already have completed it; never move it back to generating.
+      const { data: pendingRow } = await supabase.from("soulmate_sketches")
+        .select("*").eq("user_id", userId).maybeSingle();
 
       console.warn("[soulmate-sketch/generate] still generating, handing off to status polling", {
         userId,
@@ -173,11 +184,16 @@ export async function POST(request: NextRequest) {
           status: "generating",
           provider_job_id: error.jobId,
         },
-        pending: true,
+        pending: pendingRow?.status !== "complete",
         message: "Sketch is still generating. Please wait...",
       });
     }
 
+    if (createdJobId) {
+      // Provider accepted the job: a database failure must not make it retryable
+      // as a fresh generation. Preserve the reservation for support recovery.
+      return NextResponse.json({ error: "sketch_job_save_failed", message: "Your sketch was queued but its progress could not be saved. Please contact support; do not start another sketch." }, { status: 503 });
+    }
     const rawMessage = getErrorMessage(error)?.trim() || "";
     const safeMessage =
       rawMessage && rawMessage.toLowerCase() !== "no message available"
@@ -196,7 +212,8 @@ export async function POST(request: NextRequest) {
         status: "failed",
         updated_at: new Date().toISOString(),
       })
-      .eq("user_id", userId).is("support_recovery_action_id", null);
+      .eq("user_id", userId).eq("status", "generating")
+      .eq("updated_at", nowIso).is("support_recovery_action_id", null);
 
     return NextResponse.json(
       {

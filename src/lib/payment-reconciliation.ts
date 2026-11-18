@@ -3,7 +3,6 @@ import {
   type BirthDetailsInput,
   birthSnapshotToDbFields,
   birthSnapshotToUserDbFields,
-  isDefaultBirthDate,
   normalizeBirthDetailsSnapshot,
 } from "@/lib/birth-details";
 
@@ -154,16 +153,12 @@ function isBlank(value: unknown): boolean {
 
 function pickMissingBirthFields(snapshotFields: Record<string, unknown>, existing: Record<string, unknown> | null | undefined) {
   const picked: Record<string, unknown> = {};
-  const existingHasDefaultBirthDate = isDefaultBirthDate({
-    birthMonth: existing?.birth_month,
-    birthDay: existing?.birth_day,
-    birthYear: existing?.birth_year,
-  });
+  // Preserve valid existing birthdays, including January 1, 2000.
 
   for (const [key, value] of Object.entries(snapshotFields)) {
     if (value === null || value === undefined || value === "") continue;
     if (key === "birth_month" || key === "birth_day" || key === "birth_year") {
-      if (existingHasDefaultBirthDate || isBlank(existing?.[key])) picked[key] = value;
+      if (isBlank(existing?.[key])) picked[key] = value;
       continue;
     }
     if (isBlank(existing?.[key])) picked[key] = value;
