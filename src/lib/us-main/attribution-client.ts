@@ -2,7 +2,8 @@
 
 import { sanitizePaymentAttribution, type PaymentAttributionPayload } from "@/lib/attribution";
 
-const ATTRIBUTION_STORAGE_KEY = "astrorekha_us_main_attribution";
+import { isUSGoogleJourney } from './google-ads-funnel';
+function attributionStorageKey() { return isUSGoogleJourney() ? 'astrorekha_us_main_google_attribution' : 'astrorekha_us_main_attribution'; }
 
 function readCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
@@ -19,7 +20,7 @@ function readCookie(name: string): string | null {
 function readStoredAttribution(): PaymentAttributionPayload {
   if (typeof window === "undefined") return {};
   try {
-    const raw = window.localStorage.getItem(ATTRIBUTION_STORAGE_KEY);
+    const raw = window.localStorage.getItem(attributionStorageKey());
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return {};
@@ -32,7 +33,7 @@ function readStoredAttribution(): PaymentAttributionPayload {
 function writeStoredAttribution(payload: PaymentAttributionPayload): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(ATTRIBUTION_STORAGE_KEY, JSON.stringify(payload));
+    window.localStorage.setItem(attributionStorageKey(), JSON.stringify(payload));
   } catch {
     // no-op
   }
@@ -59,7 +60,7 @@ export function captureAttributionFromPage(): PaymentAttributionPayload {
   const params = url.searchParams;
   // A new tagged arrival replaces the previous campaign as a unit, so an old ad
   // ID cannot silently take precedence over a new campaign name.
-  const taggedArrival = [...params.keys()].some((key) => /^(utm_|meta_|campaign_id|adset_id|ad_id|fbclid|gclid|gbraid|wbraid)/.test(key));
+  const taggedArrival = [...params.keys()].some((key) => /^(utm_|meta_|campaign_id|adset_id|ad_id|fbclid|gclid|gbraid|wbraid|gad_campaignid)/.test(key));
   const existing = taggedArrival ? {} : readStoredAttribution();
 
   const fbclid = getParamValue(params, ["fbclid"]);

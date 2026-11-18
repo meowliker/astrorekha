@@ -34,7 +34,7 @@ export function landingRouteChannel(raw: Attribution): AcquisitionChannel {
     const url = new URL(candidate, "https://astrorekha.com");
     if (!["astrorekha.com", "www.astrorekha.com", "localhost", "127.0.0.1"].includes(url.hostname)) return "other";
     const path = url.pathname.replace(/\/+$/, "") || "/";
-    if (/^\/(?:discover|soulmate\/discover|us\/soulmate\/discover)(?:\/|$)/.test(path)) return "google";
+    if (/^\/(?:discover|us\/discover|soulmate\/discover|us\/soulmate\/discover)(?:\/|$)/.test(path)) return "google";
     if (["/", "/us", "/soulmate", "/us/soulmate"].includes(path)) return "meta";
   } catch { /* Invalid or unavailable landing evidence remains unclassified. */ }
   return "other";
@@ -124,7 +124,7 @@ export function gaSourceFilter(source: AdSource) {
       { filter: { fieldName: "sessionSource", stringFilter: { matchType: "FULL_REGEXP" as const, value: "(?i)(google|google_ads|googleads)", caseSensitive: false } } },
       { filter: { fieldName: "sessionMedium", stringFilter: { matchType: "FULL_REGEXP" as const, value: "(?i)(cpc|ppc|paid|paidsearch|paid_search|paid_social|paid-social|paidsocial|paid social|cpm)", caseSensitive: false } } },
     ] } },
-    { filter: { fieldName: "landingPagePlusQueryString", stringFilter: { matchType: "FULL_REGEXP" as const, value: "^/(discover|soulmate/discover|us/soulmate/discover)([/\\?].*)?$", caseSensitive: false } } },
+    { filter: { fieldName: "landingPagePlusQueryString", stringFilter: { matchType: "FULL_REGEXP" as const, value: "^/(discover|us/discover|soulmate/discover|us/soulmate/discover)([/\\?].*)?$", caseSensitive: false } } },
   ] } };
   return source === "google" ? google : { notExpression: google };
 }

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { useOnboardingRouter as useRouter } from "@/components/us-main/Experience";
 import { useGoogleAdsExperience } from "@/components/us-main/Experience";
-import { onboardingDestination } from "@/lib/google-ads-funnel";
+import { onboardingDestination } from "@/lib/us-main/google-ads-funnel";
 
 export default function Step14Page() {
   const router = useRouter();

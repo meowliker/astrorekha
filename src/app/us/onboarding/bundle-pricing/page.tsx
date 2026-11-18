@@ -1,4 +1,5 @@
 "use client";
+import { USDiscoverBundlePaywall } from "@/components/us-main/DiscoverBundlePaywall";
 import { startUsCheckout } from "@/lib/us-main/checkout-client";
 
 import ProductOfferTracker from "@/components/us-main/ProductOfferTracker";
@@ -320,6 +321,20 @@ export default function BundlePricingPage() {
     await handlePurchase(couponCode.trim());
   };
 
+
+  if (googleAds) return <>
+    <USDiscoverBundlePaywall
+      plans={bundlePlans} selectedPlan={selectedPlan} isPlanSelectionReady={isPlanSelectionReady}
+      onSelect={id => { hasUserTouchedPlanSelectionRef.current = true; setSelectedPlan(id); }}
+      onPurchase={() => handlePurchase()} onViewPlans={scrollToPayment} palmImage={croppedPalmImage || palmImage}
+      agreedToTerms={agreedToTerms} onTermsChange={setAgreedToTerms}
+      isProcessing={isProcessing} isCheckingCheckout={isCheckingCheckout} isRedeemingCoupon={isRedeemingCoupon}
+      paymentError={paymentError} pendingTxnId={pendingTxnId}
+      coupon={{ visible: showCouponInput, value: couponCode, onShow: () => setShowCouponInput(true), onChange: setCouponCode, onApply: handleCouponUnlock }}
+      sections={{ payment: paymentSectionRef, cards: pricingCardsRef, cta: checkoutCtaRef, details: testimonialSectionRef, about: birthChartSectionRef }}
+      sticky={{ payment: showPaymentStickyCTA, content: showStickyCTA }}
+    />
+  </>;
 
   return (
     <motion.div

@@ -85,10 +85,11 @@ export async function soulmateTrackingCredentials(db: SupabaseClient, range: Met
 export async function readSoulmateUtmVisits(db:SupabaseClient,start:string,end:string):Promise<TrackingUtmVisit[]> {
  const visits:TrackingUtmVisit[]=[];const seen=new Set<string>();
  for(let offset=0;offset<100000;offset+=1000){
-  const {data,error}=await db.from('us_main_events').select('id,created_at,session_id,path,attribution').eq('environment','production').eq('event_name','page_view').eq('path','/us').gte('created_at',start).lt('created_at',end).order('created_at').order('id').range(offset,offset+999);
+  const {data,error}=await db.from('us_main_events').select('id,created_at,session_id,path,attribution').eq('environment','production').eq('event_name','page_view').in('path',['/us','/us/discover']).gte('created_at',start).lt('created_at',end).order('created_at').order('id').range(offset,offset+999);
   if(error)throw new Error('Unable to read US main arrivals');
-  for(const row of data){const tags=row.attribution||{};const url=new URL('https://astrorekha.com/us');for(const key of ['utm_source','utm_medium','utm_campaign','utm_term','utm_content','meta_campaign_id','meta_adset_id','meta_ad_id','gclid','gbraid','wbraid','gad_campaignid'])if(tags[key])url.searchParams.set(key,String(tags[key]));
+  for(const row of data){const tags=row.attribution||{};const url=new URL(row.path,'https://astrorekha.com');for(const key of ['utm_source','utm_medium','utm_campaign','utm_term','utm_content','meta_campaign_id','meta_adset_id','meta_ad_id','gclid','gbraid','wbraid','gad_campaignid'])if(tags[key] || (key==='gad_campaignid' && tags.google_campaign_id))url.searchParams.set(key,String(tags[key] || tags.google_campaign_id));
    const visit=parseTrackedUtmVisit({created_at:row.created_at,url:url.href});
+   if(visit?.channel==='google' && tags.google_campaign_id)visit.campaignId=String(tags.google_campaign_id);
    const key=`${row.session_id}:${visit?.campaignId}:${visit?.campaignName}`;if(visit&&!seen.has(key)){seen.add(key);visits.push(visit);}
   }
   if(data.length<1000)return visits;

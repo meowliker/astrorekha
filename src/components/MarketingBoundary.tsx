@@ -11,7 +11,7 @@ import { trackPixelEvent as trackUSPixelEvent } from "@/lib/us-soulmate-pixel";
 import {isCustomerAccountPath as isAccount} from '@/lib/customer-account-path';
 import {useCustomerCommerce} from '@/hooks/useCustomerCommerce';
 import { USMainMarketing } from './us-main/Marketing';
-const isUSMain = (path: string) => path === '/us' || path.startsWith('/us/onboarding') || path === '/us/payment';
+import { isUSMainPath as isUSMain } from '@/lib/us-main/google-ads-funnel';
 const category = (path: string) => isAccount(path)?'account':isUSMain(path) ? 'us_main' : isUS(path) ? 'us_soulmate' : 'normal';
 const isUS = (path: string) => path === "/us/soulmate" || path.startsWith("/us/soulmate/");
 

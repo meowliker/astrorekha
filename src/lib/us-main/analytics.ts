@@ -1,3 +1,4 @@
+import { isUSGoogleJourney } from '@/lib/us-main/google-ads-funnel';
 import {trackMarketingEvent} from './events-client';
 export type CheckoutItem = {
   item_id: string;
@@ -23,7 +24,7 @@ export function track<E extends keyof AnalyticsEvents>(event: E, params: Analyti
   if (typeof window === "undefined") return;
   void trackMarketingEvent({eventName:event});
   if (process.env.NEXT_PUBLIC_US_MAIN_TRACKING_ENABLED !== "true" || !process.env.NEXT_PUBLIC_US_MAIN_GA_ID || !["astrorekha.com", "www.astrorekha.com"].includes(window.location.hostname)) return;
-  window.gtag?.("event", event, { ...params, funnel: "us_main", send_to: process.env.NEXT_PUBLIC_US_MAIN_GA_ID });
+  window.gtag?.("event", event, { ...params, funnel: "us_main", funnel_variant: isUSGoogleJourney() ? "google_discover" : "normal", send_to: process.env.NEXT_PUBLIC_US_MAIN_GA_ID });
 }
 
 export function trackCheckout(itemId: string, itemName: string, value: number): void {

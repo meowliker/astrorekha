@@ -14,7 +14,7 @@ function withAttribution(request: NextRequest, response: NextResponse): NextResp
   const params = request.nextUrl.searchParams;
   // A touch is a tagged landing, not every later navigation without campaign parameters.
   const tagged = ATTRIBUTION_KEYS.some((key) => params.has(key));
-  const entry = ["/", "/discover", "/soulmate", "/soulmate/discover", "/us", "/us/soulmate", "/us/soulmate/discover"].includes(pathname.replace(/\/+$/, "") || "/");
+  const entry = ["/", "/discover", "/soulmate", "/soulmate/discover", "/us", "/us/discover", "/us/soulmate", "/us/soulmate/discover"].includes(pathname.replace(/\/+$/, "") || "/");
   if (!tagged) {
     if (!entry) return response;
     // Reloading the same landing preserves its tags. A different entry starts a new touch.

@@ -1,4 +1,5 @@
 'use client';
+import { isUSGoogleJourney } from '@/lib/us-main/google-ads-funnel';
 import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import Script from 'next/script';
@@ -38,7 +39,7 @@ export function USMainMarketing() {
     const command=w.gtag as (...args:unknown[])=>void;
     command('js',new Date());command('config',ga,{cookie_prefix:'us_main',send_page_view:false});
    }
-   w.gtag('event','page_view',{send_to:ga,page_location:location.href,page_path:path,funnel:'us_main'});
+   w.gtag('event','page_view',{send_to:ga,page_location:location.href,page_path:path,funnel:'us_main',funnel_variant:isUSGoogleJourney()?'google_discover':'normal'});
   }
  },[path,live,pixel,ga]);
  if (!live) return null;

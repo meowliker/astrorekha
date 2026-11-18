@@ -1,9 +1,10 @@
 import crypto from 'crypto';
+import { usBundleRetryPath, GOOGLE_ADS_PAYWALL } from './google-ads-funnel';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { ORDER_TABLE, type UsOrder } from './server';
 export function purchasePayloads(order:UsOrder){const a=order.attribution,m=a.marketing||{},value=(order.paid_amount_cents ?? order.amount_cents)/100,items=order.line_items.map((p,i)=>{const total=order.paid_amount_cents ?? order.amount_cents;const before=order.line_items.slice(0,i).reduce((sum,x)=>sum+x.cents,0);const cents=Math.round((before+p.cents)*total/order.amount_cents)-Math.round(before*total/order.amount_cents);return {item_id:p.id,item_name:p.name,price:cents/100,discount:(p.cents-cents)/100,quantity:1};});return {
  meta:{event_name:'Purchase',event_id:order.id,event_time:Math.floor(Date.parse(order.paid_at!)/1000),action_source:'website',event_source_url:'https://astrorekha.com/us/payment',user_data:{em:[crypto.createHash('sha256').update(order.customer_email).digest('hex')],...(m.fbc?{fbc:m.fbc}:{}),...(m.fbp?{fbp:m.fbp}:{}),...(a.userAgent?{client_user_agent:a.userAgent}:{})},custom_data:{value,currency:'USD',order_id:order.id,funnel:'us_main',content_ids:items.map(p=>p.item_id),content_type:'product'}},
- ga:{client_id:a.gaClientId,timestamp_micros:Date.parse(order.paid_at!)*1000,events:[{name:'purchase',params:{transaction_id:order.id,value,currency:'USD',funnel:'us_main',items,...(a.gaSessionId?{session_id:a.gaSessionId}:{}),engagement_time_msec:1}}]}
+ ga:{client_id:a.gaClientId,timestamp_micros:Date.parse(order.paid_at!)*1000,events:[{name:'purchase',params:{transaction_id:order.id,value,currency:'USD',funnel:'us_main',...(usBundleRetryPath(m)===GOOGLE_ADS_PAYWALL?{funnel_variant:'google_discover'}:{}),items,...(a.gaSessionId?{session_id:a.gaSessionId}:{}),engagement_time_msec:1}}]}
 };}
 /** Separate claims on us_main_orders; never writes to the main payments ledger. */
 export async function sendUsPurchase(order: UsOrder) {

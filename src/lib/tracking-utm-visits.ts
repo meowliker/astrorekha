@@ -34,7 +34,7 @@ export function parseTrackedUtmVisit(row: LandingRow): TrackingUtmVisit | null {
   const campaignName = value(params, "utm_campaign");
   const source = value(params, "utm_source");
   const channel = acquisitionChannel({ url: row.url });
-  const mappedEntry = ["/", "/us", "/discover", "/soulmate", "/soulmate/discover", "/us/soulmate", "/us/soulmate/discover"].includes(url.pathname.replace(/\/+$/, "") || "/");
+  const mappedEntry = ["/", "/us", "/us/discover", "/discover", "/soulmate", "/soulmate/discover", "/us/soulmate", "/us/soulmate/discover"].includes(url.pathname.replace(/\/+$/, "") || "/");
   if (channel === "other" || (!params.size && !mappedEntry)) return null;
   if (!mappedEntry && channel !== "google" && !campaignId && !/^\d{8,24}$/.test(campaignName || "") && (!campaignName || !isMetaSource(source))) return null;
   return {

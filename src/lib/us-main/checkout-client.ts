@@ -1,4 +1,5 @@
 'use client';
+import { isUSGoogleJourney } from './google-ads-funnel';
 import { checkoutPalm } from "@/lib/checkout-palm-client";
 import { getPaymentAttributionPayload } from './attribution-client';
 import { useOnboardingStore } from './onboarding-store';
@@ -7,7 +8,7 @@ import {readUsMainGaIdentity} from './ga-client';
 import { pixelEvents } from './pixel-events';
 export async function startUsCheckout(type:'bundle'|'upsell',ids:string[],promoCode?:string){
  const email=(localStorage.getItem('astrorekha_us_main_email')||'').trim().toLowerCase();
- const basket=JSON.stringify([email,type,ids,...(promoCode?[promoCode.trim().toUpperCase()]:[])]);const savedKey='astrorekha_us_main_request';let saved: {basket:string;key:string}|null=null;
+ const basket=JSON.stringify([email,type,ids,...(promoCode?[promoCode.trim().toUpperCase()]:[])]);const savedKey=isUSGoogleJourney()?'astrorekha_us_main_google_request':'astrorekha_us_main_request';let saved: {basket:string;key:string}|null=null;
  try{saved=JSON.parse(localStorage.getItem(savedKey)||'null');}catch{}
  const requestKey=saved?.basket===basket?saved.key:crypto.randomUUID();localStorage.setItem(savedKey,JSON.stringify({basket,key:requestKey}));
  const gaIdentity=await readUsMainGaIdentity();
@@ -20,6 +21,6 @@ export async function startUsCheckout(type:'bundle'|'upsell',ids:string[],promoC
 }
 export async function prepareUsEmail(email:string){
  const old=localStorage.getItem('astrorekha_us_main_email');const changed=!!old&&old!==email;
- if(changed)for(const key of ['payment_completed','registration_completed','main_order','pending_order','request','user_id','anon_id','bundle_id'])localStorage.removeItem(`astrorekha_us_main_${key}`);
+ if(changed)for(const key of ['payment_completed','registration_completed','main_order','pending_order','request','google_request','user_id','anon_id','bundle_id'])localStorage.removeItem(`astrorekha_us_main_${key}`);
  localStorage.setItem('astrorekha_us_main_email',email);localStorage.setItem('astrorekha_us_main_checkout_email',email);return changed;
 }

@@ -114,10 +114,17 @@ test('payment delivery, event senders and shared post-payment destinations remai
     'src/app/api/payments/initiate/route.ts',
     'src/lib/payu-fulfillment.ts', 'src/lib/ga4-purchase.ts', 'src/lib/meta-purchase.ts',
     // Attribution capture intentionally changed; behavioral coverage is in test-google-attribution.cjs.
-    'src/components/MarketingBoundary.tsx',
+    // MarketingBoundary now recognizes the isolated US Discover route; checked separately below.
     'src/app/soulmate/soulmate-landing.tsx', 'src/app/us/soulmate/soulmate-landing.tsx',
   ];
   for (const file of protectedFiles) {
     assert.equal(fs.readFileSync(file, 'utf8'), execFileSync('git', ['show', 'HEAD:' + file], { encoding: 'utf8' }), file);
   }
+});
+
+test('US Discover routing leaves existing marketing destinations and sender markup unchanged', () => {
+ const file='src/components/MarketingBoundary.tsx';
+ const original=execFileSync('git',['show','HEAD:'+file],{encoding:'utf8'});
+ const normalize=s=>s.replace(/^import \{ isUSMainPath as isUSMain \} from .*;$/m,'').replace(/^const isUSMain = .*;$/m,'');
+ assert.equal(normalize(fs.readFileSync(file,'utf8')),normalize(original));
 });
