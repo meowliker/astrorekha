@@ -8,6 +8,6 @@ export function SoulmateBusinessFooter({ light = false }: { light?: boolean }) {
     <p>AI-generated portraits and readings for personal reflection. They do not identify a real future partner or guarantee a relationship or outcome.</p>
     <p>AstroRekha is operated by Visionary Era.</p>
     <address className="not-italic">IRIS-47, Chouhan Housing, Chouhan Green Valley, Bhilai – 490020, India</address>
-    <p><a href="tel:+917828991668">+91 7828991668</a> · <a href="mailto:team.astrorekha@gmail.com">team.astrorekha@gmail.com</a></p>
+    <p><a href="tel:+918820227112">+91 8820227112</a> · <a href="mailto:team.astrorekha@gmail.com">team.astrorekha@gmail.com</a></p>
   </footer>;
 }

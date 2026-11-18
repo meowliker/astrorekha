@@ -204,7 +204,7 @@ export function SoulmateLanding({ onStart }: { onStart: () => void }) {
           <p>Astro Rekha sketches are artistic interpretations for personal reflection. They do not identify a real future partner or guarantee a relationship or outcome.</p>
           <p>This website is not affiliated with or endorsed by Meta or Google.</p>
           <p>Operated by Visionary Era · IRIS-47, Chouhan Housing, Chouhan Green Valley, Bhilai – 490020, India</p>
-          <p><a href="tel:+917828991668">+91 7828991668</a> · <a href="mailto:team.astrorekha@gmail.com">team.astrorekha@gmail.com</a></p>
+          <p><a href="tel:+918820227112">+91 8820227112</a> · <a href="mailto:team.astrorekha@gmail.com">team.astrorekha@gmail.com</a></p>
           <p className={styles.copyright}>© {new Date().getFullYear()} Astro Rekha. All rights reserved.</p>
         </footer>
       </main>
