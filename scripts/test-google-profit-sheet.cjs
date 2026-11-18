@@ -1,6 +1,6 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 require('ts-node').register({transpileOnly:true,compilerOptions:{module:'CommonJS',moduleResolution:'node'}});
-const {googleProfitRow,googleProfitCacheKey}=require('../src/lib/google-profit-sheet');
+const {googleProfitRow,googleProfitCacheKey,usGoogleFinanceDay}=require('../src/lib/google-profit-sheet');
 const day={date:'2026-11-14',received:118000,refund:0,orders:1,refunds:0,bundleReceived:118000,bundleRefund:0,bundleOrders:1,salesTax:18000,gateways:{}};
 test('native Google cost converts once and preserves workspace financial formulas',()=>{
  const usa={id:'usa',name:'USA',currency:'USD'},india={id:'india',name:'India',currency:'INR'};
@@ -44,7 +44,7 @@ test('a stale or tampered account selector cannot cross workspace regions',async
   assert.match((await response.json()).error,new RegExp(googleProfitRegion(funnel).name));
  }
 });
-test('requests without an account select the workspace region for both spend and receipts',async()=>{
+test('the primary section uses its account day and unmatched orders are queried separately',async()=>{
  const reporting=require('../src/lib/google-ads-reporting');
  const finance=require('../src/lib/admin-source-finance');
  const cache=require('../src/lib/profit-report-cache');
@@ -57,9 +57,8 @@ test('requests without an account select the workspace region for both spend and
   return {account:{...region,currency:id==='6752275511'?'INR':'USD',rows:[{date:day.date,costMicros:1000000}]},campaigns:[{id:'verified-campaign',name:'Verified',accountId:id}],fetchedAt:'2026-11-17T10:00:00Z'};
  };
  finance.readAdSourceFinance=async(_db,funnel,source,_start,_end,mode,scope)=>{
-  assert.equal(source,'google');assert.equal(mode,'account_day');assert.equal(scope.timezone,googleProfitRegion(funnel).timezone);
-  assert.equal(scope.include({id:'unique-order',google_campaign_id:'verified-campaign'},'2026-11-14T12:00:00Z'),true);
-  return [day];
+  assert.equal(source,'google');assert.equal(mode,'account_day');assert.equal(scope.timezone,googleProfitRegion(requested.funnel).timezone);
+  return scope.include({id:'unique-order',google_campaign_id:'verified-campaign'},'2026-11-14T12:00:00Z') ? [day] : [];
  };
  cache.cachedProfitReport=async(_db,key,load)=>{assert.match(key,/^[a-f0-9]{64}$/);return load();};
  try{
@@ -68,11 +67,56 @@ test('requests without an account select the workspace region for both spend and
    assert.equal(response.status,200);const result=await response.json();
    assert.deepEqual(requested,{id:googleProfitRegion(funnel).id,funnel});
    assert.equal(result.account.id,googleProfitRegion(funnel).id);assert.equal(result.attributionComplete,true);
-   assert.equal(result.rows.length,1);assert.deepEqual(result.rows[0],googleProfitRow(day,1000000,result.account,funnel,90,true));
+   assert.equal(result.rows.length,1); const expected = funnel==='us-main'?{...googleProfitRow(usGoogleFinanceDay(day,day,90),1000000,result.account,funnel,90,true),originalInrReceived:day.received,originalInrRefund:day.refund,originalInrOrders:day.orders}:googleProfitRow(day,1000000,result.account,funnel,90,true);assert.deepEqual(result.rows[0],expected);
   }
  }finally{
   [reporting.readGoogleProfitContext,finance.readAdSourceFinance,cache.cachedProfitReport]=originals;
   if(oldUrl===undefined)delete process.env.NEXT_PUBLIC_SUPABASE_URL;else process.env.NEXT_PUBLIC_SUPABASE_URL=oldUrl;
   if(oldKey===undefined)delete process.env.SUPABASE_SERVICE_ROLE_KEY;else process.env.SUPABASE_SERVICE_ROLE_KEY=oldKey;
  }
+});
+
+test('USA historical INR receipts appear only in the US main workspace; unmatched receipts remain separate',async()=>{
+ const reporting=require('../src/lib/google-ads-reporting'),finance=require('../src/lib/admin-source-finance'),cache=require('../src/lib/profit-report-cache');
+ const originals=[reporting.readGoogleProfitContext,finance.readAdSourceFinance,cache.cachedProfitReport];
+ const oldUrl=process.env.NEXT_PUBLIC_SUPABASE_URL,oldKey=process.env.SUPABASE_SERVICE_ROLE_KEY;
+ process.env.NEXT_PUBLIC_SUPABASE_URL='https://fixture.supabase.co';process.env.SUPABASE_SERVICE_ROLE_KEY='fixture';
+ const india={id:'6752275511',name:'Astro India',currency:'INR',timezone:'Asia/Calcutta',rows:[{date:day.date,costMicros:2000000,status:'reported'}]};
+ const usa={id:'4870113996',name:'Astro USA',currency:'USD',timezone:'America/New_York',rows:[{date:day.date,costMicros:1000000,status:'reported'}]};
+ reporting.readGoogleProfitContext=async(id)=>({account:id===usa.id?usa:india,accounts:[india,usa],campaigns:[{id:'us-campaign',name:'USA campaign',accountId:usa.id}],fetchedAt:'2026-11-18T10:00:00Z'});
+ finance.readAdSourceFinance=async(_db,funnel,source,_start,_end,_mode,scope)=>{
+  assert.ok(['astrorekha','us-main'].includes(funnel));assert.equal(source,'google');
+  const base={...day,received:0,bundleReceived:0,bundleOrders:0,orders:0};
+  for(const campaign of funnel==='astrorekha'?['us-campaign','unmatched']:[]){
+   if(scope.include({id:campaign,google_campaign_id:campaign},'2026-11-14T12:00:00Z')) {
+    if(campaign==='us-campaign'){assert.equal(scope.timezone,usa.timezone);base.received+=296888;base.orders+=4;}
+    else {base.received+=4366;base.orders++;}
+   }
+  }
+  return [base];
+ };
+ cache.cachedProfitReport=async(_db,_key,load)=>load();
+ try{
+  const response=await googleProfitResponse(new Request('https://astrorekha.com/api/admin/profit?start=2026-11-14&end=2026-11-16&exchangeRate=90'),'astrorekha');
+  assert.equal(response.status,200);const data=await response.json();
+  assert.equal(data.rows[0].salesCount,0);assert.equal(data.rows[0].adsCostINR,2);
+  assert.equal(data.additionalReports.length,0);const us=await (await googleProfitResponse(new Request('https://astrorekha.com/api/admin/profit?start=2026-11-14&end=2026-11-16&exchangeRate=90'),'us-main')).json();
+  assert.equal(us.account.id,usa.id);assert.equal(us.rows[0].orders,4);assert.equal(us.rows[0].originalInrReceived,296888);assert.equal(us.rows[0].received,3299);assert.equal(us.rows[0].adsUsd,100);
+  assert.equal(data.unassigned.rows[0].orders,1);assert.deepEqual(data.unassigned.campaigns,['unmatched']);
+  assert.equal(data.attributionComplete,true);assert.equal(us.attributionComplete,true);
+ }finally{
+  [reporting.readGoogleProfitContext,finance.readAdSourceFinance,cache.cachedProfitReport]=originals;
+  if(oldUrl===undefined)delete process.env.NEXT_PUBLIC_SUPABASE_URL;else process.env.NEXT_PUBLIC_SUPABASE_URL=oldUrl;
+  if(oldKey===undefined)delete process.env.SUPABASE_SERVICE_ROLE_KEY;else process.env.SUPABASE_SERVICE_ROLE_KEY=oldKey;
+ }
+});
+
+test('INR conversion preserves refunds, original money and the existing tax formula without changing inputs',()=>{
+ const zero={...day,received:0,refund:0,orders:0,refunds:0,bundleReceived:0,bundleRefund:0,bundleOrders:0,salesTax:0};
+ const legacy={...day,received:296888,refund:65962,orders:4,refunds:1};
+ const before=JSON.stringify(legacy);const combined=usGoogleFinanceDay(zero,legacy,93.96);
+ assert.equal(JSON.stringify(legacy),before);assert.equal(combined.originalInrReceived,296888);assert.equal(combined.originalInrRefund,65962);
+ assert.equal(combined.received,Math.round(296888/93.96));assert.equal(combined.refund,Math.round(65962/93.96));
+ const old=googleProfitRow(legacy,0,{id:'usa',name:'USA',currency:'USD'},'astrorekha',93.96,true);
+ assert.equal(combined.salesTax,Math.round(Math.round(old.gst*100)/93.96));assert.throws(()=>usGoogleFinanceDay(zero,legacy,0));
 });

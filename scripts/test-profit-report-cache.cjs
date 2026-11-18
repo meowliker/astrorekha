@@ -7,14 +7,14 @@ const exports_ = {};
 vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/lib/profit-report-cache.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,
   {exports:exports_,require,Response,URLSearchParams,Date,console});
 const {cachedProfitReport,profitReportCacheKey,invalidateProfitReports} = exports_;
-function fixture(initial) {
+function fixture(initial, payload = {rows:[{revenue:123.45}],dayMode:"calendar_ist"}) {
   let row=initial; const tasks=[]; let loadCount=0; let failed=false;
   const db={from(){ const filters={};return {
     select(){return this},eq(k,v){filters[k]=v;return this},maybeSingle:async()=>({data:row}),
     update(value){return {eq(k,v){filters[k]=v;return this},then(resolve){if(row?.refresh_token===filters.refresh_token)row={...row,...value};resolve({error:null})}}},
     delete(){return {neq:async()=>{row=null;return {error:null}}}},
   }},async rpc(_,args){if(row?.refresh_token)return {data:false};row={...row,refresh_token:args.p_token};return {data:true}}};
-  return {db,tasks,get row(){return row},get count(){return loadCount},fail(){failed=true},async run(){return cachedProfitReport(db,'key',async()=>{loadCount++;if(failed)throw Error('provider unavailable');return Response.json({rows:[{revenue:123.45}],dayMode:'calendar_ist'})},fn=>tasks.push(fn))}};
+  return {db,tasks,get row(){return row},get count(){return loadCount},fail(){failed=true},async run(reconcile){return cachedProfitReport(db,'key',async()=>{loadCount++;if(failed)throw Error('provider unavailable');return Response.json(payload)},fn=>tasks.push(fn),reconcile)}};
 }
 test('keys isolate timing, source, range and rate, but never user credentials',()=>{
  const base=new URLSearchParams('startDate=2026-11-01&endDate=2026-11-14&token=secret');const key=profitReportCacheKey(base);
@@ -35,4 +35,11 @@ test('failed background refresh retains known totals and stores a visible warnin
 test('in-flight first request reports preparing, not zero sales; manual invalidation removes old snapshot',async()=>{
  const f=fixture({refresh_token:'other'});const result=await f.run();assert.equal(result.status,202);assert.equal((await result.json()).preparing,true);assert.equal(f.count,0);
  await invalidateProfitReports(f.db);assert.equal(f.row,null);
+});
+
+test('reconciliation persists verified rows before replacing an inconsistent successful response',async()=>{
+ const f=fixture({payload:{rows:[{date:'2026-11-17',profit:50}]},fetched_at:'2020-01-01'}, {rows:[{date:'2026-11-17',profit:null}]});
+ await f.run(async(fresh,previous)=>({...fresh,rows:previous.rows,retained:true}));await f.tasks[0]();
+ assert.equal(f.row.payload.rows[0].profit,50);assert.equal(f.row.payload.retained,true);
+ assert.equal((await(await f.run()).json()).rows[0].profit,50);
 });

@@ -1,4 +1,6 @@
 "use client";
+import GoogleProfitUnmatched, { type GoogleUnmatched } from "@/components/admin/GoogleProfitUnmatched";
+import GoogleProfitSavedNote from "@/components/admin/GoogleProfitSavedNote";
 import GoogleProfitReportingDay from "@/components/admin/GoogleProfitReportingDay";
 import { googleProfitRegion, googleProfitToday } from "@/lib/google-profit-region";
 import { useAdSource } from "@/components/admin/AcquisitionView";
@@ -25,13 +27,14 @@ export function SoulmateProfitPanel() {
   const adSource = useAdSource();
   const googleAccount = googleProfitRegion("us-main").id;
   const today = adSource === "google" ? googleProfitToday("us-main") : profitDay(Date.now());
-  const [start, setStart] = useState(US_MAIN_PROFIT_START);
+  const reportStart = adSource === "google" ? "2026-10-01" : US_MAIN_PROFIT_START;
+  const [start, setStart] = useState(reportStart);
   const [end, setEnd] = useState(today);
   const [period, setPeriod] = useState("sinceLaunch");
   const [days, setDays] = useState<string[]>([]);
   const [roas, setRoas] = useState("all");
   const [, setRate] = useState("");
-  const [, setAppliedRate] = useState<number | null>(null);
+  const [appliedRate, setAppliedRate] = useState<number | null>(null);
   const [, setRevision] = useState(0);
   const [accountCount, setAccountCount] = useState(0);
   const [attributionComplete,setAttributionComplete]=useState(true);
@@ -41,6 +44,8 @@ export function SoulmateProfitPanel() {
   const [missing, setMissing] = useState<string[]>([]);
   const [refresh, setRefresh] = useState(0);
   const [rows, setRows] = useState<SoulmateProfitRow[]>([]);
+  const [extraReports, setExtraReports] = useState<Array<{account:{id:string;name:string;timezone:string};rows:SoulmateProfitRow[];attributionComplete:boolean}>>([]);
+  const [unassigned, setUnassigned] = useState<GoogleUnmatched>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [updatedAt, setUpdatedAt] = useState("");
@@ -49,9 +54,20 @@ export function SoulmateProfitPanel() {
   const rangeStart = days.length ? days[0] : start;
   const rangeEnd = days.length ? days[days.length - 1] : end;
 
+  const loadedQuery = useRef("");
+  const refreshAttempts = useRef(0);
+  const [reportRefreshing, setReportRefreshing] = useState(false);
+  useEffect(() => {
+    if (!reportRefreshing || refreshAttempts.current >= 12) return;
+    const timer = setTimeout(() => { refreshAttempts.current++; setRefresh(n => n + 1); }, 2500);
+    return () => clearTimeout(timer);
+  }, [reportRefreshing, refresh]);
   useEffect(() => {
     const abort = new AbortController();
-    setLoading(true); setError("");
+    const queryKey = `${rangeStart}:${rangeEnd}:${adSource}:${googleAccount}`;
+    const keepSaved = adSource === "google" && loadedQuery.current === queryKey;
+    if (!keepSaved) {setLoading(true); setRows([]); setExtraReports([]); setUnassigned(undefined); refreshAttempts.current = 0;}
+    setError("");
     fetch(`/api/admin/us-main/profit?${new URLSearchParams({ start: rangeStart, end: rangeEnd, adSource, googleAccount })}`, {
       headers: { Authorization: `Bearer ${localStorage.getItem("admin_session_token") || ""}` }, signal: abort.signal, cache: "no-store",
     }).then(async (response) => {
@@ -63,15 +79,15 @@ export function SoulmateProfitPanel() {
       }
       if(result.preparing)throw new Error("This reporting window is still being prepared. Please refresh.");
       if (!response.ok) throw new Error(result.error || "Unable to load profit sheet.");
-      if (!abort.signal.aborted) { setRows(result.rows); setAttributionComplete(result.attributionComplete !== false); setNotice((result.warnings || []).join(" ")); setUpdatedAt(result.updatedAt || ""); setMissing(result.missing); setAccountCount(result.accountCount); setRevision(result.revision); setAppliedRate(result.exchangeRate); setRate(result.exchangeRate ? String(result.exchangeRate) : ""); }
-    }).catch((cause) => { if (!abort.signal.aborted) setError(cause.message); })
+      if (!abort.signal.aborted) { loadedQuery.current = queryKey; setReportRefreshing(adSource === "google" && Boolean(result.refreshing)); setLoading(false); setRows(result.rows); setExtraReports(result.additionalReports || []); setUnassigned(result.unassigned); setAttributionComplete(result.attributionComplete !== false); setNotice(result.syncWarning || (result.warnings || []).join(" ")); setUpdatedAt(result.updatedAt || ""); setMissing(result.missing); setAccountCount(result.accountCount); setRevision(result.revision); setAppliedRate(result.exchangeRate); setRate(result.exchangeRate ? String(result.exchangeRate) : ""); }
+    }).catch((cause) => { if (!abort.signal.aborted) {setReportRefreshing(false); if (keepSaved) setNotice("Refresh failed. Showing saved figures from the time below."); else setError(cause.message);} })
       .finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();
   }, [rangeStart, rangeEnd, refresh, adSource, googleAccount]);
 
   const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem("admin_session_token") || ""}`, "Content-Type": "application/json" });
   async function sync(mode: "last2" | "range", first?: string, last?: string) {
-    if (adSource === "google") {setRefresh(n => n + 1); return;}
+    if (adSource === "google") {refreshAttempts.current = 0; setRefresh(n => n + 1); return;}
     setSyncing(true); setNotice("");
     try {
       const res = await fetch("/api/admin/us-main/profit", { method: "POST", headers: authHeaders(), body: JSON.stringify({ mode, start: first, end: last }) });
@@ -84,7 +100,7 @@ export function SoulmateProfitPanel() {
   function selectPeriod(value: string) {
     const year = Number(today.slice(0, 4));
     let first = today, last = today;
-    if (value === "sinceLaunch") first = US_MAIN_PROFIT_START;
+    if (value === "sinceLaunch") first = reportStart;
     else if (value === "yesterday") first = last = shiftProfitDate(today, -1);
     else if (value === "last7") first = shiftProfitDate(today, -6);
     else if (value === "last30") first = shiftProfitDate(today, -29);
@@ -95,20 +111,10 @@ export function SoulmateProfitPanel() {
       last = new Date(Date.UTC(year, month + (value.startsWith("q") ? 3 : 1), 0)).toISOString().slice(0, 10);
       if (last > today) last = today;
     }
-    setStart(first < US_MAIN_PROFIT_START ? US_MAIN_PROFIT_START : first); setEnd(last < US_MAIN_PROFIT_START ? US_MAIN_PROFIT_START : last); setDays([]); setPeriod(value);
+    setStart(first < reportStart ? reportStart : first); setEnd(last < reportStart ? reportStart : last); setDays([]); setPeriod(value);
   }
 
-  const visible = rows.filter((row) => (!days.length || days.includes(row.date)) && (
-    roas === "all" || (roas === "positive" && row.roas !== null && row.roas > 1) ||
-    (roas === "negative" && row.roas !== null && row.roas <= 1) || (roas === "noads" && row.adsInr === 0) || (roas === "unavailable" && row.roas === null)
-  )).sort((a, b) => {
-    const left = a[sort.key] ?? null, right = b[sort.key] ?? null;
-    if (left === null) return right === null ? 0 : 1;
-    if (right === null) return -1;
-    const result = typeof left === "string" ? left.localeCompare(String(right)) : left - Number(right);
-    return sort.asc ? result : -result;
-  });
-  const total = (key: ColumnKey): number | null => visible.some((row) => row[key] === null) ? null : visible.reduce((sum, row) => sum + Number(row[key]), 0);
+
   const year = Number(today.slice(0, 4)), currentMonth = Number(today.slice(5, 7));
   const needsSync = [...new Set([...missing, ...rows.filter((r) => r.stale).map((r) => r.date)])].sort();
   const backfillStart = needsSync[0];
@@ -120,67 +126,87 @@ export function SoulmateProfitPanel() {
     <div className="rounded-xl border border-white/10 bg-[#1A2235] p-4">
       <div className="flex flex-wrap items-end gap-4">
         {adSource === "google" && <GoogleProfitReportingDay funnel="us-main" />}
-        <div><p className="mb-1 text-xs text-white/50">Date range · {adSource === "google" ? googleProfitRegion("us-main").label : "IST"}</p><TrackingDateRangePicker value={{ start, end }} maxDate={today} minDate={US_MAIN_PROFIT_START} maxDays={366} align="left" onChange={(range) => { setStart(range.start); setEnd(range.end); setDays([]); setPeriod("custom"); }} /></div>
+        <div><p className="mb-1 text-xs text-white/50">Date range · {adSource === "google" ? googleProfitRegion("us-main").label : "IST"}</p><TrackingDateRangePicker value={{ start, end }} maxDate={today} minDate={reportStart} maxDays={366} align="left" onChange={(range) => { setStart(range.start); setEnd(range.end); setDays([]); setPeriod("custom"); }} /></div>
         <div><p className="mb-1 text-xs text-white/50">Specific Days</p><button type="button" aria-haspopup="dialog" className={`${control} ${days.length ? "border-primary/40 text-primary" : ""}`} onClick={() => setPicker("days")}>{days.length ? `${days.length} days selected` : "Pick Days"}</button></div>
         <label className="text-xs text-white/50">Period<select aria-label="Period" value={period} onChange={(e) => selectPeriod(e.target.value)} className={`${control} mt-1 block`}>
-          <option value="custom" disabled>Custom selection</option><option value="sinceLaunch">Since 28 Oct 2026</option><option value="today">Today</option><option value="yesterday" disabled={today <= US_MAIN_PROFIT_START}>Yesterday</option><option value="last7">Last 7 Days</option><option value="last30">Last 30 Days</option><option value="thisMonth">This Month</option>
-          {[1, 2, 3, 4].map((q) => <option key={q} value={`q${q}`} disabled={(q - 1) * 3 + 1 > currentMonth || `${year}-${String(q * 3).padStart(2, "0")}-31` < US_MAIN_PROFIT_START}>Q{q} ({monthNames[(q - 1) * 3].slice(0, 3)}–{monthNames[q * 3 - 1].slice(0, 3)})</option>)}
-          {monthNames.map((name, i) => <option key={name} value={`month-${i + 1}`} disabled={i + 1 > currentMonth || `${year}-${String(i + 1).padStart(2, "0")}-31` < US_MAIN_PROFIT_START}>{name} {year}</option>)}
+          <option value="custom" disabled>Custom selection</option><option value="sinceLaunch">Since launch</option><option value="today">Today</option><option value="yesterday" disabled={today <= reportStart}>Yesterday</option><option value="last7">Last 7 Days</option><option value="last30">Last 30 Days</option><option value="thisMonth">This Month</option>
+          {[1, 2, 3, 4].map((q) => <option key={q} value={`q${q}`} disabled={(q - 1) * 3 + 1 > currentMonth || `${year}-${String(q * 3).padStart(2, "0")}-31` < reportStart}>Q{q} ({monthNames[(q - 1) * 3].slice(0, 3)}–{monthNames[q * 3 - 1].slice(0, 3)})</option>)}
+          {monthNames.map((name, i) => <option key={name} value={`month-${i + 1}`} disabled={i + 1 > currentMonth || `${year}-${String(i + 1).padStart(2, "0")}-31` < reportStart}>{name} {year}</option>)}
         </select></label>
         <label className="text-xs text-white/50">ROAS Filter<select aria-label="ROAS Filter" value={roas} onChange={(e) => setRoas(e.target.value)} className={`${control} mt-1 block`}><option value="all">All</option><option value="positive">Profitable (ROAS &gt; 1)</option><option value="negative">Loss (ROAS ≤ 1)</option><option value="noads">No Ads</option><option value="unavailable">ROAS unavailable</option></select></label>
         <div className="text-xs text-white/50">Reporting currency: USD</div>
         <button type="button" disabled={loading || syncing} onClick={() => sync("last2")} className="flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm text-white transition-colors hover:bg-primary/80 disabled:opacity-50"><RefreshCw size={15} className={syncing ? "animate-spin" : ""} />{syncing ? "Refreshing…" : "Refresh"}</button>
       </div>
-      <p className="mt-3 text-xs text-white/40">{adSource === "google" ? `Reporting day: midnight–11:59 PM · ${googleProfitRegion("us-main").label}. Sales and spend use the same account day.` : "Reporting day: 11:30 AM IST – 11:29 AM IST the next day."}</p>
+      <p className="mt-3 text-xs text-white/40">{adSource === "google" ? `Reporting day: midnight–11:59 PM · ${googleProfitRegion("us-main").label}. Sales and spend use the same New York calendar day.` : "Reporting day: 11:30 AM IST – 11:29 AM IST the next day."}</p>
     </div>
+    {adSource === "google" && rows.some(row=>(Number(row.originalInrReceived)>0 || Number(row.originalInrRefund)>0)) && <p className="text-xs text-white/60">Includes historical /discover purchases acquired by Astro USA. Original receipts: {money(rows.filter(row=>!days.length||days.includes(row.date)).reduce((sum,row)=>sum+(row.originalInrReceived||0),0),"INR")}. Converted USD sales and profit use ₹{appliedRate?.toFixed(2)} per $1; Google spend is native USD.</p>}
     {notice && <p role="status" className="text-sm text-amber-200">{notice}</p>}
     {adSource !== "google" && !loading && needsSync.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-sm"><span className="text-amber-200">{needsSync.length} dates need an initial sync or recalculation.</span><button type="button" disabled={syncing} className={control} onClick={() => sync("range", backfillStart, backfillEnd)}>Backfill {formatDate(backfillStart)} – {formatDate(backfillEnd)}</button></div>}
 
-    {picker && <ProfitDatePicker key={picker} mode={picker} start={start} end={end} days={days} max={today} close={() => setPicker(null)} apply={(first, last, selection) => { setStart(first); setEnd(last); setDays(selection); setPeriod("custom"); setPicker(null); }} />}
-    <div className="overflow-hidden rounded-xl border border-white/10 bg-[#1A2235]">
-      <div className="border-b border-white/10 px-4 py-3"><h2 className="text-sm font-semibold">US AstroRekha Profit Sheet — {days.length ? `${days.length} selected days` : `${formatDate(start)} – ${formatDate(end, { day: "numeric", month: "short", year: "numeric" })}`}</h2></div>
+    {picker && <ProfitDatePicker key={picker} mode={picker} start={start} end={end} days={days} max={today} min={reportStart} close={() => setPicker(null)} apply={(first, last, selection) => { setStart(first); setEnd(last); setDays(selection); setPeriod("custom"); setPicker(null); }} />}
+    {[null, ...(adSource === "google" ? extraReports : [])].map(report => {
+  const accountVisible = (report?.rows || rows).filter((row) => (!days.length || days.includes(row.date)) && (
+    roas === "all" || (roas === "positive" && row.roas !== null && row.roas > 1) ||
+    (roas === "negative" && row.roas !== null && row.roas <= 1) || (roas === "noads" && row.adsInr === 0) || (roas === "unavailable" && row.roas === null)
+  )).sort((a, b) => {
+    const left = a[sort.key] ?? null, right = b[sort.key] ?? null;
+    if (left === null) return right === null ? 0 : 1;
+    if (right === null) return -1;
+    const result = typeof left === "string" ? left.localeCompare(String(right)) : left - Number(right);
+    return sort.asc ? result : -result;
+  });
+  const total = (key: ColumnKey): number | null => accountVisible.some((row) => row[key] === null) ? null : accountVisible.reduce((sum, row) => sum + Number(row[key]), 0);
+      return (
+    <div key={report?.account.id || "primary"} className="overflow-hidden rounded-xl border border-white/10 bg-[#1A2235]">
+      <div className="border-b border-white/10 px-4 py-3">{adSource === "google" && <p className="mb-1 text-base font-semibold">{report ? `${report.account.name} · ${report.account.timezone}` : `${googleProfitRegion("us-main").name} · ${googleProfitRegion("us-main").timezone}`}</p>}<h2 className="text-sm font-semibold">US AstroRekha Profit Sheet — {days.length ? `${days.length} selected days` : `${formatDate(start)} – ${formatDate(end, { day: "numeric", month: "short", year: "numeric" })}`}</h2></div>
       {error && <p role="alert" className="px-4 py-4 text-sm text-red-300">{error}</p>}
       <div className="overflow-x-auto"><table className="w-full min-w-[1450px] text-sm">
-        <caption className="sr-only">Soulmate daily receipts and profit. A dash means the data is unavailable.</caption>
+        <caption className="sr-only">US AstroRekha daily receipts and profit. A dash means the data is unavailable.</caption>
         <thead className="border-b border-white/10 bg-white/5 text-xs text-white/65"><tr>{columns.map(({ key, label, hint }, i) => <th key={key} scope="col" aria-sort={sort.key === key ? sort.asc ? "ascending" : "descending" : "none"} className="px-4 py-5 text-right font-medium"><button type="button" title={hint} onClick={() => setSort({ key, asc: sort.key === key ? !sort.asc : true })} className={`flex w-full items-center gap-2 ${i ? "justify-end" : "justify-start"}`}>{label}{sort.key === key ? sort.asc ? <ArrowUp size={13} /> : <ArrowDown size={13} /> : <ArrowUpDown size={13} className="text-white/30" />}</button></th>)}</tr></thead>
-        <tbody>{loading ? <tr><td colSpan={columns.length} className="py-16 text-center text-white/50">Loading US AstroRekha sales…</td></tr> : error ? null : visible.length ? visible.map((row) => <tr key={row.date} className="border-b border-white/10 odd:bg-white/[0.025] hover:bg-white/[0.045]">
+        <tbody>{loading ? <tr><td colSpan={columns.length} className="py-16 text-center text-white/50">Loading US AstroRekha sales…</td></tr> : error ? null : accountVisible.length ? accountVisible.map((row) => <tr key={row.date} className="border-b border-white/10 odd:bg-white/[0.025] hover:bg-white/[0.045]">
           {columns.map(({ key }, i) => <td key={key} className={`whitespace-nowrap px-4 py-4 ${i ? "text-right" : "text-left"} ${(key === "received" && row.received > 0) || (key === "profit" && (row.profit ?? 0) >= 0) ? "text-emerald-400" : ["refund", "adsInr", "adsUsd"].includes(key) || (key === "profit" && (row.profit ?? 0) < 0) ? "text-red-300" : key === "salesGst" || key === "adGst" ? "text-amber-400" : row[key] === null ? "text-white/30" : "text-white/75"}`}>
-            {key === "date" ? <>{formatDate(row.date, { day: "numeric", month: "short", year: "numeric" })}<span className="mt-1 block text-xs text-white/40">{formatDate(row.date, { weekday: "short" })}{row.stale ? " · Recalculate" : ""}</span></> : key === "orders" ? row.orders : key === "roas" ? row.roas === null ? "—" : `${row.roas.toFixed(2)}×` : money(row[key] as number | null, key === "adsUsd" || key === "balance" ? "USD" : "USD")}
+            {key === "date" ? <>{formatDate(row.date, { day: "numeric", month: "short", year: "numeric" })}<span className="mt-1 block text-xs text-white/40">{formatDate(row.date, { weekday: "short" })}{row.stale ? " · Recalculate" : ""}</span><GoogleProfitSavedNote at={row.retainedAt} /></> : key === "orders" ? row.orders : key === "roas" ? row.roas === null ? "—" : `${row.roas.toFixed(2)}×` : money(row[key] as number | null, key === "adsUsd" || key === "balance" ? "USD" : "USD")}
+            {adSource === "google" && (key === "received" || key === "refund" || key === "revenue") && (Number(row.originalInrReceived)>0 || Number(row.originalInrRefund)>0) && <span className="block text-xs text-white/45">{money(key==="received"?row.originalInrReceived||0:key==="refund"?row.originalInrRefund||0:(row.originalInrReceived||0)-(row.originalInrRefund||0),"INR")} original</span>}
           </td>)}
         </tr>) : <tr><td colSpan={columns.length} className="py-16 text-center text-white/50">No saved days match these filters. Use Refresh or Backfill to populate missing dates.</td></tr>}</tbody>
-        {!loading && !error && visible.length > 0 && <tfoot className="bg-white/5 font-medium"><tr>{columns.map(({ key }, i) => <td key={key} className={`px-4 py-4 ${i ? "text-right" : "text-left"} text-white/80`}>{key === "date" ? `Total · ${visible.length} days` : key === "orders" ? total(key) : key === "balance" ? "—" : key === "roas" ? attributionComplete && total("adsInr") && total("revenue") !== null ? `${(total("revenue")! / total("adsInr")!).toFixed(2)}×` : "—" : money(total(key), key === "adsUsd" ? "USD" : "USD")}</td>)}</tr></tfoot>}
+        {!loading && !error && accountVisible.length > 0 && <tfoot className="bg-white/5 font-medium"><tr>{columns.map(({ key }, i) => <td key={key} className={`px-4 py-4 ${i ? "text-right" : "text-left"} text-white/80`}>{key === "date" ? `Total · ${accountVisible.length} days` : key === "orders" ? total(key) : key === "balance" ? "—" : key === "roas" ? (report?.attributionComplete ?? attributionComplete) && total("adsInr") && total("revenue") !== null ? `${(total("revenue")! / total("adsInr")!).toFixed(2)}×` : "—" : money(total(key), key === "adsUsd" ? "USD" : "USD")}</td>)}</tr></tfoot>}
       </table></div>
     </div>
+      );
+    })}
+    {adSource === "google" && !loading && <GoogleProfitUnmatched data={unassigned} days={days} />}
+    {rows.some(row => row.retainedAt) && <p className="text-xs text-white/50">Google is updating. Marked rows and their contribution to totals use the saved figures and times shown.</p>}
+    {reportRefreshing && <p className="text-xs text-white/50">Showing saved figures · checking for updated Google data.</p>}
     {updatedAt && <p className="text-xs text-white/35">Last refreshed {new Date(updatedAt).toLocaleString("en-US", { timeZone: "Asia/Kolkata" })} IST.</p>}
   </section>;
 }
 
-function ProfitDatePicker({ mode, start, end, days, max, close, apply }: { mode: "range" | "days"; start: string; end: string; days: string[]; max: string; close: () => void; apply: (start: string, end: string, days: string[]) => void }) {
+function ProfitDatePicker({ mode, start, end, days, max, min, close, apply }: { mode: "range" | "days"; start: string; end: string; days: string[]; max: string; min: string; close: () => void; apply: (start: string, end: string, days: string[]) => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [month, setMonth] = useState(start.slice(0, 7) + "-01");
   const [first, setFirst] = useState(start), [last, setLast] = useState(end), [selection, setSelection] = useState(days);
   const [pickingEnd, setPickingEnd] = useState(false);
   useEffect(() => { const node = dialog.current; node?.showModal(); return () => node?.close(); }, []);
   const moveMonth = (delta: number) => { const date = new Date(`${month}T00:00:00Z`); return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + delta, 1)).toISOString().slice(0, 10); };
-  const rangeValid = first && last && first >= US_MAIN_PROFIT_START && first <= last && last <= max && Date.parse(last) - Date.parse(first) < 366 * 86400000;
+  const rangeValid = first && last && first >= min && first <= last && last <= max && Date.parse(last) - Date.parse(first) < 366 * 86400000;
   const selectionValid = selection.length > 0 && Date.parse(selection[selection.length - 1]) - Date.parse(selection[0]) < 366 * 86400000;
   return <dialog ref={dialog} onCancel={close} onClick={(e) => { if (e.target === dialog.current) close(); }} aria-labelledby="profit-date-picker-title" className="w-[680px] max-w-[94vw] rounded-2xl border border-white/15 bg-[#1A2235] p-5 text-white shadow-2xl backdrop:bg-black/60 [color-scheme:dark]">
     <div className="flex items-center justify-between"><h2 id="profit-date-picker-title" className="font-medium">{mode === "range" ? "Custom Range" : "Specific Days"}</h2><button type="button" aria-label="Close date picker" onClick={close} className="rounded-md p-2 hover:bg-white/10"><X size={17} /></button></div>
-    <div className="my-3 flex items-center justify-between"><button type="button" aria-label="Previous month" disabled={month.slice(0, 7) <= US_MAIN_PROFIT_START.slice(0, 7)} className={`${control} disabled:opacity-30`} onClick={() => setMonth(moveMonth(-1))}><ChevronLeft size={16} /></button><p className="text-sm text-white/60">{mode === "range" ? "Select start and end dates" : "Select individual dates"}</p><button type="button" aria-label="Next month" disabled={month.slice(0, 7) >= max.slice(0, 7)} className={`${control} disabled:opacity-30`} onClick={() => setMonth(moveMonth(1))}><ChevronRight size={16} /></button></div>
+    <div className="my-3 flex items-center justify-between"><button type="button" aria-label="Previous month" disabled={month.slice(0, 7) <= min.slice(0, 7)} className={`${control} disabled:opacity-30`} onClick={() => setMonth(moveMonth(-1))}><ChevronLeft size={16} /></button><p className="text-sm text-white/60">{mode === "range" ? "Select start and end dates" : "Select individual dates"}</p><button type="button" aria-label="Next month" disabled={month.slice(0, 7) >= max.slice(0, 7)} className={`${control} disabled:opacity-30`} onClick={() => setMonth(moveMonth(1))}><ChevronRight size={16} /></button></div>
     <div className="grid gap-5">{[month].map((monthStart) => {
       const date = new Date(`${monthStart}T00:00:00Z`), offset = (date.getUTCDay() + 6) % 7;
       const count = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
       return <div key={monthStart}><p className="mb-3 text-sm text-white/80">{formatDate(monthStart, { month: "long", year: "numeric" })}</p><div className="grid grid-cols-7 gap-1">{["M", "T", "W", "T", "F", "S", "S"].map((d, i) => <span key={i} className="py-1 text-center text-xs text-white/35">{d}</span>)}{Array.from({ length: offset }, (_, i) => <span key={`empty-${i}`} />)}{Array.from({ length: count }, (_, i) => {
         const day = shiftProfitDate(monthStart, i);
         const selected = mode === "days" ? selection.includes(day) : day >= first && day <= last;
-        return <button type="button" key={day} aria-label={formatDate(day, { day: "numeric", month: "long", year: "numeric" })} aria-pressed={selected} disabled={day > max || day < US_MAIN_PROFIT_START} className={`h-9 rounded-md text-sm transition-colors disabled:opacity-20 ${selected ? "bg-primary/25 text-rose-200" : "text-white/70 hover:bg-white/10"}`} onClick={() => {
+        return <button type="button" key={day} aria-label={formatDate(day, { day: "numeric", month: "long", year: "numeric" })} aria-pressed={selected} disabled={day > max || day < min} className={`h-9 rounded-md text-sm transition-colors disabled:opacity-20 ${selected ? "bg-primary/25 text-rose-200" : "text-white/70 hover:bg-white/10"}`} onClick={() => {
           if (mode === "days") setSelection((current) => current.includes(day) ? current.filter((item) => item !== day) : [...current, day].sort());
           else if (!pickingEnd || day < first) { setFirst(day); setLast(day); setPickingEnd(true); }
           else { setLast(day); setPickingEnd(false); }
         }}>{i + 1}</button>;
       })}</div></div>;
     })}</div>
-    {mode === "range" ? <div className="mt-5 grid grid-cols-2 gap-3"><label className="text-xs text-white/50">From<input aria-label="Range start" type="date" min={US_MAIN_PROFIT_START} max={max} value={first} onChange={(e) => setFirst(e.target.value)} className={`${control} mt-1 w-full`} /></label><label className="text-xs text-white/50">Through<input aria-label="Range end" type="date" min={first} max={max} value={last} onChange={(e) => setLast(e.target.value)} className={`${control} mt-1 w-full`} /></label></div> : <p className="mt-4 text-sm text-white/60">{selection.length} days selected</p>}
+    {mode === "range" ? <div className="mt-5 grid grid-cols-2 gap-3"><label className="text-xs text-white/50">From<input aria-label="Range start" type="date" min={min} max={max} value={first} onChange={(e) => setFirst(e.target.value)} className={`${control} mt-1 w-full`} /></label><label className="text-xs text-white/50">Through<input aria-label="Range end" type="date" min={first} max={max} value={last} onChange={(e) => setLast(e.target.value)} className={`${control} mt-1 w-full`} /></label></div> : <p className="mt-4 text-sm text-white/60">{selection.length} days selected</p>}
     <div className="mt-5 flex justify-end gap-2">{mode === "days" && <button type="button" className={control} onClick={() => apply(start, end, [])}>Clear selection</button>}<button type="button" className={control} onClick={close}>Cancel</button><button type="button" disabled={mode === "days" ? !selectionValid : !rangeValid} onClick={() => apply(mode === "days" ? selection[0] : first, mode === "days" ? selection[selection.length - 1] : last, mode === "days" ? selection : [])} className="rounded-lg bg-primary px-4 py-2 text-sm text-white disabled:opacity-30">Apply dates</button></div>
   </dialog>;
 }

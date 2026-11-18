@@ -1,4 +1,6 @@
 "use client";
+import GoogleProfitUnmatched, { type GoogleUnmatched } from "@/components/admin/GoogleProfitUnmatched";
+import GoogleProfitSavedNote from "@/components/admin/GoogleProfitSavedNote";
 import GoogleProfitReportingDay from "@/components/admin/GoogleProfitReportingDay";
 import { googleProfitRegion, googleProfitToday } from "@/lib/google-profit-region";
 import AcquisitionView, { useAdSource, sourceUrl } from "@/components/admin/AcquisitionView";
@@ -56,6 +58,7 @@ type ProfitSheetDayMode = "business_1130_ist" | "calendar_ist";
 
 // Profit Sheet row interface
 interface ProfitSheetRow {
+  retainedAt?: string;
   financialBounds?: ProfitFinancialBounds;
   spendUnavailable?: boolean;
   profitUnavailable?: boolean;
@@ -671,6 +674,7 @@ function AdminRevenuePage() {
       setProfitSheetEndDate(today);
     }
   };
+  const [googleUnassigned, setGoogleUnassigned] = useState<GoogleUnmatched>();
   const [profitSheetData, setProfitSheetData] = useState<ProfitSheetRow[]>([]);
   const [profitSheetLoadedMode, setProfitSheetLoadedMode] = useState<ProfitSheetDayMode | null>(null);
   const [profitSheetLoading, setProfitSheetLoading] = useState(false);
@@ -887,14 +891,17 @@ function AdminRevenuePage() {
     }
   };
 
+  const profitLoadedQueryRef = useRef("");
   const fetchProfitSheet = async (customRate?: number, syncLastTwoDays: boolean = false, backgroundRefresh = false) => {
     const requestId = ++profitSheetRequestIdRef.current;
     const dayMode = profitSheetDayMode;
     const requestedStartDate = profitSheetStartDate;
     const requestedEndDate = profitSheetEndDate;
     const rateInput = profitSheetCustomExchangeRate;
+    const queryKey = `${adSource}:${dayMode}:${requestedStartDate}:${requestedEndDate}:${customRate || rateInput}`;
+    const keepSaved = adSource === "google" && profitLoadedQueryRef.current === queryKey;
     try {
-      if (!backgroundRefresh) setProfitSheetLoading(true);
+      if (!backgroundRefresh && !keepSaved) setProfitSheetLoading(true);
       setProfitSheetError(null);
       const token = localStorage.getItem("admin_session_token");
       if (!token) return;
@@ -978,7 +985,9 @@ function AdminRevenuePage() {
       }
       if (requestId !== profitSheetRequestIdRef.current) return;
       if (sourceRef.current !== adSource) return;
+      profitLoadedQueryRef.current = queryKey;
       setProfitSheetData(result.rows || []);
+      setGoogleUnassigned(result.unassigned);
       setProfitSheetFetchedAt(result.fetchedAt || new Date().toISOString());
       setProfitSheetError(gstWarning || result.syncWarning || null);
       setProfitSheetLoadedMode(dayMode);
@@ -993,7 +1002,7 @@ function AdminRevenuePage() {
       console.error("Profit sheet fetch error:", err);
       setProfitSheetRefreshing(false);
       setProfitSheetError(err instanceof Error ? err.message : "Failed to fetch profit sheet");
-      if (!backgroundRefresh) {
+      if (!backgroundRefresh && !keepSaved) {
         setProfitSheetData([]);
         setProfitSheetFetchedAt(null);
       }
@@ -1184,6 +1193,7 @@ function AdminRevenuePage() {
   }, [analyticsStartDate, analyticsEndDate, analyticsDayMode, adSource]);
 
   useEffect(() => {
+     setGoogleUnassigned(undefined);
     setProfitSheetData([]); setMetaBreakdown(null); setAnalyticsData(null);
   }, [adSource]);
 
@@ -1566,7 +1576,9 @@ function AdminRevenuePage() {
         {/* Profit Sheet Tab Content */}
         {activeTab === "profit-sheet" && (
 
+          <>
           <ProfitSheetTab
+            accountLabel={adSource === "google" ? "Astro India · IST" : undefined}
             dayMode={profitSheetDayMode}
             setDayMode={changeProfitSheetDayMode}
             refreshing={profitSheetLoadedMode === profitSheetDayMode && profitSheetRefreshing}
@@ -1589,6 +1601,8 @@ function AdminRevenuePage() {
             onRefresh={() => fetchProfitSheet(undefined, true)}
             onRefreshWithRate={(rate) => fetchProfitSheet(rate, true)}
           />
+          {adSource === "google" && !profitSheetLoading && <GoogleProfitUnmatched data={googleUnassigned} days={profitSheetSelectedDates} />}
+          </>
 
         )}
 
@@ -1659,6 +1673,7 @@ type ProfitSheetSortDirection = "asc" | "desc" | null;
 
 // Profit Sheet Tab Component
 function ProfitSheetTab({
+  accountLabel, hideControls=false,
   dayMode,
   setDayMode,
   refreshing,
@@ -1681,6 +1696,7 @@ function ProfitSheetTab({
   onRefresh,
   onRefreshWithRate,
 }: {
+  accountLabel?: string; hideControls?: boolean;
   dayMode: ProfitSheetDayMode;
   setDayMode: (mode: ProfitSheetDayMode) => void;
   refreshing: boolean;
@@ -2346,7 +2362,7 @@ function ProfitSheetTab({
             ) : (
               rows.map((row, idx) => (
                   <tr key={row.date} className={`border-b border-white/5 hover:bg-white/5 ${idx % 2 === 0 ? "bg-white/[0.02]" : ""}`}>
-                    <td className="px-4 py-3 text-sm text-white/80">{formatDate(row.date)}</td>
+                    <td className="px-4 py-3 text-sm text-white/80">{formatDate(row.date)}<GoogleProfitSavedNote at={row.retainedAt} /></td>
                     <td className="px-4 py-3 text-sm text-white/60">{row.day}</td>
                     <td className="px-4 py-3 text-right text-sm font-medium text-green-400">{formatCurrency(row.grossRevenue ?? row.revenue)}</td>
                     <td className="px-4 py-3 text-right text-sm font-medium text-red-400">-{formatCurrency(row.refundAmount ?? 0)}</td>
@@ -2419,8 +2435,8 @@ function ProfitSheetTab({
 
   return (
     <div className="space-y-4">
-      {/* Filters */}
-      <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
+      {/* Filters shared by all Google account sections. */}
+      {!hideControls && <div className="bg-[#1A2235] rounded-xl p-4 border border-white/10">
         <div className="flex flex-wrap items-end gap-4">
           <div>
             {adSource === "google" ? <GoogleProfitReportingDay funnel="astrorekha" /> : <>
@@ -2756,8 +2772,9 @@ function ProfitSheetTab({
         </div>
         {gstRefreshError && <p role="alert" className="mt-3 text-xs text-red-300">{gstRefreshError}</p>}
 	        <p className="text-white/30 text-xs mt-3">
-	          {adSource === "google" ? `Reporting day: midnight–11:59 PM · ${googleProfitRegion("astrorekha").label}. Sales and spend use the same account day.` : dayMode === "calendar_ist" ? "Reporting day: midnight–11:59 PM IST." : "Reporting day: 11:30 AM IST–11:29 AM IST the next day."}
+	          {adSource === "google" ? "Astro India · midnight–11:59 PM IST. Sales and spend use the same account day." : dayMode === "calendar_ist" ? "Reporting day: midnight–11:59 PM IST." : "Reporting day: 11:30 AM IST–11:29 AM IST the next day."}
 	        </p>
+            {data.some(row => row.retainedAt) && <p className="mt-1 text-xs text-white/50">Google is updating. Marked rows and totals include saved figures from the times shown.</p>}
             {refreshing && <p className="mt-1 text-xs text-cyan-300">Showing saved data · refreshing in the background…</p>}
             {fetchedAt && <p className="mt-1 text-xs text-white/40">Updated {new Date(fetchedAt).toLocaleString("en-IN", {timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit"})} IST</p>}
 	        {selectedDates.length > 0 && (
@@ -2781,7 +2798,8 @@ function ProfitSheetTab({
 	            </button>
 	          </div>
 	        )}
-	      </div>
+	      </div>}
+      {accountLabel && <div><h2 className="text-lg font-semibold">{accountLabel}</h2><p className="mt-1 text-xs text-white/50">Astro India campaigns only · midnight–11:59 PM IST. Astro USA main-campaign sales and spend are in the US AstroRekha Google profit sheet.</p></div>}
       {actionableError && (
         <div role="alert" className="rounded-xl p-3 text-sm border bg-red-500/10 border-red-500/30 text-red-300">
           {actionableError}

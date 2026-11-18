@@ -14,6 +14,7 @@ export function profitReportCacheKey(params: URLSearchParams) {
 export async function cachedProfitReport(
   db: SupabaseClient, key: string, load: () => Promise<Response>,
   schedule: (task: () => Promise<void>) => void,
+  reconcile?: (fresh: Record<string, unknown>, previous: Record<string, unknown> | null) => Record<string, unknown> | Promise<Record<string, unknown>>,
 ): Promise<Response> {
   const saved = await db.from(TABLE).select("payload,fetched_at,refresh_error").eq("cache_key", key).maybeSingle();
   if (saved.error) throw new Error("Profit report storage is unavailable. Please retry.");
@@ -25,7 +26,8 @@ export async function cachedProfitReport(
     try {
       const response = await load();
       if (!response.ok) throw new Error("Unable to refresh the Profit Sheet. Previous saved figures are retained.");
-      const payload = await response.json();
+      const fresh = await response.json();
+      const payload = reconcile ? await reconcile(fresh, saved.data?.payload || null) : fresh;
       const fetchedAt = new Date().toISOString();
       const write = await db.from(TABLE).update({ payload: { ...payload, fetchedAt }, fetched_at: fetchedAt,
         refresh_token: null, refresh_until: null, refresh_error: null }).eq("cache_key", key).eq("refresh_token", token);

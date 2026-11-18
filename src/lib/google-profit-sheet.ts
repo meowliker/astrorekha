@@ -1,15 +1,16 @@
 import { createHash } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { after } from 'next/server';
-import type { AcquisitionFunnel } from './admin-acquisition';
+import { acquisitionTags, acquisitionTouch, type AcquisitionFunnel } from './admin-acquisition';
 import { googleAccountDate, googleOrderAccount, readGoogleProfitContext, validateGoogleRange } from './google-ads-reporting';
 import { readAdSourceFinance, type SourceFinanceDay } from './admin-source-finance';
 import { cachedProfitReport } from './profit-report-cache';
 import { calculateProfitSheetGst } from './profit-sheet-gst';
+import { retainVerifiedGoogleProfit } from './google-profit-retention';
 import { googleProfitRegion } from './google-profit-region';
 
 export function googleProfitCacheKey(funnel: string, account: string, start: string, end: string, rate: string | null) {
-  return createHash('sha256').update(JSON.stringify(['google-account-profit-v1', funnel, account, start, end, rate || 'auto'])).digest('hex');
+  return createHash('sha256').update(JSON.stringify(['google-region-profit-v4', funnel, account, start, end, rate || 'auto'])).digest('hex');
 }
 
 /** Keep each workspace's existing financial formula; only the account and day boundaries change. */
@@ -43,6 +44,18 @@ export function googleProfitRow(day: SourceFinanceDay, costMicros: number | null
     roas:adsInr&&attributionComplete?revenue/adsInr:null,accounts:[],stale:false};
 }
 
+/** Preserve INR receipts and tax; convert only the USA reporting view, never payment records. */
+export function usGoogleFinanceDay(usd: SourceFinanceDay, inr: SourceFinanceDay, rate: number) {
+  if (!Number.isFinite(rate) || rate <= 0) throw new Error('Invalid reporting exchange rate.');
+  const convert = (amount:number) => Math.round(amount/rate);
+  const legacyTax = calculateProfitSheetGst((inr.received-inr.refund)/100, inr.date >= '2026-10-01' ? .18 : .05, 0).gst;
+  const received = usd.received+convert(inr.received), refund = usd.refund+convert(inr.refund);
+  return {...usd,received,refund,orders:usd.orders+inr.orders,refunds:usd.refunds+inr.refunds,
+    bundleReceived:usd.bundleReceived+convert(inr.bundleReceived),bundleRefund:usd.bundleRefund+convert(inr.bundleRefund),
+    bundleOrders:usd.bundleOrders+inr.bundleOrders,salesTax:usd.salesTax+convert(Math.round(legacyTax*100)),
+    originalInrReceived:inr.received,originalInrRefund:inr.refund,originalInrOrders:inr.orders};
+}
+
 export async function googleProfitResponse(request: Request, funnel: AcquisitionFunnel) {
   const params = new URL(request.url).searchParams;
   const region = googleProfitRegion(funnel);
@@ -67,19 +80,77 @@ export async function googleProfitResponse(request: Request, funnel: Acquisition
       rate = Number((await response.json()).rates?.INR);
       if (!Number.isFinite(rate)||rate<=0) throw new Error('Exchange rate unavailable.');
     }
-    const unknown = new Set<string>(); const unknownDates = new Set<string>(); let unknownRefundTime = false;
-    const finance = await readAdSourceFinance(db,funnel,'google',start,end,'account_day',{
+    // Each regional workspace shows its owning account only. Historical USA /discover receipts are read below.
+    const reports = await Promise.all([account].map(async current => {
+      let unknownRefundTime = false;
+      let finance = await readAdSourceFinance(db,funnel,'google',start,end,'account_day',{
+        timezone:current.timezone,
+        include:(row)=>googleOrderAccount(row,campaigns)===current.id,
+        unknownRefundTime:()=>{unknownRefundTime=true;},
+      });
+      let originalInr = new Map<string,SourceFinanceDay>();
+      if (funnel === 'us-main') {
+        const legacy = await readAdSourceFinance(db,'astrorekha','google',start,end,'account_day',{
+          timezone:current.timezone,include:row=>googleOrderAccount(row,campaigns)===current.id,
+          unknownRefundTime:()=>{unknownRefundTime=true;},
+        });
+        originalInr = new Map(legacy.map(day=>[day.date,day]));
+        finance = finance.map(day=>usGoogleFinanceDay(day,originalInr.get(day.date)!,rate));
+      }
+      const accountToday = googleAccountDate(Date.now(),current.timezone);
+      const rows = finance.filter(day=>day.date<=accountToday).map(day=>({ ...googleProfitRow(day,
+        current.rows.find(row=>row.date===day.date)?.costMicros??null,current,funnel,rate,!unknownRefundTime),
+        ...(originalInr.has(day.date)?{originalInrReceived:originalInr.get(day.date)!.received,
+          originalInrRefund:originalInr.get(day.date)!.refund,originalInrOrders:originalInr.get(day.date)!.orders}:{}),
+      }));
+      const warnings = [current.error,unknownRefundTime?'Some matched refunds have no exact timestamp. Profit is unavailable for this account window.':null].filter(Boolean);
+      return {rows,funnel,unassignedDates:[],unknownRefundTime,adSource:'google',dayMode:'google_account',account:current,exchangeRate:rate,
+        sourceFetchedAt:fetchedAt,fetchedAt,updatedAt:fetchedAt,dateRange:{start,end:end<accountToday?end:accountToday},missingRanges:[],missing:[],revision:4,accountCount:1,
+        unassignedOrderCount:0,attributionComplete:!unknownRefundTime,warnings,syncWarning:warnings.join(' ')||null};
+    }));
+    // Unmatched Google receipts remain visible separately and are never guessed into an account.
+    const unmatchedCampaigns = new Set<string>();
+    let unmatchedRefundTime = false;
+    const unmatched = await readAdSourceFinance(db,funnel,'google',start,end,'account_day',{
       timezone:account.timezone,
-      include: (row,at) => { const owner=googleOrderAccount(row,campaigns); if(!owner){unknown.add(String(row.payu_txn_id||row.id));if(at)unknownDates.add(googleAccountDate(at,account.timezone));else unknownRefundTime=true;} return owner===id; },
-      unknownRefundTime:()=>{unknownRefundTime=true;},
+      include:(row)=>{
+        if(googleOrderAccount(row,campaigns)) return false;
+        const tags = acquisitionTags(acquisitionTouch(row));
+        unmatchedCampaigns.add(String(tags.google_campaign_id || tags.gad_campaignid || tags.utm_campaign || 'Not recorded'));
+        return true;
+      },
+      unknownRefundTime:()=>{unmatchedRefundTime=true;},
     });
-    const complete = !unknown.size && !unknownRefundTime;
-    const rows = finance.filter(day=>day.date<=today).map(day=>googleProfitRow(day,account.rows.find(row=>row.date===day.date)?.costMicros??null,account,funnel,rate,!unknownRefundTime&&!unknownDates.has(day.date)));
-    const warnings = [account.error,unknown.size?`${unknown.size} Google orders/refunds have no unique account attribution. Receipts show matched orders; profit and ROAS are unavailable on affected days until attribution is resolved.`:null,unknownRefundTime?'Some refunds have no exact timestamp. Profit is unavailable for this reporting window.':null].filter(Boolean);
-    return Response.json({rows,adSource:'google',dayMode:'google_account',account,exchangeRate:rate,
-      sourceFetchedAt:fetchedAt,fetchedAt,updatedAt:fetchedAt,dateRange:{start,end:end<today?end:today},missingRanges:[],missing:[],revision:1,accountCount:1,
-      unassignedOrderCount:unknown.size,attributionComplete:complete,warnings,syncWarning:warnings.join(' ')||null});
+    const primary = reports.find(report=>report.account.id===id)!;
+    const additionalReports = reports.filter(report=>report.account.id!==id &&
+      (report.rows.some(row=>Number('orders' in row?row.orders:row.salesCount)>0 || Number('refund' in row?row.refund:row.refundAmount)>0) ||
+       report.account.rows.some(row=>row.costMicros===null&&row.status!=='not_started'||Number(row.costMicros)>0)));
+    return Response.json({...primary, additionalReports, unassigned:{
+      timezone:account.timezone,currency:funnel.startsWith('us-')?'USD':'INR',campaigns:[...unmatchedCampaigns],
+      rows:unmatched.filter(day=>day.orders||day.refunds),unknownRefundTime:unmatchedRefundTime,
+    }});
   };
-  try { return await cachedProfitReport(db,googleProfitCacheKey(funnel,id,start,end,suppliedRate),load,after); }
+  try { return await cachedProfitReport(db,googleProfitCacheKey(funnel,id,start,end,suppliedRate),load,after,async(fresh,previous) => {
+    const merge = (next: Record<string,unknown>, before: Record<string,unknown> | null): Record<string,unknown> & {additionalReports:Record<string,unknown>[]} => {
+      const main = retainVerifiedGoogleProfit(next, before);
+      const extras = (next.additionalReports || []) as Record<string,unknown>[];
+      const oldExtras = (before?.additionalReports || []) as Record<string,unknown>[];
+      return {...main,additionalReports:extras.map(report=>retainVerifiedGoogleProfit(report,
+        oldExtras.find(old=>(old.account as {id:string}).id===(report.account as {id:string}).id)||null))};
+    };
+    let merged = merge(fresh, previous);
+    const pending = () => [merged,...merged.additionalReports].some(report =>
+      (report.account as {rows:Array<{costMicros:number|null;unavailableReason?:string;retainedAt?:string}>}).rows
+        .some(row=>row.costMicros===null&&row.unavailableReason==='updating'));
+    if (pending()) {
+      const history = await db.from('admin_profit_report_cache').select('payload').eq('payload->>funnel',funnel)
+        .eq('payload->>revision','4').eq('payload->>dayMode','google_account').eq('payload->account->>id',id).order('fetched_at',{ascending:false}).limit(50);
+      for (const entry of history.data || []) {
+        if (!pending()) break;
+        merged = merge(merged, entry.payload);
+      }
+    }
+    return merged;
+  }); }
   catch { return Response.json({error:'Unable to load the Google account profit sheet. Please retry.'},{status:503}); }
 }

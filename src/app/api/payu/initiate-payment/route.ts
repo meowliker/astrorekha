@@ -8,6 +8,7 @@ import { ensurePaymentUser } from "@/lib/payu-checkout-user";
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { readOrderAttribution } from "@/lib/order-attribution";
+import { withCheckoutAttribution } from "@/lib/checkout-attribution";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_PRICING, normalizePricing, type PricingConfig } from "@/lib/pricing";
 import { sanitizePaymentAttribution, resolvePaymentAttribution, type PaymentAttributionPayload } from "@/lib/attribution";
@@ -159,7 +160,8 @@ export async function POST(request: NextRequest) {
     if (lastTouch?.landing_path?.startsWith("/") && !lastTouch.landing_path.startsWith("//")) {
       try { finalAttribution.landing_url = new URL(lastTouch.landing_path, request.url).href; } catch { /* Invalid optional attribution must not block checkout. */ }
     }
-    const savedLastTouch = lastTouch || (finalAttribution.utm_source || finalAttribution.gclid || finalAttribution.gbraid || finalAttribution.wbraid || finalAttribution.meta_campaign_id ? finalAttribution : null);
+    // Persist the normalized touch, including source/medium inferred from auto-tagged Google clicks.
+    const savedLastTouch = lastTouch || Object.values(finalAttribution).some(Boolean) ? finalAttribution : null;
 
     const gateway = await activePaymentGateway();
     const backup = gateway === "pinelabs" ? pineLabsConfig() : gateway === "paytm" ? paytmConfig() : null;
@@ -458,13 +460,13 @@ export async function POST(request: NextRequest) {
       try {
         const checkout = await (gateway === "pinelabs" ? initiatePineLabsCheckout : initiatePaytmCheckout)({ id: txnId, amount: toPaise(amount), customer_email: normalizedEmail,
           customer_name: firstName, customer_phone: payuPhone, payment_mode: backup.mode, ...(gateway === "pinelabs" ? { product_name: productInfo } : {}) });
-        return NextResponse.json({ ...checkout, txnId, amount: amount.toFixed(2), productInfo }, { headers: { "Cache-Control": "no-store" } });
+        return withCheckoutAttribution(NextResponse.json({ ...checkout, txnId, amount: amount.toFixed(2), productInfo }, { headers: { "Cache-Control": "no-store" } }), txnId);
       } catch {
         // A timeout does not mean a charge failed. Keep the saved order for reconciliation.
         return NextResponse.json({ error: "Payment checkout could not be opened. Please try again.", orderId: txnId }, { status: 503 });
       }
     }
-    return NextResponse.json({
+    return withCheckoutAttribution(NextResponse.json({
       txnId,
       amount: payuParams.amount,
       productInfo,
@@ -478,7 +480,7 @@ export async function POST(request: NextRequest) {
       udf3: payuParams.udf3,
       udf4: payuParams.udf4,
       udf5: payuParams.udf5,
-    });
+    }), txnId);
   } catch (error: unknown) {
     console.error("PayU initiate payment error:", error);
     const errorMessage = error instanceof Error ? error.message : "Failed to initiate payment";

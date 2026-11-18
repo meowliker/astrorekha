@@ -146,3 +146,23 @@ test('account attribution requires a unique saved campaign, never currency or fu
  assert.equal(googleOrderAccount({utm_campaign:'Shared'},campaigns),null);
  assert.equal(googleOrderAccount({currency:'USD',landing_url:'https://astrorekha.com/discover?gclid=abc'},campaigns),null);
 });
+
+test('mismatching reports are transient only when current and reported URLs agree on the funnel',()=>{
+ const {aggregateGoogleAccountDays,googleSpendReportsDisagree}=require('../src/lib/google-ads-reporting');
+ const raw=snapshot({landingCost:1});assert.equal(googleSpendReportsDisagree(raw.landing,raw.hours),true);
+ let r=aggregateGoogleAccountDays(raw,'astrorekha','2026-11-12','2026-11-12');assert.equal(r.rows[0].unavailableReason,'updating');
+ raw.destinations[0].adGroupAd.ad.finalUrls=['https://astrorekha.com/us/soulmate/discover'];r=aggregateGoogleAccountDays(raw,'astrorekha','2026-11-12','2026-11-12');assert.equal(r.rows[0].unavailableReason,'unattributed');
+ const valid=snapshot();assert.equal(googleSpendReportsDisagree(valid.landing,valid.hours),false);
+});
+
+
+test('USA regional main sheet combines disjoint legacy and USD destinations once, without soulmate spend',()=>{
+ const {aggregateGoogleWorkspaceDays}=require('../src/lib/google-ads-reporting');
+ const raw=snapshot();const native=snapshot({url:'https://astrorekha.com/us',cost:3000000});const soulmate=snapshot({url:'https://astrorekha.com/us/soulmate/discover',cost:4000000});
+ for(const [fixture,id]of [[native,'200'],[soulmate,'300']])for(const key of ['campaigns','destinations','landing','hours'])raw[key].push(...fixture[key].map(r=>({...r,campaign:{...r.campaign,id}})));
+ const us=aggregateGoogleWorkspaceDays(raw,'us-main','2026-11-12','2026-11-12',Date.parse('2026-11-13T12:00:00Z'));
+ assert.equal(us.rows[0].costMicros,5000000);assert.equal(us.timezone,'America/New_York');
+ const soul=aggregateGoogleWorkspaceDays(raw,'us-soulmate','2026-11-12','2026-11-12');assert.equal(soul.rows[0].costMicros,4000000);
+ native.landing[0].metrics.costMicros='1';raw.landing[1].metrics.costMicros='1';
+ assert.equal(aggregateGoogleWorkspaceDays(raw,'us-main','2026-11-12','2026-11-12').rows[0].costMicros,null);
+});

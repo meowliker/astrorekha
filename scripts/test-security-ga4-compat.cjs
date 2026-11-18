@@ -62,8 +62,8 @@ test('concurrent verified purchase sends preserve one INR event, client identity
   assert.equal(event.params.value, 1);
   assert.equal(event.params.currency, 'INR');
   assert.equal(event.params.session_id, '123456');
-  assert.equal(event.params.source, 'fixture-source');
-  assert.equal(event.params.campaign, 'fixture-campaign');
+  assert.equal(event.params.source, undefined, 'Do not override browser attribution with a saved checkout source');
+  assert.equal(event.params.campaign, undefined);
   assert.equal(event.params.items[0].price, 1);
   assert.ok(row.ga_purchase_sent_at);
   await sendGa4Purchase(order());

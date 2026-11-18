@@ -51,14 +51,9 @@ export async function sendGa4Purchase(order: PurchaseOrder, productName?: string
     currency: "INR",
     ...(order.ga_session_id ? { session_id: order.ga_session_id } : {}),
     engagement_time_msec: 1,
-    ...(order.utm_campaign ? { campaign: order.utm_campaign } : {}),
-    ...(order.utm_source ? { source: order.utm_source } : {}),
-    ...(order.utm_medium ? { medium: order.utm_medium } : {}),
-    ...(order.utm_term ? { term: order.utm_term } : {}),
-    ...(order.utm_content ? { content: order.utm_content } : {}),
-    ...(order.fb_campaign_id ? { campaign_id: order.fb_campaign_id } : {}),
-    ...(order.fb_adset_id ? { adset_id: order.fb_adset_id } : {}),
-    ...(order.fb_ad_id ? { ad_id: order.fb_ad_id } : {}),
+    // Let the browser client/session retain Google click attribution. Repeating
+    // checkout-time manual campaign fields can override a later Google ad click.
+    // Source/campaign snapshots remain in our payment records for internal reporting.
     items: [{ item_id: itemId, item_name: productName || itemId, price: value, quantity: 1 }],
   };
 

@@ -8,7 +8,7 @@ export function validProfitDate(value: string) {
   const time = Date.parse(`${value}T00:00:00Z`);
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value;
 }
-export type SoulmateProfitRow = { date: string; orders: number; received: number; salesGst: number; refund: number | null; revenue: number | null; adsUsd: number | null; adsInr: number | null; adGst: number | null; balance: number | null; profit: number | null; roas: number | null; exchangeRate?: number | null; balanceCapturedAt?: string | null; syncedAt?: string; stale?: boolean; accounts?: SoulmateAccountSpend[] };
+export type SoulmateProfitRow = { retainedAt?: string; originalInrReceived?: number; originalInrRefund?: number; originalInrOrders?: number; date: string; orders: number; received: number; salesGst: number; refund: number | null; revenue: number | null; adsUsd: number | null; adsInr: number | null; adGst: number | null; balance: number | null; profit: number | null; roas: number | null; exchangeRate?: number | null; balanceCapturedAt?: string | null; syncedAt?: string; stale?: boolean; accounts?: SoulmateAccountSpend[] };
 export type SoulmateAccountSpend = { date: string; accountId: string; label: string; currency: string; nativeSpend: number; adsUsd: number; adsInr: number; adGst: number; balance: number | null; balanceCapturedAt: string | null };
 export function latestSoulmateProfitRange(now = Date.now()) {
   const end = profitDay(now);

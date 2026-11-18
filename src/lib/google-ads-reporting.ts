@@ -28,6 +28,7 @@ export type GoogleAccountReport = {
   dailyCostMicros?: Record<string, number>;
   dailySpendBounds?: Record<string, GoogleDayBounds>;
   unavailableDates?: string[];
+  unavailableReasons?: Record<string, 'updating' | 'unattributed'>;
   hourlySpendInr: Record<string, Record<string, number[]>>;
   warnings: string[];
 };
@@ -69,6 +70,18 @@ async function search(customerId: string, query: string): Promise<Row[]> {
   }
   throw new Error('Google Ads report exceeds the pagination limit. Choose fewer dates.');
 }
+export function googleSpendReportsDisagree(landing: Row[], hours: Row[]) {
+  const totals = (rows: Row[]) => {
+    const result = new Map<string, number>();
+    for (const row of rows) {
+      const key = `${row.campaign?.id}:${row.segments?.date}`;
+      result.set(key, (result.get(key) || 0) + metric(row.metrics?.costMicros));
+    }
+    return result;
+  };
+  const a = totals(landing), b = totals(hours);
+  return [...new Set([...a.keys(), ...b.keys()])].some(key => (a.get(key) || 0) !== (b.get(key) || 0));
+}
 async function snapshot(id: string, start: string, end: string): Promise<Snapshot> {
   const key = `${id}:${start}:${end}`;
   const cached = cache.get(key); if (cached && cached.until > Date.now()) return cached.promise;
@@ -79,18 +92,30 @@ async function snapshot(id: string, start: string, end: string): Promise<Snapsho
   if (cache.size >= 24) cache.delete(cache.keys().next().value!);
   const promise = (async () => {
     const range = `segments.date BETWEEN '${start}' AND '${end}'`;
-    const [customer, campaigns, destinations, landing, hours] = await Promise.all([
+    const [customer, campaigns, destinations, firstLanding, firstHours] = await Promise.all([
       search(id, 'SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.time_zone FROM customer LIMIT 1'),
-      search(id, 'SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_budget.amount_micros FROM campaign'),
+      search(id, 'SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_budget.amount_micros FROM campaign WHERE campaign.status IN (\'ENABLED\', \'PAUSED\', \'REMOVED\')'),
       search(id, 'SELECT campaign.id, ad_group_ad.ad.final_urls FROM ad_group_ad'),
       search(id, `SELECT campaign.id, landing_page_view.unexpanded_final_url, segments.date, metrics.cost_micros FROM landing_page_view WHERE ${range}`),
       search(id, `SELECT campaign.id, segments.date, segments.hour, metrics.cost_micros, metrics.clicks, metrics.impressions FROM campaign WHERE ${range}`),
     ]);
+    let landing = firstLanding, hours = firstHours;
+    // Google updates these reports independently. Retry once before withholding a day.
+    if (googleSpendReportsDisagree(landing, hours)) {
+      [landing, hours] = await Promise.all([
+        search(id, `SELECT campaign.id, landing_page_view.unexpanded_final_url, segments.date, metrics.cost_micros FROM landing_page_view WHERE ${range}`),
+        search(id, `SELECT campaign.id, segments.date, segments.hour, metrics.cost_micros, metrics.clicks, metrics.impressions FROM campaign WHERE ${range}`),
+      ]);
+    }
     if (!customer[0]?.customer) throw new Error(`Google Ads ${id}: account metadata unavailable.`);
     return { customer: customer[0].customer, campaigns, destinations, landing, hours, fetchedAt: new Date().toISOString() };
   })();
   cache.set(key, { until: Date.now() + 300_000, promise });
-  try { return await promise; } catch (error) { cache.delete(key); throw error; }
+  try {
+    const result = await promise;
+    if (googleSpendReportsDisagree(result.landing, result.hours)) cache.set(key, {until: Date.now() + 15_000, promise});
+    return result;
+  } catch (error) { cache.delete(key); throw error; }
 }
 
 /** Use the actual reported landing URL, never the account's country or campaign name. */
@@ -137,6 +162,7 @@ export function aggregateGoogleSnapshot(data: Snapshot, funnel: AcquisitionFunne
   report.dailySpendBounds = {};
   report.dailyCostMicros = {};
   const unavailable = new Set<string>();
+  report.unavailableReasons = {};
   for (let date = start; date <= end; date = shift(date, 1)) {
     report.dailySpendInr[date] = { total: 0, indian: 0 };
     report.dailyCostMicros[date] = 0;
@@ -173,7 +199,16 @@ export function aggregateGoogleSnapshot(data: Snapshot, funnel: AcquisitionFunne
     if (destinations.size === 1 && !destinations.has(null) && !destinations.has(funnel)) continue;
     const mapped = destinations.size === 1 && destinations.has(funnel) && (cost === 0 || !!mapping && mapping.micros === dailyCosts.get(`${id}:${date}`));
     if (!mapped) {
-      if (cost > 0) { warnings.add('Some Google spend has an unknown or mixed funnel destination. Profit and ROAS are withheld for affected dates until that spend can be assigned reliably.'); report.account.error = 'Incomplete funnel attribution'; for (const w of overlaps) unavailable.add(w.date); }
+      if (cost > 0) {
+        const live = current.get(id);
+        const updating = !!mapping && destinations.size === 1 && destinations.has(funnel) && live?.size === 1 && live.has(funnel);
+        warnings.add(updating ? 'Google spend reports are updating.' : 'Some Google spend has an unknown or mixed funnel destination.');
+        report.account.error = 'Incomplete funnel attribution';
+        for (const w of overlaps) {
+          unavailable.add(w.date);
+          if (!updating || !report.unavailableReasons![w.date]) report.unavailableReasons![w.date] = updating ? 'updating' : 'unattributed';
+        }
+      }
       continue;
     }
     const row = getRow(id);
@@ -219,7 +254,7 @@ export type GoogleAccountDaySpend = {
   funnel: AcquisitionFunnel; start: string; end: string; fetchedAt: string;
   accounts: Array<{
     id: string; name: string; currency: string; timezone: string; error?: string;
-    rows: Array<{date: string; costMicros: number | null; status: 'reported' | 'updating' | 'not_started' | 'unavailable'}>;
+    rows: Array<{date: string; costMicros: number | null; status: 'reported' | 'updating' | 'not_started' | 'unavailable'; unavailableReason?: 'updating' | 'unattributed'}>;
   }>;
 };
 
@@ -230,21 +265,39 @@ export function aggregateGoogleAccountDays(data: Snapshot, funnel: AcquisitionFu
   const rows = Object.entries(result.dailyCostMicros || {}).map(([date, micros]) => {
     const unavailable = result.unavailableDates?.includes(date) || (!!result.account.error && !result.unavailableDates?.length);
     const status = date > today ? 'not_started' : unavailable ? 'unavailable' : date === today ? 'updating' : 'reported';
-    return {date, costMicros: status === 'unavailable' || status === 'not_started' ? null : micros, status} as GoogleAccountDaySpend['accounts'][number]['rows'][number];
+    return {date, costMicros: status === 'unavailable' || status === 'not_started' ? null : micros, status, ...(result.unavailableReasons?.[date] ? {unavailableReason: result.unavailableReasons[date]} : {})} as GoogleAccountDaySpend['accounts'][number]['rows'][number];
   });
   return {id:data.customer.id, name:data.customer.descriptiveName, currency:data.customer.currencyCode, timezone:data.customer.timeZone, rows,
     ...(result.account.error ? {error:'Some spend could not be assigned to this workspace. Affected dates are unavailable.'} : {})};
 }
 
 export type GoogleCampaignAccount = {id:string;name:string;accountId:string};
-export function googleOrderAccount(order: Attribution, campaigns: GoogleCampaignAccount[]): string | null {
+/** A campaign must match uniquely; account names and landing regions are not attribution. */
+export function googleOrderCampaign(order: Attribution, campaigns: GoogleCampaignAccount[]): GoogleCampaignAccount | null {
   const tags = acquisitionTags(acquisitionTouch(order));
   const id = String(tags.google_campaign_id || tags.gad_campaignid || '').trim();
   const campaign = id || String(tags.utm_campaign || '').trim();
   if (!campaign) return null;
   const matches = campaigns.filter(row => row.id === campaign || (!id && campaignNameKey(row.name) === campaignNameKey(campaign)));
-  const accounts = [...new Set(matches.map(row=>row.accountId))];
-  return accounts.length===1 ? accounts[0] : null;
+  return matches.length === 1 ? matches[0] : null;
+}
+export function googleOrderAccount(order: Attribution, campaigns: GoogleCampaignAccount[]): string | null {
+  return googleOrderCampaign(order, campaigns)?.accountId || null;
+}
+export function aggregateGoogleWorkspaceDays(raw: Snapshot, funnel: AcquisitionFunnel, start:string, end:string, now=Date.now()) {
+  // USA main reporting includes historical INR /discover sales acquired by Astro USA.
+  // Destination buckets are disjoint, so combine their spend once in the owning account.
+  const primary = aggregateGoogleAccountDays(raw,funnel,start,end,now);
+  if (funnel === 'us-main') {
+    const legacy = aggregateGoogleAccountDays(raw,'astrorekha',start,end,now);
+    primary.rows = primary.rows.map(row => {
+      const other = legacy.rows.find(item=>item.date===row.date)!;
+      const missing = row.costMicros===null ? row : other.costMicros===null ? other : null;
+      return missing ? {...missing} : {...row,costMicros:row.costMicros!+other.costMicros!};
+    });
+    primary.error ||= legacy.error;
+  }
+  return primary;
 }
 export async function readGoogleProfitContext(accountId:string, funnel:AcquisitionFunnel,start:string,end:string) {
   if (!(GOOGLE_ADS_CUSTOMERS as readonly string[]).includes(accountId)) throw new Error('Choose a configured Google account.');
@@ -253,7 +306,10 @@ export async function readGoogleProfitContext(accountId:string, funnel:Acquisiti
   const snapshots = await Promise.all(GOOGLE_ADS_CUSTOMERS.map(id=>snapshot(id,start,end)));
   const raw = snapshots.find(item=>item.customer.id===accountId)!;
   const campaigns = snapshots.flatMap(item=>item.campaigns.map(row=>({id:row.campaign!.id,name:row.campaign!.name,accountId:item.customer.id})));
-  return {account:aggregateGoogleAccountDays(raw,funnel,start,end),campaigns,fetchedAt:raw.fetchedAt};
+  const primary = aggregateGoogleWorkspaceDays(raw,funnel,start,end);
+  return {account:primary,
+    accounts:snapshots.map(item=>aggregateGoogleAccountDays(item,funnel,start,end)),
+    campaigns,fetchedAt:snapshots.map(item=>item.fetchedAt).sort()[0]};
 }
 export async function readGoogleSpend(funnel: AcquisitionFunnel, start: string, end: string, mode: TrackingDayMode, rate: number): Promise<GoogleSpendReport> {
   validateGoogleRange(start, end);

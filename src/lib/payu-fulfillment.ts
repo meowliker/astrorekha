@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { verifyPayUResponseHash } from "@/lib/payu-response-hash";
 import { sendGa4Purchase } from "@/lib/ga4-purchase";
+import { finalizeCheckoutAttribution } from "@/lib/checkout-attribution";
 import { sendMetaPurchase } from "@/lib/meta-purchase";
 import { sendVastuGuideEmail } from "@/lib/vastu-guide-email";
 import { type PaymentAttributionPayload } from "@/lib/attribution";
@@ -533,6 +534,15 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
     if (!grant.data) return { success: true, alreadyPaid: true, userId: resolvedUserId };
   }
   await markFulfilled();
+
+  try {
+    // Gateway payment time excludes clicks after payment, even when its notification is delayed.
+    // Access has already been saved; optional attribution cannot block payment or unlocks.
+    // Without a provider payment timestamp, retain the checkout snapshot rather
+    // than attributing clicks during a delayed/unverified notification interval.
+    const attributed = options.paidAt ? await finalizeCheckoutAttribution(existingPayment, options.paidAt) : existingPayment;
+    Object.assign(existingPayment, attributed);
+  } catch { console.warn("[checkout-attribution] Finalization unavailable; preserving checkout attribution"); }
 
   if (!existingPayment.fulfilled_at) {
     await recordMarketingEvent({
