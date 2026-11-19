@@ -12,7 +12,7 @@ const check = (key: string, name: string, message: string): MonitorCheck => ({
 const issue = buildMonitoringAlert([
   { check: check("supabase", "Supabase database", "Monitoring cannot save its run"), event: "issue" },
 ], at);
-assert.match(issue.slackText, /^<!here> \*AstroRekha needs attention\*/);
+assert.match(issue.slackText, /^\*AstroRekha\*\n<!here> \*AstroRekha needs attention\*/);
 assert.match(issue.slackText, /couldn't read or save information in Supabase/);
 assert.doesNotMatch(issue.slackText, /Monitoring cannot save its run/);
 assert.match(issue.emailHtml, /Orders and other live data may be affected/);

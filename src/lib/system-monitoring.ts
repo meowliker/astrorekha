@@ -1,4 +1,4 @@
-import { collectAdBalanceChecks, type AdBalance } from "./monitoring-ad-balances";
+import { collectAdBalanceChecks, retireTransferredBalanceIncidents, type AdBalance } from "./monitoring-ad-balances";
 import { pineLabsAccessToken } from "@/lib/pinelabs-api";
 import { randomUUID } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -455,6 +455,8 @@ export async function runMonitoring(db: SupabaseClient, trigger: "cron" | "manua
       .not("finished_at", "is", null).order("started_at", { ascending: false }).limit(1).maybeSingle();
     if (priorError) throw new Error("Unable to read previous monitoring run");
     const checks = rawChecks.map((check) => confirmProviderFailure(check, priorRun, trigger, now));
+    // Retire transferred accounts silently; this is not a balance recovery.
+    await retireTransferredBalanceIncidents(db, now);
     const { data: existing, error: incidentError } = await db.from("monitoring_incidents")
       .select("check_key,active,status,opened_at,last_seen_at,last_notified_at");
     if (incidentError) throw new Error("Unable to read monitoring incidents");

@@ -5,7 +5,6 @@ import type { MonitorCheck } from "./system-monitoring";
 export const LOW_AD_BALANCE_INR = 5000;
 export const BALANCE_SLACK_MEMBER_ID = "U08C5ENV66Q";
 const DAILY_BALANCE_MAHESH_MEMBER_ID = "U08KKPKQKHD";
-const TOKEN_SOURCE_ACCOUNT = "1123080110423751";
 const VEDIC_ACCOUNTS = ["2022187855078303", "2366717340763776"] as const;
 export type AdBalance = {
   accountId: string; accountName: string; group: "AstroRekha" | "VedicRekha";
@@ -26,7 +25,6 @@ export function remainingSpendingLimit(raw: { spend_cap?: unknown; amount_spent?
 
 export function selectBalanceAccounts(settings: ReturnType<typeof normalizeMetaAdAccountsSettings>, now: number, workspaces: ReturnType<typeof normalizeMetaAdAccountsSettings>[] = []) {
   const current = new Set(getMetaAccountCredentialsFromSettings(settings, { startMillis: now, endMillis: now + 1 }).map(a => a.accountId));
-  const token = settings.accounts.find(a => a.accountId === TOKEN_SOURCE_ACCOUNT)?.accessToken;
   // An account can be retired in one workspace and still active in another.
   // Prefer an active credential and show each account once in the summary.
   const byId = new Map<string, { accountId: string; accountName: string; group: "AstroRekha"; accessToken?: string; inactive: boolean }>();
@@ -42,10 +40,7 @@ export function selectBalanceAccounts(settings: ReturnType<typeof normalizeMetaA
       if (!prior || (prior.inactive && !candidate.inactive) || (!prior.accessToken && !candidate.inactive && candidate.accessToken)) byId.set(a.accountId, candidate);
     }
   }
-  const accounts = [...byId.values()];
-  return [...accounts, ...VEDIC_ACCOUNTS.map(accountId => ({
-    accountId, accountName: accountId === "2022187855078303" ? "VE | ADS 5" : "Vedicrekha 1 <> Shiprocke_BFRS", group: "VedicRekha" as const, accessToken: token, inactive: false,
-  }))];
+  return [...byId.values()];
 }
 
 export function balanceCheck(balance: AdBalance, now: number): MonitorCheck {
@@ -110,18 +105,25 @@ export function formatBalance(balance: AdBalance) {
 }
 const slackEscape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/[\r\n*`]/g, " ");
 const htmlEscape = (s: string) => s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+// Keep historical payloads readable, but never include transferred accounts in new alerts.
+export function isAstroBalanceCheck(check: MonitorCheck) {
+  return check.adBalance?.group === "AstroRekha" && !VEDIC_ACCOUNTS.some(id => id === check.adBalance?.accountId);
+}
+
+export async function retireTransferredBalanceIncidents(db: SupabaseClient, now: number) {
+  const { error } = await db.from("monitoring_incidents").update({
+    active: false, status: "unconfigured", message: "Account monitoring moved to VedicRekha.",
+    resolved_at: new Date(now).toISOString(),
+  }).in("check_key", VEDIC_ACCOUNTS.map(id => `meta_balance:${id}`)).eq("active", true);
+  if (error) throw new Error("Unable to retire transferred balance incidents");
+}
+
 export function balanceAlertSections(checks: MonitorCheck[]) {
-  const groups = ["AstroRekha", "VedicRekha"] as const;
+  const rows = checks.filter(isAstroBalanceCheck);
   const line = (c: MonitorCheck) => `${c.adBalance!.accountName} (${c.adBalance!.accountId}): ${c.message}`;
   return {
-    slack: groups.map(group => {
-      const rows = checks.filter(c => c.adBalance?.group === group);
-      return rows.length ? `*${group}*\n${rows.map(c => `• ${slackEscape(line(c))}`).join("\n")}` : "";
-    }).filter(Boolean).join("\n\n"),
-    html: groups.map(group => {
-      const rows = checks.filter(c => c.adBalance?.group === group);
-      return rows.length ? `<h3>${group}</h3><ul>${rows.map(c => `<li>${htmlEscape(line(c))}</li>`).join("")}</ul>` : "";
-    }).join(""),
+    slack: rows.map(c => `• ${slackEscape(line(c))}`).join("\n"),
+    html: rows.length ? `<ul>${rows.map(c => `<li>${htmlEscape(line(c))}</li>`).join("")}</ul>` : "",
   };
 }
 
@@ -131,9 +133,9 @@ export function buildDailyBalanceAlert(checks: MonitorCheck[], now: Date) {
   const time = now.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
   const note = "Amounts show spending limit remaining, not a prepaid wallet balance.";
   return {
-    subject: "Daily ad account balances",
-    slackText: `<@${BALANCE_SLACK_MEMBER_ID}> <@${DAILY_BALANCE_MAHESH_MEMBER_ID}> *Daily ad account balances*\n\n${sections.slack || "No active ad accounts configured."}\n\n${note}\nChecked ${time} IST`,
-    emailHtml: `<h2>Daily ad account balances</h2>${sections.html || "<p>No active ad accounts configured.</p>"}<p>${note}</p><p>Checked ${time} IST</p>`,
+    subject: "AstroRekha · Daily ad account balances",
+    slackText: `*AstroRekha*\n<@${BALANCE_SLACK_MEMBER_ID}> <@${DAILY_BALANCE_MAHESH_MEMBER_ID}> *Daily ad account balances*\n\n${sections.slack || "No active ad accounts configured."}\n\n${note}\nChecked ${time} IST`,
+    emailHtml: `<h2>AstroRekha · Daily ad account balances</h2>${sections.html || "<p>No active ad accounts configured.</p>"}<p>${note}</p><p>Checked ${time} IST</p>`,
   };
 }
 

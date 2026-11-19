@@ -1,4 +1,4 @@
-import { balanceAlertSections, BALANCE_SLACK_MEMBER_ID } from "./monitoring-ad-balances";
+import { balanceAlertSections, BALANCE_SLACK_MEMBER_ID, isAstroBalanceCheck } from "./monitoring-ad-balances";
 import type { MonitorCheck } from "./system-monitoring";
 
 export type MonitorAlertChange = { check: MonitorCheck; event: "issue" | "recovery" };
@@ -52,12 +52,12 @@ function recoveryExplanation(check: MonitorCheck): string {
 }
 
 export function buildMonitoringAlert(changed: MonitorAlertChange[], checkedAt = new Date()) {
-  const balanceChanges = changed.filter(c => c.check.adBalance);
+  const balanceChanges = changed.filter(c => isAstroBalanceCheck(c.check));
   const serviceChanges = changed.filter(c => !c.check.adBalance);
   const balanceSections = balanceAlertSections(balanceChanges.map(c => c.check));
-  const issueCount = changed.filter(({ event }) => event === "issue").length;
+  const issueCount = [...balanceChanges, ...serviceChanges].filter(({ event }) => event === "issue").length;
   const balancesOnly = balanceChanges.length > 0 && serviceChanges.length === 0;
-  const subject = balancesOnly ? (issueCount ? "Ad account balance is low" : "Ad account balance recovered") : issueCount
+  const subject = balancesOnly ? (issueCount ? "AstroRekha · Ad account balance is low" : "AstroRekha · Ad account balance recovered") : issueCount
     ? `AstroRekha alert: ${issueCount} ${issueCount === 1 ? "issue needs" : "issues need"} attention`
     : "AstroRekha update: service checks recovered";
   const heading = balancesOnly ? (issueCount ? "Ad account balance is low" : "Ad account balance recovered") : issueCount ? "AstroRekha needs attention" : "AstroRekha services are recovering";
@@ -70,9 +70,9 @@ export function buildMonitoringAlert(changed: MonitorAlertChange[], checkedAt = 
     dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata",
   }).format(checkedAt);
   const statusUrl = "https://astrorekha.com/admin/monitoring";
-  const slackText = `${serviceChanges.some(c => c.event === "issue") ? "<!here> " : ""}${balanceChanges.length ? `<@${BALANCE_SLACK_MEMBER_ID}> ` : ""}*${heading}*\n\n${entries.map((entry) =>
+  const slackText = `*AstroRekha*\n${serviceChanges.some(c => c.event === "issue") ? "<!here> " : ""}${balanceChanges.length ? `<@${BALANCE_SLACK_MEMBER_ID}> ` : ""}*${heading}*\n\n${entries.map((entry) =>
     `*${entry.name} — ${entry.label}*\n${entry.explanation}`).join("\n\n")}${balanceSections.slack ? `\n\n${balanceSections.slack}` : ""}\n\nChecked ${time} IST · View details: ${statusUrl}`;
-  const emailHtml = `<h2>${escapeHtml(heading)}</h2>${entries.map((entry) =>
+  const emailHtml = `<h2>AstroRekha</h2><h3>${escapeHtml(heading)}</h3>${entries.map((entry) =>
     `<p><strong>${escapeHtml(entry.name)} — ${entry.label}</strong><br>${escapeHtml(entry.explanation)}</p>`).join("")}`
     + balanceSections.html + `<p>Checked ${escapeHtml(time)} IST · <a href="${statusUrl}">View details in System Status</a></p>`;
   return { subject, slackText, emailHtml };
