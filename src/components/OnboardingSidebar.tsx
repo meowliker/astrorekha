@@ -2,7 +2,6 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
-import { useGoogleAdsExperience } from "@/components/onboarding/OnboardingExperience";
 
 interface OnboardingSidebarProps {
   isOpen: boolean;
@@ -10,12 +9,11 @@ interface OnboardingSidebarProps {
 }
 
 export function OnboardingSidebar({ isOpen, onClose }: OnboardingSidebarProps) {
-  const googleAds = useGoogleAdsExperience();
   const menuItems = [
-    { label: "About us", href: "Terms/about-us.html" },
-    { label: "Contact us", href: "Terms/contact-us.html" },
-    { label: "Privacy Policy", href: "Terms/privacy-policy.html" },
-    { label: "Terms of Service", href: "Terms/terms-of-service.html" },
+    { label: "About us", href: "/Terms/about-us.html" },
+    { label: "Contact us", href: "/Terms/contact-us.html" },
+    { label: "Privacy Policy", href: "/Terms/privacy-policy.html" },
+    { label: "Terms of Service", href: "/Terms/terms-of-service.html" },
   ];
 
   return (
@@ -53,7 +51,7 @@ export function OnboardingSidebar({ isOpen, onClose }: OnboardingSidebarProps) {
                 {menuItems.map((item, index) => (
                   <motion.a
                     key={item.label}
-                    href={googleAds ? `/${item.href}` : item.href}
+                    href={item.href}
                     target={item.href.startsWith("mailto") ? undefined : "_blank"}
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
@@ -64,7 +62,7 @@ export function OnboardingSidebar({ isOpen, onClose }: OnboardingSidebarProps) {
                         // Let mailto work normally
                       } else {
                         e.preventDefault();
-                        window.open(googleAds ? `/${item.href}` : item.href, "_blank");
+                        window.open(item.href, "_blank");
                       }
                     }}
                   >
