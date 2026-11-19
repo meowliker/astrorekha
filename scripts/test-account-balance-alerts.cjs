@@ -8,9 +8,21 @@ function fixture(){const tables={admin_balance_history:[{id:'one',payload:event,
 test('mentions are real users, currencies render correctly, and Vedic/initial/decrease events do not qualify',()=>{
  const m=alerts.balanceAdditionMessage(event);assert.ok(m.includes('<@U08KKPKQKHD> <@U08C5ENV66Q>'));assert.ok(m.includes('₹40,939.00'));assert.ok(m.includes('spending limit'));assert.ok(!m.includes('D08KYJW45M3'));
  assert.ok(alerts.balanceAdditionMessage({...event,currency:'USD'}).includes('$40,939.00'));
+ assert.match(alerts.balanceAdditionMessage({...event,at:'2026-11-19T08:09:59Z'}), /\*Time:\* 19 Nov 2026, 1:39 pm IST/);
  for(const accountId of ['2022187855078303','2366717340763776'])assert.equal(alerts.eligibleBalanceAddition({...event,accountId}),false);
  assert.equal(alerts.eligibleBalanceAddition({...event,before:0}),false);assert.equal(alerts.eligibleBalanceAddition({...event,amount:-100}),false);
  assert.ok(!alerts.balanceAdditionMessage({...event,accountName:'<@everyone>'}).includes('<@everyone>'));
+});
+test('overlapping cron and manual dispatch sends one alert; an empty poll sends nothing',async()=>{
+ const oldEnv=process.env.NODE_ENV,oldFetch=global.fetch;let calls=0;
+ global.fetch=async()=>{calls++;await new Promise(resolve=>setTimeout(resolve,10));return{ok:true,status:200}};
+ try{
+  process.env.NODE_ENV='production';const f=fixture();
+  await Promise.all([alerts.deliverBalanceAdditionAlerts(f.db),alerts.deliverBalanceAdditionAlerts(f.db)]);
+  assert.equal(calls,1);assert.equal(f.tables.admin_balance_alert_deliveries.length,1);
+  await alerts.deliverBalanceAdditionAlerts(f.db);assert.equal(calls,1);
+  const empty=fixture();empty.tables.admin_balance_history=[];await alerts.deliverBalanceAdditionAlerts(empty.db);assert.equal(calls,1);
+ }finally{process.env.NODE_ENV=oldEnv;global.fetch=oldFetch;}
 });
 test('local preview sends nothing; production sends once per destination, respects pause, and skips ambiguous retries',async()=>{
  const oldEnv=process.env.NODE_ENV,oldFetch=global.fetch;let calls=0,timeout=false;

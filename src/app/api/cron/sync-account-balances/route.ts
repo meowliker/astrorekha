@@ -1,4 +1,3 @@
-import { deliverBalanceAdditionAlerts } from '@/lib/account-balance-alerts';
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { refreshBalances } from '@/lib/account-balances';
@@ -10,7 +9,6 @@ export async function GET(req: NextRequest) {
   const now = new Date();
   if (!balanceSchedule(now)) return NextResponse.json({ error: 'Outside scheduled window' }, { status: 409 });
   try { const db = getSupabaseAdmin({ fresh: true }); const result = await refreshBalances(db, true, now);
-    const alerts = await deliverBalanceAdditionAlerts(db).catch(() => ({ error: 'Balance saved; Slack delivery deferred' }));
-    return NextResponse.json({ ...result, alerts }, { headers: { 'Cache-Control': 'no-store' } }); }
+    return NextResponse.json(result, { headers: { 'Cache-Control': 'no-store' } }); }
   catch { return NextResponse.json({ error: 'Balance update failed' }, { status: 503 }); }
 }

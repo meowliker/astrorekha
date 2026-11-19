@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { normalizeMetaAdAccountsSettings, getMetaAccountWindowForRequest, type MetaAdAccountsSettings } from './meta-ad-accounts';
 import { balanceSchedule, type BalanceAccount, type BalanceFunnel, type BalanceReading, type BalanceHistory, type BalancesView } from './account-balances-types';
 import { balanceStore, localBalancePreview } from './account-balances-store';
+import { eligibleBalanceAddition } from './account-balance-alerts';
 
 type Account = BalanceAccount & { accessToken?: string };
 export const EXCLUDED_BALANCE_ACCOUNTS = new Set(['2022187855078303', '2366717340763776']);
@@ -61,19 +62,45 @@ export function parseLimitActivity(raw: Record<string, unknown>, account: Balanc
       amount: Math.round((after - before) * 100) / 100, before, after, reference: 'Meta spending-limit activity' };
   } catch { return null; }
 }
-async function historyFor(account: Account, now: Date) {
+async function historyFor(account: Account, now: Date, days = 90) {
   const history: BalanceHistory[] = [];
   const signal = AbortSignal.timeout(25_000);
   let after = '';
   // Bounded history import. We explicitly disclose the window and any incomplete scan.
   for (let page = 0; page < 8; page++) {
     const data = await meta(account, '/activities', { category: 'BUDGET', fields: 'event_time,event_type,object_id,extra_data',
-      since: String(Math.floor(now.getTime() / 1000) - 90 * 86400), until: String(Math.floor(now.getTime() / 1000)), limit: '100', ...(after ? { after } : {}) }, signal);
+      since: String(Math.floor(now.getTime() / 1000) - days * 86400), until: String(Math.floor(now.getTime() / 1000)), limit: '100', ...(after ? { after } : {}) }, signal);
     for (const raw of data.data || []) { const entry = parseLimitActivity(raw, account); if (entry) history.push(entry); }
     after = data.paging?.cursors?.after || '';
     if (!data.paging?.next || !after) return { history, complete: true };
   }
   return { history, complete: false };
+}
+// Alert-only polling: never writes current balances, sheet snapshots or refresh times.
+// An overlapping activity window catches delayed Meta events and additions masked by
+// concurrent spending. Event IDs and delivery claims deduplicate all collection paths.
+export async function checkBalanceAdditions(db: SupabaseClient, now = new Date()) {
+  if (localBalancePreview()) return { checked: 0, failed: 0, skipped: 'Local preview' };
+  const cutoff = await db.from('admin_balance_alert_state').select('activated_at').eq('id', true).maybeSingle();
+  const activatedAt = Date.parse(cutoff.data?.activated_at || '');
+  if (cutoff.error || !Number.isFinite(activatedAt)) throw new Error('Balance alert activation is unavailable');
+  const accounts = await loadAccounts(db, now);
+  const results = await Promise.allSettled(accounts.map(async account => {
+    const raw = await meta(account, '', { fields: 'id,name,currency,balance,spend_cap,amount_spent' });
+    const reading = parseBalance(raw, publicAccount(account), 'manual', now.toISOString());
+    if (reading.status !== 'ok') throw new Error('Balance could not be verified');
+    const { history, complete } = await historyFor({ ...account, accountName: typeof raw.name === 'string' ? raw.name : account.accountName }, now, 2);
+    const additions = history.filter(event => eligibleBalanceAddition(event) && event.currency === reading.currency
+      && Date.parse(event.at) >= activatedAt && Date.parse(event.at) <= now.getTime());
+    if (additions.length) {
+      const saved = await db.from('admin_balance_history').upsert(additions.map(event => ({
+        id: event.id, account_id: event.accountId, occurred_at: event.at, payload: event, notify: true,
+      })), { onConflict: 'id', ignoreDuplicates: true });
+      if (saved.error) throw new Error('Balance additions could not be saved');
+    }
+    if (!complete) throw new Error('Balance activity scan was incomplete');
+  }));
+  return { checked: results.filter(r => r.status === 'fulfilled').length, failed: results.filter(r => r.status === 'rejected').length };
 }
 export async function getBalancesView(db: SupabaseClient): Promise<BalancesView> {
   const [accounts, saved] = await Promise.all([loadAccounts(db), balanceStore(db).read()]);

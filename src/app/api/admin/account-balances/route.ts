@@ -1,4 +1,3 @@
-import { deliverBalanceAdditionAlerts } from '@/lib/account-balance-alerts';
 import { NextRequest, NextResponse } from 'next/server';
 import { withAdminAccess } from '@/lib/admin-access';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
@@ -13,8 +12,7 @@ export const POST = withAdminAccess(async (req: NextRequest) => {
   const body = await req.json().catch(() => null);
   if (!body || body.action !== 'refresh') return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
   const db = getSupabaseAdmin({ fresh: true });
-  try { const result = await refreshBalances(db);
-    const alerts = await deliverBalanceAdditionAlerts(db).catch(() => ({ error: 'Balance saved; Slack delivery deferred' }));
-    return NextResponse.json({ ...result, alerts }); }
+  // Refreshing the sheet must never send messages. The 15-minute cron delivers alerts.
+  try { return NextResponse.json(await refreshBalances(db)); }
   catch { return NextResponse.json({ error: 'Refresh could not be completed. Saved balances have been retained.' }, { status: 503 }); }
 }, 'administrator');

@@ -4,6 +4,10 @@
   "framework": "nextjs",
   "crons": [
     {
+      "path": "/api/cron/check-balance-additions",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/cron/prepare-soulmate-reports",
       "schedule": "* * * * *"
     },

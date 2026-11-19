@@ -78,3 +78,33 @@ test('refresh calls Meta read endpoints only, records partial failures, and repe
   try {const result=await m.exports.refreshBalances(db,false,new Date());assert.equal(result.successful,0);assert.equal(saved.readings.length,2);assert.equal(merged.last_verified.remaining,7500);assert.equal(merged.last_attempt.status,'error');assert.ok(!JSON.stringify(saved).includes('secret-fixture-token'));const count=calls.length;assert.equal((await m.exports.refreshBalances(db)).refreshed,false);assert.equal(calls.length,count);}
   finally{global.fetch=original;}
 });
+
+test('15-minute addition polling preserves sheet data, ignores spending and old events, and never rearms an imported alert', async () => {
+  const history = new Map(); let rows = [], fail = false, calls = 0, writes = 0;
+  const now = new Date('2026-11-19T08:30:00Z');
+  const settings = {accounts:[{accountId:'123',active:true,accessToken:'fixture'}]};
+  const db = {from(table) {
+    // Any write/read of the sheet's current values, snapshots or runs fails this test.
+    assert.ok(['settings','soulmate_admin_settings','us_main_admin_settings','us_soulmate_admin_settings','admin_balance_history','admin_balance_alert_state'].includes(table));
+    const q = {select(){return q},eq(){return q},maybeSingle:async()=>({data:table==='admin_balance_alert_state'?{activated_at:'2026-11-19T00:00:00Z'}:table==='settings'?{value:settings}:{accounts:[]},error:null}),
+      upsert:async(items,options)=>{writes++;assert.deepEqual(options,{onConflict:'id',ignoreDuplicates:true});for(const item of items)if(!history.has(item.id))history.set(item.id,item);return {error:null};}};return q;
+  }};
+  const activity = (at, before, after) => ({object_id:'123',event_time:at,event_type:'ad_account_update_spend_limit',extra_data:JSON.stringify({type:'payment_amount',currency:'INR',old_value:before,new_value:after})});
+  const original=global.fetch;
+  global.fetch=async(url,init)=>{calls++;url=new URL(url);assert.ok(!init.method||init.method==='GET');
+    if(fail)throw Error('provider unavailable');
+    if(url.pathname.endsWith('/activities')){assert.equal(Number(url.searchParams.get('since')),now.getTime()/1000-2*86400);return {ok:true,json:async()=>({data:rows})};}
+    return {ok:true,json:async()=>({id:'act_123',name:'Verified account',currency:'INR',balance:'0',spend_cap:'5000000',amount_spent:'4900000'})};
+  };
+  try {
+    assert.deepEqual(await service.checkBalanceAdditions(db,now),{checked:1,failed:0});assert.equal(writes,0);
+    rows=[activity('2026-11-18T20:00:00Z',10000,20000),activity('2026-11-19T08:00:00Z',20000,10000),activity('2026-11-19T08:01:00Z',0,10000),activity('2026-11-19T09:00:00Z',10000,20000)];
+    await service.checkBalanceAdditions(db,now);assert.equal(writes,0);
+    rows.push(activity('2026-11-19T08:09:59Z',335470000,339563900));
+    await Promise.all([service.checkBalanceAdditions(db,now),service.checkBalanceAdditions(db,now)]);
+    assert.equal(history.size,1);const saved=[...history.values()][0];assert.equal(saved.payload.amount,40939);assert.equal(saved.payload.accountName,'Verified account');assert.equal(saved.occurred_at,'2026-11-19T08:09:59.000Z');assert.equal(saved.notify,true);
+    saved.notify=false;await service.checkBalanceAdditions(db,now);assert.equal(history.size,1);assert.equal(saved.notify,false);
+    const before=writes;fail=true;assert.deepEqual(await service.checkBalanceAdditions(db,now),{checked:0,failed:1});assert.equal(writes,before);assert.ok(calls>0);
+  } finally {global.fetch=original;}
+  assert.deepEqual(JSON.parse(fs.readFileSync('vercel.json')).crons.filter(c=>c.path==='/api/cron/check-balance-additions'),[{path:'/api/cron/check-balance-additions',schedule:'*/15 * * * *'}]);
+});

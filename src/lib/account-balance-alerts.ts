@@ -12,7 +12,7 @@ const escapeSlack = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, 
 export function balanceAdditionMessage(event: BalanceHistory) {
   const amount = new Intl.NumberFormat('en-IN', { style: 'currency', currency: event.currency, currencyDisplay: 'narrowSymbol', maximumFractionDigits: 2 }).format(event.amount);
   const at = new Date(event.at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
-  return `${BALANCE_ADDITION_MENTIONS.map(id => `<@${id}>`).join(' ')}\n*Ad account balance added*\n*${escapeSlack(event.accountName)}* (${escapeSlack(event.accountId)}) — *${amount} added to the spending limit*.\n${at} IST\n<https://astrorekha.com/admin/account-balances|View account balances>`;
+  return `${BALANCE_ADDITION_MENTIONS.map(id => `<@${id}>`).join(' ')}\n*Ad account balance added*\n*${escapeSlack(event.accountName)}* (${escapeSlack(event.accountId)}) — *${amount} added to the spending limit*.\n*Time:* ${at} IST\n<https://astrorekha.com/admin/account-balances|View account balances>`;
 }
 function validWebhook(value: string) {
   try { const u = new URL(value); return u.protocol === 'https:' && ['hooks.slack.com', 'hooks.slack-gov.com'].includes(u.hostname) && u.pathname.startsWith('/services/') && !u.username && !u.password; } catch { return false; }
