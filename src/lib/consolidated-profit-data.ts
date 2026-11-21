@@ -14,7 +14,7 @@ import { fetchMetaTrackingAccount as usMeta } from './us-main-tracking-meta';
 import { trackingDayStartUtc, nextTrackingDayStartUtc } from './tracking-dashboard';
 import { calculateProfitSheetGst } from './profit-sheet-gst';
 import { usGoogleFinanceDay } from './google-profit-sheet';
-import { countryMode, countryTimezone, countryWindow, financialValues, combineRow, totalRows, roundMoney, type Country, type Contribution, type Balance, type ConsolidatedReport } from './consolidated-profit';
+import { countryMode, countryTimezone, countryWindow, financialValues, combineRow, totalRows, roundMoney, type AccountSpend, type Country, type Contribution, type Balance, type ConsolidatedReport } from './consolidated-profit';
 
 const shift = (date: string, n: number) => new Date(Date.parse(date) + n * 86400000).toISOString().slice(0, 10);
 const labels: Record<AcquisitionFunnel, string> = { astrorekha: 'AstroRekha', soulmate: 'Soulmate', 'us-main': 'US AstroRekha', 'us-soulmate': 'US Soulmate' };
@@ -35,6 +35,7 @@ export async function loadConsolidatedProfit(db: SupabaseClient, country: Countr
   const parts = new Map(dates.map(date => [date, [] as Contribution[]]));
   const accountCredentials = new Map<string, MetaAccountCredential[]>();
   const assignedCampaigns = new Set<string>();
+  const balanceSources = new Map<string, {key:string; credential:MetaAccountCredential}[]>();
   const google = await readConsolidatedGoogleContext(country,start,end,mode,rate);
   let unassignedOrders = 0;
   for (const funnel of funnels) {
@@ -59,6 +60,7 @@ export async function loadConsolidatedProfit(db: SupabaseClient, country: Countr
           const credentials = await credentialsFor[funnel](db,range);
           scopeKey = createHash('sha256').update(JSON.stringify(credentials.map(account=>({accountId:account.accountId,campaignIds:account.campaignIds,startDate:account.startDate,startTime:account.startTime,endDate:account.endDate,endTime:account.endTime})))).digest('hex');
           for (const credential of credentials) {
+            balanceSources.set(credential.accountId,[...(balanceSources.get(credential.accountId)||[]),{key:`${funnel}:meta`,credential}]);
             accountCredentials.set(credential.accountId,[...(accountCredentials.get(credential.accountId)||[]),credential]);
             for (const campaign of credential.campaignIds) {
               const id = `${credential.accountId}:${campaign}`;
@@ -86,6 +88,21 @@ export async function loadConsolidatedProfit(db: SupabaseClient, country: Countr
             spend = spend===null || !old ? null : spend+old.total/rate;
           }
         }
+        const accountAmounts = (amount:number|null) => ({
+          adsUsd:amount===null?null:roundMoney(currency==='USD'?amount:amount/rate),
+          adsInr:amount===null?null:roundMoney(currency==='INR'?amount:amount*rate),
+        });
+        const accounts: AccountSpend[] = source==='google'
+          ? [{id:google.accountId,name:country==='india'?'Astro India':'Astro USA',...accountAmounts(spend)}]
+          : meta.map(item=>({id:item.account.id,name:item.account.name,...accountAmounts(item.account.error || !(country==='us'?['USD']:['USD','INR']).includes(item.account.currency)?null:item.dailySpendInr[day.date]?.total || 0)}));
+        // Allocate only rounding pennies so the displayed account amounts reconcile to the source total.
+        for(const metric of ['adsUsd','adsInr'] as const) {
+          const target=accountAmounts(spend)[metric];
+          if(target!==null && accounts.length && accounts.every(a=>a[metric]!==null)) {
+            const largest=accounts.reduce((a,b)=>(a[metric] || 0)>=(b[metric] || 0)?a:b);
+            largest[metric]=roundMoney((largest[metric] || 0)+target-accounts.reduce((sum,a)=>sum+(a[metric] || 0),0));
+          }
+        }
         const revenue = (nativeDay.received-nativeDay.refund)/100;
         const gst = spend===null || unknownRefund ? null : funnel==='astrorekha'
           ? calculateProfitSheetGst(revenue,day.date>='2026-10-01'?.18:.05,day.date>='2026-10-01'?indianSpend || 0:0).gst
@@ -96,6 +113,7 @@ export async function loadConsolidatedProfit(db: SupabaseClient, country: Countr
           return minute!=='00';
         });
         parts.get(day.date)!.push({key:`${funnel}:${source}`,label:`${labels[funnel]} · ${source==='meta'?'Meta / other sources':'Google Ads'}`,
+          accounts,
           scopeKey:source==='meta'?scopeKey:`${google.accountId}:${funnel}`,
           retainAllowed:source==='meta'?selectionValid:google.reports[funnel].unavailableReasons?.[day.date]==='updating',
           fetchedAt:source==='google'?google.fetchedAt:new Date().toISOString(),approximate,
@@ -130,9 +148,13 @@ export async function loadConsolidatedProfit(db: SupabaseClient, country: Countr
       // The ledger's signed outstanding/remaining snapshot is authoritative when present.
       if(existing<0)items.push({id:reading.accountId,name:reading.accountName,value,capturedAt:reading.at,note:'Remaining spending limit; shared accounts counted once.'});
     }
-    // Missing account snapshots stay unavailable; never silently understate the total.
+    // Keep missing snapshots visible in the breakdown while summing available balances.
     for (const id of accountIds) if (!items.some(a=>a.id===id)) items.push({id,name:id,value:null,capturedAt:'',note:'No snapshot saved for this reporting boundary.'});
-    return combineRow(date,parts.get(date)!,items,currency);
+    return combineRow(date,parts.get(date)!,items.map(item=>({...item,sources:[...new Set((balanceSources.get(item.id)||[]).filter(({credential})=>{
+      const window=getMetaAccountWindowForRequest(credential,shift(date,-1),shift(date,1),'calendar_ist');
+      const day=googleAccountDayWindow(date,timezone);
+      return window && window.startMillis<day.end && window.endMillis>day.start;
+    }).map(source=>source.key))]})),currency);
   });
   return {country,currency,dayMode:country==='us'?'calendar_new_york':mode,window:countryWindow(country),rows,total:totalRows(rows,currency),exchangeRate:rate,
     fetchedAt:new Date().toISOString(),unassignedOrders,complete:rows.every(row=>row.values.profit!==null)};

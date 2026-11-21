@@ -1,8 +1,8 @@
 'use client';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Info, RefreshCw, X } from 'lucide-react';
-import { countryDate, countryWindow, type Country, type Metric, type ConsolidatedReport, type ConsolidatedRow } from '@/lib/consolidated-profit';
+import { ArrowLeft, ChevronDown, Info, RefreshCw, X } from 'lucide-react';
+import { availableBalance, countryDate, countryWindow, type Country, type Metric, type ConsolidatedReport, type ConsolidatedRow } from '@/lib/consolidated-profit';
 import { trackingDate } from '@/lib/tracking-dashboard';
 const columns: {key:Metric;label:string}[] = [
   {key:'received',label:'Received'},{key:'refund',label:'Refund'},{key:'revenue',label:'Revenue'},
@@ -12,6 +12,15 @@ const columns: {key:Metric;label:string}[] = [
 ];
 const dateLabel = (date:string) => date==='Total'?date:new Date(`${date}T12:00:00Z`).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'});
 const timestamp = (at:string) => new Date(at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',dateStyle:'medium',timeStyle:'short'})+' IST';
+const metricColor = (value:number|null,key:Metric) => {
+  if(value===null)return 'text-white/35';
+  if(['received','revenue','profit','margin'].includes(key))return value<0?'text-red-400':'text-green-400';
+  if(key==='refund'||key==='adsInr')return 'text-red-400';
+  if(key==='adsUsd')return 'text-red-400/70';
+  if(key==='gst')return 'text-amber-400';
+  if(key==='roas')return value>=1?'text-green-400':value>0?'text-amber-400':'text-white/35';
+  return 'text-white/80';
+};
 type Loaded = ConsolidatedReport & {refreshing?:boolean;preparing?:boolean;syncWarning?:string};
 export default function ConsolidatedProfitPage() {
   const [country,setCountry] = useState<Country>('india');
@@ -59,7 +68,7 @@ export default function ConsolidatedProfitPage() {
     const amount=row.values[key];
     const retained=row.contributions.some(p=>p.retainedAt)&&['adsUsd','adsInr','gst','profit','margin','roas'].includes(key);
     return <td key={key} className="whitespace-nowrap px-4 py-4 text-right tabular-nums"><div className="flex items-center justify-end gap-2">
-      <span className={amount===null?'text-white/35':['revenue','profit','received'].includes(key)?amount<0?'text-red-400':'text-emerald-400':'text-white/80'}>{format(amount,key)}{retained&&<span title="Includes last verified spend" className="ml-1 text-amber-300">*</span>}</span>
+      <span className={metricColor(amount,key)}>{format(amount,key)}{retained&&<span title="Includes last verified spend" className="ml-1 text-amber-300">*</span>}</span>
       <button aria-label={`${dateLabel(row.date)} ${columns.find(c=>c.key===key)?.label} breakdown`} onClick={()=>setSelected({row,key})} className="rounded p-1 text-white/40 hover:bg-white/10 hover:text-cyan-300 focus-visible:outline focus-visible:outline-cyan-300"><Info size={14}/></button>
     </div></td>;
   };
@@ -83,12 +92,22 @@ export default function ConsolidatedProfitPage() {
           {report&&<tfoot className="border-t border-white/20 bg-white/10 font-semibold"><tr><td colSpan={2} className="px-4 py-5">TABLE TOTAL</td>{columns.map(col=>cell(report.total,col.key))}</tr></tfoot>}
         </table></div>
       </section>
-      {report&&<p className="mt-4 text-xs leading-6 text-white/40">Amounts are {report.currency} except the labelled ad-spend columns. Profit keeps each funnel’s existing tax calculation. ROAS = net revenue ÷ ad spend. Account balances use the saved {country==='india'?'midnight IST':'11:30 AM IST'} snapshot; the total uses the final day, not the sum of daily balances. Google balances are unavailable.{report.unassignedOrders>0?` ${report.unassignedOrders} Google orders with no verified account remain separate from these totals.`:''}</p>}
+      {report&&<p className="mt-4 text-xs leading-6 text-white/40">Amounts are {report.currency} except the labelled ad-spend columns. Profit keeps each funnel’s existing tax calculation. ROAS = net revenue ÷ ad spend. Account balances sum available accounts once and use the saved {country==='india'?'midnight IST':'11:30 AM IST'} snapshot; the total uses the final day, not the sum of daily balances. Google balances are unavailable.{report.unassignedOrders>0?` ${report.unassignedOrders} Google orders with no verified account remain separate from these totals.`:''}</p>}
       <dialog ref={dialog} onCancel={()=>setSelected(null)} onClose={()=>setSelected(null)} onClick={e=>{if(e.target===dialog.current)setSelected(null);}} className="m-auto max-h-[85vh] w-[min(640px,calc(100vw-32px))] overflow-y-auto rounded-2xl border border-white/15 bg-[#161F30] p-0 text-white shadow-2xl backdrop:bg-black/70">
         {selected&&<><header className="flex items-start justify-between border-b border-white/10 p-5"><div><h2 className="text-lg font-semibold">{columns.find(col=>col.key===selected.key)?.label} breakdown</h2><p className="mt-1 text-sm text-white/50">{dateLabel(selected.row.date)} · {country==='india'?'India':'US'}</p></div><button autoFocus aria-label="Close breakdown" onClick={()=>setSelected(null)} className="rounded-lg p-2 hover:bg-white/10"><X size={19}/></button></header>
           <div className="p-5"><p className="mb-5 text-xs text-white/50">{countryWindow(country)}</p>
-          {selected.key==='balance'?<>{selected.row.balances.map(account=><div key={account.id} className="border-b border-white/10 py-3"><div className="flex justify-between gap-3"><span>{account.name}</span><span>{format(account.value,'balance')}</span></div><p className="mt-1 text-xs text-white/40">{account.id} · {account.capturedAt?timestamp(account.capturedAt):'Snapshot unavailable'}</p><p className="mt-1 text-xs text-white/50">{account.note}</p></div>)}<p className="mt-4 text-xs text-white/50">Shared Meta accounts are included once. Google does not provide a remaining balance here. Period total shows the last selected day’s snapshot.</p></>:selected.row.contributions.map(part=><div key={part.key} className="border-b border-white/10 py-4"><div className="flex justify-between gap-3"><span className="text-sm">{part.label}</span><span className="shrink-0 font-medium tabular-nums">{format(part.values[selected.key],selected.key)}</span></div><p className="mt-2 text-xs leading-5 text-white/45">{part.note}</p>{part.approximate&&['adsUsd','adsInr','gst','profit','margin','roas'].includes(selected.key)&&<p className="mt-1 text-xs text-white/50">Meta hourly spend is allocated across a reporting boundary.</p>}{part.retainedAt&&<p className="mt-1 text-xs text-amber-200">Spend last verified {timestamp(part.retainedAt)}.</p>}{part.values[selected.key]===null&&<p className="mt-1 text-xs text-white/50">Unavailable; not treated as zero.</p>}</div>)}
-          <div className="mt-5 flex justify-between font-semibold"><span>{selected.key==='margin'||selected.key==='roas'?'Combined ratio':'Total'}</span><span>{format(selected.row.values[selected.key],selected.key)}</span></div>
+          {selected.key==='balance'?<>{selected.row.contributions.map(part=>{
+            const accounts=selected.row.balances.filter(a=>a.sources?.includes(part.key));
+            return <details key={part.key} className="group border-b border-white/10 py-4">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded focus-visible:outline focus-visible:outline-cyan-300 [&::-webkit-details-marker]:hidden"><span className="flex items-center gap-2 text-sm"><ChevronDown size={16} className="shrink-0 transition-transform group-open:rotate-180"/>{part.label}</span><span className="shrink-0 tabular-nums">{format(availableBalance(accounts),'balance')}</span></summary>
+              <div className="mt-3 border-l border-white/15 pl-5">{accounts.length?accounts.map(account=><div key={account.id} className="py-3"><div className="flex justify-between gap-3 text-sm"><span>{account.name}</span><span className="shrink-0 tabular-nums">{format(account.value,'balance')}</span></div><p className="mt-1 text-xs text-white/40">{account.id} · {account.capturedAt?timestamp(account.capturedAt):'Snapshot unavailable'}</p><p className="mt-1 text-xs text-white/50">{account.note}</p></div>):<p className="py-2 text-xs text-white/50">{part.key.endsWith(':google')?'Google does not provide a remaining balance here.':'No account snapshot available for this funnel.'}</p>}</div>
+            </details>;
+          })}<p className="mt-4 text-xs text-white/50">Available balances only. A shared account can appear under more than one funnel but is counted once in the total. Period total shows the last selected day’s snapshot.</p></>:selected.row.contributions.map(part=><div key={part.key} className="border-b border-white/10 py-4">
+            {selected.key==='adsUsd'||selected.key==='adsInr'?<details className="group"><summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded focus-visible:outline focus-visible:outline-cyan-300 [&::-webkit-details-marker]:hidden"><span className="flex items-center gap-2 text-sm"><ChevronDown size={16} className="shrink-0 transition-transform group-open:rotate-180"/>{part.label}</span><span className={`shrink-0 font-medium tabular-nums ${metricColor(part.values[selected.key],selected.key)}`}>{format(part.values[selected.key],selected.key)}</span></summary>
+              <div className="mt-3 border-l border-white/15 pl-5">{part.accounts?.length?part.accounts.map(account=><div key={account.id} className="py-3"><div className="flex justify-between gap-3 text-sm"><span>{account.name}</span><span className={`shrink-0 tabular-nums ${metricColor(account[selected.key as 'adsUsd'|'adsInr'],selected.key)}`}>{format(account[selected.key as 'adsUsd'|'adsInr'],selected.key)}</span></div><p className="mt-1 text-xs text-white/40">{account.id}</p></div>):<p className="py-2 text-xs text-white/50">{part.values[selected.key]===null?'Account spend unavailable.':'No ad accounts assigned for this period.'}</p>}</div>
+            </details>:<div className="flex justify-between gap-3"><span className="text-sm">{part.label}</span><span className={`shrink-0 font-medium tabular-nums ${metricColor(part.values[selected.key],selected.key)}`}>{format(part.values[selected.key],selected.key)}</span></div>}
+            <p className="mt-2 text-xs leading-5 text-white/45">{part.note}</p>{part.approximate&&['adsUsd','adsInr','gst','profit','margin','roas'].includes(selected.key)&&<p className="mt-1 text-xs text-white/50">Meta hourly spend is allocated across a reporting boundary.</p>}{part.retainedAt&&<p className="mt-1 text-xs text-amber-200">Spend last verified {timestamp(part.retainedAt)}.</p>}{part.values[selected.key]===null&&<p className="mt-1 text-xs text-white/50">Unavailable; not treated as zero.</p>}</div>)}
+          <div className="mt-5 flex justify-between font-semibold"><span>{selected.key==='margin'||selected.key==='roas'?'Combined ratio':selected.key==='balance'?'Available balance':'Total'}</span><span className={metricColor(selected.row.values[selected.key],selected.key)}>{format(selected.row.values[selected.key],selected.key)}</span></div>
           {['margin','roas'].includes(selected.key)&&<p className="mt-3 text-xs text-white/50">Calculated from combined totals; individual percentages and ROAS values are not added together.</p>}
           {selected.key==='gst'&&<p className="mt-3 text-xs text-white/50">Normal India uses sales GST minus eligible ad GST credit. Soulmate uses recorded sales GST plus ad GST. US uses any recorded sales tax, including tax on historical INR purchases.</p>}
           </div></>}

@@ -60,3 +60,26 @@ test('cross-workspace report is administrator only on page and API, including ne
   assert.equal(canAccess({isAdministrator:false,workspaces:['astrorekha']},workspaceForPath(path)),false);
  }
 });
+
+test('available balance survives missing accounts, preserves zero and counts shared accounts once',()=>{
+ const known={id:'a',name:'A',value:100,capturedAt:'2026-11-21T00:00:00Z',sources:['normal:meta','soulmate:meta']};
+ const missing={id:'b',name:'B',value:null,capturedAt:''};
+ assert.equal(combineRow('x',[],[known,known,missing],'INR').values.balance,100);
+ assert.equal(combineRow('x',[],[{...known,value:0},missing],'INR').values.balance,0);
+ assert.equal(combineRow('x',[],[missing],'INR').values.balance,null);
+ assert.equal(combineRow('x',[],[],'INR').values.balance,null);
+});
+test('account spend groups aggregate by account within each source and follow retained costs',()=>{
+ const a=part('normal',100,30);a.accounts=[{id:'1',name:'One',adsInr:10,adsUsd:.1},{id:'2',name:'Two',adsInr:20,adsUsd:.2}];
+ const b=part('normal',200,45);b.accounts=[{id:'1',name:'One',adsInr:15,adsUsd:.15},{id:'2',name:'Two',adsInr:30,adsUsd:.3}];
+ const rows=[combineRow('2026-11-20',[a],[],'INR'),combineRow('2026-11-21',[b],[],'INR')];
+ const total=totalRows(rows,'INR');
+ assert.deepEqual(total.contributions[0].accounts.map(a=>a.adsInr),[25,50]);
+ assert.equal(total.contributions[0].accounts.reduce((sum,a)=>sum+a.adsInr,0),total.values.adsInr);
+ const report={country:'india',currency:'INR',dayMode:'calendar_ist',exchangeRate:100,rows,total,fetchedAt:'2026-11-21T00:00:00Z'};
+ const unavailable={...b,accounts:[],values:{...b.values,adsInr:null,adsUsd:null}};
+ const fresh={...report,rows:[combineRow('2026-11-21',[unavailable],[],'INR')]};
+ assert.deepEqual(retainConsolidatedSpend(fresh,report).rows[0].contributions[0].accounts,b.accounts);
+ b.accounts[0].adsInr=null;
+ assert.equal(totalRows(rows,'INR').contributions[0].accounts[0].adsInr,null);
+});

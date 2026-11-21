@@ -18,7 +18,7 @@ export const GET = withAdminAccess(async (request: NextRequest) => {
     if (start<'2026-10-01' || end>countryDate(new Date(),country)) throw new Error('Choose dates from 1 October 2026 through the current reporting day.');
   } catch (error) { return Response.json({error:(error as Error).message},{status:400}); }
   const db = getSupabaseAdmin({fresh:true});
-  const key = createHash('sha256').update(JSON.stringify(['consolidated-profit-v3',country,start,end,countryTimezone(country)])).digest('hex');
+  const key = createHash('sha256').update(JSON.stringify(['consolidated-profit-v4',country,start,end,countryTimezone(country)])).digest('hex');
   return cachedProfitReport(db,key,async()=>Response.json(await loadConsolidatedProfit(db,country,start,end)),after,
     (fresh,previous)=>retainConsolidatedSpend(fresh as unknown as ConsolidatedReport,previous as unknown as ConsolidatedReport|null) as unknown as Record<string,unknown>);
 }, 'administrator');

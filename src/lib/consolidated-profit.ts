@@ -7,13 +7,26 @@ export const countryWindow = (country: Country) => country === 'india' ? '12:00 
 export const metrics = ['received', 'refund', 'revenue', 'adsUsd', 'adsInr', 'gst', 'balance', 'profit', 'margin', 'roas', 'bundles', 'orders'] as const;
 export type Metric = typeof metrics[number];
 export type Values = Record<Metric, number | null>;
-export type Contribution = { key: string; label: string; values: Values; note?: string; fetchedAt?: string; retainedAt?: string; approximate?: boolean; scopeKey?: string; retainAllowed?: boolean; salesTax?: number; adTax?: number | null };
-export type Balance = { id: string; name: string; value: number | null; capturedAt: string; note?: string };
+export type AccountSpend = { id: string; name: string; adsUsd: number | null; adsInr: number | null };
+export type Contribution = { accounts?: AccountSpend[]; key: string; label: string; values: Values; note?: string; fetchedAt?: string; retainedAt?: string; approximate?: boolean; scopeKey?: string; retainAllowed?: boolean; salesTax?: number; adTax?: number | null };
+export type Balance = { sources?: string[]; id: string; name: string; value: number | null; capturedAt: string; note?: string };
 export type ConsolidatedRow = { date: string; values: Values; contributions: Contribution[]; balances: Balance[] };
 export type ConsolidatedReport = { country: Country; currency: 'INR' | 'USD'; dayMode: ReturnType<typeof countryMode> | 'calendar_new_york'; window: string; rows: ConsolidatedRow[]; total: ConsolidatedRow; fetchedAt: string; exchangeRate: number; unassignedOrders: number; complete: boolean };
 export const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 export function sumKnown(values: (number | null)[]): number | null {
   return values.some(value => value === null || !Number.isFinite(value)) ? null : roundMoney((values as number[]).reduce((a, b) => a + b, 0));
+}
+/** Available balances are useful even when another account has no snapshot. */
+export function availableBalance(accounts: Balance[]): number | null {
+  const known = accounts.filter(a => a.value !== null && Number.isFinite(a.value));
+  return known.length ? sumKnown(known.map(a => a.value)) : null;
+}
+export function totalAccountSpend(parts: Contribution[]): AccountSpend[] {
+  const ids = [...new Set(parts.flatMap(p => (p.accounts || []).map(a => a.id)))];
+  return ids.map(id => {
+    const accounts = parts.flatMap(p => (p.accounts || []).filter(a => a.id === id));
+    return {...accounts[0], adsUsd:sumKnown(accounts.map(a => a.adsUsd)), adsInr:sumKnown(accounts.map(a => a.adsInr))};
+  });
 }
 export function financialValues(input: Partial<Values>, currency: 'INR' | 'USD'): Values {
   const values = Object.fromEntries(metrics.map(key => [key, input[key] ?? null])) as Values;
@@ -34,14 +47,14 @@ export function combineRow(date: string, contributions: Contribution[], balances
     else if (balance.capturedAt === previous.capturedAt && balance.value !== previous.value) unique.set(balance.id, { ...balance, value: null, note: 'Conflicting snapshots.' });
   }
   const values = financialValues(Object.fromEntries(metrics.map(key => [key, sumKnown(contributions.map(part => part.values[key]))])), currency);
-  values.balance = unique.size ? sumKnown([...unique.values()].map(account => account.value)) : null;
+  values.balance = availableBalance([...unique.values()]);
   return { date, values, contributions, balances: [...unique.values()] };
 }
 export function totalRows(rows: ConsolidatedRow[], currency: 'INR' | 'USD'): ConsolidatedRow {
   const keys = [...new Set(rows.flatMap(row => row.contributions.map(part => part.key)))];
   const contributions = keys.map(key => {
     const parts = rows.flatMap(row => row.contributions.filter(part => part.key === key));
-    return { ...parts[0], approximate: parts.some(p => p.approximate), retainedAt: parts.find(p => p.retainedAt)?.retainedAt,
+    return { ...parts[0], accounts:totalAccountSpend(parts), approximate: parts.some(p => p.approximate), retainedAt: parts.find(p => p.retainedAt)?.retainedAt,
       values: financialValues(Object.fromEntries(metrics.map(metric => [metric, sumKnown(parts.map(part => part.values[metric]))])), currency) };
   });
   // Show the final selected day's snapshot; daily balances must never be added together.
@@ -56,7 +69,7 @@ export function retainConsolidatedSpend(fresh: ConsolidatedReport, previous: Con
     const old = previous.rows.find(r => r.date === row.date)?.contributions.find(p => p.key === part.key);
     if (!part.retainAllowed || !part.scopeKey || part.scopeKey !== old?.scopeKey || !old || old.values.adsUsd === null || old.values.adsInr === null || old.adTax == null) return part;
     const retainedAt = old.retainedAt || old.fetchedAt || previous.fetchedAt;
-    return {...part, retainedAt, adTax:old.adTax, approximate:old.approximate,
+    return {...part, accounts:old.accounts, retainedAt, adTax:old.adTax, approximate:old.approximate,
       values:financialValues({...part.values, adsUsd:old.values.adsUsd, adsInr:old.values.adsInr,
         gst:part.values.refund===null || part.salesTax==null ? null : roundMoney(part.salesTax+old.adTax)}, fresh.currency)};
   }), row.balances, fresh.currency));
