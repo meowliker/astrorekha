@@ -93,3 +93,18 @@ test('account-local nonmain refunds use the actual timestamp, not the saved 11:3
  const [legacy]=await readAdSourceFinance(db({us_main_orders:[order],us_main_refund_events:[{...refund,occurred_at:null}]}),'us-main','google','2026-11-12','2026-11-12','account_day',scope);
  assert.equal(legacy.refund,0);assert.equal(unknown,1,'no invented timestamp');
 });
+
+test('consolidated scope filters account ownership without overriding midnight or 11:30 IST; refunds use occurrence time',async()=>{
+ const at='2026-11-20T19:00:00Z'; // 00:30 IST on 21 November
+ const sale={...paid('a','google',at),payment_mode:'live'};
+ const scope={timezone:'Asia/Kolkata',reportingMode:'business_1130_ist',include:()=>true,unknownRefundTime:()=>assert.fail('timestamp exists')};
+ const [us]=await readAdSourceFinance(db({payments:[sale]}),'astrorekha','google','2026-11-20','2026-11-20','business_1130_ist',scope);
+ assert.equal(us.orders,1);
+ const [india]=await readAdSourceFinance(db({payments:[sale]}),'astrorekha','google','2026-11-21','2026-11-21','calendar_ist',{...scope,reportingMode:'calendar_ist'});
+ assert.equal(india.orders,1);
+ const [excluded]=await readAdSourceFinance(db({payments:[sale]}),'astrorekha','google','2026-11-21','2026-11-21','calendar_ist',{...scope,reportingMode:'calendar_ist',include:()=>false});assert.equal(excluded.orders,0);
+ const order={id:'sm1',amount:11800,gst_amount:1800,paid_at:'2026-11-20T12:00:00Z',payment_status:'paid',payment_mode:'live','attribution->>trackingEnvironment':'production',funnel:'soulmate_standalone',attribution:{utm_source:'google',utm_medium:'cpc'}};
+ const refund={event_id:'r1',order_id:'sm1',date:'2026-11-20',occurred_at:at,amount_paise:11800,gst_paise:1800};
+ const [refunded]=await readAdSourceFinance(db({soulmate_orders:[order],soulmate_refund_events:[refund]}),'soulmate','google','2026-11-21','2026-11-21','calendar_ist',{...scope,reportingMode:'calendar_ist'});
+ assert.equal(refunded.refund,11800);assert.equal(refunded.salesTax,-1800);
+});

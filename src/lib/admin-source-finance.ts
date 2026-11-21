@@ -8,14 +8,14 @@ export type SourceFinanceDay = { date: string; received: number; refund: number;
 const shift = (date: string, days: number) => new Date(Date.parse(date) + days * 86400000).toISOString().slice(0, 10);
 const fields = "id,payu_txn_id,landing_url,landing_path,amount,currency,payment_status,type,created_at,fulfilled_at,utm_source,utm_medium,utm_campaign,meta_campaign_id,meta_adset_id,meta_ad_id,last_touch,gateway,payment_mode";
 /** Rebuild a read-only source view. Never write filtered values into the shared profit ledger. Amounts are minor units. */
-export type FinanceScope = {timezone:string;include:(row:Attribution, occurredAt:string)=>boolean;unknownRefundTime:()=>void};
+export type FinanceScope = {reportingMode?: "calendar_ist" | "business_1130_ist";timezone:string;include:(row:Attribution, occurredAt:string)=>boolean;unknownRefundTime:()=>void};
 export async function readAdSourceFinance(db: SupabaseClient, funnel: AcquisitionFunnel, source: AdSource, start: string, end: string, mode = "business_1130_ist", scope?:FinanceScope) {
   if (![start, end].every((d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && Number.isFinite(Date.parse(d)) && new Date(d).toISOString().slice(0, 10) === d) || end < start || Date.parse(end) - Date.parse(start) >= 366 * 86400000) throw new Error("Choose a valid date range of up to 366 days.");
-  const offset = mode === "calendar_ist" ? 330 : -360;
-  const from = new Date(scope ? googleAccountDayWindow(start,scope.timezone).start : Date.parse(start) - offset * 60000).toISOString(), to = new Date(scope ? googleAccountDayWindow(end,scope.timezone).end : Date.parse(shift(end, 1)) - offset * 60000).toISOString();
+  const offset = (scope?.reportingMode || mode) === "calendar_ist" ? 330 : -360;
+  const from = new Date(scope && !scope.reportingMode ? googleAccountDayWindow(start,scope.timezone).start : Date.parse(start) - offset * 60000).toISOString(), to = new Date(scope && !scope.reportingMode ? googleAccountDayWindow(end,scope.timezone).end : Date.parse(shift(end, 1)) - offset * 60000).toISOString();
   const days = new Map<string, SourceFinanceDay>();
   for (let d = start; d <= end; d = shift(d, 1)) days.set(d, { date: d, received: 0, refund: 0, orders: 0, refunds: 0, bundleReceived: 0, bundleRefund: 0, bundleOrders: 0, salesTax: 0, gateways: {} });
-  const day = (at: string) => days.get(scope ? googleAccountDate(at,scope.timezone) : new Date(Date.parse(at) + offset * 60000).toISOString().slice(0, 10));
+  const day = (at: string) => days.get(scope && !scope.reportingMode ? googleAccountDate(at,scope.timezone) : new Date(Date.parse(at) + offset * 60000).toISOString().slice(0, 10));
   const main = funnel === "astrorekha", us = funnel === "us-soulmate", usMain = funnel === "us-main";
   const table = main ? "payments" : usMain ? "us_main_orders" : us ? "us_soulmate_orders" : "soulmate_orders";
   const select = main ? fields : usMain ? "id,amount_cents,paid_amount_cents,type,paid_at,attribution" : "id,amount,gst_amount,paid_at,attribution,plan";

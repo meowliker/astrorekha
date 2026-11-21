@@ -358,3 +358,16 @@ export function googleSpendBoundsForDay(report: GoogleSpendReport, date: string)
 export function googleHourlySpendForDay(report: GoogleSpendReport | null, day: string): Record<string, number[]> {
   return Object.fromEntries((report?.accounts || []).flatMap(account => Object.entries(account.hourlySpendInr).map(([key, dates]) => [key, dates[day] || Array(24).fill(0)])));
 }
+
+/** Country roll-up: reuse verified Google snapshots on each country account’s calendar day.
+ * Legacy INR /discover campaigns in Astro USA remain exclusively in USA reporting. */
+export async function readConsolidatedGoogleContext(country: 'india' | 'us', start: string, end: string, mode: TrackingDayMode, rate: number) {
+  validateGoogleRange(start, end);
+  const snapshots = await Promise.all(GOOGLE_ADS_CUSTOMERS.map(id => snapshot(id, shift(start, -1), shift(end, 2))));
+  const raw = snapshots.find(item => item.customer.id === (country === 'india' ? '6752275511' : '4870113996'))!;
+  const funnels: AcquisitionFunnel[] = country === 'india' ? ['astrorekha', 'soulmate'] : ['us-main', 'us-soulmate', 'astrorekha'];
+  return { accountId: raw.customer.id,
+    campaigns: snapshots.flatMap(item => item.campaigns.map(row => ({id: row.campaign!.id, name: row.campaign!.name, accountId: item.customer.id}))),
+    reports: Object.fromEntries(funnels.map(funnel => [funnel, aggregateGoogleSnapshot(raw, funnel, start, end, mode, rate, true)])),
+    fetchedAt: raw.fetchedAt };
+}

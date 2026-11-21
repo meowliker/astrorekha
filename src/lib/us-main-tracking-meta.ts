@@ -1,3 +1,4 @@
+import { metaSpendForCalendarDays } from './consolidated-meta-calendar';
 import { metaReportingFetch } from "./meta-reporting-fetch";
 // Soulmate-only Meta reader. Normal tracking keeps its original account-wide reader.
 import { campaignInsightFilter, selectedCampaignIds, type SoulmateCredential } from "./us-main-campaigns";
@@ -108,6 +109,7 @@ export async function fetchMetaTrackingAccount(
   dates: { start: string; end: string },
   usdInrRate: number,
   dayMode: TrackingDayMode = "business_1130_ist",
+  calendarTimezone?: string,
 ): Promise<{
   account: { id: string; name: string; currency: string; timezone: string | null; error?: string };
   campaigns: TrackingCampaign[];
@@ -179,7 +181,9 @@ export async function fetchMetaTrackingAccount(
     }
     const offset = Number(metadata.timezone_offset_hours_utc);
     if (!Number.isFinite(offset)) throw new Error(`Meta did not return the timezone offset for ${accountName}.`);
-    const accountWindow = getMetaAccountWindowForRequest(credential, dates.start, dates.end, dayMode);
+    const accountWindow = calendarTimezone
+      ? getMetaAccountWindowForRequest(credential, buffered.since, buffered.until, "calendar_ist")
+      : getMetaAccountWindowForRequest(credential, dates.start, dates.end, dayMode);
     if (!accountWindow) throw new Error(`No active reporting window for ${accountName}.`);
     const metaPurchaseWindowAligned = metaPurchasesMatchWindow(metadata.timezone_name, accountWindow, dates, dayMode);
     const normalizedHourly = normalizeHourlySpendToDailyTotals(hourlySpend.rows, dailySpend.rows);
@@ -265,7 +269,11 @@ export async function fetchMetaTrackingAccount(
       row.businessLinkClicks = Object.values(days).flat().reduce((sum, value) => sum + value, 0);
       byId.set(id, row);
     }
-    return { account, campaigns: Array.from(byId.values()), dailySpendInr, hourlySpendInr, warnings };
+    const calendarSpend = calendarTimezone ? metaSpendForCalendarDays({
+      start:dates.start,end:dates.end,timezone:calendarTimezone,accountTimezone:metadata.timezone_name || '',
+      daily:dailySpend.rows,hourly:hourlySpend.rows,accountWindow,now:Date.now(),
+    }) : null;
+    return { account, campaigns: Array.from(byId.values()), dailySpendInr:calendarSpend || dailySpendInr, hourlySpendInr, warnings };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Meta request failed";
     return { account: { id: accountId, name: fallbackName, currency: "USD", timezone: null, error: message }, campaigns: [], dailySpendInr: {}, hourlySpendInr: {}, warnings: [`${fallbackName}: ${message}`] };

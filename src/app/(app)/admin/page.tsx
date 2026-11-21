@@ -257,6 +257,12 @@ function AdminDashboardPage() {
           <ChevronRight className="h-5 w-5 text-white/40" />
         </button>}
 
+        {access?.isAdministrator && <button onClick={() => router.push('/admin/consolidated-profit')} className="mb-6 flex w-full items-center gap-4 rounded-2xl border border-cyan-400/25 bg-[#1A2235] p-6 text-left hover:border-cyan-400/60">
+          <span className="rounded-xl bg-cyan-500/15 p-3"><DollarSign className="h-6 w-6 text-cyan-300" /></span>
+          <span className="flex-1"><span className="block text-lg font-semibold text-white">Consolidated Profit Sheet</span><span className="mt-1 block text-sm text-white/50">India and US totals across all funnels and sources, with a breakdown of every figure.</span></span>
+          <ChevronRight className="h-5 w-5 text-white/40" />
+        </button>}
+
         {/* Admin Options Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {adminOptions.filter(o=>access&&canAccess(access,workspaceForPath(o.href))).map((option, index) => (
