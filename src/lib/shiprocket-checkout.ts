@@ -20,7 +20,8 @@ export async function initiateShiprocketCheckout(input: CheckoutOrder) {
   const state = shiprocketState(order.id);
   const reservation = await db.from("shiprocket_checkout_sessions").insert({ order_id: order.id, payment_mode: order.payment_mode, variant_id: variantId, return_state: state });
   if (reservation.error && reservation.error.code !== "23505") throw new Error("Unable to reserve Fastrr checkout");
-  let session = await shiprocketSession(order.id);
+  // New reservations are filled by the create response; only retries need a read.
+  let session = reservation.error ? await shiprocketSession(order.id) : null;
   if (!reservation.error) {
     const result = await shiprocketRequest("/api/v1/access-token/checkout", shiprocketCheckoutPayload(order, variantId, state));
     const data = result.data as { order_id?: string };
@@ -35,7 +36,9 @@ export async function initiateShiprocketCheckout(input: CheckoutOrder) {
   const bound = await db.from(table).update({ gateway_order_id: session.provider_order_id }).eq("id", order.id).eq("gateway", "shiprocket");
   if (bound.error) throw new Error("Unable to bind Fastrr order");
   if (Date.parse(session.expires_at) <= Date.now()) throw new Error("This checkout expired. Check its payment status before starting again.");
-  return { gateway: "shiprocket" as const, action: `${shiprocketOrigin()}/api/shiprocket/checkout?state=${encodeURIComponent(session.return_state)}` };
+  return { gateway: "shiprocket" as const, action: `${shiprocketOrigin()}/api/shiprocket/checkout?state=${encodeURIComponent(session.return_state)}`,
+    shiprocket: { token: openShiprocketToken(session.token_encrypted), ui: shiprocketConfig().ui,
+      recoveryPath: order.id.startsWith("sm_") ? `/soulmate/payment?order=${order.id}` : `/payment/processing?txnid=${order.id}` } };
 }
 export async function shiprocketBrowserSession(id: string) {
   const session = await shiprocketSession(id);

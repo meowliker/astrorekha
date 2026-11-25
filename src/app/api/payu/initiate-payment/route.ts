@@ -154,7 +154,8 @@ export async function POST(request: NextRequest) {
     // Persist the normalized touch, including source/medium inferred from auto-tagged Google clicks.
     const savedLastTouch = lastTouch || Object.values(finalAttribution).some(Boolean) ? finalAttribution : null;
 
-    const gateway = await activePaymentGateway();
+    // Independent configuration reads can run together; prices remain server-authoritative.
+    const [gateway, pricing] = await Promise.all([activePaymentGateway(), getPricingConfig()]);
     const provider = paymentProvider(gateway);
     const backup = gateway !== "payu" ? { mode: provider.mode() } : null;
     const merchantKey = process.env.PAYU_MERCHANT_KEY;
@@ -166,9 +167,6 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
-
-    // Fetch dynamic pricing from database
-    const pricing = await getPricingConfig();
 
       let amount: number;
       let baseAmount: number | null = null;
@@ -425,25 +423,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await saveCheckoutReportInputs("IN", paymentRecord.id, body.palmImage);
-
-    await recordMarketingEvent({
-      eventName: "checkout_started",
-      userId: resolvedPaymentUserId,
-      email: normalizedEmail || null,
-      productType: type || null,
-      productId: bundleId || packageId || null,
-      productName: productInfo,
-      paymentId: txnId,
-      payuTxnId: gateway === "payu" ? txnId : null,
-      amount: toPaise(amount),
-      currency: "INR",
-      route: finalAttribution.landing_path || null,
-      url: finalAttribution.landing_url || null,
-      referrerUrl: finalAttribution.referrer_url || requestReferrer || null,
-      attribution: finalAttribution,
-      metadata,
-    });
+    await Promise.all([
+      saveCheckoutReportInputs("IN", paymentRecord.id, body.palmImage),
+      recordMarketingEvent({
+        eventName: "checkout_started",
+        userId: resolvedPaymentUserId,
+        email: normalizedEmail || null,
+        productType: type || null,
+        productId: bundleId || packageId || null,
+        productName: productInfo,
+        paymentId: txnId,
+        payuTxnId: gateway === "payu" ? txnId : null,
+        amount: toPaise(amount),
+        currency: "INR",
+        route: finalAttribution.landing_path || null,
+        url: finalAttribution.landing_url || null,
+        referrerUrl: finalAttribution.referrer_url || requestReferrer || null,
+        attribution: finalAttribution,
+        metadata,
+      }),
+    ]);
 
     if (backup) {
       try {

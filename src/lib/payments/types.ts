@@ -17,6 +17,7 @@ export type CheckoutRequest =
   | { kind: "soulmate"; order: SoulmateOrder; origin: string };
 export type CheckoutResponse = {
   gateway?: PaymentGateway; action?: string; fields?: Record<string, string>;
+  shiprocket?: import("../shiprocket-checkout-browser").ShiprocketBrowserCheckout;
   txnId?: string; amount?: string; productInfo?: string; hash?: string; key?: string;
   firstName?: string; email?: string; phone?: string;
   udf1?: string; udf2?: string; udf3?: string; udf4?: string; udf5?: string;

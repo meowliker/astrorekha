@@ -351,7 +351,7 @@ export default function ChatPage() {
           bundleId: pkg.packageId,
           returnTo: "/chat",
         });
-        if (openPaytmCheckout(data)) return;
+        if (await openPaytmCheckout(data)) return;
         const bolt = (window as unknown as CheckoutWidgetWindow).bolt;
         bolt.launch({
           key: data.key,
@@ -475,7 +475,7 @@ export default function ChatPage() {
           bundleId: CHAT_UNLIMITED_PASS_ID,
           returnTo: "/chat",
         });
-        if (openPaytmCheckout(data)) return;
+        if (await openPaytmCheckout(data)) return;
         const bolt = (window as unknown as CheckoutWidgetWindow).bolt;
         bolt.launch({
           key: data.key,

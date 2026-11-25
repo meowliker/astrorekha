@@ -338,7 +338,7 @@ function BundleUpsellContent() {
         pixelEvents.initiateCheckout(selectedOfferPrice, selectedOfferNames, data.txnId);
         pixelEvents.addPaymentInfo(selectedOfferPrice, selectedOfferLabel, data.txnId);
 
-        if (openPaytmCheckout(data)) return;
+        if (await openPaytmCheckout(data)) return;
         const bolt = (window as Window & { bolt?: PayUBolt }).bolt;
         if (!bolt) {
           setPaymentError("Payment checkout is still loading. Please try again.");

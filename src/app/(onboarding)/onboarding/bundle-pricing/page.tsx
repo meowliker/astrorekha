@@ -505,7 +505,7 @@ export default function BundlePricingPage() {
           pixelEvents.addPaymentInfo(chargedAmountInr, plan.name, data.txnId);
         } catch { /* Optional analytics must never block payment. */ }
         // Open PayU Bolt checkout
-        if (openPaytmCheckout(data)) return;
+        if (await openPaytmCheckout(data)) return;
         const bolt = (window as Window & { bolt?: PayUBolt }).bolt;
         if (!bolt) {
           localStorage.removeItem(PENDING_PAYMENT_KEY);

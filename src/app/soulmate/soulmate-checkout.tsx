@@ -90,7 +90,7 @@ export function SoulmateCheckout({ planId }: { planId: DeliveryId }) {
       if (data.checkStatus) { window.location.assign(data.receiptUrl); return; }
       if (data.gateway === "shiprocket" || data.gateway === "airpay" || data.gateway === "paytm" || data.gateway === "pinelabs") {
         trackSoulmate(data.gateway === "shiprocket" ? "shiprocket_redirect" : data.gateway === "airpay" ? "airpay_redirect" : data.gateway === "pinelabs" ? "pinelabs_redirect" : "paytm_redirect", { plan: planId, value: totals.total, once: data.orderId });
-        if (openPaytmCheckout(data)) return;
+        if (await openPaytmCheckout(data)) return;
       }
       if (!["https://secure.payu.in/_payment", "https://test.payu.in/_payment"].includes(data.action)) throw new Error("Invalid payment destination");
       const form = document.createElement("form");

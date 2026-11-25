@@ -128,7 +128,7 @@ export function UpsellPopup({ isOpen, onClose, feature, onPurchase }: UpsellPopu
           bundleId: reportId,
           returnTo: window.location.pathname,
         });
-        if (openPaytmCheckout(data)) return;
+        if (await openPaytmCheckout(data)) return;
         const bolt = (window as unknown as CheckoutWidgetWindow).bolt;
         if (!bolt) {
           setError("Payment checkout is still loading. Please try again.");
