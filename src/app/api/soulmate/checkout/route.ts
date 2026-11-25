@@ -1,6 +1,5 @@
-import { pineLabsConfig, initiatePineLabsCheckout } from "@/lib/pinelabs-api";
+import { createGatewayCheckout, paymentProvider } from "@/lib/payments/providers";
 import { activePaymentGateway } from "@/lib/payment-gateway";
-import { initiatePaytmCheckout, paytmConfig } from "@/lib/paytm-api";
 import { resolvePaymentAttribution } from "@/lib/attribution";
 import { buildSoulmateCart } from "@/lib/soulmate-cart";
 import crypto from "crypto";
@@ -11,7 +10,7 @@ import { deliveryPlans, sanitizeAnswers, steps } from "@/app/soulmate/chat-data"
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { readOrderAttribution } from "@/lib/order-attribution";
 import { SOULMATE_FUNNEL, SOULMATE_ORDERS_TABLE, SOULMATE_ORDER_PREFIX } from "@/lib/soulmate-orders";
-import { checkoutParameters, soulmatePayUProductInfo, payuConfig, receiptPath, receiptCookie, type SoulmateOrder } from "@/lib/soulmate-payu";
+import { soulmatePayUProductInfo, receiptPath, receiptCookie, type SoulmateOrder } from "@/lib/soulmate-payu";
 import { toPayUPhoneNumber } from "@/lib/whatsapp";
 
 export async function POST(request: NextRequest) {
@@ -38,7 +37,7 @@ export async function POST(request: NextRequest) {
     if (body.session && !session) return NextResponse.json({ error: "Invalid sketch session" }, { status: 400 });
     if (session) await saveSoulmateSession(session, answers);
     const gateway = await activePaymentGateway();
-    const { mode } = gateway === "pinelabs" ? pineLabsConfig() : gateway === "paytm" ? paytmConfig() : payuConfig();
+    const mode = paymentProvider(gateway).mode("soulmate");
     let cart;
     try { cart = buildSoulmateCart(plan.id, body.addOns ?? []); } catch { return NextResponse.json({ error: "Invalid add-ons for this package." }, { status: 400 }); }
     const fingerprintFor = (savedGateway: string, savedMode: string) => crypto.createHash("sha256").update(JSON.stringify({ answers, plan: plan.id, email, phone, mode: savedMode, cart, ...(savedGateway !== "payu" ? { gateway: savedGateway } : {}) })).digest("hex");
@@ -76,7 +75,7 @@ export async function POST(request: NextRequest) {
     const receiptUrl = receiptPath(order.id);
     const response = NextResponse.json(order.payment_status !== "created"
       ? { receiptUrl, checkStatus: true }
-      : { ...(order.gateway === "pinelabs" ? await initiatePineLabsCheckout(order) : order.gateway === "paytm" ? await initiatePaytmCheckout(order) : checkoutParameters(order, origin)), receiptUrl, orderId: order.id }, { headers: { "Cache-Control": "no-store" } });
+      : { ...(await createGatewayCheckout(order.gateway || "payu", { kind: "soulmate", order, origin })), receiptUrl, orderId: order.id }, { headers: { "Cache-Control": "no-store" } });
     response.cookies.set(receiptCookie(order.id));
     return response;
   } catch (error) {

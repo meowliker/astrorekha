@@ -244,13 +244,13 @@ async function ensureFulfillmentUser(params: {
   return normalizedUserId;
 }
 
-export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: { verifiedByPayUApi?: boolean; verifiedByPaytmApi?: boolean; verifiedByPineLabsApi?: boolean; paidAt?: string } = {}): Promise<{
+export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: { verifiedByPayUApi?: boolean; verifiedByPaytmApi?: boolean; verifiedByPineLabsApi?: boolean; verifiedByAirpayApi?: boolean; paidAt?: string } = {}): Promise<{
   success: boolean;
   alreadyPaid: boolean;
   userId: string | null;
   reason?: string;
 }> {
-  const verifiedGateway = options.verifiedByPineLabsApi ? "pinelabs" : options.verifiedByPaytmApi ? "paytm" : null;
+  const verifiedGateway = options.verifiedByAirpayApi ? "airpay" : options.verifiedByPineLabsApi ? "pinelabs" : options.verifiedByPaytmApi ? "paytm" : null;
   const isBackup = verifiedGateway !== null;
   const status = normalizeStatus(payload.status);
   const txnid = payload.txnid?.trim() || "";
@@ -277,7 +277,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
   if (isBackup && (existingPayment.gateway !== verifiedGateway || parseAmountToPaise(payload.amount) !== existingPayment.amount || !mihpayid)) {
     throw new Error("Invalid verified gateway order");
   }
-  if (!isBackup && ["paytm", "pinelabs"].includes(existingPayment.gateway)) throw new Error("Wrong payment gateway");
+  if (!isBackup && ["paytm", "pinelabs", "airpay"].includes(existingPayment.gateway)) throw new Error("Wrong payment gateway");
   if (!options.verifiedByPayUApi && !isBackup) {
     const key = process.env.PAYU_MERCHANT_KEY;
     const salt = process.env.PAYU_MERCHANT_SALT;
@@ -523,7 +523,7 @@ export async function fulfillPayUPayment(payload: PayUCallbackPayload, options: 
     if (profileSaveError) throw profileSaveError;
   }
   if (isBackup) {
-    const grant = await supabase.rpc(verifiedGateway === "pinelabs" ? "fulfill_pinelabs_report_payment" : "fulfill_paytm_report_payment", { p_order: txnid, p_transaction: mihpayid,
+    const grant = await supabase.rpc(verifiedGateway === "airpay" ? "fulfill_airpay_report_payment" : verifiedGateway === "pinelabs" ? "fulfill_pinelabs_report_payment" : "fulfill_paytm_report_payment", { p_order: txnid, p_transaction: mihpayid,
       p_amount: amountInPaise, p_paid_at: options.paidAt || nowIso });
     if (grant.error) throw grant.error;
     if (!grant.data) return { success: true, alreadyPaid: true, userId: resolvedUserId };

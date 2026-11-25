@@ -115,3 +115,19 @@ test('verified gateway flags cannot fulfill an order saved for a different provi
  await assert.rejects(fulfillPayUPayment({...payload(),mihpayid:'wrong-provider'},{verifiedByPayUApi:true}),/Wrong payment gateway/);
  assert.equal(payment.fulfilled_at,null);
 });
+
+test('Airpay fulfillment uses the saved catalog snapshot and Airpay RPC, preserving PayU identifiers',async()=>{
+ let rpcCalls=0;
+ db.rpc=async(name,args)=>{
+  assert.equal(name,'fulfill_airpay_report_payment');assert.equal(args.p_order,payment.id);assert.equal(args.p_amount,payment.amount);assert.equal(args.p_transaction,'airpay-transaction');
+  rpcCalls++;for(const feature of payment.fulfillment_features)user.unlocked_features[feature]=true;
+  user.coins+=payment.fulfillment_coins;Object.assign(payment,{payment_status:'paid',gateway_transaction_id:args.p_transaction,paid_at:args.p_paid_at,fulfilled_at:new Date().toISOString()});return {data:true,error:null};
+ };
+ Object.assign(payment,{gateway:'airpay',payu_txn_id:null,fulfillment_features:['witchArchetypeReport','compatibilityTest'],fulfillment_coins:7});
+ Object.assign(user,{payu_txn_id:'previous-payu',payu_payment_id:'previous-provider'});
+ const result=await fulfillPayUPayment({...payload(),mihpayid:'airpay-transaction',udf4:'pastLifeReport'},{verifiedByAirpayApi:true,paidAt:'2026-01-01T10:02:00Z'});
+ assert.equal(result.success,true);assert.equal(rpcCalls,1);assert.equal(coreSavedAtAnalytics,true);assert.equal(user.coins,7);
+ assert.equal(user.unlocked_features.witchArchetypeReport,true);assert.equal(user.unlocked_features.compatibilityTest,true);assert.equal(user.unlocked_features.pastLifeReport,undefined);assert.equal(user.unlocked_features.palmReading,undefined);
+ assert.equal(user.payu_txn_id,'previous-payu');assert.equal(payment.payu_txn_id,null);assert.equal(payment.gateway_transaction_id,'airpay-transaction');
+ user.coins=2;await fulfillPayUPayment({...payload(),mihpayid:'airpay-transaction'},{verifiedByAirpayApi:true});assert.equal(user.coins,2);assert.equal(rpcCalls,1);
+});

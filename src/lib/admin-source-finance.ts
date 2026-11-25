@@ -78,7 +78,7 @@ export async function readAdSourceFinance(db: SupabaseClient, funnel: Acquisitio
       const id = String(main ? row.payu_txn_id || "" : row.order_id);
       const parent = all.get(id) || all.get(`pay_${id}`) || (
         main && row.payment_mode === "live" && Number(row.amount) < 0 &&
-        ["paytm", "pinelabs", "shiprocket"].includes(String(row.gateway)) ? row : undefined
+        ["paytm", "pinelabs", "airpay", "shiprocket"].includes(String(row.gateway)) ? row : undefined
       );
       if (!parent || parent.payment_mode === "test" || (main && isStandaloneSoulmatePayment(parent)) || !matchesAdSource(parent, source)) continue;
       if (scope && !main && (!row.occurred_at || !Number.isFinite(Date.parse(String(row.occurred_at))))) {

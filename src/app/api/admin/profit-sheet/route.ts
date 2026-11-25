@@ -637,7 +637,7 @@ type FinancialRow = {
   amount: number;
   signedAmount: number;
   type: string;
-  gateway: "payu" | "paytm" | "pinelabs" | "shiprocket";
+  gateway: "payu" | "paytm" | "pinelabs" | "airpay" | "shiprocket";
 };
 
 async function loadProfitFinancialRows(supabase: SupabaseClient, startDate: string, endDate: string, dayMode: ProfitSheetDayMode) {
@@ -669,7 +669,7 @@ async function loadProfitFinancialRows(supabase: SupabaseClient, startDate: stri
   // Never query PayU for these orders or synthesize PayU identifiers.
   for (let offset = 0; ; offset += 1000) {
     const backupRows = await supabase.from("payments").select("id,amount,type,paid_at,created_at,gateway")
-      .in("gateway", ["paytm", "pinelabs", "shiprocket"]).eq("payment_mode", "live").in("payment_status", ["paid", "refunded"])
+      .in("gateway", ["paytm", "pinelabs", "airpay", "shiprocket"]).eq("payment_mode", "live").in("payment_status", ["paid", "refunded"])
       .gte("paid_at", `${addDaysToIsoDate(startDate, -1)}T00:00:00Z`).lt("paid_at", `${addDaysToIsoDate(endDate, 2)}T00:00:00Z`)
       .order("id").range(offset, offset + 999);
     if (backupRows.error) throw new Error("Unable to read backup gateway sales");
@@ -966,7 +966,7 @@ async function handleGET(request: NextRequest) {
     if (adSource !== "all" && sourceBreakdownDate !== null) {
       if (sourceBreakdownDate < APP_LAUNCH_DATE || sourceBreakdownDate > businessToday) return NextResponse.json({ error: "Choose a valid reporting date." }, { status: 400 });
       const [day] = await readAdSourceFinance(supabase, "astrorekha", adSource, sourceBreakdownDate, sourceBreakdownDate, dayMode);
-      const names: Record<string, string> = { payu: "PayU", paytm: "Paytm", pinelabs: "Pine Labs", shiprocket: "Shiprocket Fastrr", coupon: "Coupon" };
+      const names: Record<string, string> = { airpay: "Airpay", payu: "PayU", paytm: "Paytm", pinelabs: "Pine Labs", shiprocket: "Shiprocket Fastrr", coupon: "Coupon" };
       const gateways = Object.entries(day.gateways).map(([gateway, totals]) => ({ gateway, name: names[gateway] || gateway,
         received: totals.received / 100, refunds: totals.refunds / 100, revenue: (totals.received - totals.refunds) / 100,
         salesCount: totals.salesCount, refundCount: totals.refundCount }));
@@ -1028,7 +1028,7 @@ async function handleGET(request: NextRequest) {
       // Use exactly the same events and day boundaries as the Profit Sheet sync.
       // Opening the breakdown never refreshes or writes the saved sheet.
       const { financialRows } = await loadProfitFinancialRows(supabase, revenueDate, revenueDate, dayMode);
-      const gatewayNames = { payu: "PayU", paytm: "Paytm", pinelabs: "Pine Labs", shiprocket: "Shiprocket Fastrr" } as const;
+      const gatewayNames = { airpay: "Airpay", payu: "PayU", paytm: "Paytm", pinelabs: "Pine Labs", shiprocket: "Shiprocket Fastrr" } as const;
       const gateways = (Object.keys(gatewayNames) as FinancialRow["gateway"][])
         .filter(gateway => gateway !== "shiprocket" || financialRows.some(event => event.gateway === gateway)).map((gateway) => {
         const events = financialRows.filter((event) => event.gateway === gateway);

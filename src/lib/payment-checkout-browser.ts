@@ -2,9 +2,11 @@ import { pineLabsCheckoutUrl } from "./pinelabs-checkout-url";
 /** Hosted backup checkout; preserves the existing recovery state saved by each caller. */
 export function openPaytmCheckout(data: { gateway?: string; action?: string; fields?: Record<string, string> }): boolean {
   if (data.gateway === "pinelabs") { window.location.assign(pineLabsCheckoutUrl(data.action || "")); return true; }
-  if (data.gateway !== "paytm") return false;
+  if (data.gateway !== "paytm" && data.gateway !== "airpay") return false;
   const url = new URL(data.action || "");
-  if (!["https://secure.paytmpayments.com", "https://securestage.paytmpayments.com"].includes(url.origin) || url.pathname !== "/theia/api/v1/showPaymentPage" || !data.fields?.txnToken) throw new Error("Invalid checkout destination");
+  if (data.gateway === "airpay") {
+    if (url.origin !== "https://payments.airpay.co.in" || url.pathname !== "/pay/v4/" || url.username || url.password || !url.searchParams.get("token") || !data.fields?.encdata || !data.fields?.privatekey || !data.fields?.checksum || !data.fields?.merchant_id) throw new Error("Invalid checkout destination");
+  } else if (!["https://secure.paytmpayments.com", "https://securestage.paytmpayments.com"].includes(url.origin) || url.pathname !== "/theia/api/v1/showPaymentPage" || !data.fields?.txnToken) throw new Error("Invalid checkout destination");
   const form = document.createElement("form");
   form.method = "POST"; form.action = url.toString();
   for (const [name, value] of Object.entries(data.fields)) {

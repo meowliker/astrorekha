@@ -1,3 +1,4 @@
+import { reconcileAirpayOrder } from "./airpay-reconciliation";
 import { reconcilePineLabsOrder } from "./pinelabs-reconciliation";
 import { reconcilePaytmOrder } from "./paytm-reconciliation";
 import { confirmSoulmatePurchase } from "./soulmate-invoice";
@@ -9,7 +10,7 @@ import { SOULMATE_FUNNEL, SOULMATE_ORDERS_TABLE } from "./soulmate-orders";
 import { verifyPayUResponseHash, type SignedPayUResponse } from "./payu-response-hash";
 
 export type SoulmateOrder = {
-  gateway?: "payu" | "paytm" | "pinelabs"; gateway_transaction_id?: string | null;
+  gateway?: "payu" | "paytm" | "pinelabs" | "airpay"; gateway_transaction_id?: string | null;
   id: string; plan: "standard" | "express"; customer_name: string; customer_email: string;
   customer_phone: string; amount: number; base_amount: number; gst_amount: number;
   product_info: string; delivery_hours: number; payment_status: string;
@@ -117,6 +118,7 @@ export function verifiedOrderUpdate(order: SoulmateOrder, txn: VerifiedTransacti
 }
 
 export async function reconcileSoulmateOrder(order: SoulmateOrder): Promise<SoulmateOrder> {
+  if (order.gateway === "airpay") return reconcileAirpayOrder(order.id) as Promise<SoulmateOrder>;
   if (order.gateway === "pinelabs") return reconcilePineLabsOrder(order.id) as Promise<SoulmateOrder>;
   if (order.gateway === "paytm") return reconcilePaytmOrder(order.id) as Promise<SoulmateOrder>;
   if (order.payment_status === "paid") { await Promise.all([sendSoulmatePurchase(order), confirmSoulmatePurchase(order)]); return order; }

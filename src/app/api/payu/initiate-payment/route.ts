@@ -1,12 +1,9 @@
 import { saveCheckoutReportInputs } from "@/lib/checkout-report-inputs";
-import { initiatePineLabsCheckout, pineLabsConfig } from "@/lib/pinelabs-api";
+import { createGatewayCheckout, paymentProvider } from "@/lib/payments/providers";
 import { activePaymentGateway } from "@/lib/payment-gateway";
-import { initiatePaytmCheckout, paytmConfig } from "@/lib/paytm-api";
-import { createPaytmOrderId } from "@/lib/paytm-order-id";
 import { quotePaymentOrder } from "@/lib/payment-quote";
 import { ensurePaymentUser } from "@/lib/payu-checkout-user";
 import { NextRequest, NextResponse } from "next/server";
-import crypto from "crypto";
 import { readOrderAttribution } from "@/lib/order-attribution";
 import { withCheckoutAttribution } from "@/lib/checkout-attribution";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -45,12 +42,6 @@ async function getPricingConfig(): Promise<PricingConfig> {
   } catch {
     return DEFAULT_PRICING;
   }
-}
-
-function generateHash(params: Record<string, string>, salt: string): string {
-  // PayU hash sequence: key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||||salt
-  const hashString = `${params.key}|${params.txnid}|${params.amount}|${params.productinfo}|${params.firstname}|${params.email}|${params.udf1 || ""}|${params.udf2 || ""}|${params.udf3 || ""}|${params.udf4 || ""}|${params.udf5 || ""}||||||${salt}`;
-  return crypto.createHash("sha512").update(hashString).digest("hex");
 }
 
 function roundMoney(value: number): number {
@@ -164,7 +155,8 @@ export async function POST(request: NextRequest) {
     const savedLastTouch = lastTouch || Object.values(finalAttribution).some(Boolean) ? finalAttribution : null;
 
     const gateway = await activePaymentGateway();
-    const backup = gateway === "pinelabs" ? pineLabsConfig() : gateway === "paytm" ? paytmConfig() : null;
+    const provider = paymentProvider(gateway);
+    const backup = gateway !== "payu" ? { mode: provider.mode() } : null;
     const merchantKey = process.env.PAYU_MERCHANT_KEY;
     const merchantSalt = process.env.PAYU_MERCHANT_SALT;
 
@@ -294,7 +286,7 @@ export async function POST(request: NextRequest) {
 
     // Generate unique transaction ID
     // PayU v1 limits txnid to 25 characters; the same ID is our payments.id.
-    const txnId = gateway === "pinelabs" ? `pnl${crypto.randomBytes(12).toString("hex")}` : gateway === "paytm" ? createPaytmOrderId() : `pay_${Date.now().toString(36)}${crypto.randomBytes(5).toString("hex")}`;
+    const txnId = provider.createReportId();
 
     // Prepare PayU parameters
     const payuParams = {
@@ -311,9 +303,6 @@ export async function POST(request: NextRequest) {
       udf4: txnId,
       udf5: metadata.coins || "",
     };
-
-    // Generate hash
-    const hash = gateway === "payu" ? generateHash(payuParams, merchantSalt!) : "";
 
     const resolvedPaymentUserId = await ensurePaymentUser({
       supabase,
@@ -458,29 +447,19 @@ export async function POST(request: NextRequest) {
 
     if (backup) {
       try {
-        const checkout = await (gateway === "pinelabs" ? initiatePineLabsCheckout : initiatePaytmCheckout)({ id: txnId, amount: toPaise(amount), customer_email: normalizedEmail,
-          customer_name: firstName, customer_phone: payuPhone, payment_mode: backup.mode, ...(gateway === "pinelabs" ? { product_name: productInfo } : {}) });
+        const checkout = await createGatewayCheckout(gateway, { kind: "reports", order: { id: txnId, gateway, currency: "INR", amount: toPaise(amount), customer_email: normalizedEmail,
+          customer_name: firstName, customer_phone: payuPhone, payment_mode: backup.mode, product_name: productInfo } });
         return withCheckoutAttribution(NextResponse.json({ ...checkout, txnId, amount: amount.toFixed(2), productInfo }, { headers: { "Cache-Control": "no-store" } }), txnId);
       } catch {
         // A timeout does not mean a charge failed. Keep the saved order for reconciliation.
         return NextResponse.json({ error: "Payment checkout could not be opened. Please try again.", orderId: txnId }, { status: 503 });
       }
     }
-    return withCheckoutAttribution(NextResponse.json({
-      txnId,
-      amount: payuParams.amount,
-      productInfo,
-      hash,
-      key: merchantKey || "",
-      firstName: payuParams.firstname,
-      email: payuParams.email,
-      phone: payuParams.phone,
-      udf1: payuParams.udf1,
-      udf2: payuParams.udf2,
-      udf3: payuParams.udf3,
-      udf4: payuParams.udf4,
-      udf5: payuParams.udf5,
-    }), txnId);
+    const checkout = await createGatewayCheckout(gateway, { kind: "reports", order: {
+      id: txnId, gateway, amount: toPaise(amount), currency: "INR", customer_email: normalizedEmail,
+      payment_mode: provider.mode(),
+    }, payu: payuParams });
+    return withCheckoutAttribution(NextResponse.json(checkout), txnId);
   } catch (error: unknown) {
     console.error("PayU initiate payment error:", error);
     const errorMessage = error instanceof Error ? error.message : "Failed to initiate payment";

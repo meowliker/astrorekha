@@ -1,3 +1,4 @@
+import { fetchAirpayStatus, validateAirpayStatus } from "@/lib/airpay-api";
 import { db, checked } from "./auth";
 import { FEATURES, SupportError } from "./policy";
 import { verifyPayUTransaction } from "@/lib/payu-api";
@@ -57,7 +58,7 @@ export async function paymentFor(
   if (
     allowUnmapped &&
     !row.user_id &&
-    ["paytm", "pinelabs"].includes(row.gateway)
+    ["paytm", "pinelabs", "airpay"].includes(row.gateway)
   )
     throw new SupportError(
       "This gateway locks the original order identity. Developer-assisted mapping is required.",
@@ -103,7 +104,11 @@ export async function verifyPurchase(
   row: Awaited<ReturnType<typeof paymentFor>>,
 ) {
   let transactionId: string | undefined;
-  if (row.gateway === "pinelabs") {
+  if (row.gateway === "airpay") {
+    const verified = validateAirpayStatus(row, await fetchAirpayStatus(row.id, row.payment_mode));
+    if (verified.status !== "paid") throw new SupportError("Airpay has not confirmed a settled payment. Keep this case open.");
+    transactionId = verified.transactionId;
+  } else if (row.gateway === "pinelabs") {
     const remote = await fetchPineLabsOrder(row.id, row.payment_mode);
     const verified = validatePineLabsOrder(row, remote);
     if (verified.status !== "paid")

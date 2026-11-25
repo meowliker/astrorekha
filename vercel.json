@@ -64,6 +64,10 @@
       "schedule": "17,47 * * * *"
     },
     {
+      "path": "/api/cron/reconcile-airpay-payments",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/reconcile-pinelabs-payments",
       "schedule": "*/5 * * * *"
     },
