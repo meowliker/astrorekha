@@ -58,7 +58,7 @@ export async function paymentFor(
   if (
     allowUnmapped &&
     !row.user_id &&
-    ["paytm", "pinelabs", "airpay"].includes(row.gateway)
+    ["paytm", "pinelabs", "airpay", "shiprocket"].includes(row.gateway)
   )
     throw new SupportError(
       "This gateway locks the original order identity. Developer-assisted mapping is required.",

@@ -1,0 +1,18 @@
+const assert=require('node:assert/strict'),{test,beforeEach}=require('node:test'),Module=require('node:module'),path=require('node:path');
+require('ts-node').register({transpileOnly:true,compilerOptions:{module:'CommonJS',moduleResolution:'node'}});
+const resolve=Module._resolveFilename;Module._resolveFilename=function(n,p,...r){return resolve.call(this,n.startsWith('@/')?path.join(__dirname,'../src',n.slice(2)):n,p,...r)};
+const stub=(f,exports)=>{const id=require.resolve(f);require.cache[id]={id,filename:id,loaded:true,exports}};
+let order,session,creates,checks,fail;
+const db={from(){const q={select(){return q},eq(){return q},single:async()=>({data:{...order},error:null})};return q}};
+stub('../src/lib/supabase-admin',{getSupabaseAdmin:()=>db});
+stub('../src/lib/shiprocket-checkout-api',{isShiprocketReportId:id=>/^src[a-f0-9]{24}$/.test(id),shiprocketConfig:()=>({mode:'live'}),shiprocketOrigin:()=> 'https://astrorekha.com'});
+stub('../src/lib/shiprocket-checkout',{shiprocketSession:async()=>session,initiateShiprocketCheckout:async()=>{creates++;return {action:'https://astrorekha.com/api/shiprocket/checkout?state=fixture'}}});
+stub('../src/lib/shiprocket-reconciliation',{reconcileShiprocketOrder:async()=>{checks++;if(fail)throw Error('API unavailable');return {...order}}});
+const {GET,POST}=require('../src/app/api/shiprocket/private-check/route'),{NextRequest}=require('next/server');
+beforeEach(()=>{Object.assign(process.env,{SHIPROCKET_PRIVATE_TEST_ENABLED:'true',SHIPROCKET_PRIVATE_TEST_ORDER_ID:'src'+'a'.repeat(24),SHIPROCKET_PRIVATE_TEST_TOKEN:'b'.repeat(64),SHIPROCKET_PRIVATE_TEST_EXPIRES_AT:new Date(Date.now()+60000).toISOString(),SHIPROCKET_PRIVATE_TEST_EMAIL:'fixture@example.invalid'});order={id:process.env.SHIPROCKET_PRIVATE_TEST_ORDER_ID,customer_email:'fixture@example.invalid',amount:100,currency:'INR',payment_mode:'live',utm_source:'shiprocket_local_check',bundle_id:'palm-birth-sketch',payment_status:'created'};session=null;creates=checks=0;fail=false});
+const req=(token='b'.repeat(64),origin='https://astrorekha.com')=>new NextRequest('https://astrorekha.com/api/shiprocket/private-check',{method:'POST',headers:{authorization:'Bearer '+token,origin}});
+test('private access expires and GET never leaks email or token',async()=>{const r=await GET();assert.equal(r.status,200);const html=await r.text();assert.ok(!html.includes('fixture@example.invalid'));assert.ok(!html.includes('b'.repeat(64)));process.env.SHIPROCKET_PRIVATE_TEST_EXPIRES_AT='2000-01-01';assert.equal((await GET()).status,404);assert.equal((await POST(req())).status,404)});
+test('token and origin mandatory before reading order',async()=>{assert.equal((await POST(req('bad'))).status,401);assert.equal((await POST(req(undefined,'https://evil.example'))).status,403);assert.equal(creates,0)});
+test('saved one-rupee order uses shared idempotent creation',async()=>{assert.equal((await POST(req())).status,200);assert.equal(creates,1)});
+test('wrong commercial data or identity never launches',async()=>{for(const patch of [{amount:65962},{currency:'USD'},{customer_email:'someone@example.com'},{utm_source:'facebook'}]){const original={...order};Object.assign(order,patch);assert.equal((await POST(req())).status,503);order=original}assert.equal(creates,0)});
+test('paid order skips checkout and existing session requires successful verification',async()=>{order.payment_status='paid';assert.equal((await (await POST(req())).json()).alreadyPaid,true);assert.equal(creates,0);order.payment_status='pending';session={provider_order_id:'a'.repeat(24)};fail=true;assert.equal((await POST(req())).status,503);assert.equal(creates,0);fail=false;assert.equal((await POST(req())).status,200);assert.equal(checks,2)});

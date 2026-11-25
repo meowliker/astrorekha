@@ -102,6 +102,10 @@
     {
       "path": "/api/cron/ad-balance-summary",
       "schedule": "30 18 * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-shiprocket-payments",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

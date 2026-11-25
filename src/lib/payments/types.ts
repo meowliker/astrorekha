@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SoulmateOrder } from "../soulmate-payu";
 
-export type PaymentGateway = "payu" | "paytm" | "pinelabs" | "airpay";
+export type PaymentGateway = "payu" | "paytm" | "pinelabs" | "airpay" | "shiprocket";
 export type CheckoutOrder = {
   id: string; amount: number; currency?: string; customer_email: string;
   gateway?: PaymentGateway;

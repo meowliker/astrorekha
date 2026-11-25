@@ -488,8 +488,8 @@ async function buildInvoice(userId: string, txnId: string): Promise<InvoicePaylo
   const invoiceNow = new Date();
   const invoiceDateIso = invoiceNow.toISOString();
   const paidAt = firstDefined(primaryPayment.paid_at, primaryPayment.fulfilled_at, primaryPayment.created_at, user?.updated_at, user?.created_at);
-  const txn = firstDefined(txnId, ["paytm", "pinelabs", "airpay"].includes(primaryPayment.gateway || "") ? primaryPayment.id : null, primaryPayment.payu_txn_id, user?.payu_txn_id, primaryPayment.id);
-  const paymentId = firstDefined(primaryPayment.gateway_transaction_id, primaryPayment.payu_payment_id, ["paytm", "pinelabs", "airpay"].includes(primaryPayment.gateway || "") ? null : user?.payu_payment_id);
+  const txn = firstDefined(txnId, ["paytm", "pinelabs", "airpay", "shiprocket"].includes(primaryPayment.gateway || "") ? primaryPayment.id : null, primaryPayment.payu_txn_id, user?.payu_txn_id, primaryPayment.id);
+  const paymentId = firstDefined(primaryPayment.gateway_transaction_id, primaryPayment.payu_payment_id, ["paytm", "pinelabs", "airpay", "shiprocket"].includes(primaryPayment.gateway || "") ? null : user?.payu_payment_id);
   const invoiceNumber = buildInvoiceNumber({
     now: invoiceNow,
     txnId: txn,
@@ -553,9 +553,9 @@ async function buildInvoice(userId: string, txnId: string): Promise<InvoicePaylo
     payment: {
       status: primaryPayment.payment_status || user?.payment_status || "paid",
       type: normalizeType(primaryPayment.type || user?.purchase_type),
-      gateway: primaryPayment.gateway === "airpay" ? "Airpay" : primaryPayment.gateway === "pinelabs" ? "Pine Labs" : ["paytm", "pinelabs", "airpay"].includes(primaryPayment.gateway || "") ? "Paytm" : "PayU",
-      txnId: firstDefined(["paytm", "pinelabs", "airpay"].includes(primaryPayment.gateway || "") ? primaryPayment.id : null, primaryPayment.payu_txn_id, user?.payu_txn_id, txnId, primaryPayment.id),
-      paymentId: firstDefined(primaryPayment.gateway_transaction_id, primaryPayment.payu_payment_id, ["paytm", "pinelabs", "airpay"].includes(primaryPayment.gateway || "") ? null : user?.payu_payment_id),
+      gateway: primaryPayment.gateway === "shiprocket" ? "Fastrr (Airpay)" : primaryPayment.gateway === "airpay" ? "Airpay" : primaryPayment.gateway === "pinelabs" ? "Pine Labs" : ["paytm", "pinelabs", "airpay", "shiprocket"].includes(primaryPayment.gateway || "") ? "Paytm" : "PayU",
+      txnId: firstDefined(["paytm", "pinelabs", "airpay", "shiprocket"].includes(primaryPayment.gateway || "") ? primaryPayment.id : null, primaryPayment.payu_txn_id, user?.payu_txn_id, txnId, primaryPayment.id),
+      paymentId: firstDefined(primaryPayment.gateway_transaction_id, primaryPayment.payu_payment_id, ["paytm", "pinelabs", "airpay", "shiprocket"].includes(primaryPayment.gateway || "") ? null : user?.payu_payment_id),
       paidAt,
     },
       items: items.length ? items : [{ name: "AstroRekha Digital Service", quantity: 1, amount: total }],
@@ -572,8 +572,8 @@ async function buildInvoice(userId: string, txnId: string): Promise<InvoicePaylo
       purchaseType: normalizeType(primaryPayment.type) || user?.purchase_type || "",
       bundle: itemNames.join(", ") || titleFromId(user?.bundle_purchased || primaryPayment.bundle_id),
       paymentStatus: primaryPayment.payment_status || user?.payment_status || "paid",
-      primaryTxnId: firstDefined(["paytm", "pinelabs", "airpay"].includes(primaryPayment.gateway || "") ? primaryPayment.id : null, primaryPayment.payu_txn_id, user?.payu_txn_id, txnId, primaryPayment.id),
-      primaryPaymentId: firstDefined(primaryPayment.gateway_transaction_id, primaryPayment.payu_payment_id, ["paytm", "pinelabs", "airpay"].includes(primaryPayment.gateway || "") ? null : user?.payu_payment_id),
+      primaryTxnId: firstDefined(["paytm", "pinelabs", "airpay", "shiprocket"].includes(primaryPayment.gateway || "") ? primaryPayment.id : null, primaryPayment.payu_txn_id, user?.payu_txn_id, txnId, primaryPayment.id),
+      primaryPaymentId: firstDefined(primaryPayment.gateway_transaction_id, primaryPayment.payu_payment_id, ["paytm", "pinelabs", "airpay", "shiprocket"].includes(primaryPayment.gateway || "") ? null : user?.payu_payment_id),
       accountCreated: user?.created_at || null,
       lastUpdated: user?.updated_at || primaryPayment.fulfilled_at || primaryPayment.created_at || null,
     },

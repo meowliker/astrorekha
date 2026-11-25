@@ -9,12 +9,12 @@ async function handleGET(request: NextRequest) {
   if (!db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const setting = await db.from("settings").select("value").eq("key", "payment_gateway").maybeSingle();
   if (setting.error) return NextResponse.json({ error: "Unable to read gateway setting" }, { status: 503 });
-  const ready = async (gateway: "paytm" | "pinelabs" | "airpay") => {
+  const ready = async (gateway: "paytm" | "pinelabs" | "airpay" | "shiprocket") => {
     try { await paymentProvider(gateway).assertReady(db, true); return true; }
     catch { return false; }
   };
-  const [paytmReady, pineLabsReady, airpayReady] = await Promise.all([ready("paytm"), ready("pinelabs"), ready("airpay")]);
-  return NextResponse.json({ airpayReady, pineLabsReady, active: localPaymentGateway() || setting.data?.value?.active || "payu", paytmReady }, { headers: { "Cache-Control": "no-store" } });
+  const [paytmReady, pineLabsReady, airpayReady, shiprocketReady] = await Promise.all([ready("paytm"), ready("pinelabs"), ready("airpay"), ready("shiprocket")]);
+  return NextResponse.json({ shiprocketReady, airpayReady, pineLabsReady, active: localPaymentGateway() || setting.data?.value?.active || "payu", paytmReady }, { headers: { "Cache-Control": "no-store" } });
 }
 async function handlePOST(request: NextRequest) {
   const db = await soulmateAdmin(request);

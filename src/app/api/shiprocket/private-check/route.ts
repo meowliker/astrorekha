@@ -1,0 +1,48 @@
+import { timingSafeEqual } from "node:crypto";
+import { NextRequest, NextResponse } from "next/server";
+import { shiprocketConfig, shiprocketOrigin, isShiprocketReportId } from "@/lib/shiprocket-checkout-api";
+import { initiateShiprocketCheckout, shiprocketSession } from "@/lib/shiprocket-checkout";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { reconcileShiprocketOrder } from "@/lib/shiprocket-reconciliation";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+const headers = {"Cache-Control":"no-store", "Referrer-Policy":"no-referrer", "X-Robots-Tag":"noindex, nofollow"};
+function config() {
+  const id=process.env.SHIPROCKET_PRIVATE_TEST_ORDER_ID || "", token=process.env.SHIPROCKET_PRIVATE_TEST_TOKEN || "", expires=Date.parse(process.env.SHIPROCKET_PRIVATE_TEST_EXPIRES_AT || "");
+  if(process.env.SHIPROCKET_PRIVATE_TEST_ENABLED!=="true" || !isShiprocketReportId(id) || !/^[a-f0-9]{64}$/.test(token) || !Number.isFinite(expires) || Date.now()>=expires) return null;
+  return {id,token,email:process.env.SHIPROCKET_PRIVATE_TEST_EMAIL || ""};
+}
+export async function GET() {
+  if(!config())return new NextResponse("Not found",{status:404,headers});
+  return new NextResponse(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Private Fastrr · Airpay test</title><style>body{background:#090d19;color:#fff;font:17px system-ui;max-width:540px;margin:10vh auto;padding:24px}article{border:1px solid #34394a;border-radius:20px;padding:28px;background:#151a29}p{line-height:1.6;color:#cbd0dc}button{background:#e91e63;color:white;border:0;border-radius:10px;padding:16px;width:100%;font:600 18px system-ui;cursor:pointer}.price{font-size:42px;font-weight:700;color:white}</style><article><h1>Private Fastrr · Airpay test</h1><p class="price">₹1.00 total</p><p>Your existing test order and saved report inputs will be used. This link cannot create another order. The public payment gateway stays unchanged.</p><button id="pay">Continue to Fastrr · ₹1</button><p id="status" role="status"></p></article><script>
+const token=location.hash.slice(1);history.replaceState(null,'',location.pathname);const button=document.getElementById('pay'),status=document.getElementById('status');
+button.onclick=async()=>{button.disabled=true;status.textContent='Checking payment status…';try{const response=await fetch(location.pathname,{method:'POST',headers:{Authorization:'Bearer '+token}});const data=await response.json();if(!response.ok)throw Error(data.error||'Checkout unavailable');
+localStorage.setItem('astrorekha_email',data.email);localStorage.setItem('astrorekha_checkout_email',data.email);localStorage.setItem('astrorekha_pending_payu_payment',JSON.stringify({txnid:data.txnId,type:'bundle',bundleId:data.bundleId,email:data.email}));
+if(data.alreadyPaid){location.assign('/payment/processing?txnid='+encodeURIComponent(data.txnId));return;}
+const next=new URL(data.action,location.origin);if(next.origin!==location.origin || next.pathname!=='/api/shiprocket/checkout')throw Error('Invalid checkout destination');location.assign(next.href);
+}catch(e){status.textContent=e.message;button.disabled=false}};
+if(!token){button.disabled=true;status.textContent='Open the private test link supplied for this test.'}
+</script></html>`,{headers:{...headers,"Content-Type":"text/html; charset=utf-8"}});
+}
+export async function POST(request: NextRequest) {
+  const c=config();if(!c)return NextResponse.json({error:"Not found"},{status:404,headers});
+  const actual=Buffer.from(request.headers.get("authorization")?.replace(/^Bearer /,"")||""), expected=Buffer.from(c.token);
+  if(actual.length!==expected.length || !timingSafeEqual(actual,expected))return NextResponse.json({error:"Invalid test access"},{status:401,headers});
+  if(request.headers.get("origin")!=="https://astrorekha.com" || request.nextUrl.hostname!=="astrorekha.com")return NextResponse.json({error:"Invalid origin"},{status:403,headers});
+  try {
+    if(shiprocketConfig().mode!=="live" || shiprocketOrigin()!=="https://astrorekha.com")throw Error("Test checkout is not configured");
+    const db=getSupabaseAdmin({fresh:true});
+    const found=await db.from("payments").select("*").eq("id",c.id).eq("gateway","shiprocket").single();const order=found.data;
+    if(found.error || !order || !c.email || order.customer_email!==c.email || order.amount!==100 || order.currency!=="INR" || order.payment_mode!=="live" || order.utm_source!=="shiprocket_local_check" || order.bundle_id!=="palm-birth-sketch")throw Error("Prepared test order unavailable");
+    const base={txnId:order.id,email:order.customer_email,bundleId:order.bundle_id};
+    if(order.payment_status==="paid")return NextResponse.json({...base,alreadyPaid:true},{headers});
+    // Reconcile any existing provider order before reusing its single checkout session.
+    // The session reservation prevents parallel requests creating duplicate payments.
+    if ((await shiprocketSession(order.id))?.provider_order_id) {
+      const checked = await reconcileShiprocketOrder(order.id);
+      if (checked.payment_status === "paid") return NextResponse.json({...base,alreadyPaid:true},{headers});
+    }
+    const checkout=await initiateShiprocketCheckout(order);
+    return NextResponse.json({...base,...checkout},{headers});
+  }catch(error){console.warn("[shiprocket-private-check] Checkout unavailable",error instanceof Error?error.message:"unknown");return NextResponse.json({error:error instanceof Error?error.message:"Checkout unavailable"},{status:503,headers});}
+}

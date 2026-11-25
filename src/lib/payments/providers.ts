@@ -1,3 +1,4 @@
+import { shiprocketProvider } from "./providers/shiprocket";
 import { airpayProvider } from "./providers/airpay";
 import { payuProvider } from "./providers/payu";
 import { paytmProvider } from "./providers/paytm";
@@ -5,7 +6,7 @@ import { pineLabsProvider } from "./providers/pinelabs";
 import type { CheckoutRequest, PaymentGateway, PaymentProvider } from "./types";
 
 const providers: Record<PaymentGateway, PaymentProvider> = {
-  airpay: airpayProvider, payu: payuProvider, paytm: paytmProvider, pinelabs: pineLabsProvider,
+  shiprocket: shiprocketProvider, airpay: airpayProvider, payu: payuProvider, paytm: paytmProvider, pinelabs: pineLabsProvider,
 };
 export function isPaymentGateway(value: unknown): value is PaymentGateway {
   return typeof value === "string" && Object.prototype.hasOwnProperty.call(providers, value);
