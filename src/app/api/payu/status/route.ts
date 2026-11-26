@@ -1,5 +1,6 @@
 import { isShiprocketReportId } from "@/lib/shiprocket-checkout-api";
 import { reconcileShiprocketOrder } from "@/lib/shiprocket-reconciliation";
+import { shiprocketSession } from "@/lib/shiprocket-checkout";
 import { isAirpayReportId } from "@/lib/airpay-api";
 import { reconcileAirpayOrder } from "@/lib/airpay-reconciliation";
 import { isPineLabsReportId } from "@/lib/pinelabs-api";
@@ -38,7 +39,19 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ success: true, matchesCheckout: !!row.data && row.data.customer_email?.toLowerCase() === email }, { headers: { "Cache-Control": "no-store" } });
       }
       const order = await (gateway === "shiprocket" ? reconcileShiprocketOrder : gateway === "airpay" ? reconcileAirpayOrder : gateway === "pinelabs" ? reconcilePineLabsOrder : reconcilePaytmOrder)(txnid);
+      let checkoutUrl: string | undefined;
+      if (gateway === "shiprocket" && ["created", "pending"].includes(order.payment_status)) {
+        // Reopen only the existing, unexpired session after server reconciliation.
+        // A missing session must not hide the payment's verified status.
+        try {
+          const session = await shiprocketSession(txnid);
+          if (session?.token_encrypted && session.return_state && Date.parse(session.expires_at) > Date.now()) {
+            checkoutUrl = `/api/shiprocket/checkout?state=${encodeURIComponent(session.return_state)}`;
+          }
+        } catch { /* Status remains useful when resume is temporarily unavailable. */ }
+      }
       return NextResponse.json({ success: true, gateway, status: order.payment_status === "paid" && !order.fulfilled_at ? "pending" : order.payment_status,
+        ...(checkoutUrl ? { checkoutUrl } : {}),
         amount: order.amount / 100, userId: order.user_id, type: order.type, bundleId: order.bundle_id, feature: order.feature,
         gatewayTransactionId: order.gateway_transaction_id }, { headers: { "Cache-Control": "no-store" } });
     }

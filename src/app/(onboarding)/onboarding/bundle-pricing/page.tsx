@@ -203,9 +203,14 @@ export default function BundlePricingPage() {
         }
         if (cancelled) return;
         const pending = readPendingPayU();
-        if (pending?.type === "bundle") {
+        const reviewingFastrr = pending && /^src[a-f0-9]{24}$/.test(pending.txnid) && new URLSearchParams(window.location.search).get("review") === pending.txnid;
+        if (pending?.type === "bundle" && !reviewingFastrr) {
           router.replace(`/payment/processing?txnid=${encodeURIComponent(pending.txnid)}`);
           return;
+        }
+        if (reviewingFastrr && pending?.type === "bundle") {
+          setPendingTxnId(pending.txnid);
+          if (pending.bundleId) setSelectedPlan(pending.bundleId);
         }
         setIsProcessing(false);
         localStorage.setItem("astrorekha_onboarding_flow", "flow-a");

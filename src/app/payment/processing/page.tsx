@@ -8,6 +8,7 @@ import { useUserStore } from "@/lib/user-store";
 import { pixelEvents } from "@/lib/pixel-events";
 import { Button } from "@/components/ui/button";
 import { discoverBundleRetryPath } from "@/lib/discover-bundle-checkout";
+import { validShiprocketCheckoutPath } from "@/lib/shiprocket-checkout-recovery";
 
 type PendingPayment = {
   txnid: string;
@@ -83,6 +84,9 @@ function PaymentProcessingContent() {
   const [isFailed, setIsFailed] = useState(false);
   const [canRetry, setCanRetry] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
+  const isFastrr = /^src[a-f0-9]{24}$/.test(txnid);
+  const [resumeAllowed, setResumeAllowed] = useState(false);
+  const [resumePath, setResumePath] = useState<string | null>(null);
 
   useEffect(() => {
     if (!txnid) {
@@ -93,12 +97,16 @@ function PaymentProcessingContent() {
     }
 
     setCanRetry(false);
+    setResumeAllowed(false);
+    setResumePath(null);
     setIsFailed(false);
     setStatusText("Confirming your payment...");
     let navigationFallback: ReturnType<typeof setTimeout> | undefined;
     const monitor = watchPayUPayment({
       txnid,
+      ...(isFastrr ? { maxWaitMs: 20000 } : {}),
       onPaid: (data) => {
+        setResumeAllowed(false);
         try {
           const pending = getStoredPendingPayment() || storedPending;
           const paymentType = normalizeStatus(data.type || pending?.type || "");
@@ -136,12 +144,25 @@ function PaymentProcessingContent() {
         }
       },
       onFailed: () => {
+        setResumeAllowed(false);
         clearPendingPayment(txnid);
         setStatusText("Payment was not completed. You can return to checkout.");
         setIsFailed(true);
         setCanRetry(true);
       },
-      onWaiting: () => setStatusText("Waiting for payment confirmation. If you have been charged, do not pay again; we will check this transaction automatically."),
+      onWaiting: (data) => {
+        if (isFastrr) {
+          setCanRetry(true);
+          const path = data?.checkoutUrl ? validShiprocketCheckoutPath(data.checkoutUrl, txnid) : null;
+          setStatusText(path
+            ? "Payment has not been confirmed. If you have not paid, continue your existing checkout. If you have been charged, check again instead of paying again."
+            : "We could not confirm this payment yet. Check again or return to your order. If you have been charged, do not make another payment.");
+          setResumePath(path);
+          setResumeAllowed(!!data?.success && ["created", "pending"].includes(normalizeStatus(data.status)) && !!path);
+        } else {
+          setStatusText("Waiting for payment confirmation. If you have been charged, do not pay again; we will check this transaction automatically.");
+        }
+      },
       onExpired: () => {
         setStatusText("We could not confirm this payment yet. Check again to continue with the same transaction. If you have been charged, do not make another payment.");
         setCanRetry(true);
@@ -158,7 +179,7 @@ function PaymentProcessingContent() {
       window.removeEventListener("online", resume);
       document.removeEventListener("visibilitychange", resume);
     };
-  }, [router, storedPending, txnid, retryKey]);
+  }, [router, storedPending, txnid, retryKey, isFastrr]);
 
   return (
     <main className="min-h-screen bg-background flex items-center justify-center px-6">
@@ -177,12 +198,18 @@ function PaymentProcessingContent() {
         {txnid && <p className="mt-3 text-xs text-muted-foreground/70">Transaction: {txnid}</p>}
         {canRetry && (
           <div className="mt-5 flex flex-col gap-2">
+            {resumeAllowed && resumePath && <Button onClick={() => window.location.assign(resumePath)} className="w-full">
+              Continue to Payment
+            </Button>}
             <Button onClick={() => setRetryKey((value) => value + 1)} className="w-full">
               Check Again
             </Button>
             {isFailed && <Button variant="outline" onClick={() => router.replace(discoverBundleRetryPath(txnid, storedPending))} className="w-full">
               Back to Checkout
             </Button>}
+            {isFastrr && !isFailed && <Button variant="outline" onClick={() => router.replace(
+              storedPending?.type === "bundle" ? `${discoverBundleRetryPath(txnid, storedPending)}?review=${encodeURIComponent(txnid)}` : "/reports"
+            )} className="w-full">Back to Order</Button>}
           </div>
         )}
       </div>

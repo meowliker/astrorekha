@@ -6,6 +6,7 @@ export type PayUStatus = {
   bundleId?: string | null;
   userId?: string | null;
   amount?: number;
+  checkoutUrl?: string;
 };
 
 export const PENDING_PAYU_KEY = "astrorekha_pending_payu_payment";
@@ -117,7 +118,7 @@ export function watchPayUPayment(options: {
   txnid: string;
   onPaid: (status: PayUStatus) => void;
   onFailed: () => void;
-  onWaiting: () => void;
+  onWaiting: (status?: PayUStatus) => void;
   onExpired: () => void;
   intervalMs?: number;
   maxWaitMs?: number;
@@ -154,7 +155,7 @@ export function watchPayUPayment(options: {
       stop();
       options.onFailed();
     } else {
-      options.onWaiting();
+      options.onWaiting(status);
       timer = setTimeout(checkNow, options.intervalMs ?? 5000);
     }
   };

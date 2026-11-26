@@ -54,6 +54,9 @@ export default function Step15Page() {
 
   // Load captured palm image from localStorage and track ViewContent
   useEffect(() => {
+    setEmail(localStorage.getItem("astrorekha_checkout_email") || localStorage.getItem("astrorekha_email") || "");
+    const savedPhone = (localStorage.getItem("astrorekha_whatsapp_number") || "").replace(/\D/g, "");
+    setWhatsappNumber(savedPhone.length === 12 && savedPhone.startsWith("91") ? savedPhone.slice(2) : savedPhone);
     const savedImage = localStorage.getItem("astrorekha_palm_image");
     if (savedImage) {
       setPalmImage(savedImage);
