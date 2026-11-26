@@ -507,6 +507,7 @@ Total Paid: INR ${invoice.total.toFixed(2)}</p>`
   With gratitude,<br/>
   <strong>Team AstroRekha</strong>
 </p>
+<p style="font-size:12px;line-height:1.6;color:#666;margin-top:16px">This is a digital product. Access your purchased reports by signing in to your AstroRekha account at astrorekha.com/login. No physical product will be shipped or delivered.</p>
   `;
 
   await sendEmailWithAttachments(

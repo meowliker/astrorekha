@@ -37,6 +37,7 @@ export function renderPurchaseAccessEmail(row: AccessEmail, code: string, invoic
 <p style="text-align:center;margin:24px 0"><a href="https://astrorekha.com/login" style="background:#9333EA;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;display:inline-block;font-weight:600">Open AstroRekha</a></p>
 <p style="color:#9CA3AF;font-size:12px;line-height:1.7;text-align:center">This code has no expiry and works only once. Keep it private. After using it, sign in with your password or request a fresh sign-in code.</p>
 <p style="color:#9CA3AF;font-size:13px;line-height:1.7;margin-top:24px">Need help? <a href="mailto:team.astrorekha@gmail.com" style="color:#c4b5fd">team.astrorekha@gmail.com</a><br>With gratitude,<br>Team AstroRekha</p>
+<p style="color:#9CA3AF;font-size:12px;line-height:1.6;margin-top:16px">This is a digital product. Access your purchased reports by signing in to your AstroRekha account at astrorekha.com/login. No physical product will be shipped or delivered.</p>
 </td></tr><tr><td align="center" style="padding-top:32px;color:#6B7280;font-size:12px">© ${new Date().getFullYear()} AstroRekha. All rights reserved.</td></tr>
 </table></td></tr></table></body></html>`;
 }
